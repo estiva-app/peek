@@ -77,8 +77,11 @@ async function main() {
   console.log(`\n30840 with h=${folder.id}: ${bare.length}; naming a parent by a: ${subs.length}`)
   for (const e of subs.sort((x, y) => y.created_at - x.created_at).slice(0, 15)) {
     const address = `30840:${e.pubkey}:${tag(e, 'd')}`
-    const inContents = contents.files.some((f) => f.address === address)
-    console.log(`  ${new Date(e.created_at * 1000).toISOString()} ${JSON.stringify(tag(e, 'title'))} a=${tag(e, 'a')} state-lists=${listed.has(address)} contents=${inContents}`)
+    const drawn = contents.files.find((f) => f.address === address)
+    const inContents = !!drawn
+    // The folded title (a rename is a 1851) when the listing resolved it; the root's tag otherwise.
+    const title = drawn?.slots.title?.value ?? tag(e, 'title')
+    console.log(`  ${new Date(e.created_at * 1000).toISOString()} ${JSON.stringify(title)} a=${tag(e, 'a')} state-lists=${listed.has(address)} contents=${inContents}`)
   }
 }
 

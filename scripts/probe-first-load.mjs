@@ -72,11 +72,13 @@ const leaf = (text) => `[...document.querySelectorAll('main *')].find((e) => e.c
 /*
   Unfolds a topic's row so what is under it is drawn: its chevron, not its title. The title is a link that opens the
   topic and leaves its row closed (PEE-55: clicking it read as "not listed" while the sub-topic was there). Topics
-  draws an author's sub-topic flat, with no chevron on its parent, so there is nothing to press.
+  draws an author's sub-topic flat, with no chevron on its parent, so there is nothing to press. The chevron is waited
+  for, not only the row: a listing read before the child was added draws the row first and the chevron after.
 */
+const chevron = (title) => `[...document.querySelectorAll('main [aria-label^="Show what is under "]')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(`Show what is under ${title}`)})`
 const unfold = (title) => [
-  '--until', `!!${leaf(title)} || performance.now() > 15000`,
-  '--eval', `(() => { const b = document.querySelector(${JSON.stringify(`[aria-label="Show what is under ${title}"]`)}); if (!b) return 'opening parent: no chevron'; if (b.getAttribute('aria-expanded') !== 'true') b.click(); return 'opening parent' })()`,
+  '--until', `!!${chevron(title)} || performance.now() > 15000`,
+  '--eval', `(() => { const b = ${chevron(title)}; if (!b) return ${JSON.stringify(`${title}: no chevron`)}; if (b.getAttribute('aria-expanded') !== 'true') b.click(); return 'opening parent' })()`,
   '--wait', '1500',
 ]
 // A press, then the click, as a person's click arrives: Desk's loader gives way on the press (PEE-5).
@@ -496,7 +498,8 @@ async function seenBy(as, page, title, message, parent = null) {
   const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--init', ALL_VIEW, '--timeout', '45000', ...steps])
   const outcomes = probe.steps.filter((s) => s.eval && !String(s.result).startsWith('opening')).map((s) => s.result ?? s.error)
   console.log(`  ${as} in Topics: ${outcomes.join(', ') || probe.failure}`)
-  if (outcomes[0] !== 'listed' || (message && outcomes[1] !== 'message there')) failed = true
+  // A parent with no chevron is printed among them ("…: no chevron"), so the verdicts are found, not indexed.
+  if (!outcomes.includes('listed') || (message && !outcomes.includes('message there'))) failed = true
 }
 
 /**
