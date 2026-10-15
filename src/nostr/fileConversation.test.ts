@@ -31,6 +31,7 @@ import {
   editCommentAsViewer,
   fileConversationAsViewer,
   fileThreadsAsViewer,
+  partsAndAnchorOf,
   reactAsViewer,
   resolveAsViewer,
   type ConversationContainer,
@@ -717,4 +718,25 @@ describe('publishConfirmed — success is the relay’s acceptance, and a transi
     expect(result.ok).toBe(false)
     expect(publishSigned).toHaveBeenCalledTimes(PUBLISH_ATTEMPTS)
   }, 15_000)
+})
+
+describe("a comment's anchor keeps its whole run and its words (§13.6, LEAF-7)", () => {
+  const DOC = `30842:${'a'.repeat(64)}:doc`
+
+  it('keeps every block of the run and the quote, so the card reads the selection rather than its first block', () => {
+    const tags = [['A', DOC], ['block', 'p1', 'p2', 'p3'], ['quote', 'ship on Friday.', 'Then we']]
+    expect(partsAndAnchorOf({ kind: 1111, tags })).toEqual([
+      { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1', 'p2', 'p3'], ['quote', 'ship on Friday.', 'Then we']] },
+    ])
+  })
+
+  it('reads a one-block comment as it always did', () => {
+    expect(partsAndAnchorOf({ kind: 1111, tags: [['A', DOC], ['block', 'p1']] })).toEqual([
+      { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1']] },
+    ])
+  })
+
+  it('anchors nothing on a channel message, which names no file', () => {
+    expect(partsAndAnchorOf({ kind: 9, tags: [['block', 'p1', 'p2'], ['quote', 'x']] })).toEqual([])
+  })
 })

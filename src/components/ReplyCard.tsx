@@ -573,7 +573,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a

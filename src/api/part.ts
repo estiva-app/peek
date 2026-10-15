@@ -15,7 +15,7 @@
  * subscription keyed on the Folder is not available to the first render.
  */
 import { useEffect, useState } from 'react'
-import { resolvePart, type Block } from '@estiva-app/protocol'
+import { KIND, resolveCommentAnchor, resolvePart, type Block, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { validToken } from '@/auth/estivaId'
 import { absenceAsViewer, blockLinkAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
@@ -35,16 +35,32 @@ const FIRST_RETRY_MS = 3_000
 /** The Open link per address, title and block: it changes only on a rename, so it is built once. */
 const links = new Map<string, Promise<string | undefined>>()
 
-/** What a part draws. The five states of `resolvePart`, plus waiting. */
+/**
+ * What a part draws. The five states of `resolvePart`, plus waiting — and, for
+ * a comment's anchor, `reworded`: its blocks are there and the words it quoted
+ * are not (§13.6, LEAF-7). `run` is every block of an anchor's run when it has
+ * more than one; `block` is always the first.
+ */
 export type PartView =
   | { state: 'loading' }
-  | { state: 'resolved'; block: Block; object: ForeignObject; link?: string }
+  | { state: 'resolved'; block: Block; run?: Block[]; object: ForeignObject; link?: string }
+  | { state: 'reworded'; block: Block; run?: Block[]; quote: Quote; object: ForeignObject; link?: string }
   | { state: 'unaddressable' | 'detached'; object: ForeignObject; link?: string }
   | { state: 'deleted' }
   | { state: 'unreadable' }
 
+/**
+ * What a card points at: one block (`part`), or a comment's anchor, read from
+ * its `block` and `quote` tags as written (`anchorTags`).
+ */
+export interface PartPointerView {
+  address: string
+  block: string
+  anchorTags?: string[][]
+}
+
 /** Read one part once, as the signed-in viewer. Null when nobody is signed in. */
-async function readPart(pointer: { address: string; block: string }): Promise<PartView | null> {
+async function readPart(pointer: PartPointerView): Promise<PartView | null> {
   const token = validToken()
   if (!RELAY_URL || !token) return null
   const object = await resolveObjectAsViewer(pointer.address, RELAY_URL, token)
@@ -54,18 +70,34 @@ async function readPart(pointer: { address: string; block: string }): Promise<Pa
     return (await absenceAsViewer(pointer.address, RELAY_URL, token)) === 'deleted' ? { state: 'deleted' } : { state: 'unreadable' }
   }
   const body = object.slots.body
-  // An object with no body slot has no parts Peek can see — not "deleted".
-  const part = body
-    ? resolvePart(pointer.block, { value: body.value, format: body.format === 'blocks' ? 'blocks' : 'marker' })
-    : ({ state: 'unaddressable' } as const)
-  // `resolvePart` only says deleted or unreadable when told so, and it was not.
-  if (part.state === 'deleted' || part.state === 'unreadable') return { state: 'unreadable' }
+  const format = body?.format === 'blocks' ? 'blocks' : 'marker'
   const title = object.slots.title?.value
   const key = `${pointer.address}\u0000${pointer.block}\u0000${title ?? ''}`
   if (!links.has(key)) {
     links.set(key, blockLinkAsViewer({ address: pointer.address, title, block: pointer.block }, RELAY_URL, token).catch(() => undefined))
   }
   const link = (await links.get(key)) ?? object.openUrl
+  // An object with no body slot has no parts Peek can see — not "deleted".
+  if (!body) return { state: 'unaddressable', object, link }
+
+  if (pointer.anchorTags) {
+    // A comment's anchor: its run of blocks and the words at its ends, read
+    // against the file as it is now. A comment about words that changed is
+    // `reworded`, never `detached` — its blocks are still there.
+    const anchor = resolveCommentAnchor({ kind: KIND.COMMENT, tags: pointer.anchorTags }, body.value, format)
+    if (anchor.state === 'resolved' || anchor.state === 'reworded') {
+      const run = anchor.blocks.length > 1 ? { run: anchor.blocks } : {}
+      return anchor.state === 'resolved'
+        ? { state: 'resolved', block: anchor.blocks[0], ...run, object, link }
+        : { state: 'reworded', block: anchor.blocks[0], ...run, quote: anchor.quote, object, link }
+    }
+    // `unanchored` cannot come back from tags that hold a `block`; read it as unaddressable rather than draw nothing.
+    return { state: anchor.state === 'detached' ? 'detached' : 'unaddressable', object, link }
+  }
+
+  const part = resolvePart(pointer.block, { value: body.value, format })
+  // `resolvePart` only says deleted or unreadable when told so, and it was not.
+  if (part.state === 'deleted' || part.state === 'unreadable') return { state: 'unreadable' }
   return part.state === 'resolved' ? { state: 'resolved', block: part.block, object, link } : { state: part.state, object, link }
 }
 
@@ -74,14 +106,17 @@ async function readPart(pointer: { address: string; block: string }): Promise<Pa
  * signed out or with no relay it settles on `unreadable`, which is the truth
  * for a reader who can read nothing.
  */
-export function usePart(pointer: { address: string; block: string }): PartView {
-  const { address, block } = pointer
+export function usePart(pointer: PartPointerView): PartView {
+  const { address, block, anchorTags } = pointer
+  // The tags arrive as a new array on every render; their text is what identifies the poll.
+  const anchor = anchorTags ? JSON.stringify(anchorTags) : ''
   const [view, setView] = useState<PartView>({ state: 'loading' })
 
   useEffect(() => {
     if (!hasRelay) return
-    return watchPart(`${address}\u0000${block}`, { address, block }, setView)
-  }, [address, block])
+    const tags = anchor ? (JSON.parse(anchor) as string[][]) : undefined
+    return watchPart(`${address}\u0000${block}\u0000${anchor}`, { address, block, anchorTags: tags }, setView)
+  }, [address, block, anchor])
 
   return hasRelay ? view : { state: 'unreadable' }
 }
@@ -98,7 +133,7 @@ interface Poll {
 }
 const polls = new Map<string, Poll>()
 
-function watchPart(key: string, pointer: { address: string; block: string }, listener: (view: PartView) => void): () => void {
+function watchPart(key: string, pointer: PartPointerView, listener: (view: PartView) => void): () => void {
   let poll = polls.get(key)
   if (!poll) {
     const created: Poll = { listeners: new Set(), stop: () => undefined }
