@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { noteCardAvailability, rememberedUnavailable } from '@/lib/unavailableCards'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, SUMMARY_FIELD, pickWidget } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { referenceTypeWord } from '@/lib/textParsing'
 import type {
@@ -434,6 +434,9 @@ export function ForeignObjectCard({
     (action) =>
       action.field &&
       action.field !== object.slots.title?.field &&
+      // Nor the summary (SPEC §6.12): a card shows it, and Peek writes it only
+      // in the file's Details (Miky, 15 Oct) — never from a card in a message.
+      action.field !== SUMMARY_FIELD &&
       // Nor the move (FOL-4): its value is an address, and a text box asking
       // for `30840:<hex>:<uuid>` is not a control. The tree and the file's
       // menu offer it, picking from the team.
@@ -575,9 +578,11 @@ export function ForeignObjectCard({
         const description = (
           <>
           {/* A card shows the subtitle; a row is a single line by definition —
-              except on the object's own page, where it is the subject (MAN-9). */}
+              except on the object's own page, where it is the subject (MAN-9).
+              Clamped to two lines, as Ship's card is: interop cuts a summary at
+              280 characters, still more than this card has room for (SPEC §6.12). */}
           {whole && slots.subtitle && (
-            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+            <p className="mt-1 line-clamp-2 break-words text-caption text-text-secondary">{slots.subtitle.value}</p>
           )}
           {/* The description, in whichever content model its own app writes —
               PRO-2. Where the subtitle is, for its reason: a row in a message is a
