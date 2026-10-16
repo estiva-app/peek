@@ -1,0 +1,50 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as PersonItemStories from './PersonItem.stories'
+
+<Meta of={PersonItemStories} />
+
+# PersonItem
+
+One person in a side list, on the package's **NavItem**: their photo, their
+name, the unread dot, and "Hide conversation" on the ⋮ where hiding can succeed.
+
+<Canvas of={PersonItemStories.Default} />
+
+## When
+
+- The People page's lists: Starred and everyone else.
+- The link is the person's page, `/app/people/{id}`. `onSelect` takes a plain
+  click instead; a click with a modifier is left to the link, so a new tab
+  still opens it.
+
+<Canvas of={PersonItemStories.WithHide} />
+
+## When not
+
+- A file or a DM on the Desk: the Desk draws its own rows on **NavItem**, with
+  their ✕ and the "Archived" chip.
+- A row in the Folders tree: **NavItem** through `FileTreeView`.
+
+## How
+
+```tsx
+import { PersonItem } from '@/components/ui/PersonItem'
+
+<PersonItem
+  id={dm.id}
+  name={dm.name}
+  unread={dm.isUnread}
+  active={dm.id === selectedId}
+  onSelect={select}
+  onHide={dm.canHide ? () => hide(dm.id) : undefined}
+/>
+```
+
+## What it owns
+
+- **The photo**: the profile's, or the one the name finds when there is none.
+- **The link**: the person's page.
+
+## Props
+
+<Controls of={PersonItemStories.Default} />

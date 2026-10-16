@@ -16,7 +16,7 @@ import { filePath } from '@/lib/objectUrl'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
- * rows (Katerina, 2026-09-14): each PersonRow pads itself, so the line takes a
+ * rows (Katerina, 2026-09-14): each row pads itself, so the line takes a
  * row's inset here, and EmptyState is never padded.
  */
 function TreeLine({ message }: { message: string }) {
@@ -34,8 +34,7 @@ function TreeLine({ message }: { message: string }) {
  * `ForeignObjectCard`, which is right at the Folder page's full width and
  * wrong in a 290px column: a Ship project's card wraps its whole description
  * into a tower and the tree it sits in disappears (Miky, 2026-09-14). This is
- * the same listing drawn the way the Topics list draws its rows — `PersonRow`,
- * one line each, the glyph on the left and the dot on the right — so a file in
+ * the same listing drawn the way the Topics list drew its rows, one line each, the glyph on the left and the dot on the right — so a file in
  * the tree reads like a topic in the list, which is what it is about to
  * replace (FOL-21).
  *
@@ -300,7 +299,7 @@ export function JoinedFileRowsView({
 
 /**
  * One row, and the rows inside it when it is open: the package's `NavItem`
- * (Katerina, 2 October), drawing what `PersonRow` drew — the glyph, the name,
+ * (Katerina, 2 October), drawing what Peek's own row drew — the glyph, the name,
  * the dot, the selection, the menu on hover. Its icon becomes the arrow while
  * it is pointed at, so a row with rows under it is as wide as one without.
  */
