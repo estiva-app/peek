@@ -43,10 +43,21 @@ const URGENT: DeskRow[] = [
 ]
 
 const OPEN_WORK: DeskRow[] = [
-  row('o1', 'file', 'Launch checklist for v2 of the mobile app', { isUnread: true, glyph: 'topic', onRemove: noop }),
+  // A file's summary is the row's second line (SPEC §6.12); one with none stays one line.
+  row('o1', 'file', 'Launch checklist for v2 of the mobile app', {
+    isUnread: true,
+    glyph: 'topic',
+    summary: 'Everything that has to be true before the store submission, and who checks each item.',
+    onRemove: noop,
+  }),
   // A Ship project and a Ship issue wear Ship's glyphs here too (7 October).
   row('o2', 'file', 'Payments v2', { glyph: 'project', onRemove: noop }),
-  row('o4', 'file', 'Card form validation', { isUnread: true, glyph: 'issue', onRemove: noop }),
+  row('o4', 'file', 'Card form validation', {
+    isUnread: true,
+    glyph: 'issue',
+    summary: 'The card form accepts expired dates; reject them before the charge is tried.',
+    onRemove: noop,
+  }),
   row('o5', 'file', 'Remote work policy clarifications', { onRemove: noop }),
   row('o3', 'dm', 'Daniel Stanton', { onRemove: noop }),
 ]

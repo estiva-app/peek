@@ -40,6 +40,8 @@ export type UrgentItem =
       /** The root's kind — a bare file draws as a topic. */
       fileKind: number
       title: string
+      /** Its summary (SPEC §6.12), the row's second line; absent, the row is the title alone. */
+      summary?: string
     }
 
 export type StarredEntry = {

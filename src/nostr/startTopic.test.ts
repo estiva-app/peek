@@ -53,6 +53,22 @@ describe('starting a topic', () => {
     }
   })
 
+  it('seeds a summary as the root’s last tag, on one line and trimmed (SPEC §6.12)', async () => {
+    await createTopicAsViewer(
+      { folder: TEAM, title: 'Launch naming', summary: '  Where we pick the name.\n  Two weeks.  ', parent: PROJECT, hasState: false },
+      RELAY,
+      token,
+    )
+    const [file] = sent()
+    expect(file.tags.map((t) => t[0])).toEqual(['d', 'title', 'h', 'a', 'summary'])
+    expect(file.tags[4]).toEqual(['summary', 'Where we pick the name. Two weeks.'])
+  })
+
+  it('writes no summary tag when the summary is blank', async () => {
+    await createTopicAsViewer({ folder: TEAM, title: 'General thoughts', summary: '  \n ', hasState: false }, RELAY, token)
+    expect(sent()[0].tags.map((t) => t[0])).toEqual(['d', 'title', 'h'])
+  })
+
   it('omits the a tag for a topic at the top of the folder', async () => {
     await createTopicAsViewer({ folder: TEAM, title: 'General thoughts', hasState: false }, RELAY, token)
     expect(sent()[0].tags.map((t) => t[0])).toEqual(['d', 'title', 'h'])

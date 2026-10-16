@@ -367,6 +367,26 @@ export function useHeldObject(reference: string | null): {
   return { object, reload, gone: !!key && entry?.value === null }
 }
 
+/**
+ * Ask a file this tab holds again, by any spelling it was held under: after
+ * this tab changed it (a rename, a summary), so a listing drawing held copies
+ * (`useResolvedReferences`'s `held`) shows the change. A file not held is not
+ * asked.
+ */
+export function useReloadHeldObject(): (reference: string) => Promise<void> {
+  const viewer = useRelayViewer()
+  return useCallback(
+    async (reference: string) => {
+      const pubkey = viewer()?.token.pubkey
+      if (!pubkey) return
+      const key = heldKey(pubkey, reference)
+      if (heldObjects.peek(key)?.value === undefined) return
+      await heldObjects.read(key, heldLoad(reference, viewer))
+    },
+    [viewer],
+  )
+}
+
 export function useForeignObjects() {
   const viewer = useRelayViewer()
 
@@ -800,9 +820,19 @@ export function useResolvedReferences(
    * an open conversation draws (a message's chips, the Activity's titles), not
    * for a listing, where it would be a watch for every Folder listed.
    */
-  options?: { live?: boolean },
+  options?: {
+    live?: boolean
+    /**
+     * Draw this tab's newer held copy of a file over the listing's own answer,
+     * and draw again when it changes — after a rename or a summary change in
+     * Details ({@link useReloadHeldObject}) — without following the files: a
+     * listing's way to stay in step with this tab's own writes, at no watch.
+     */
+    held?: boolean
+  },
 ): Record<string, ForeignObject | null> {
   const live = options?.live ?? false
+  const drawHeld = live || (options?.held ?? false)
   const { resolveObjects } = useForeignObjects()
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey ?? ''
@@ -866,21 +896,21 @@ export function useResolvedReferences(
   const [heldChanges, setHeldChanges] = useState(0)
   useEffect(() => {
     // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
-    if (!live || !hasRelay || !pubkey || !key) return
+    if (!drawHeld || !hasRelay || !pubkey || !key) return
     const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref), () => setHeldChanges((n) => n + 1)))
     return () => leave.forEach((each) => each())
-  }, [live, key, pubkey])
+  }, [drawHeld, key, pubkey])
 
   const merged = useMemo(() => {
     void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
       // A listing keeps its own answer first, as before; it fills only what it has not answered.
-      if (!live && objects[ref]) return []
+      if (!drawHeld && objects[ref]) return []
       const value = heldObjects.peek(heldKey(pubkey, ref))?.value
       return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [live, key, objects, pubkey, heldChanges])
+  }, [drawHeld, key, objects, pubkey, heldChanges])
 
   // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
   const follow = live
