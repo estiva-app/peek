@@ -52,7 +52,7 @@ describe('a part is drawn while the body names its object', () => {
     const { container } = show({ state: 'resolved', block: blockOf('Ship it on Friday'), object, link: LINK })
     expect(card(container)?.dataset.part).toBe('resolved')
     expect(screen.getByText('Ship it on Friday')).toBeTruthy()
-    expect(screen.getByText('Issue · Plan the launch')).toBeTruthy()
+    expect(screen.getByText('Plan the launch')).toBeTruthy()
     expect(widgets).not.toContain(LINK)
   })
 
@@ -77,29 +77,22 @@ describe('a part is drawn while the body names its object', () => {
   })
 })
 
-describe('deleted and not available never look alike', () => {
-  it('deleted says so, and shows no title', () => {
-    const { container } = show({ state: 'deleted' })
-    expect(card(container)?.dataset.part).toBe('deleted')
-    expect(screen.getByText('Deleted')).toBeTruthy()
-    expect(screen.queryByText(/Plan the launch/)).toBeNull()
-  })
-
-  it('not available shows neither title nor text, in a different frame', () => {
-    const { container } = show({ state: 'unreadable' })
-    expect(card(container)?.dataset.part).toBe('unreadable')
-    expect(screen.getByText('Not available to you')).toBeTruthy()
-    expect(screen.queryByText(/Plan the launch|Deleted/)).toBeNull()
-    // The package Card's `unreadable` look — a dashed hairline — and only here.
-    expect(card(container)?.className).toMatch(/dashed/)
-  })
+describe('deleted and not available read the same (Miky, 15 Oct)', () => {
+  for (const state of ['deleted', 'unreadable'] as const) {
+    it(`${state} says only that a part of the issue is not available: no title, no text`, () => {
+      const { container } = show({ state })
+      expect(card(container)?.dataset.part).toBe(state)
+      expect(card(container)?.textContent).toBe('A part of this issue — not available.')
+      expect(screen.queryByText(/Plan the launch/)).toBeNull()
+    })
+  }
 
   it('a deleted block of a readable object names the object it was in', () => {
     const { container } = show({ state: 'detached', object, link: LINK })
     expect(card(container)?.dataset.part).toBe('detached')
     expect(screen.getByText('This part was deleted')).toBeTruthy()
-    expect(screen.getByText('Issue · Plan the launch')).toBeTruthy()
-    expect(card(container)?.className).not.toMatch(/dashed/)
+    expect(screen.getByText('Plan the launch')).toBeTruthy()
+    expect(card(container)?.textContent).not.toContain('not available')
   })
 })
 

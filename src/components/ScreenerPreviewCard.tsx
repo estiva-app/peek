@@ -39,7 +39,8 @@ export function ScreenerPreviewCardView({
               <MetaText size="chip" className="leading-tight">{r.timestamp}</MetaText>
             </div>
             <div className="text-caption leading-normal text-text-secondary line-clamp-4">
-              <MessageBody body={r.body} follow={false} />
+              {/* A preview: its links as chips only (Decided 16 Oct). */}
+              <MessageBody body={r.body} follow={false} preview />
             </div>
           </div>
         ))

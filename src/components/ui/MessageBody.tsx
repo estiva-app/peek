@@ -1,6 +1,7 @@
 import type { FC, ReactNode } from 'react'
-import { Reference } from './Reference'
 import { CommentAnchor } from './CommentAnchor'
+import { MessageCard, MessageChip, MessagePart, MessageRow } from './MessageLinks'
+import { placeLines, ROW_BLOCK, type RowLine } from '@/lib/messageLines'
 import {
   IconFile,
   IconFileTypePdf,
@@ -12,7 +13,6 @@ import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { PartCard } from './PartCard'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
@@ -132,7 +132,7 @@ function dedupeReferences(refs: string[]): string[] {
  * item from another app it names drawn as its chip, and below it the cards its
  * author chose.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true, here, preview = false }: { body: string; /** The address of the file this message is shown on ("Mentioned in", a file's conversation): no card for it, its chip stays (WID-3). */ here?: string; /** A preview of the message (the Screener's): its links as chips only — no row, no card, no part (Decided 16 Oct). */ preview?: boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   /*
     What the message is about, for its anchor's card: its `a` tags (sync stores
     them in `nostrReferences`) and the addresses its body names, deduplicated by
@@ -245,35 +245,56 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     const known = supplied(ref)
     if (known) resolved[ref] = known
   }
+  /*
+    Where each line draws (SPEC §13.2; why:
+    https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md):
+    a link in a sentence is its chip, a line that is only a link to a file or a
+    message is that file's row, and the file whose card is under the message
+    draws nothing in the text, since the card stands for it. A preview draws
+    chips only (Decided 16 Oct), and the file a "Mentioned in" list is on keeps
+    its chip where it was written, with no card (WID-3).
+  */
+  const isHere = (value: string) => !!here && value.toLowerCase() === here.toLowerCase()
+  const drawnCards = preview ? [] : cards.filter((card) => !isHere(card.value))
+  const placed = preview ? undefined : placeLines(blocks, { cards: drawnCards, parts: shown, resolveLink, stayChip: isHere })
+  const chip = (reference: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} />
+  const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} />
   return (
     <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
-      {anchored.length > 0
-        ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />)
-        : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />}
+      {!preview &&
+        (anchored.length > 0
+          ? anchored.map((part) => (
+              <MessagePart key={part.address}>
+                <PartCard address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />
+              </MessagePart>
+            ))
+          : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />)}
       <RichText
-        blocks={blocks}
+        blocks={placed?.blocks ?? blocks}
         renderText={renderTokens}
-        renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} urgent={urgentMentions} />}
+        renderReference={(reference, run) => {
+          const line = placed?.rowRuns.get(run)
+          return line ? row(line) : chip(reference)
+        }}
+        renderBlock={(block) => {
+          const line = block.type === ROW_BLOCK ? placed?.rowOf(block) : undefined
+          return line ? row(line) : undefined
+        }}
       />
-      {cards
+      {drawnCards
         .filter((card) => card.layout !== 'none')
         .map((card) => (
-          <div key={card.value} data-card={card.layout}>
-            <ForeignObjectWidget
-              naddr={card.reference.replace(/^nostr:/i, '')}
-              resolved={supplied(card.reference)}
-              layout={card.layout === 'detailed' ? 'card' : 'row'}
-              // A detailed card is cut behind "Show more", so its height is known before it loads (OPT-10; Miky, 14 Oct).
-              clampDescription={card.layout === 'detailed'}
-            />
-          </div>
+          <MessageCard key={card.value} uri={card.reference} resolved={supplied(card.reference)} compact={card.layout !== 'detailed'} />
         ))}
-      {shown.map((part) => (
-        <PartCard key={part.address} address={part.address} block={part.block} />
-      ))}
+      {!preview &&
+        shown.map((part) => (
+          <MessagePart key={part.address}>
+            <PartCard address={part.address} block={part.block} />
+          </MessagePart>
+        ))}
     </div>
   )
 }

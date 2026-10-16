@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { noteCardAvailability, rememberedUnavailable } from '@/lib/unavailableCards'
+import { useState } from 'react'
+import { rememberedUnavailable } from '@/lib/unavailableCards'
+import { useHeldCard } from './useHeldCard'
 import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, SUMMARY_FIELD, pickWidget } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { referenceTypeWord } from '@/lib/textParsing'
@@ -9,7 +10,6 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasRelay, isFromCopy, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
@@ -111,15 +111,6 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
       {slot.value}
     </span>
   )
-}
-
-/** How long a pick made on a card from the copy waits for the relay's answer before it is undone. */
-const HELD_PICK_MS = 10_000
-
-/** A picker's value in words, as its control draws it: the option's label, or the person's name. */
-function valueLabel(action: ResolvedAction, value: string, directory?: People, people?: People): string {
-  if (action.control === 'pubkey') return value ? (directory?.[value]?.displayName ?? people?.[value]?.displayName ?? 'someone else') : 'Unassigned'
-  return action.options?.find((option) => option.value === value)?.label ?? (value || 'none')
 }
 
 /**
@@ -727,7 +718,6 @@ function NotAvailableRow({ naddr }: { naddr: string }) {
 export function ForeignObjectWidget({
   naddr,
   resolved,
-  quiet = false,
   page = false,
   clampDescription = false,
   layout,
@@ -740,117 +730,11 @@ export function ForeignObjectWidget({
   clampDescription?: boolean
   /** `ForeignObjectCard`'s: the layout the message's author chose (SPEC §13.6.2). */
   layout?: 'card' | 'row'
-  /**
-   * Draw nothing while resolving, for a reference that might not be one.
-   * See the branch below.
-   */
-  quiet?: boolean
   /** The already-resolved object, for surfaces with no relay to ask (stories,
    *  tests). Skips resolution entirely; actions still render but cannot land. */
   resolved?: ForeignObject
 }) {
-  const { applyAction } = useForeignObjects()
-  const directory = useWorkspaceDirectory()
-  /*
-    Already in hand — nothing to resolve (`resolved`), and a newer one from the
-    page is taken, so an edit made elsewhere reaches the editor (MAN-9). Peek
-    runs without a relay in tests, Storybook and checkouts with no
-    `VITE_RELAY_URL` (`hasRelay`): nothing to ask, so it resolves to nothing.
-    Otherwise the tab's held answer (OPT-3): a topic you come back to draws its
-    widgets at once. The token matters here: without it this reads as the
-    backend, a member of no channel, and every widget renders as broken.
-  */
-  const held = useHeldObject(resolved || !hasRelay ? null : naddr)
-  const object: ForeignObject | null | 'loading' = resolved ?? (hasRelay ? held.object : null)
-  // Returned, so an action's `await reload()` waits for the re-read it names.
-  const reload = held.reload
-  /*
-    A chosen card's answer, remembered on this device: not available (nothing, or
-    not readable), so the next open draws its one-line row at once; or available
-    again. A failed read says neither.
-  */
-  const availability = object === 'loading' || (object === null && !held.gone) ? undefined : !!object && !object.unreachable
-  useEffect(() => {
-    if (layout && !resolved && availability !== undefined) noteCardAvailability(naddr, availability)
-  }, [layout, resolved, availability, naddr])
-  const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState<string | undefined>()
-  /*
-    A pick made on a card drawn from the copy on the device: shown at once, sent
-    only once the relay has answered and the field still holds what the card
-    showed, and otherwise undone with a note (Miky, 2026-10-16, kickoff of "A
-    Ship issue's card drawn from the copy has its controls at once"). The copy
-    may be days old; a pick sent from it would quietly undo a newer change.
-  */
-  const [waiting, setWaiting] = useState<{ naddr: string; actionId: string; value: string; shown: string } | null>(null)
-  const fromCopy = !!object && object !== 'loading' && isFromCopy(object)
-
-  const onAct = useCallback(
-    async (actionId: string, value: string, contentFormat?: string) => {
-      if (fromCopy) {
-        setActionError(undefined)
-        setWaiting({ naddr, actionId, value, shown: object.actions.find((action) => action.id === actionId)?.current ?? '' })
-        // Ask the relay now: a read that failed before the pick is retried rather than waited out.
-        void reload()
-        return true
-      }
-      setBusy(true)
-      setActionError(undefined)
-      try {
-        const result = await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
-        // The relay is the authority on whether this happened, so re-read rather
-        // than patching local state optimistically. Slower, and it means the
-        // widget can never claim a change the shared record does not have.
-        if (result.ok) await reload()
-        else setActionError(result.reason)
-        return result.ok
-      } catch (e) {
-        setActionError((e as Error).message)
-        return false
-      } finally {
-        setBusy(false)
-      }
-    },
-    [applyAction, naddr, reload, fromCopy, object],
-  )
-
-  // The relay's answer to a held pick: send it, drop it, or undo it with a note.
-  useEffect(() => {
-    if (!waiting || object === 'loading') return
-    // The card now shows another file: its pick is not this one's to send.
-    if (waiting.naddr !== naddr) return setWaiting(null)
-    if (fromCopy) return
-    setWaiting(null)
-    // Gone, unreadable, or no longer offered — the workspace may have removed the app since the copy was kept.
-    const now = object && !object.unreachable ? object.actions.find((action) => action.id === waiting.actionId) : undefined
-    if (!now) {
-      setActionError('Not sent: this can no longer be changed here.')
-      return
-    }
-    const current = now.current ?? ''
-    if (current === waiting.value) return
-    if (current !== waiting.shown) {
-      setActionError(`Not sent: changed meanwhile to ${valueLabel(now, current, directory, object?.people)}.`)
-      return
-    }
-    void onAct(waiting.actionId, waiting.value)
-  }, [waiting, object, fromCopy, naddr, onAct, directory])
-
-  // A relay that does not answer at all — a failed read, or a card whose object only the page can replace — undoes the pick too.
-  useEffect(() => {
-    if (!waiting) return
-    const timer = setTimeout(() => {
-      setWaiting(null)
-      setActionError('Not sent: Peek could not reach the relay. Try again.')
-    }, HELD_PICK_MS)
-    return () => clearTimeout(timer)
-  }, [waiting])
-
-  // The held pick, drawn as if it were already the field's value.
-  const drawn =
-    waiting && object && object !== 'loading' && !object.unreachable
-      ? { ...object, actions: object.actions.map((action) => (action.id === waiting.actionId ? { ...action, current: waiting.value } : action)) }
-      : object
+  const { object, drawn, gone, busy, error: actionError, onAct, directory } = useHeldCard(naddr, resolved, { remember: !!layout })
 
   /**
    * Waiting is not the same as nothing, and they used to render the same.
@@ -862,18 +746,7 @@ export function ForeignObjectWidget({
    *
    * The state already told these apart; only this branch did not.
    */
-  /*
-    `quiet` is for a reference that is only a *candidate*.
-
-    An `naddr` in a message is certainly a reference, so a skeleton is right:
-    the alternative is a message that settles at one height and then grows
-    (FEE-3). A pasted URL is not — most links in most messages are just links,
-    and RFC 0.5 §7.5 says one no manifest claims stays a plain link. Drawing a
-    skeleton under every one of those and then removing it is the same flicker
-    FEE-3 fixed, pointed the other way.
-  */
   if (object === 'loading') {
-    if (quiet) return null
     // Found not available the last time this device asked: its one-line row from the first paint, not a whole card's height.
     if (layout && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
     return <ForeignObjectSkeleton layout={layout} kind={kindOf(naddr)} className="mt-1" />
@@ -889,8 +762,8 @@ export function ForeignObjectWidget({
   if (object === null) {
     // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
     // A failed read keeps what this device remembered, rather than taking away the row it drew at first paint.
-    if (layout && !held.gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
-    if (!layout || !held.gone) return null
+    if (layout && !gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
+    if (!layout || !gone) return null
     return <NotAvailableRow naddr={naddr} />
   }
 
@@ -911,7 +784,7 @@ export function ForeignObjectWidget({
   return (
     <ForeignObjectCard
       object={drawn as ForeignObject}
-      busy={busy || !!waiting}
+      busy={busy}
       error={actionError}
       onAct={onAct}
       directory={directory}

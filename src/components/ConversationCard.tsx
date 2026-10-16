@@ -72,6 +72,8 @@ interface ConversationCardProps {
   parts?: { address: string; block: string; anchor?: true }[]
   /** The cards its author asked for (SPEC §13.6.2). */
   embeds?: readonly Embed[]
+  /** The address of the file it is shown on ("Mentioned in"): no card for that file under it, only its chip (WID-3). */
+  here?: string
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
@@ -128,6 +130,7 @@ export function ConversationCard({
   urgentMentions,
   parts,
   embeds,
+  here,
   nostrBlockId,
   highlightType,
   onHighlightChange,
@@ -637,7 +640,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} />
+            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} here={here} />
           </div>
           </>
           )}
