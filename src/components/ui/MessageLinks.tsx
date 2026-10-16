@@ -35,7 +35,7 @@ const isModified = (event: MouseEvent) => event.button !== 0 || event.metaKey ||
  *
  * Everything else is the kit's: an address in Peek goes through its router.
  */
-export function LinkClicks({ block = false, children }: { block?: boolean; children: ReactNode }) {
+function LinkClicks({ block = false, children }: { block?: boolean; children: ReactNode }) {
   const onClickCapture = (event: MouseEvent<HTMLElement>) => {
     const anchor = (event.target as Element).closest('a')
     if (!anchor || isModified(event) || anchor.getAttribute('target')) return
@@ -71,6 +71,11 @@ export function LinkClicks({ block = false, children }: { block?: boolean; child
     },
   }
   return block ? <div {...props}>{children}</div> : <span {...props}>{children}</span>
+}
+
+/** A part of another file shown in a message (SPEC §13.6.1): its links are clicked as a chip's are. */
+export function MessagePart({ children }: { children: ReactNode }) {
+  return <LinkClicks block>{children}</LinkClicks>
 }
 
 /**

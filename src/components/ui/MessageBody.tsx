@@ -1,6 +1,6 @@
 import type { FC, ReactNode } from 'react'
 import { CommentAnchor } from './CommentAnchor'
-import { LinkClicks, MessageCard, MessageChip, MessageRow } from './MessageLinks'
+import { MessageCard, MessageChip, MessagePart, MessageRow } from './MessageLinks'
 import { placeLines, ROW_BLOCK, type RowLine } from '@/lib/messageLines'
 import {
   IconFile,
@@ -267,9 +267,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
       {!preview &&
         (anchored.length > 0
           ? anchored.map((part) => (
-              <LinkClicks key={part.address} block>
+              <MessagePart key={part.address}>
                 <PartCard address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />
-              </LinkClicks>
+              </MessagePart>
             ))
           : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />)}
       <RichText
@@ -291,9 +291,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
         ))}
       {!preview &&
         shown.map((part) => (
-          <LinkClicks key={part.address} block>
+          <MessagePart key={part.address}>
             <PartCard address={part.address} block={part.block} />
-          </LinkClicks>
+          </MessagePart>
         ))}
     </div>
   )
