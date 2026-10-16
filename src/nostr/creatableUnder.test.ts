@@ -21,7 +21,6 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 
 import { creatableUnderAsViewer, forgetUrlShapes } from './foreign'
-import { manifestContent } from './manifest'
 
 const ME = 'a'.repeat(64)
 const OTHER = 'b'.repeat(64)
@@ -60,12 +59,38 @@ const event = (partial: Partial<TestEvent> & { kind: number }): TestEvent => ({
 
 const web = (entity: string) => ['web', 'https://peek.estiva.app/o/<bech32>', entity]
 
-/** Peek's listing as it is published until the republish: it still claims a Folder and a message. */
+/**
+ * Peek's listing as it is published until the republish: it still claims a
+ * Folder and a message, draws both, and declares its own Start a conversation.
+ * Written out rather than read from `manifest.ts`, which stops claiming them.
+ */
 const peekClaiming = event({
   kind: 31990,
   pubkey: PEEK_APP,
   tags: [['d', 'estiva-peek'], ['k', '39000'], ['k', '9'], web('naddr'), web('nevent')],
-  content: JSON.stringify(manifestContent()),
+  content: JSON.stringify({
+    name: 'Peek',
+    aspect: 'conversation',
+    fileNoun: 'topic',
+    projections: {
+      39000: {
+        widget: 'card',
+        slots: { title: { tag: 'name' }, list: { children: { kind: 9, via: 'h', match: 'identifier', limit: 50 } } },
+      },
+      9: { widget: ['message', 'card'], slots: { title: { field: 'pubkey', as: 'pubkey' }, body: { field: 'content' } } },
+    },
+    actions: [
+      {
+        id: 'start-a-conversation',
+        label: 'Start a conversation',
+        description: 'Start a new conversation in a topic, as a root message that people can then reply to.',
+        effect: 'writes',
+        appliesTo: '39000',
+        emits: { kind: 9, toAddressOf: 'self' },
+        input: { type: 'object', properties: { message: { type: 'string', target: 'content' } }, required: ['message'] },
+      },
+    ],
+  }),
 })
 /** Peek's listing after it: the conversation aspect, its two links, and no claim. */
 const peekUnclaimed = event({
