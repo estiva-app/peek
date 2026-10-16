@@ -9,7 +9,7 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
+import { hasRelay, isFromCopy, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
@@ -111,6 +111,12 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
       {slot.value}
     </span>
   )
+}
+
+/** A picker's value in words, as its control draws it: the option's label, or the person's name. */
+function valueLabel(action: ResolvedAction, value: string, directory?: People, people?: People): string {
+  if (action.control === 'pubkey') return value ? (directory?.[value]?.displayName ?? people?.[value]?.displayName ?? 'someone else') : 'Unassigned'
+  return action.options?.find((option) => option.value === value)?.label ?? (value || 'none')
 }
 
 /**
@@ -766,9 +772,23 @@ export function ForeignObjectWidget({
   }, [layout, resolved, availability, naddr])
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
+  /*
+    A pick made on a card drawn from the copy on the device: shown at once, sent
+    only once the relay has answered and the field still holds what the card
+    showed, and otherwise undone with a note (Miky, 2026-10-16, kickoff of "A
+    Ship issue's card drawn from the copy has its controls at once"). The copy
+    may be days old; a pick sent from it would quietly undo a newer change.
+  */
+  const [waiting, setWaiting] = useState<{ actionId: string; value: string; shown: string } | null>(null)
+  const fromCopy = !!object && object !== 'loading' && isFromCopy(object)
 
   const onAct = useCallback(
     async (actionId: string, value: string, contentFormat?: string) => {
+      if (fromCopy) {
+        setActionError(undefined)
+        setWaiting({ actionId, value, shown: object.actions.find((action) => action.id === actionId)?.current ?? '' })
+        return true
+      }
       setBusy(true)
       setActionError(undefined)
       try {
@@ -786,8 +806,38 @@ export function ForeignObjectWidget({
         setBusy(false)
       }
     },
-    [applyAction, naddr, reload],
+    [applyAction, naddr, reload, fromCopy, object],
   )
+
+  // The relay's answer to a held pick: send it, drop it, or undo it with a note.
+  useEffect(() => {
+    if (!waiting || object === 'loading') return
+    if (fromCopy && !held.failed) return
+    setWaiting(null)
+    if (fromCopy) {
+      setActionError('Not sent: Peek could not reach the relay.')
+      return
+    }
+    // Gone, unreadable, or no longer offered — the workspace may have removed the app since the copy was kept.
+    const now = object && !object.unreachable ? object.actions.find((action) => action.id === waiting.actionId) : undefined
+    if (!now) {
+      setActionError('Not sent: this can no longer be changed here.')
+      return
+    }
+    const current = now.current ?? ''
+    if (current === waiting.value) return
+    if (current !== waiting.shown) {
+      setActionError(`${now.label} changed meanwhile: ${valueLabel(now, current, directory, object?.people)}`)
+      return
+    }
+    void onAct(waiting.actionId, waiting.value)
+  }, [waiting, object, fromCopy, held.failed, onAct, directory])
+
+  // The held pick, drawn as if it were already the field's value.
+  const drawn =
+    waiting && object && object !== 'loading' && !object.unreachable
+      ? { ...object, actions: object.actions.map((action) => (action.id === waiting.actionId ? { ...action, current: waiting.value } : action)) }
+      : object
 
   /**
    * Waiting is not the same as nothing, and they used to render the same.
@@ -847,8 +897,8 @@ export function ForeignObjectWidget({
 
   return (
     <ForeignObjectCard
-      object={object}
-      busy={busy}
+      object={drawn && drawn !== 'loading' ? drawn : object}
+      busy={busy || !!waiting}
       error={actionError}
       onAct={onAct}
       directory={directory}
