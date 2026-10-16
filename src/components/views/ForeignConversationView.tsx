@@ -144,7 +144,6 @@ export function ForeignConversationView({
             key={comment.id}
             comment={comment}
             people={people}
-            here={object.address}
             /*
               The open thread is marked on the row it belongs to, so the middle
               pane says which of its comments the right pane is showing. Without

@@ -3,7 +3,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { AttachmentCard, Button, PartCard as KitPartCard, RichText, ShowMore, thingKindOf, type RichTextBlock } from '@estiva-app/ui'
 import { IconExternalLink } from '@tabler/icons-react'
 import { usePart, type PartView } from '@/api'
-import { objectLabel } from '@/lib/appName'
+import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 
@@ -70,12 +70,13 @@ export function PartCardView({
   if (view.state === 'unreadable' || view.state === 'deleted') {
     return (
       <div data-part={view.state} data-part-address={address} className="mt-1">
-        <KitPartCard state="unavailable" kind={kind} noun={kind === 'topic' ? 'Topic' : kind[0].toUpperCase() + kind.slice(1)} />
+        <KitPartCard state="unavailable" kind={kind} noun={kind[0].toUpperCase() + kind.slice(1)} />
       </div>
     )
   }
 
-  const frame = { kind: thingKindOf(view.object.kind), heading: headingOf(view.object), href: view.link }
+  // The way into the app it came from is a manifest's URL: http(s) only, as every other link to another app.
+  const frame = { kind: thingKindOf(view.object.kind), heading: headingOf(view.object), href: openInAppUrl({ openUrl: view.link }) }
 
   if (view.state !== 'resolved' && view.state !== 'reworded') {
     return (
@@ -90,7 +91,7 @@ export function PartCardView({
   const run = view.run ?? [view.block]
   const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: run }), 'blocks')
   const content = <RichText blocks={blocks} size="small" renderBlock={(b) => renderAttachment(b, fetchImage)} />
-  const link = view.link
+  const link = frame.href
   // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
   // reads as an action, level with Show more at the right of its row.
   const openIn = link ? (

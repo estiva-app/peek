@@ -44,7 +44,9 @@ export interface LinkedContext {
 
 /** Where a reference opens: Peek's own page for its own files, the owning app for anyone else's. */
 export function hrefOf(uri: string, object: ForeignObject): string {
-  return referenceLink(uri, object)?.href ?? openInAppUrl(object) ?? ''
+  const link = referenceLink(uri, object)
+  // Another app's address comes from a manifest anyone in the workspace may publish: http(s) only (`openInAppUrl`).
+  return (link && link.place !== 'app' ? link.href : openInAppUrl(object)) ?? ''
 }
 
 /** The file `uri` names, read from interop's projection of it. */

@@ -136,8 +136,7 @@ describe('the card under the message', () => {
 
   it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {
     const quiet = show(THE_MESSAGE, { embeds: ITS_CARD })
-    const count = quiet.querySelector('[data-card] a[href^="/"]') as HTMLAnchorElement
-    expect(count.textContent).toBe('3comments — open the conversation')
+    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
     quiet.remove()
     unread = true
     const member = show(THE_MESSAGE, { embeds: ITS_CARD })
@@ -170,6 +169,16 @@ describe('where the message is shown', () => {
     expect(c.textContent).toContain('Widgets 2')
     expect(c.textContent).toContain('Cards draw from the kit')
     expect(screen.queryByRole('combobox')).toBeNull()
+  })
+})
+
+describe('another app’s address, from a manifest anyone may publish', () => {
+  it('never becomes a link that is not http(s): a script URL draws no href on the chip, the row or the card', () => {
+    const script = 'javascript:alert(1)//'
+    for (const address of [SENTENCE_ISSUE, PROJECT, CARD_ISSUE]) objects[naddr(address)] = { ...(objects[naddr(address)] as object), openUrl: script }
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(c.textContent).toContain('Widgets 2')
+    expect([...c.querySelectorAll('a')].map((a) => a.getAttribute('href')).filter((href) => /^\s*javascript:/i.test(href ?? ''))).toEqual([])
   })
 })
 

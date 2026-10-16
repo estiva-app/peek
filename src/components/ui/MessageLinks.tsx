@@ -1,5 +1,5 @@
 import { useCallback, type MouseEvent, type ReactNode } from 'react'
-import type { ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { CardUnder, FieldLine, LinkChip, LinkRow, type LinkState } from '@estiva-app/ui'
 import { useConversationBadges } from '@/api'
 import { linkedKindOf, linkStateOf } from '@/lib/linked'
@@ -64,10 +64,11 @@ export function LinkClicks({ block = false, children }: { block?: boolean; child
     }
   }
   const props = {
-    'data-interactive': '',
     onClickCapture,
-    // After the link's own handler: the message around it never hears the click.
-    onClick: (event: MouseEvent) => event.stopPropagation(),
+    // After the control's own handler: the message around it never hears a click on a link or a picker. The card's empty space still opens its thread.
+    onClick: (event: MouseEvent) => {
+      if ((event.target as Element).closest('a, button, [role="combobox"], [role="option"], [role="listbox"]')) event.stopPropagation()
+    },
   }
   return block ? <div {...props}>{children}</div> : <span {...props}>{children}</span>
 }
@@ -109,8 +110,14 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
-  // The hook keys on the addresses, not the array: one file, asked once.
-  const { counts, unread } = useConversationBadges(ready && !compact ? [ready] : undefined)
+  /*
+    The hook keys on the addresses, not the array: one file, asked once, and
+    held for five minutes (OPT-5), so a topic of carded messages is not a read
+    per card on every open. A Peek topic has no comments to count: it is the
+    conversation itself.
+  */
+  const counted = ready && !compact && ready.kind !== KIND_BARE_FILE ? ready : undefined
+  const { counts, unread } = useConversationBadges(counted ? [counted] : undefined, { hold: true })
   const act = useCallback((actionId: string, value: string) => {
     if (!busy) void onAct(actionId, value)
   }, [busy, onAct])
@@ -124,7 +131,7 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
     // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
     link = gone || rememberedUnavailable(naddr) ? notAvailable : null
   } else {
-    const count = ready ? counts[ready.ref] : undefined
+    const count = counted ? counts[counted.ref] : undefined
     const title = ready?.slots.title && !ready.slots.title.isPubkey ? ready.slots.title.value : undefined
     link = linkStateOf(uri, drawn as ForeignObject, {
       directory,
