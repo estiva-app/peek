@@ -48,7 +48,7 @@ const cardIssue = () => ({
 })
 let objects: Record<string, unknown> = {}
 const byReference = (reference: string) => objects[reference.replace(/^nostr:/, '')]
-let unread = false
+let unread: boolean | undefined = false
 const applyAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
 
 vi.mock('@/api', () => ({
@@ -66,7 +66,8 @@ vi.mock('@/api', () => ({
   // `useConversationBadges` gates unread on membership itself; this is its answer.
   useConversationBadges: (files?: { ref: string }[]) => ({
     counts: Object.fromEntries((files ?? []).map((f) => [f.ref, 3])),
-    unread: Object.fromEntries((files ?? []).map((f) => [f.ref, unread])),
+    // `undefined`: the file is not judged — the reader is no member of it — so it has no key at all.
+    unread: Object.fromEntries((files ?? []).flatMap((f) => (unread === undefined ? [] : [[f.ref, unread]]))),
   }),
 }))
 vi.mock('@/api/mentions', () => ({
@@ -138,6 +139,11 @@ describe('the card under the message', () => {
     const quiet = show(THE_MESSAGE, { embeds: ITS_CARD })
     expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
     quiet.remove()
+    // QA-2, a reader who is no member: the badges leave the file out, and the count shows with no dot.
+    unread = undefined
+    const stranger = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
+    stranger.remove()
     unread = true
     const member = show(THE_MESSAGE, { embeds: ITS_CARD })
     expect(member.querySelector('[data-card]')?.textContent).toContain('comments, unread')
