@@ -25,6 +25,8 @@ export interface StartedTopic {
   /** Its `d`: starting it again after a refusal reuses it, so the draft under its address comes back. */
   fileId: string
   title: string
+  /** The summary it was started with, if any: a refusal puts it back in Start's field with the title. */
+  summary?: string
   /** The team it was written in — where the person is sent back to, and what lists it. */
   folder: string
   folderName?: string

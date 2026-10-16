@@ -174,8 +174,11 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   /*
     A file's row is rendered from the relay, not from a workspace index: it has
     no Convex id and no Convex copy (FOL-34). One read for every file (PER-10),
-    once per change to the set — a title is not something that needs a refresh,
-    and the unread badge is read separately, by the Desk, where it is drawn.
+    once per change to the set; the unread badge is read separately, by the
+    Desk, where it is drawn. `live` draws this tab's newer copy of a file when
+    there is one — the open file re-read after a rename or a summary change in
+    its Details — so the row beside it shows the new title and summary (SUM-5).
+    It follows the tab's held copies only, and asks the relay nothing more.
   */
   const fileAddresses = useMemo(
     () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'file' ? [e.address] : []))),
@@ -185,7 +188,10 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'dm' ? [e.key] : []))),
     [effectiveSet],
   )
-  const fileObjects = useResolvedReferences(useMemo(() => [...fileAddresses].sort(), [fileAddresses]))
+  const fileObjects = useResolvedReferences(
+    useMemo(() => [...fileAddresses].sort(), [fileAddresses]),
+    { live: true },
+  )
 
   const items = useMemo<OpenWorkItem[]>(() => {
     if (!hasRelay) return mockItems

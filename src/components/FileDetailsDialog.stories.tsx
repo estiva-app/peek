@@ -49,3 +49,30 @@ export const Renaming: Story = {
 export const Refused: Story = {
   args: { initialEditing: true, initialError: 'The relay refused the rename: relay_membership_required.' },
 }
+
+const SUMMARY = 'Where we work out how people move between Folders, files and apps, before the navigation rework starts.'
+const summarized = { ...file, slots: { ...file.slots, subtitle: { value: SUMMARY, field: 'summary' } } }
+
+/**
+ * The topic's summary (SPEC §6.12), under its name — where a topic's summary
+ * is read and written, since its page shows none (the short-summary
+ * prototype's *In Peek's Details*). Edit opens a field with Save and Cancel.
+ */
+export const WithASummary: Story = {
+  args: { file: summarized, onSummarize: async () => null },
+}
+
+/** No summary yet, for someone who can edit: "Add a summary". */
+export const AddASummary: Story = {
+  args: { onSummarize: async () => null },
+}
+
+/** Someone who can't edit: the text alone, like the name. With none, the section is left out (ReadOnly). */
+export const SummaryReadOnly: Story = {
+  args: { file: summarized, onRename: undefined },
+}
+
+/** A refused summary: the field stays open with your text and the reason, and Save sends it again. */
+export const SummaryRefused: Story = {
+  args: { file: summarized, onSummarize: async () => null, initialSummaryError: 'relay_membership_required' },
+}

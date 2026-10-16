@@ -307,6 +307,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
+              summary: item.summary,
               glyph: fileGlyph(item.fileKind),
               isUnread: true,
               isUrgent: true,
@@ -330,6 +331,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
+              summary: item.object.slots?.subtitle?.value,
               glyph: fileGlyph(item.object.kind),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
               isSelected: isOpen(item.address, 'openWork'),
@@ -377,6 +379,8 @@ export interface DeskRow {
   */
   kind: 'dm' | 'file'
   name: string
+  /** Files only: its summary, the row's second line (SPEC §6.12). */
+  summary?: string
   avatarSrc?: string
   /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
   glyph?: FileGlyph
@@ -395,6 +399,7 @@ function DeskRows({ rows }: { rows: DeskRow[] }) {
         <PersonRow
           key={row.id}
           name={row.name}
+          summary={row.summary}
           type={row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')}
           avatarSrc={row.avatarSrc}
           isUnread={row.isUnread}

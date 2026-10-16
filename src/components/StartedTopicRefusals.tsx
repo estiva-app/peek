@@ -49,13 +49,15 @@ export function StartedTopicRefusals() {
     <StartTopicDialog
       key={again.address}
       initialTitle={again.title}
+      initialSummary={again.summary}
       folderName={again.folderName}
       parent={again.parent}
       onClose={() => setAgain(null)}
-      onCreate={async (title) => {
+      onCreate={async (title, _chosen, summary) => {
         const result = await createTopic({
           folder: again.folder,
           title,
+          summary,
           parent: again.parent?.address,
           hasState: again.hasState,
           // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-unique-across-every-kind.md

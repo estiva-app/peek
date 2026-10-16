@@ -1,6 +1,7 @@
 import { buildBareFile, buildDeletion, encodeNaddr, type UnsignedEvent } from '@estiva-app/protocol'
-import { KIND_BARE_FILE, planPlaceFile } from '@estiva-app/interop'
+import { KIND_BARE_FILE, SUMMARY_FIELD, planPlaceFile } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
+import { summaryText } from '@/lib/summary'
 import { publishConfirmed } from './fileConversation'
 
 /**
@@ -27,15 +28,24 @@ export interface PlannedTopic {
  *
  * `fileId` is given again when a refused topic is started again, so the draft
  * kept under its address is the one its composer opens with.
+ *
+ * A summary is seeded as the root's `["summary", <text>]`, last, as SPEC §6.12
+ * has the reference writers put it; `buildBareFile` takes none, so it is
+ * appended here. Blank, the root carries no tag at all.
  */
-export function planTopic(args: { folder: string; title: string; parent?: string; fileId?: string }, pubkey: string): PlannedTopic {
+export function planTopic(
+  args: { folder: string; title: string; summary?: string; parent?: string; fileId?: string },
+  pubkey: string,
+): PlannedTopic {
   const fileId = args.fileId ?? crypto.randomUUID()
-  const event = buildBareFile(pubkey, Date.now(), {
+  const built = buildBareFile(pubkey, Date.now(), {
     fileId,
     title: args.title,
     channelUuid: args.folder,
     ...(args.parent ? { parent: args.parent } : {}),
   })
+  const summary = summaryText(args.summary ?? '')
+  const event = summary ? { ...built, tags: [...built.tags, [SUMMARY_FIELD, summary]] } : built
   return {
     fileId,
     address: `${KIND_BARE_FILE}:${pubkey}:${fileId}`,
@@ -89,7 +99,7 @@ export async function publishTopicAsViewer(
 
 /** Plan and write a topic in one go, answering once the relay has — for the fixture seeds, which wait. */
 export async function createTopicAsViewer(
-  args: { folder: string; title: string; parent?: string; hasState: boolean },
+  args: { folder: string; title: string; summary?: string; parent?: string; hasState: boolean },
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {

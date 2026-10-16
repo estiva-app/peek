@@ -1,4 +1,4 @@
-import { ARCHIVED_FIELD, type ForeignObject, type ResolvedAction } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, SUMMARY_FIELD, type ForeignObject, type ResolvedAction } from '@estiva-app/interop'
 
 /**
  * Which of a file's controls its manifest offers — Rename and Delete, read off
@@ -43,6 +43,12 @@ export interface FileControls {
    * Archive, and an app that declares none offers nothing.
    */
   archive?: ResolvedAction
+  /**
+   * The action that sets the file's summary (SPEC §6.12) — found by field,
+   * `summary`, as every other control here. The bare file's built-in manifest
+   * declares `summarize`; Details offers Edit only when it is here.
+   */
+  summarize?: ResolvedAction
 }
 
 export function fileControlsOf(
@@ -57,11 +63,13 @@ export function fileControlsOf(
   const remove = file.actions.find((a) => a.control === 'confirm')
   const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
   const archive = file.actions.find((a) => a.field === ARCHIVED_FIELD)
+  const summarize = file.actions.find((a) => a.control === 'text' && a.field === SUMMARY_FIELD)
   return {
     ...(rename ? { rename } : {}),
     ...(remove ? { delete: remove } : {}),
     ...(move ? { move } : {}),
     ...(archive ? { archive } : {}),
+    ...(summarize ? { summarize } : {}),
   }
 }
 

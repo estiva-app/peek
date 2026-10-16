@@ -169,6 +169,22 @@ describe('Open work keeps the person’s order', () => {
   })
 })
 
+describe('a Desk row shows its file’s summary (SPEC §6.12)', () => {
+  it('draws the summary under the name, and a file with none as its name alone', () => {
+    desk.openWork = [
+      { ...openWorkFile(ISSUE, 'Issue one'), object: { ref: ISSUE, kind: 30851, slots: { subtitle: { value: 'Why the file route moves.' } } } },
+      openWorkFile(SECOND, 'Issue two'),
+    ]
+    mount()
+    const left = within(screen.getByTestId('left'))
+    const first = left.getByText('Issue one').parentElement!
+    expect(first.textContent).toBe('Issue oneWhy the file route moves.')
+    const second = left.getByText('Issue two').parentElement!
+    expect(second.textContent).not.toContain('Why the file route moves.')
+    expect(left.getAllByText('Why the file route moves.')).toHaveLength(1)
+  })
+})
+
 describe('Desk opens a file beside its lists (SID-3)', () => {
   it('opens an Open work file in place, with a composer, rather than on its own page', () => {
     mount()

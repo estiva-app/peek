@@ -1502,6 +1502,45 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(screen.getByRole('textbox', { name: 'Name' })).toBeInTheDocument()
   })
 
+  describe('a topic’s summary lives in Details, and its page shows none (SPEC §6.12; Miky, 15 Oct)', () => {
+    const SUMMARY = 'Where the launch name is picked, by Friday.'
+    const summarized = {
+      ...bareFile,
+      slots: { ...bareFile.slots, subtitle: { value: SUMMARY, field: 'summary' } },
+      actions: [
+        ...bareFile.actions,
+        { id: 'summarize', label: 'Summary', control: 'text', effect: 'writes', field: 'summary', current: SUMMARY },
+      ],
+    } as unknown as ForeignObject
+
+    it('the page draws no summary; Details does, and saves a change through the manifest’s summarize action', async () => {
+      objects.byAddress[TOPIC_ADDRESS] = summarized
+      writes.applyAction.mockClear()
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      expect(screen.queryByText(SUMMARY)).toBeNull()
+      openHeaderMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Details' }))
+      expect(await screen.findByText(SUMMARY)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), { target: { value: 'Picked by Friday.' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
+      expect(writes.applyAction).toHaveBeenCalledWith({ naddr: bareFile.naddr, actionId: 'summarize', value: 'Picked by Friday.' })
+      // Accepted: the dialog shows the new summary, no field open.
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Summary' })).toBeNull())
+      expect(screen.getByText('Picked by Friday.')).toBeInTheDocument()
+    })
+
+    it('a file whose manifest declares no summary change offers no Edit in Details', async () => {
+      objects.byAddress[TOPIC_ADDRESS] = { ...summarized, actions: bareFile.actions } as unknown as ForeignObject
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      openHeaderMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Details' }))
+      expect(await screen.findByText(SUMMARY)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+    })
+  })
+
   it('a Ship issue’s menu and confirm never call it a topic (PEE-41)', async () => {
     objects.byAddress[ISSUE_ADDRESS] = {
       ...shipIssue,
@@ -1866,6 +1905,18 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     )
     // Membership of what you create is the address's: nothing is written for it (§11.8).
     expect(follows.setMember).not.toHaveBeenCalled()
+  })
+
+  it('starts a topic with the summary typed under its title, on one line (SPEC §6.12)', async () => {
+    writes.createTopic.mockClear()
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Transcripts' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), { target: { value: ' Every call,\ntranscribed. ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
+    expect(writes.createTopic).toHaveBeenCalledWith(expect.objectContaining({ title: 'Transcripts', summary: 'Every call, transcribed.' }))
   })
 
   it('starts a topic inside a Ship project in the team that lists it, not in the project’s record channel', async () => {

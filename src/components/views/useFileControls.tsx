@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { isArchived, topLevelFolders } from '@estiva-app/interop'
+import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { reloadFoldersOnScreen, useForeignObjects, useMembership } from '@/api'
@@ -106,7 +106,7 @@ export function useFileControls({
   onArchived,
   onMembership,
 }: {
-  /** The rename went through: re-read what shows the title. */
+  /** The rename or a summary change went through: re-read what shows the title and the summary. */
   onRenamed?: (file: ForeignObject) => void
   /** The delete went through, and the Folder is unlisted where it had to be. */
   onDeleted?: (file: ForeignObject) => void
@@ -407,13 +407,14 @@ export function useFileControls({
     hasState: boolean,
     teamName: string,
     title: string,
+    summary: string,
   ): Promise<boolean> => {
     /*
       The parent's team, never the page's (SPEC §6.7): a sub-file is readable by
       exactly its parent's readers. For a bare parent that is its `h`, which is
       `team` here; any other kind reached this dialog only with an `h` of its own.
     */
-    const result = await createTopic({ folder: team, title, parent: parent.address, hasState, folderName: teamName, parentFile: parent })
+    const result = await createTopic({ folder: team, title, summary, parent: parent.address, hasState, folderName: teamName, parentFile: parent })
     if (!result.ok) {
       showToast({ label: result.reason, type: 'error' })
       return false
@@ -435,6 +436,29 @@ export function useFileControls({
         ? { ...current, file: { ...file, slots: { ...file.slots, title: { ...file.slots.title, value: title } } } }
         : current,
     )
+    onRenamed?.(file)
+    return null
+  }
+
+  /*
+    The summary (SPEC §6.12), through the manifest's own action as Rename is.
+    The dialog's copy takes the new value at once, in the slot a card reads and
+    the action's `current`, and the page re-reads, so a Desk row or a card
+    behind the dialog shows it on the same signal a rename does.
+  */
+  const summarize = async (file: ForeignObject, summary: string): Promise<RenameOutcome> => {
+    const action = fileControlsOf(file).summarize
+    if (!action || !file.naddr) return { kind: 'error', message: 'This file’s summary cannot be changed from here.' }
+    const result = await applyAction({ naddr: file.naddr, actionId: action.id, value: summary })
+    if (!result.ok) return { kind: 'error', message: result.reason || 'The relay gave no reason.' }
+    setDialog((current) => {
+      if (current?.kind !== 'details' || current.file !== file) return current
+      const slots = { ...file.slots }
+      if (summary) slots.subtitle = { ...file.slots.subtitle, field: SUMMARY_FIELD, value: summary }
+      else delete slots.subtitle
+      const actions = file.actions.map((a) => (a === action ? { ...a, current: summary } : a))
+      return { ...current, file: { ...file, slots, actions } }
+    })
     onRenamed?.(file)
     return null
   }
@@ -499,13 +523,15 @@ export function useFileControls({
       <StartTopicDialog
         folderName={dialog.teamName}
         parent={dialog.file}
-        onCreate={(title) => startInside(dialog.file, dialog.team, dialog.hasState, dialog.teamName, title)}
+        onCreate={(title, _chosen, summary) => startInside(dialog.file, dialog.team, dialog.hasState, dialog.teamName, title, summary)}
         onClose={() => setDialog(null)}
       />
     ) : (
       <FileDetailsDialog
         file={dialog.file}
         onRename={fileControlsOf(dialog.file).rename ? (title) => rename(dialog.file, title) : undefined}
+        summary={fileControlsOf(dialog.file).summarize?.current}
+        onSummarize={fileControlsOf(dialog.file).summarize ? (summary) => summarize(dialog.file, summary) : undefined}
         initialEditing={dialog.editing}
         onClose={() => setDialog(null)}
       />

@@ -11,6 +11,8 @@ import { holdStartedTopic, type TopicOutcome } from './pendingTopics'
 export interface StartTopicArgs {
   folder: string
   title: string
+  /** Its summary (SPEC §6.12), seeded on the root; blank starts it without one. */
+  summary?: string
   /** The address of the file it sits under, of any kind. */
   parent?: string
   hasState: boolean
@@ -69,6 +71,7 @@ export async function startTopicAsViewer(
       naddr: planned.naddr,
       fileId: planned.fileId,
       title: args.title,
+      ...(args.summary ? { summary: args.summary } : {}),
       folder: args.folder,
       folderName: args.folderName,
       hasState: args.hasState,
