@@ -17,6 +17,8 @@ const CUT_AT = 160
 /**
  * One block of another object, live inside a message — SPEC §13.6.1, COM-2.
  * This one reads it (`usePart`); `PartCardView` draws what the read gave.
+ *
+ * @registry namesake: reads the part from the relay and draws its blocks inside the package's PartCard, which draws only the frame.
  */
 export function PartCard({ address, block, anchorTags, quotedBy }: { address: string; block: string; /** A comment's `block` and `quote` tags, when this is its anchor (§13.6). */ anchorTags?: string[][]; /** Who wrote the comment, for its quote once the words have changed. */ quotedBy?: string }) {
   return <PartCardView view={usePart({ address, block, anchorTags })} address={address} block={block} quotedBy={quotedBy} />

@@ -133,6 +133,8 @@ const liveComposers = new Map<string, ComposerEditor>()
 /**
  * The box for writing a new message or reply, with text formatting, files,
  * highlights and a send button; unsent text is kept for later.
+ *
+ * @registry namesake: Peek's composer, with its drafts, mentions, cards and send to the relay; the package's ComposeBox (0.72) is the comment box Leaf and Ship take, and Peek's move onto it is its own ticket.
  */
 export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, resolvedObjects, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
