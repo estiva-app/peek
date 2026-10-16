@@ -25,6 +25,8 @@ vi.mock('@/api', async () => {
   const { useCallback, useEffect, useState } = await import('react')
   return {
   hasRelay: true,
+  // Nothing here is drawn from the copy on the device: `src/wire/copyCardPick.wire.test.tsx` covers that.
+  isFromCopy: () => false,
   useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
   // The tab's held answer (OPT-3), reduced to a resolve on mount and on `reload`.
   useHeldObject: (reference: string | null) => {

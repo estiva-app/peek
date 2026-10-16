@@ -45,6 +45,7 @@ import {
   partTag,
 } from '@estiva-app/protocol'
 import {
+  ARCHIVED_FIELD,
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
@@ -550,19 +551,46 @@ export async function resolveObjectAsViewer(
 }
 
 /**
+ * The objects drawn from the copy on the device, until the relay's answer
+ * replaces them. Marked by identity: every consumer passes the object as it was
+ * resolved, and one rebuilt from it is no longer known to come from the copy.
+ */
+const drawnFromCopy = new WeakSet<ForeignObject>()
+
+/** Whether this object came from the copy on the device rather than from the relay (PEE-4). */
+export function isFromCopy(object: ForeignObject): boolean {
+  return drawnFromCopy.has(object)
+}
+
+/**
+ * Nothing publishes over the copy (PEE-2): an edit started from it would write
+ * its older value over a newer one. Until the relay's answer replaces it, an
+ * object from the copy offers a comment, which overwrites nothing, and its
+ * pickers — a status, an assignee — so its card can be used at once. A pick
+ * there is one value, and the card sends it only once the relay has answered,
+ * and only if the field still holds what the card showed; otherwise it is
+ * undone with a note (Miky, 2026-10-16, kickoff of "A Ship issue's card drawn
+ * from the copy has its controls at once"). Text, a move and an archive still
+ * wait for the relay.
+ */
+function drawOnly(object: ForeignObject | null): ForeignObject | null {
+  if (!object) return null
+  const pick = (action: ResolvedAction) =>
+    (action.control === 'select' || action.control === 'pubkey') &&
+    !!action.field &&
+    !action.format &&
+    action.field !== ARCHIVED_FIELD &&
+    action.field !== object.parentField
+  const drawn = { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment' || pick(action)) }
+  drawnFromCopy.add(drawn)
+  return drawn
+}
+
+/**
  * The query a read from the copy on the device runs on, with people and
  * manifest caches of its own: what the copy lacks must not be held as a miss or
  * a failure the relay's answer would then wait out (PEE-2).
  */
-/**
- * Nothing publishes over the copy (PEE-2): an edit started from it would write
- * its older value over a newer one. Until the relay's answer replaces it, an
- * object from the copy offers only a comment, which overwrites nothing.
- */
-function drawOnly(object: ForeignObject | null): ForeignObject | null {
-  return object ? { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment') } : null
-}
-
 function fromCopy(relayUrl: string, token: StoredToken) {
   const query = copyQuery(relayUrl, token)
   return { query, people: createPeopleCache().viaRelay(query), cache: createProjectionCache(0) }

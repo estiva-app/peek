@@ -53,6 +53,7 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
+export { isFromCopy } from '@/nostr/foreign'
 import type { ReadSource } from '@/nostr/readFrom'
 import { fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
