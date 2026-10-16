@@ -139,4 +139,36 @@ describe('resolveObjectsAsViewer', () => {
       RelayReadError,
     )
   })
+
+  it('from the copy, a file offers its comment and its pickers, never its text, archive or delete (a78f1419)', async () => {
+    // Ship's issue actions as interop resolves them: a status select, an archive select, a text edit, a delete.
+    events[0] = event({
+      kind: 31990,
+      tags: [['d', 'ship'], ['k', String(ISSUE)]],
+      content: JSON.stringify({
+        name: 'Ship',
+        records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
+        vocabularies: { issueStatuses: [{ value: 'todo', label: 'Todo' }], archived: [{ value: '', label: 'No' }, { value: 'true', label: 'Yes' }] },
+        projections: { [ISSUE]: { widget: 'row', slots: { title: { tag: 'title' } } } },
+        actions: [
+          { id: 'comment', label: 'Comment', appliesTo: String(ISSUE), emits: { kind: 1111, scope: 'address' } },
+          { id: 'set-issue-status', label: 'Change status', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'status' }, input: { type: 'string', enum: 'issueStatuses' } },
+          { id: 'archive-issue', label: 'Archive', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'archived' }, input: { type: 'string', enum: 'archived' } },
+          { id: 'rename-issue', label: 'Rename', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'title' }, input: { type: 'string' } },
+          { id: 'delete-issue', label: 'Delete', appliesTo: String(ISSUE), emits: { kind: 5 } },
+        ],
+      }),
+    })
+    try {
+      readFrom.mockImplementation(async (_source: string, _url: string, filters: Record<string, unknown>[]) => ({ ok: true, events: answer(filters) }))
+      const fromCopy = await resolveObjectsAsViewer([addresses[0]], 'https://relay.test', token, 'copy')
+      const fromRelay = await resolveObjectsAsViewer([addresses[0]], 'https://relay.test', token)
+
+      // The control: the relay's answer offers every action, so the copy's is a filter, not a missing manifest.
+      expect(fromRelay[addresses[0]]?.actions.map((a) => a.id).sort()).toEqual(['archive-issue', 'comment', 'delete-issue', 'rename-issue', 'set-issue-status'])
+      expect(fromCopy[addresses[0]]?.actions.map((a) => a.id).sort()).toEqual(['comment', 'set-issue-status'])
+    } finally {
+      events[0] = manifest
+    }
+  })
 })
