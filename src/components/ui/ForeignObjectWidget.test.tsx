@@ -43,7 +43,7 @@ vi.mock('@/api', async () => {
       [reference],
     )
     useEffect(() => void reload(), [reload])
-    return { object, reload, gone: !!reference && object === null && !failed, failed }
+    return { object, reload, gone: !!reference && object === null && !failed }
   },
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({

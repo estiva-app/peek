@@ -551,11 +551,10 @@ export async function resolveObjectAsViewer(
 }
 
 /**
- * The query a read from the copy on the device runs on, with people and
- * manifest caches of its own: what the copy lacks must not be held as a miss or
- * a failure the relay's answer would then wait out (PEE-2).
+ * The objects drawn from the copy on the device, until the relay's answer
+ * replaces them. Marked by identity: every consumer passes the object as it was
+ * resolved, and one rebuilt from it is no longer known to come from the copy.
  */
-/** The objects drawn from the copy on the device, until the relay's answer replaces them. */
 const drawnFromCopy = new WeakSet<ForeignObject>()
 
 /** Whether this object came from the copy on the device rather than from the relay (PEE-4). */
@@ -587,6 +586,11 @@ function drawOnly(object: ForeignObject | null): ForeignObject | null {
   return drawn
 }
 
+/**
+ * The query a read from the copy on the device runs on, with people and
+ * manifest caches of its own: what the copy lacks must not be held as a miss or
+ * a failure the relay's answer would then wait out (PEE-2).
+ */
 function fromCopy(relayUrl: string, token: StoredToken) {
   const query = copyQuery(relayUrl, token)
   return { query, people: createPeopleCache().viaRelay(query), cache: createProjectionCache(0) }

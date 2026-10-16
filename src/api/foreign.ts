@@ -330,8 +330,6 @@ export function useHeldObject(reference: string | null): {
   reload: () => Promise<void>
   /** `object` is null because the relay answered with nothing — not because the read failed (OPT-10). */
   gone: boolean
-  /** The last read failed: what is drawn, if anything, is older than the relay's word. */
-  failed: boolean
 } {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
@@ -366,7 +364,7 @@ export function useHeldObject(reference: string | null): {
   }, [key, load])
 
   const object = !key ? null : entry?.value !== undefined ? entry.value : entry?.failure ? null : 'loading'
-  return { object, reload, gone: !!key && entry?.value === null, failed: !!key && !!entry?.failure }
+  return { object, reload, gone: !!key && entry?.value === null }
 }
 
 export function useForeignObjects() {

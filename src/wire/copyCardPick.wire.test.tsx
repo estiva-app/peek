@@ -142,7 +142,7 @@ describe("a pick on an issue's card drawn from the copy", () => {
     await pickStatus('In progress')
     answer()
 
-    expect(await screen.findByText('Change status changed meanwhile: Done')).toBeInTheDocument()
+    expect(await screen.findByText('Not sent: changed meanwhile to Done.')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByLabelText('Change status')).toHaveTextContent('Done'))
     expect(relay.sentOf(1851)).toEqual([])
   })

@@ -113,6 +113,9 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
   )
 }
 
+/** How long a pick made on a card from the copy waits for the relay's answer before it is undone. */
+const HELD_PICK_MS = 10_000
+
 /** A picker's value in words, as its control draws it: the option's label, or the person's name. */
 function valueLabel(action: ResolvedAction, value: string, directory?: People, people?: People): string {
   if (action.control === 'pubkey') return value ? (directory?.[value]?.displayName ?? people?.[value]?.displayName ?? 'someone else') : 'Unassigned'
@@ -779,14 +782,16 @@ export function ForeignObjectWidget({
     Ship issue's card drawn from the copy has its controls at once"). The copy
     may be days old; a pick sent from it would quietly undo a newer change.
   */
-  const [waiting, setWaiting] = useState<{ actionId: string; value: string; shown: string } | null>(null)
+  const [waiting, setWaiting] = useState<{ naddr: string; actionId: string; value: string; shown: string } | null>(null)
   const fromCopy = !!object && object !== 'loading' && isFromCopy(object)
 
   const onAct = useCallback(
     async (actionId: string, value: string, contentFormat?: string) => {
       if (fromCopy) {
         setActionError(undefined)
-        setWaiting({ actionId, value, shown: object.actions.find((action) => action.id === actionId)?.current ?? '' })
+        setWaiting({ naddr, actionId, value, shown: object.actions.find((action) => action.id === actionId)?.current ?? '' })
+        // Ask the relay now: a read that failed before the pick is retried rather than waited out.
+        void reload()
         return true
       }
       setBusy(true)
@@ -812,12 +817,10 @@ export function ForeignObjectWidget({
   // The relay's answer to a held pick: send it, drop it, or undo it with a note.
   useEffect(() => {
     if (!waiting || object === 'loading') return
-    if (fromCopy && !held.failed) return
+    // The card now shows another file: its pick is not this one's to send.
+    if (waiting.naddr !== naddr) return setWaiting(null)
+    if (fromCopy) return
     setWaiting(null)
-    if (fromCopy) {
-      setActionError('Not sent: Peek could not reach the relay.')
-      return
-    }
     // Gone, unreadable, or no longer offered — the workspace may have removed the app since the copy was kept.
     const now = object && !object.unreachable ? object.actions.find((action) => action.id === waiting.actionId) : undefined
     if (!now) {
@@ -827,11 +830,21 @@ export function ForeignObjectWidget({
     const current = now.current ?? ''
     if (current === waiting.value) return
     if (current !== waiting.shown) {
-      setActionError(`${now.label} changed meanwhile: ${valueLabel(now, current, directory, object?.people)}`)
+      setActionError(`Not sent: changed meanwhile to ${valueLabel(now, current, directory, object?.people)}.`)
       return
     }
     void onAct(waiting.actionId, waiting.value)
-  }, [waiting, object, fromCopy, held.failed, onAct, directory])
+  }, [waiting, object, fromCopy, naddr, onAct, directory])
+
+  // A relay that does not answer at all — a failed read, or a card whose object only the page can replace — undoes the pick too.
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setTimeout(() => {
+      setWaiting(null)
+      setActionError('Not sent: Peek could not reach the relay. Try again.')
+    }, HELD_PICK_MS)
+    return () => clearTimeout(timer)
+  }, [waiting])
 
   // The held pick, drawn as if it were already the field's value.
   const drawn =
@@ -897,7 +910,7 @@ export function ForeignObjectWidget({
 
   return (
     <ForeignObjectCard
-      object={drawn && drawn !== 'loading' ? drawn : object}
+      object={drawn as ForeignObject}
       busy={busy || !!waiting}
       error={actionError}
       onAct={onAct}
