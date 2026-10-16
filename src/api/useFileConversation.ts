@@ -342,7 +342,9 @@ export function useFileConversation(
           /*
             A long file's newest comments first (PEE-7): asking replies and decorations over every comment is
             what kept a 200-message topic on its placeholder for 2–3 s. Its failure is left to the whole read.
-            What the placeholder waits on goes ahead of every other read the page asks (`first`).
+            What the placeholder waits on goes ahead of every other read the page asks (`first`) — only a file's,
+            whose first read is a page at most: a DM's or a channel's is never paged, and its whole history is
+            too many REQs for a lane that waits on no room.
           */
           const first = viewerQuery(at.relayUrl, at.token, 'first')
           const paged = container.kind === 'file' && toRead.length > FIRST_PAGE
@@ -353,7 +355,8 @@ export function useFileConversation(
               })
               .catch(() => {})
           }
-          const { value, events } = await readConversation(container, toRead, paged ? query : first)
+          const whole = container.kind === 'file' && !paged ? first : query
+          const { value, events } = await readConversation(container, toRead, whole)
           sentBeforeRead.delete(key)
           // A catch-up that settled meanwhile is newer than this.
           if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)
@@ -569,13 +572,16 @@ export function useFileConversation(
         : Promise.resolve(SIGNED_OUT),
   }
 
-  // A first read that failed keeps what was drawn meanwhile on screen, unless the Folder is no longer the viewer's.
+  /*
+    A first read that failed keeps the copy's conversation on screen, unless the Folder is no longer the viewer's.
+    Not a long file's newest comments (PEE-7): they say more is coming, and nothing is — the failure is drawn.
+  */
   const copied = meanwhile?.key === key ? meanwhile.value : undefined
   const state: FileConversationState = !key
     ? 'loading'
     : held
       ? held
-      : failure?.key === key && (failure.failed === 'not_a_member' || !copied)
+      : failure?.key === key && (failure.failed === 'not_a_member' || !copied || copied.earlier)
         ? { failed: failure.failed }
         : (copied ?? 'loading')
 

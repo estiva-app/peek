@@ -36,7 +36,7 @@ import type { QueryLane, SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
-import { otherFramesSince, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
+import { firstFrameWaitMs, otherFramesSince, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
 
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
@@ -390,6 +390,11 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     if (!outcomes) {
       if (lane === 'first') {
         // Past the pacer, which counts its frames as others' (PEE-7): the shaper keeps it room, and the cap is the shaper's.
+        // A window already full would hold it there longer than a click's read waits before it goes over HTTP.
+        if (firstFrameWaitMs(now) > SPILL_AFTER_MS && spill.allowed()) {
+          log('socket read spilled to HTTP', { reqs })
+          return overHttp('spilled', { reqs, liveWaitMs })
+        }
         const answered = readingFirst(now)
         try {
           outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk, lane)))

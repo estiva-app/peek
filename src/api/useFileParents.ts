@@ -29,7 +29,7 @@ import type { StoredToken } from '@/auth/estivaId'
  *
  * A refused read is logged, forgotten and asked again `FILE_PARENTS_RETRY_MS`
  * later, even when the dots name nothing new. A file the relay could say
- * nothing about is asked again as long after. Until then those files stay
+ * nothing about is asked again with the next file named as long after. Until then those files stay
  * where they are talked about, which is what they did before this existed.
  */
 let cache: { viewer: string; parents: Map<string, string | null>; asked: Set<string> } | null = null
@@ -67,17 +67,16 @@ function retryLater(): void {
 }
 
 /**
- * Files the relay could say nothing about are asked again `FILE_PARENTS_RETRY_MS` later, not with the next file
- * named (PEE-7): QA-1's dots name ~60 of them, and opening a topic, which names one more, sent all of them again —
- * six REQs ahead of the topic's own first page.
+ * Files the relay could say nothing about are asked again with the next file named once `FILE_PARENTS_RETRY_MS`
+ * has passed, not with every one before (PEE-7): QA-1's dots name ~60 of them, and opening a topic, which names
+ * one more, sent all of them again — six REQs ahead of the topic's own first page. Never by themselves: the relay
+ * may never answer them, and an idle tab would ask every 30 s.
  */
 function askAgainLater(held: NonNullable<typeof cache>, addresses: readonly string[]): void {
   if (addresses.length === 0) return
   setTimeout(() => {
     if (cache !== held) return
     for (const address of addresses) if (!held.parents.has(address)) held.asked.delete(address)
-    retries += 1
-    for (const listener of listeners) listener()
   }, FILE_PARENTS_RETRY_MS)
 }
 

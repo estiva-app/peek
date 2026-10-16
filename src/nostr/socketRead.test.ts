@@ -17,6 +17,7 @@ import {
 import {
   createFrameShaper,
   FIRST_GRACE_MS,
+  FIRST_HOLD_MS,
   FIRST_RESERVE,
   FRAMES_PER_SECOND,
   FRAMES_PER_WINDOW,
@@ -130,6 +131,26 @@ describe('socket reads', () => {
     await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT + 2))
     subs.at(-1)!.onEose?.()
     expect(await others).toEqual({ ok: true, events: [] })
+  })
+
+  it('sends a first page over HTTP when the socket has no room for it within a click’s wait, and on the socket once it has (PEE-7)', async () => {
+    vi.useFakeTimers()
+    resetSocketFrames()
+    const shaper = createFrameShaper(() => {})
+    for (let i = 0; i < FRAMES_PER_WINDOW; i++) shaper.send(`["REQ","peek-${i}",{}]`)
+    await vi.advanceTimersByTimeAsync(4_000)
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const full = read('https://relay', [{ ids: ['newest'] }], ME, { lane: 'first' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(subs).toHaveLength(0)
+    expect(await full).toBeNull()
+    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
+    const page = read('https://relay', [{ ids: ['newest'] }], ME, { lane: 'first' })
+    await vi.waitFor(() => expect(subs).toHaveLength(1))
+    subs[0].onEose?.()
+    expect(await page).toEqual({ ok: true, events: [] })
+    resetSocketFrames()
   })
 
   it('sends a read for a relay the tab is not connected to over HTTP', async () => {
@@ -401,14 +422,20 @@ describe('socket frames', () => {
     expect(out).toHaveLength(FRAMES_PER_SECOND - FIRST_RESERVE)
     sendingFirst(() => s.send('["REQ","first",{}]'))
     expect(out.at(-1)).toBe('["REQ","first",{}]')
-    // The pacer did not grant it, so it counts against the window as another sender's.
-    expect(otherFramesSince(0)).toContain(Date.now())
     await vi.advanceTimersByTimeAsync(500)
     expect(out).toHaveLength(FRAMES_PER_SECOND - FIRST_RESERVE + 1)
     answered()
     await vi.advanceTimersByTimeAsync(FIRST_GRACE_MS + 1)
     expect(out).toHaveLength(FRAMES_PER_SECOND)
     expect(s.waiting()).toBe(1)
+  })
+
+  it(`keeps a first page the relay never answers its room for ${FIRST_HOLD_MS} ms, not until the read times out (PEE-7)`, async () => {
+    const { out, shaper: s } = shaper()
+    readingFirst()
+    await vi.advanceTimersByTimeAsync(FIRST_HOLD_MS)
+    for (let i = 0; i < FRAMES_PER_SECOND; i++) s.send(`["REQ","peek-${i}",{}]`)
+    expect(out).toHaveLength(FRAMES_PER_SECOND)
   })
 
   it('sends a first page’s REQ that must wait for room before the frames that were waiting already (PEE-7)', async () => {

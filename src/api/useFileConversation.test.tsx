@@ -391,6 +391,17 @@ describe('useFileConversation — a new root keeps the conversation (SID-1)', ()
     expect(relay.firstPage).not.toHaveBeenCalled()
   })
 
+  it('a long file’s whole read that fails after its newest comments drew says it failed, not that more is coming (PEE-7)', async () => {
+    let refuse: () => void = () => {}
+    relay.read.mockImplementationOnce(() => new Promise((_, reject) => (refuse = () => reject(new Error('fetch failed')))))
+    const page = { ...one, earlier: { messages: 5 } }
+    relay.firstPage.mockResolvedValueOnce(page)
+    const { result } = mount({ container, rootIds: ['r1', 'r2', 'r3', 'r4', 'r5'] })
+    await waitFor(() => expect(result.current.state).toBe(page))
+    await act(async () => refuse())
+    expect(result.current.state).toEqual({ failed: expect.any(String) })
+  })
+
   it('a first read that fails keeps the copy’s conversation — unless the Folder is no longer the viewer’s', async () => {
     relay.read.mockRejectedValueOnce(new Error('rate-limited: slow down'))
     copy.read.mockResolvedValueOnce(one)

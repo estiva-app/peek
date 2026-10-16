@@ -46,14 +46,19 @@ export const FRAMES_PER_SECOND = 12
 export const FIRST_RESERVE = 3
 /** How long after a first-page read answers its room is still kept: the next read of that page asks within it. */
 export const FIRST_GRACE_MS = 300
+/**
+ * How long after it is asked a first page unanswered still has its room kept: one the relay is slow to end (no
+ * EOSE until the read's 10 s timeout) must not hold every other frame to nine a second all that while.
+ */
+export const FIRST_HOLD_MS = 3_000
 /** While a first page is still being read, how often a frame held back for it looks again. */
 const FIRST_RECHECK_MS = 100
 
 const METERED = /^\["(REQ|EVENT|COUNT)"/
 let readDepth = 0
 let firstDepth = 0
-/** First-page reads not answered yet, and until when the room is kept after the last one answered. */
-let firstReading = 0
+/** When each first-page read not answered yet was asked, and until when the room is kept after the last one answered. */
+const firstAsked: number[] = []
 let firstUntil = 0
 /** Every metered frame sent, across reconnects: the budget is the pubkey's, not the connection's. */
 const sent: number[] = []
@@ -81,18 +86,42 @@ export function sendingFirst<T>(send: () => T): T {
 
 /** A first-page read begins: other frames leave it room until it answers. Call what it returns when it has. */
 export function readingFirst(now: () => number = Date.now): () => void {
-  firstReading += 1
+  const asked = now()
+  firstAsked.push(asked)
   let done = false
   return () => {
     if (done) return
     done = true
-    firstReading -= 1
-    firstUntil = Math.max(firstUntil, now() + FIRST_GRACE_MS)
+    firstAsked.splice(firstAsked.indexOf(asked), 1)
+    firstUntil = Math.max(firstUntil, Math.min(now(), asked + FIRST_HOLD_MS) + FIRST_GRACE_MS)
   }
 }
 
+/** Whether a first page is being read at `at`, asked less than {@link FIRST_HOLD_MS} ago. */
+const readingFirstAt = (at: number) => firstAsked.some((asked) => at - asked < FIRST_HOLD_MS)
+
 function trim(log: number[], floor: number) {
   while (log.length > 0 && log[0] <= floor) log.shift()
+}
+
+/** How long until a frame fits under each cap less `reserve`. */
+function waitUnder(at: number, reserve: number): number {
+  const perWindow = FRAMES_PER_WINDOW - reserve
+  const perSecond = FRAMES_PER_SECOND - reserve
+  let wait = 0
+  if (sent.length >= perWindow) wait = sent[sent.length - perWindow] + SHAPED_WINDOW_MS - at
+  if (sent.length >= perSecond) wait = Math.max(wait, sent[sent.length - perSecond] + 1_000 - at)
+  return Math.max(0, wait)
+}
+
+/**
+ * How long a first page's REQ asked now would wait for room (PEE-7): it skips the reader's pacer, so this is what
+ * decides it goes over HTTP instead, as a click's read that waited too long does.
+ */
+export function firstFrameWaitMs(now: () => number = Date.now): number {
+  const at = now()
+  trim(sent, at - SHAPED_WINDOW_MS)
+  return waitUnder(at, 0)
 }
 
 /** Metered frames this tab sent since `floor` that the reader did not send. */
@@ -133,26 +162,17 @@ export function createFrameShaper(
   const queue: Frame[] = []
   let timer: unknown = null
 
-  /** How long until a frame fits under each cap less `reserve`. */
-  function waitUnder(at: number, reserve: number): number {
-    const perWindow = FRAMES_PER_WINDOW - reserve
-    const perSecond = FRAMES_PER_SECOND - reserve
-    let wait = 0
-    if (sent.length >= perWindow) wait = sent[sent.length - perWindow] + SHAPED_WINDOW_MS - at
-    if (sent.length >= perSecond) wait = Math.max(wait, sent[sent.length - perSecond] + 1_000 - at)
-    return Math.max(0, wait)
-  }
-
   /** 0 when `frame` may go now, or how long until it may. */
   function waitFor(frame: Frame): number {
     if (!frame.metered) return 0
     const at = now()
     trim(sent, at - SHAPED_WINDOW_MS)
     const wait = waitUnder(at, 0)
-    if (frame.first || (firstReading === 0 && at >= firstUntil)) return wait
+    const reading = readingFirstAt(at)
+    if (frame.first || (!reading && at >= firstUntil)) return wait
     // Held back only by the room a first page is kept: until it is not, or a look again while it is still read.
     const held = waitUnder(at, FIRST_RESERVE)
-    return held <= wait ? wait : Math.max(wait, Math.min(held, firstReading > 0 ? FIRST_RECHECK_MS : firstUntil - at))
+    return held <= wait ? wait : Math.max(wait, Math.min(held, reading ? FIRST_RECHECK_MS : firstUntil - at))
   }
   const hasRoom = (frame: Frame) => waitFor(frame) === 0
 
@@ -203,7 +223,7 @@ export function createFrameShaper(
 export function resetSocketFrames(): void {
   sent.length = 0
   others.length = 0
-  firstReading = 0
+  firstAsked.length = 0
   firstUntil = 0
 }
 

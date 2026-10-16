@@ -37,6 +37,7 @@ import { FILE_PARENTS_RETRY_MS, resetFileParentsForTests, useFileParents } from 
 const PK = 'b'.repeat(64)
 const I1 = `30851:${PK}:i1`
 const I2 = `30851:${PK}:i2`
+const I3 = `30851:${PK}:i3`
 const PROJECT = `30850:${PK}:project`
 
 beforeEach(() => {
@@ -65,7 +66,7 @@ describe('useFileParents', () => {
     expect(relay.asked).toEqual([[I1], [I2]])
   })
 
-  it('keeps a file the relay could tell nothing about out of the answer, and asks again a while later, not with the next file', async () => {
+  it('keeps a file the relay could tell nothing about out of the answer, and asks again with the next file named a while later — not before, not by itself', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       relay.answer = () => ({})
@@ -79,11 +80,14 @@ describe('useFileParents', () => {
       rerender({ addresses: [I1, I2] })
       await waitFor(() => expect(result.current).toEqual({ [I2]: PROJECT }))
       expect(relay.asked).toEqual([[I1], [I2]])
-      act(() => {
-        vi.advanceTimersByTime(FILE_PARENTS_RETRY_MS)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FILE_PARENTS_RETRY_MS * 3)
       })
-      await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT }))
-      expect(relay.asked).toEqual([[I1], [I2], [I1]])
+      // An idle tab asks nothing: the relay may never answer it.
+      expect(relay.asked).toEqual([[I1], [I2]])
+      rerender({ addresses: [I1, I2, I3] })
+      await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT, [I3]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I2], [I1, I3]])
     } finally {
       vi.useRealTimers()
     }
