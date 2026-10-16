@@ -1,0 +1,150 @@
+import { useCallback, type MouseEvent, type ReactNode } from 'react'
+import type { ForeignObject } from '@estiva-app/interop'
+import { CardUnder, FieldLine, LinkChip, LinkRow, type LinkState } from '@estiva-app/ui'
+import { useConversationBadges } from '@/api'
+import { linkedKindOf, linkStateOf } from '@/lib/linked'
+import { findMessageByEventId } from '@/lib/conversationRegistry'
+import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { filePath } from '@/lib/objectUrl'
+import { openConversation } from '@/lib/threadOpener'
+import { referenceTypeWord } from '@/lib/textParsing'
+import { rememberedUnavailable } from '@/lib/unavailableCards'
+import { Reference } from './Reference'
+import { useHeldCard } from './useHeldCard'
+
+/*
+  A message's links, drawn by the kit (`@estiva-app/ui` 0.75): a chip in a
+  sentence, a row alone on its line, the card its author chose under the
+  message (why:
+  https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  Peek adds what only it knows: where its own links land, and that a click on a
+  link is not a click on the message around it.
+*/
+
+const isModified = (event: MouseEvent) => event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+
+/**
+ * A click on a link inside a message, routed as Peek routes a mention (RIC-16).
+ *
+ * - It is the link's, not the message's: the card underneath opens its thread
+ *   on click (`data-interactive` is the card's contract for "not mine").
+ * - A message lands on itself: scrolled to when its thread is open, its thread
+ *   opened when its topic is, and only otherwise `/message/<id>` (INT-3).
+ * - Another app's address opens in a new tab: a stranger published it into a
+ *   shared relay, hence `noopener`.
+ *
+ * Everything else is the kit's: an address in Peek goes through its router.
+ */
+export function LinkClicks({ block = false, children }: { block?: boolean; children: ReactNode }) {
+  const onClickCapture = (event: MouseEvent<HTMLElement>) => {
+    const anchor = (event.target as Element).closest('a')
+    if (!anchor || isModified(event) || anchor.getAttribute('target')) return
+    const href = anchor.getAttribute('href') ?? ''
+    let url: URL
+    try {
+      url = new URL(href, window.location.href)
+    } catch {
+      return
+    }
+    if (url.origin !== window.location.origin) {
+      event.preventDefault()
+      window.open(url.href, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const eventId = /^\/message\/([0-9a-f]{64})$/i.exec(url.pathname)?.[1]
+    const here = eventId ? findMessageByEventId(eventId.toLowerCase()) : undefined
+    if (!here) return
+    if (scrollToMessage(here.id)) {
+      event.preventDefault()
+      return
+    }
+    if (here.conversationId && openConversation(here.conversationId)) {
+      event.preventDefault()
+      void scrollToMessageWhenReady(here.id)
+    }
+  }
+  const props = {
+    'data-interactive': '',
+    onClickCapture,
+    // After the link's own handler: the message around it never hears the click.
+    onClick: (event: MouseEvent) => event.stopPropagation(),
+  }
+  return block ? <div {...props}>{children}</div> : <span {...props}>{children}</span>
+}
+
+/**
+ * A reference in a sentence: the kit's chip, or a person's, which the kit has
+ * no kind for. `object` is the body's one lookup (`undefined` while asked), so
+ * the same file never draws in two states on one screen.
+ */
+export function MessageChip({ uri, object, urgent, preview = true }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one. */ preview?: boolean }) {
+  if (/^nostr:npub1/i.test(uri)) return <Reference uri={uri} urgent={urgent} />
+  return (
+    <LinkClicks>
+      <LinkChip link={linkStateOf(uri, object)} preview={preview} />
+    </LinkClicks>
+  )
+}
+
+/** A line that is only a link to a file or a message: that file's row, where the line was. */
+export function MessageRow({ uri, object, unreadable = false }: { uri: string; object: ForeignObject | null | undefined; /** A reference that names no address or event id. */ unreadable?: boolean }) {
+  const link: LinkState = unreadable ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' } : linkStateOf(uri, object)
+  return (
+    <LinkClicks block>
+      <div data-link-row>
+        <LinkRow link={link} />
+      </div>
+    </LinkClicks>
+  )
+}
+
+/**
+ * The card its author chose under a message (SPEC §13.6.2), with no ✕: taking
+ * a card off a sent message is the message box's (4136f999). Any reader may
+ * change the file from it (Decided 16 Oct), each change written and read back
+ * (`useHeldCard`). Its comment count shows the dot only for a member with
+ * something unread (record membership-replaces-following).
+ */
+export function MessageCard({ uri, resolved, compact = false }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean }) {
+  const naddr = uri.replace(/^nostr:/i, '')
+  const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true })
+  const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
+  // The hook keys on the addresses, not the array: one file, asked once.
+  const { counts, unread } = useConversationBadges(ready && !compact ? [ready] : undefined)
+  const act = useCallback((actionId: string, value: string) => {
+    if (!busy) void onAct(actionId, value)
+  }, [busy, onAct])
+
+  let link: LinkState | null
+  const notAvailable: LinkState = { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
+  if (object === 'loading') {
+    // Found not available the last time this device asked: its one-line row from the first paint, not a card's height (OPT-10).
+    link = rememberedUnavailable(naddr) ? notAvailable : linkStateOf(uri, 'loading')
+  } else if (object === null) {
+    // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
+    link = gone || rememberedUnavailable(naddr) ? notAvailable : null
+  } else {
+    const count = ready ? counts[ready.ref] : undefined
+    const title = ready?.slots.title && !ready.slots.title.isPubkey ? ready.slots.title.value : undefined
+    link = linkStateOf(uri, drawn as ForeignObject, {
+      directory,
+      onAct: act,
+      ...(ready?.address && count !== undefined
+        ? { conversation: { count, href: filePath(ready.address, title), unread: unread[ready.ref] === true } }
+        : {}),
+    })
+  }
+  if (!link) return null
+  return (
+    <LinkClicks block>
+      <div data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr}>
+        {compact ? <LinkRow link={link} /> : <CardUnder link={link} />}
+        {error && (
+          <FieldLine tone="error" className="mt-1">
+            {error}
+          </FieldLine>
+        )}
+      </div>
+    </LinkClicks>
+  )
+}

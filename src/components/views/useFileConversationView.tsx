@@ -586,6 +586,7 @@ export function useFileConversationView({
                   hasNewReply={newReplies.has(c.id)}
                   isSelected={openThreadId === c.id}
                   readOnly={readOnly}
+                  here={container?.kind === 'file' ? container.address : undefined}
                   actions={rowActions}
                 />
                 </div>
@@ -648,6 +649,7 @@ export function useFileConversationView({
         onInitialEmbedsChange={(e) => editEmbeds(openRoot.id, e)}
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
+        here={container?.kind === 'file' ? container.address : undefined}
         onSendReply={handleSendReply}
         readOnly={readOnly}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.

@@ -1,12 +1,11 @@
 /**
  * A topic and a message mentioned in a body — RIC-11.
  *
- * The rendering is `Reference`'s and is tested there; what this guards is the
- * plumbing around it. An `naddr` and an `nevent` written mid-sentence are
- * handed to the resolver, and the bracket form every older message carries is
- * still drawn from the fixture. And a message alone on its line is drawn as its
- * chip where it was written, like one mid-sentence (OPT-18), rather than hidden
- * from the prose and then drawn by nothing.
+ * The chip is the kit's; what this guards is the plumbing around it. An
+ * `naddr` and an `nevent` written mid-sentence are handed to the resolver, and
+ * the bracket form every older message carries is still drawn from the
+ * fixture. And a message alone on its line is drawn as its row where it was
+ * written (SPEC §13.2), rather than hidden from the prose and drawn by nothing.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
@@ -19,7 +18,6 @@ const EVENT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
 const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 
 const asked: string[][] = []
-const attached: string[] = []
 
 vi.mock('@/api', () => ({
   TOPICS: [{ id: '7', title: 'Updates on the new office layout', isResolved: false }],
@@ -37,13 +35,6 @@ vi.mock('@/api', () => ({
       ]),
     )
   },
-}))
-vi.mock('./ForeignObjectWidget', () => ({
-  ForeignObjectWidget: ({ naddr }: { naddr: string }) => {
-    attached.push(naddr)
-    return <div data-widget={naddr} />
-  },
-  StatusPill: () => null,
 }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: () => undefined,
@@ -67,18 +58,17 @@ describe('a topic or a message in a message body', () => {
   it('asks the resolver about a message pointer written mid-sentence', () => {
     const c = show(`as ${NEVENT} said`)
     expect(asked.at(-1)).toContain(NEVENT)
-    // Resolved to nothing here; still a chip and never a 60-character pointer.
-    expect(c.querySelector('[data-reference="unresolved"]')).not.toBeNull()
+    // Resolved to nothing here; still a chip, saying so, and never a 60-character pointer.
+    expect(c.textContent).toContain('as Message, not available said')
+    expect(c.querySelector('[data-link-row]')).toBeNull()
     expect(c.textContent).not.toContain(NEVENT)
   })
 
-  it('draws a message that stands alone on its line as its chip, rather than losing it (OPT-18)', () => {
-    attached.length = 0
+  it('draws a message that stands alone on its line as its row, rather than losing it', () => {
     const c = show(`Look at this.\n\n${NEVENT}`)
-    expect(attached).toEqual([])
     expect(asked.at(-1)).toContain(NEVENT)
     expect(c.textContent).toContain('Look at this.')
-    expect(c.querySelector('[data-reference="unresolved"]')).not.toBeNull()
+    expect(c.querySelector('[data-link-row]')?.textContent).toBe('Message — not available.')
     expect(c.textContent).not.toContain(NEVENT.replace(/^nostr:/, ''))
   })
 

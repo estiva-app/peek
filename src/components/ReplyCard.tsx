@@ -146,6 +146,8 @@ interface ReplyCardProps {
   parts?: { address: string; block: string; anchor?: true }[]
   /** The cards its author asked for (SPEC §13.6.2). */
   embeds?: readonly Embed[]
+  /** The address of the file whose conversation it is in: no card for that file under it, only its chip (WID-3). */
+  here?: string
   /** The published event's id. When present the timestamp becomes the
    *  message's permalink — see the render below (PEE-17). */
   nostrEventId?: string
@@ -189,6 +191,7 @@ export function ReplyCard({
   urgentMentions,
   parts,
   embeds,
+  here,
   nostrEventId,
   nostrBlockId,
   resolvedObjects,
@@ -573,7 +576,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} here={here} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a

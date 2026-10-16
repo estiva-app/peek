@@ -29,13 +29,16 @@ export interface PlacedLines {
   /** The row a block of type {@link ROW_BLOCK} draws. */
   rowOf: (block: { type: string; attrs?: Record<string, unknown> }) => RowLine | undefined
   /** The row a list item's only run draws, by that run: a bullet that is only a link keeps its bullet. */
-  rowRuns: ReadonlyMap<RenderInline, RowLine>
+  rowRuns: ReadonlyMap<object, RowLine>
 }
 
 const BREAK: RenderInline = { text: '\n', marks: [] }
 
-function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type'>, context: Parameters<typeof lineDrawOf>[2]): RowLine | 'nothing' | undefined {
+type LineContext = NonNullable<Parameters<typeof lineDrawOf>[2]> & { stayChip?: (value: string) => boolean }
+
+function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type'>, context: LineContext): RowLine | 'nothing' | undefined {
   const drawn = lineDrawOf(line, block, context)
+  if ((drawn.draw === 'row' || drawn.draw === 'nothing') && context.stayChip?.(drawn.value)) return undefined
   if (drawn.draw === 'nothing') return 'nothing'
   if (drawn.draw === 'unreadable') return { reference: drawn.reference, unreadable: true }
   if (drawn.draw !== 'row') return undefined
@@ -54,9 +57,14 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
  * `blocks` is the message's tree after `linksAsReferences`, so a lone app URL
  * this reader can read is already its reference, and one it cannot stays the
  * URL as written. `cards` is `cardsIn`'s answer, `parts` the `part` pointers
- * drawn under the message.
+ * drawn under the message. `stayChip` keeps a value's lines as sentences: the
+ * file a "Mentioned in" list is on draws no card and no row there, only its
+ * chip (Miky, WID-3).
  */
-export function placeLines(blocks: readonly RenderBlock[], context: { cards?: readonly Embed[]; parts?: readonly PartPointer[]; resolveLink?: LinkResolver }): PlacedLines {
+export function placeLines(
+  blocks: readonly RenderBlock[],
+  context: { cards?: readonly Embed[]; parts?: readonly PartPointer[]; resolveLink?: LinkResolver; stayChip?: (value: string) => boolean },
+): PlacedLines {
   const rows = new Map<object, RowLine>()
   const rowRuns = new Map<RenderInline, RowLine>()
   const out: RenderBlock[] = []

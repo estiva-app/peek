@@ -36,9 +36,12 @@ export function CommentRow({
   people,
   actions,
   below,
+  here,
   className,
 }: {
   comment: DrawableComment
+  /** The address of the file these comments are on: a link to it alone on a line stays its chip (WID-3). */
+  here?: string
   /** Names and avatars for comment authors. Absent renders shortened keys. */
   people?: People
   /** Drawn at the row's right edge, on the name's line. */
@@ -94,7 +97,7 @@ export function CommentRow({
             </WithTooltip>
             {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
           </header>
-          <MessageBody body={comment.body} />
+          <MessageBody body={comment.body} here={here} />
           {below && <div className="mt-1 flex items-center gap-2">{below}</div>}
         </div>
       </div>

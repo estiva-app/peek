@@ -192,6 +192,8 @@ interface ThreadPanelProps {
    * reply's author can still edit or delete their own (PER-24).
    */
   composerNotice?: ReactNode
+  /** The address of the file whose conversation this thread is in: no card for it under its messages (WID-3). */
+  here?: string
   onDeleteReply?: (id: string) => void
   onInitialBodyChange?: (newBody: string) => void
   /** The root message's files after an edit — PEE-16. */
@@ -278,6 +280,7 @@ export function ThreadPanel({
   readOnlyNotice,
   readOnly: readOnlyProp = false,
   composerNotice,
+  here,
   onDeleteReply,
   onInitialBodyChange,
   onInitialFilesChange,
@@ -443,6 +446,7 @@ export function ThreadPanel({
               urgentMentions={conversation.urgentMentions}
               parts={conversation.parts}
               embeds={conversation.embeds}
+              here={here}
               onBodyChange={onInitialBodyChange}
               messageId={conversation.id}
               onFilesChange={onInitialFilesChange}
@@ -495,6 +499,7 @@ export function ThreadPanel({
                     urgentMentions={reply.urgentMentions}
                     parts={reply.parts}
                     embeds={reply.embeds}
+                    here={here}
                     nostrEventId={reply.nostrEventId}
                     onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
                     onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
