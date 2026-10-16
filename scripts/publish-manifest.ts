@@ -1,7 +1,12 @@
 /**
  * Publish Peek's NIP-89 manifest, then read it back and check it (PRO-6).
  *
- *   RELAY_URL=https://estiva.estiva.app npx tsx scripts/publish-manifest.ts
+ *   APP_URL=https://peek.estiva.app/ RELAY_URL=https://estiva.estiva.app \
+ *     npx tsx --tsconfig tsconfig.app.json scripts/publish-manifest.ts
+ *
+ * `--tsconfig tsconfig.app.json` because the manifest imports through the
+ * app's `@/` alias, which only that file declares; without it tsx stops at
+ * `Cannot find package '@/lib'`.
  *
  * Modelled on Ship's script of the same name, and for the same reason: the
  * check worth having is not "did it publish" but **"can a consumer satisfy
@@ -24,10 +29,28 @@
  *
  * **This has since been granted and run.** The header used to end "which is why
  * this script exists complete and unrun", and that stopped being true once
- * Peek's manifest reached production — `31990:<pubkey>:estiva-peek` is live and
- * a `#k` query for 39000 or 9 finds it. Corrected because the note reads as
- * "do not bother running this", which is the opposite of what somebody
- * republishing a changed declaration needs to know.
+ * Peek's manifest reached production — `31990:<pubkey>:estiva-peek` is live.
+ * Corrected because the note reads as "do not bother running this", which is
+ * the opposite of what somebody republishing a changed declaration needs to
+ * know.
+ *
+ * ## It claims no kind (REC-1)
+ *
+ * It claimed a Folder (`39000`) and a chat message (`9`) by `k` tags, and a
+ * consumer found it with a `#k` query. Both belong to the protocol now
+ * (interop 0.58), so it has no `k` tag at all: a consumer finds Peek as the
+ * app declaring the `conversation` aspect, by sweeping every manifest, and
+ * that is what this checks after publishing. **Publish it only once Ship,
+ * Leaf, Peek and the agent all run interop 0.58 or later**: an older runtime
+ * finds a Folder and a message by the claims, and draws nothing once they go.
+ *
+ * ## A dry run
+ *
+ *   npx tsx --tsconfig tsconfig.app.json scripts/publish-manifest.ts --dry-run
+ *
+ * runs every check made before signing and prints the event it would publish
+ * — unsigned, with the key's pubkey if `.manifest-key` exists — and stops. It
+ * signs nothing, connects to no relay and writes no key.
  *
  * The key is a gitignored `.manifest-key` beside this script, generated on
  * first run and then registered as a relay member. **It is not in the
@@ -43,11 +66,21 @@
 import { KIND, Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
-import { KIND_BARE_FILE, widgetChainProblem, actionProblems, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
+import { MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
+import {
+  KIND_BARE_FILE,
+  widgetChainProblem,
+  actionProblems,
+  resolveForeignEvent,
+  resolveForeignObject,
+  type QueryFn,
+} from '@estiva-app/interop'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
+const DRY_RUN = process.argv.includes('--dry-run')
+/** The first interop with a Folder and a message built in — what every consumer must run before this publishes. */
+const BUILT_INS_SINCE = [0, 58]
 const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/'
 const CLOSED_LIST = 'card, row, table, stat'
 
@@ -72,7 +105,7 @@ function assertUrlsAgree(relayUrl: string, appUrl: string): void {
       `\n✋ Refusing to publish.\n` +
         `   relay is ${relayUrl} but the app URL is ${appUrl}.\n` +
         `   Every "open in Peek" link would point at localhost.\n` +
-        `     APP_URL=https://peek.estiva.app/ RELAY_URL=https://estiva.estiva.app npx tsx scripts/publish-manifest.ts\n`,
+        `     APP_URL=https://peek.estiva.app/ RELAY_URL=https://estiva.estiva.app npx tsx --tsconfig tsconfig.app.json scripts/publish-manifest.ts\n`,
     )
     process.exit(1)
   }
@@ -89,6 +122,27 @@ function manifestIdentity() {
   return { secretKeyHex, pubkey: publicKeyFromSecret(secretKeyHex) }
 }
 
+/** The pubkey a dry run prints: the key's, when there is one — and no key is ever made for it. */
+function dryRunPubkey(): string {
+  const secretKeyHex = existsSync(KEY_FILE) ? readFileSync(KEY_FILE, 'utf8').trim() : ''
+  return /^[0-9a-f]{64}$/.test(secretKeyHex) ? publicKeyFromSecret(secretKeyHex) : '0'.repeat(64)
+}
+
+/**
+ * Whether this checkout's interop draws a Folder and a message itself (0.58+).
+ *
+ * Only this checkout's: Ship's, Leaf's and the agent's are not visible from
+ * here, so the header's order still has to be kept by whoever runs this. It
+ * catches the case nothing else would, a republish from a checkout that would
+ * itself draw nothing afterwards.
+ */
+function interopHasBuiltIns(): { ok: boolean; version: string } {
+  const path = new URL('../node_modules/@estiva-app/interop/package.json', import.meta.url).pathname
+  const version = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version : '0.0.0'
+  const [major = 0, minor = 0] = version.split('.').map(Number)
+  return { ok: major > BUILT_INS_SINCE[0] || (major === BUILT_INS_SINCE[0] && minor >= BUILT_INS_SINCE[1]), version }
+}
+
 function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): UnsignedEvent {
   return {
     pubkey,
@@ -96,20 +150,24 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
     kind: 31990,
     tags: [
       ['d', MANIFEST_D_TAG],
-      ...HANDLED_KINDS.map((k) => ['k', String(k)]),
+      // No `k` tag: Peek claims no kind (REC-1). It is found by its aspect.
       // NIP-89's `web` tag. `<bech32>` is substituted by the consumer with the
-      // entity it holds. A topic is addressable so an naddr resolves; a message
-      // is not, which is recorded on the check below rather than papered over.
+      // entity it holds. A file or a Folder is addressable so an naddr
+      // resolves; a message is not, which is recorded on the check below rather
+      // than papered over.
       /*
-        One `web` tag per NIP-19 entity type, because Peek owns two shapes of
-        object and they are not interchangeable.
+        One `web` tag per NIP-19 entity type, because what Peek opens comes in
+        two shapes and they are not interchangeable — and both stay now that
+        Peek owns neither: they are where every app opens what the conversation
+        aspect is for (SPEC §7.8 says the app declaring it MUST publish both).
 
-        A Topic is addressable — the relay's `kind:39000`, whose `d` is the
-        channel uuid — so `naddr` names it. A Message is a `kind:9` with no `d`
-        at all, so **nothing but its event id can name it** and `nevent` is the
-        only form that works. Declaring only the first is what PRO-11 found:
-        a consumer rendering a message had no way to offer "open this in Peek",
-        and `<bech32>` had nothing to substitute.
+        A file and a Folder are addressable — a Folder is the relay's
+        `kind:39000`, whose `d` is the channel uuid — so `naddr` names them. A
+        Message is a `kind:9` with no `d` at all, so **nothing but its event id
+        can name it** and `nevent` is the only form that works. Declaring only
+        the first is what PRO-11 found: a consumer rendering a message had no
+        way to offer "open this in Peek", and `<bech32>` had nothing to
+        substitute.
 
         Both point at the same route. It resolves the reference and then decides
         which surface to show, the way Ship's `#/o/` does — the entity type
@@ -152,8 +210,15 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
         Declared as its own shape beside the topic's: `matchObjectUrl` prefers
         the pattern whose query the URL satisfies, so the same path with no
         `?thread=` still resolves to the file. Nobody owns `kind:1111` either;
-        interop's built-in manifest draws a comment the way Peek draws a
-        message, which is why the kind is named here and not in `k`.
+        interop's built-in manifest draws a comment as it draws a message,
+        which is why the kind is named here and not in `k`.
+
+        The last two are the same case since REC-1: a shape names the kind a
+        Peek URL points at, and claims nothing. A message (`/message/<id>`,
+        which Peek writes into its own links) and an old topic's channel
+        (`/topic-old/`) are no app's kinds any more, and a pasted Peek link to
+        either still resolves only because these say which kind it names —
+        drop them and it stays a plain link in every app.
       */
       ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>`, String(KIND_BARE_FILE)],
       ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>?thread=<id>`, String(KIND.COMMENT)],
@@ -165,12 +230,7 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
 }
 
 async function main() {
-  const identity = manifestIdentity()
-  const signer = { pubkey: identity.pubkey, sign: async (e: UnsignedEvent) => signEvent(e, identity.secretKeyHex) }
-  const relay = new Relay(RELAY_URL, signer as never)
-
-  console.log(`relay    ${RELAY_URL}`)
-  console.log(`manifest ${identity.pubkey.slice(0, 16)}…  (31990:<pubkey>:${MANIFEST_D_TAG})\n`)
+  console.log(`relay    ${RELAY_URL}${DRY_RUN ? '  (dry run: not contacted)' : ''}`)
   assertUrlsAgree(RELAY_URL, APP_URL)
 
   /*
@@ -228,20 +288,58 @@ async function main() {
     )
   }
 
+  // Every consumer must draw a Folder and a message itself before this goes (REC-1); this checkout at least.
+  const interop = interopHasBuiltIns()
+  if (DRY_RUN) {
+    check('this checkout’s interop draws a Folder and a message itself', interop.ok, `@estiva-app/interop ${interop.version}`)
+    const event = buildManifest(dryRunPubkey(), Date.now(), APP_URL)
+    console.log('\nThe event a publish would sign and send — unsigned, and not sent:\n')
+    console.log(JSON.stringify(event, null, 2))
+    console.log(failures === 0 ? '\nDry run: nothing signed, nothing sent.' : `\nDry run: ${failures} check(s) FAILED; nothing signed, nothing sent.`)
+    process.exit(failures === 0 ? 0 : 1)
+  }
+  if (!interop.ok) {
+    console.error(
+      `\n✋ Refusing to publish. @estiva-app/interop ${interop.version} finds a Folder and a message by Peek's claims,\n` +
+        `   which this manifest drops: run it from a checkout on 0.58 or later, once every app runs one.\n`,
+    )
+    process.exit(1)
+  }
+
+  const identity = manifestIdentity()
+  const signer = { pubkey: identity.pubkey, sign: async (e: UnsignedEvent) => signEvent(e, identity.secretKeyHex) }
+  const relay = new Relay(RELAY_URL, signer as never)
+  console.log(`manifest ${identity.pubkey.slice(0, 16)}…  (31990:<pubkey>:${MANIFEST_D_TAG})\n`)
+
   const event = buildManifest(identity.pubkey, Date.now(), APP_URL)
   const published = await relay.publish(signEvent(event, identity.secretKeyHex))
   check('the relay accepts kind:31990', published.ok, published.reason ?? '')
   if (!published.ok) process.exit(1)
 
   // ── Discovery: the check PRO-6's done-when names ──────────────────────────
-  // A consumer will not know Peek's pubkey. It holds an object of some kind and
-  // asks "who handles this?", which is a `#k` filter.
-  for (const kind of HANDLED_KINDS) {
-    const found = await relay.query([{ kinds: [31990], '#k': [String(kind)], limit: 20 }])
+  /*
+    A consumer will not know Peek's pubkey. It used to hold an object of one of
+    Peek's kinds and ask "who handles this?" with a `#k` filter; Peek has no
+    kind now (REC-1), so a consumer holding a file, a Folder or a message nobody
+    owns asks "who opens conversations?" — every manifest, newest first, the
+    first declaring the `conversation` aspect with somewhere to link to
+    (interop's `resolveAspectApp`, 50 manifests). That one must be this one.
+  */
+  {
+    const handlers = await relay.query([{ kinds: [31990], limit: 50 }])
+    const opener = [...handlers]
+      .sort((a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at)
+      .find((e: SignedEvent) => {
+        try {
+          return (JSON.parse(e.content) as { aspect?: string }).aspect === 'conversation' && e.tags.some((t) => t[0] === 'web')
+        } catch {
+          return false
+        }
+      })
     check(
-      `a consumer holding a kind:${kind} finds a handler by #k`,
-      found.some((e: SignedEvent) => e.pubkey === identity.pubkey),
-      `${found.length} manifest(s) declare kind ${kind}`,
+      'a consumer looking for the app that opens conversations finds this one',
+      opener?.pubkey === identity.pubkey,
+      opener ? `31990:${opener.pubkey.slice(0, 16)}…:${opener.tags.find((t) => t[0] === 'd')?.[1] ?? ''}` : 'none found',
     )
   }
 
@@ -251,81 +349,31 @@ async function main() {
   check('the manifest reads back', !!stored)
   if (!stored) process.exit(1)
 
-  const manifest = JSON.parse(stored.content)
+  const query = ((filters) => relay.query(filters as never)) as QueryFn
 
-  // ── Can the projections be satisfied by objects that actually exist? ──────
+  // ── Do a Folder and a message, which Peek no longer draws, open here? ──────
   /*
-    Sample several topics, not the first one.
-
-    The first version asked `limit: 1` and asserted that topic had messages.
-    **19 of production's 30 topics are empty**, so a correct manifest failed
-    roughly two runs in three depending on which one sorted first — and the
-    failure said "list resolves 0 children", which is indistinguishable from
-    the declaration being wrong. That is the same confusion between *empty* and
-    *broken* this script exists to catch, turned on itself.
-
-    What "the declaration is satisfiable" actually means is that the query shape
-    finds children **where children exist**, so the check has to find such a
-    topic before it can assert anything.
+    The projection checks that stood here went with the projections (REC-1): a
+    Folder's name, one-liner and contents and a message's author and text are
+    the runtime's to draw now (interop 0.58). What this manifest still decides
+    is where they open, so that is what is checked, on a real one of each.
   */
-  const topics = await relay.query([{ kinds: [TOPIC_KIND], limit: 30 }])
-  check('there are real topics to project', topics.length > 0, `${topics.length} topic(s)`)
-  let topic = topics[0]
-  let children: Awaited<ReturnType<typeof relay.query>> = []
-  const listSpec = manifest.projections[String(TOPIC_KIND)].slots.list.children
-  let empties = 0
-  for (const candidate of topics) {
-    const cd = candidate.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''
-    const found = await relay.query([{ kinds: [listSpec.kind], [`#${listSpec.via}`]: [cd], limit: listSpec.limit }])
-    if (found.length > 0) { topic = candidate; children = found; break }
-    empties++
-  }
-  if (topic) {
-    const slots = manifest.projections[String(TOPIC_KIND)].slots
-    const name = topic.tags.find((t: string[]) => t[0] === slots.title.tag)?.[1]
-    check(`  topic slot "title" (tag:${slots.title.tag}) resolves`, !!name, name)
-
-    const d = topic.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''
-    const { via, match } = slots.list.children
+  const [folder] = await relay.query([{ kinds: [TOPIC_KIND], limit: 1 }])
+  check('there is a real Folder to open', !!folder)
+  if (folder) {
+    const address = `${TOPIC_KIND}:${folder.pubkey}:${folder.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''}`
+    const resolved = await resolveForeignObject(address, query)
+    check('  …it resolves through the built-in, as a folder', resolved?.noun === 'folder', resolved?.noun ?? 'null')
     check(
-      `  topic slot "list" resolves children by #${via} (match:${match})`,
-      children.length > 0,
-      `${children.length} message(s) in ${d}${empties ? `, after ${empties} empty topic(s)` : ''}`,
-    )
-    /*
-      The whole reason `match` exists — and this control is only worth anything
-      against a topic that HAS children.
-
-      Its first version ran against whatever topic came first and reported
-      "0 by address vs 0 by identifier" as a pass. Both arms were zero because
-      the topic was empty, so it would have passed just as happily if `match`
-      did nothing at all. A control that cannot fail is not a control; the loop
-      above is what gives this one something to distinguish.
-    */
-    const asAddress = await relay.query([
-      { kinds: [listSpec.kind], [`#${via}`]: [`${TOPIC_KIND}:${topic.pubkey}:${d}`], limit: 5 },
-    ])
-    check(
-      '  …and the same query by address finds nothing, which is why match exists',
-      children.length > 0 && asAddress.length === 0,
-      `${asAddress.length} by address vs ${children.length} by identifier`,
+      '  …and opens here, from the naddr template',
+      typeof resolved?.openUrl === 'string' && resolved.openUrl.includes('naddr1'),
+      resolved?.openUrl ?? '(none)',
     )
   }
 
   const [message] = await relay.query([{ kinds: [MESSAGE_KIND], limit: 1 }])
-  check('there is a real message to project', !!message)
+  check('there is a real message to open', !!message)
   if (message) {
-    const slots = manifest.projections[String(MESSAGE_KIND)].slots
-    check('  message slot "title" (field:pubkey) resolves', !!message.pubkey, message.pubkey.slice(0, 16) + '…')
-    check('  message slot "body" (field:content) resolves', !!message.content, `${message.content.length} chars`)
-    check(
-      '  the widget declares a chain terminating in a closed type',
-      Array.isArray(slots ? manifest.projections[String(MESSAGE_KIND)].widget : null) &&
-        ['card', 'row', 'table', 'stat'].includes(
-          manifest.projections[String(MESSAGE_KIND)].widget.at(-1),
-        ),
-      JSON.stringify(manifest.projections[String(MESSAGE_KIND)].widget),
-    )
     check(
       '  a message carries no `d`, so it is NOT addressable — resolved by id instead',
       !message.tags.some((t: string[]) => t[0] === 'd'),
@@ -333,15 +381,14 @@ async function main() {
     )
 
     /*
-      The message actually resolves by id — PRO-11.
+      The message actually resolves by id, and opens here — PRO-11, REC-1.
 
-      This was recorded as a known gap for two tickets: a projection could be
-      declared for kind:9 and nothing could look one up. Now it can, and the
-      check is the resolve rather than the declaration, because a manifest that
-      declares a Message projection nothing can reach is exactly what the gap
-      was.
+      Peek no longer declares how a message draws: the runtime does (interop
+      0.58, SPEC §7.8), and takes only where to open it from this manifest's
+      `nevent` template. So the check is the resolve through the built-in, and
+      its link — what a Ship issue's "Message" chip opens.
     */
-    const resolved = await resolveForeignEvent(message.id, ((filters) => relay.query(filters as never)) as QueryFn)
+    const resolved = await resolveForeignEvent(message.id, query)
     check(
       '  …and resolveForeignEvent reaches it from a bare event id',
       resolved !== null && resolved.eventId === message.id,
@@ -351,6 +398,8 @@ async function main() {
       '  …with no address and no naddr, which is the point',
       resolved?.address === undefined && resolved?.naddr === undefined,
     )
+    // What a Ship issue's chip for it reads: "Message", from the built-in's noun.
+    check('  …as a message', resolved?.noun === 'message', resolved?.noun ?? '(none)')
     check(
       '  …and a web link that opens it, from the nevent template',
       typeof resolved?.openUrl === 'string' && resolved.openUrl.includes('nevent1'),
