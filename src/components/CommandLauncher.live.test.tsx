@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
-import type { ResolvedAction } from '@estiva-app/interop'
+import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr, parseBlockDocument } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
@@ -359,10 +359,10 @@ describe('the created object leaves a trace in the thread (PEE-2)', () => {
 
 describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
   /*
-    Ship declares `add-project` on a Folder, which is Peek's kind — so it
+    Ship declares `add-project` on a Folder, which is no app's — so it
     arrives on the Folder read with `declaredBy` naming Ship's manifest, beside
-    Peek's own `start-a-conversation`. It belongs in Ship's section, with the
-    Folders to choose from, and is built with Ship's manifest.
+    the Folder's own `start-a-conversation`. It belongs in Ship's section, with
+    the Folders to choose from, and is built with Ship's manifest.
   */
   const RELAY = 'f'.repeat(64)
   const SHIP_MANIFEST = `31990:${'8'.repeat(64)}:estiva-ship`
@@ -386,7 +386,9 @@ describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
     control: 'form',
     fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
     createsUnder: 'self',
+    declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
   }
+  const A_DM = { address: `39000:${RELAY}:0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b`, title: 'A DM' }
 
   beforeEach(() => {
     applyAction.mockClear()
@@ -394,9 +396,13 @@ describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
       kind === 39000
         ? {
             actions: [startConversation, addProject],
-            parents: [{ address: `39000:${RELAY}:0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b`, title: 'A DM' }],
-            manifest: `31990:${'0'.repeat(64)}:estiva-peek`,
-            parentsFor: { 'add-project': [{ address: QA_FOLDER, title: 'QA' }] },
+            parents: [A_DM],
+            manifest: FOLDER_ACTIONS_ADDRESS,
+            parentsFor: {
+              'add-project': [{ address: QA_FOLDER, title: 'QA' }],
+              'start-a-conversation': [{ address: QA_FOLDER, title: 'QA' }, A_DM],
+            },
+            dms: [A_DM.address],
           }
         : {
             actions: [liveAddIssue],

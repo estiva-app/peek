@@ -56,20 +56,18 @@ const event = (partial: Partial<TestEvent> & { kind: number }): TestEvent => ({
 
 /*
   Ship's two `listed` declarations, as `src/nostr/manifest.ts` in Ship writes
-  them. The `39000` projection is not Ship's — Peek resolves a Folder through
-  its own manifest — and is here only so the creation half of the runtime path
-  can be exercised through `applyActionAsViewer` at all.
+  them. No `39000` claim: a Folder is no app's (SPEC §3.2, interop 0.58), so
+  `add-project` is built with Ship's manifest only when the caller names it.
 */
 const manifest = event({
   kind: 31990,
-  tags: [['d', 'estiva-ship'], ['k', String(PROJECT)], ['k', String(ISSUE)], ['k', '39000']],
+  tags: [['d', 'estiva-ship'], ['k', String(PROJECT)], ['k', String(ISSUE)]],
   content: JSON.stringify({
     name: 'Estiva Ship',
     records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
     projections: {
       [PROJECT]: { widget: 'card', slots: { title: { tag: 'name' } } },
       [ISSUE]: { widget: 'row', slots: { title: { tag: 'title' } } },
-      39000: { widget: 'card', slots: { title: { tag: 'name' } } },
     },
     actions: [
       {
@@ -210,7 +208,11 @@ describe('a listed deletion', () => {
 
 describe('a listed creation', () => {
   const create = () =>
-    applyActionAsViewer({ naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' } }, 'https://relay.test', token)
+    applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
 
   it('into a Folder with state: the record in buzz-channel, then an add naming it', async () => {
     queryRelay.mockImplementation(relayOver([manifest, channel(FOLDER), state(FOLDER, [])]))
@@ -255,10 +257,11 @@ describe('a listed creation', () => {
 
 describe('a creation another app declares on a Folder (MAN-8)', () => {
   /*
-    Production's shape, which the fixture above is not: a Folder is drawn by
-    Peek's manifest, and Ship's projects no `39000`. So the Folder resolves
-    through Peek's, which has no `add-project` — and the creation is built only
-    because the caller names Ship's manifest as the one that declared it.
+    Peek's listing still claims a Folder until it is republished, and the
+    runtime no longer reads that claim (interop 0.58): a Folder resolves
+    through the specification's built-in, which has no `add-project` — so the
+    creation is built only because the caller names Ship's manifest as the one
+    that declared it.
   */
   const PEEK_APP = 'ee'.repeat(32)
   const peekManifest = event({
@@ -271,13 +274,7 @@ describe('a creation another app declares on a Folder (MAN-8)', () => {
       actions: [],
     }),
   })
-  // The fixture above, less its `39000` projection and `k` tag: Ship is not a Folder's owner here.
-  const { 39000: _folder, ...shipProjections } = JSON.parse(manifest.content).projections
-  const shipOnly = event({
-    kind: 31990,
-    tags: [['d', 'estiva-ship'], ['k', String(PROJECT)], ['k', String(ISSUE)]],
-    content: JSON.stringify({ ...JSON.parse(manifest.content), projections: shipProjections }),
-  })
+  const shipOnly = manifest
   const SHIP_MANIFEST = `31990:${AUTHOR}:estiva-ship`
 
   beforeEach(() => forgetUrlShapes())

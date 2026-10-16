@@ -88,6 +88,29 @@ export function dmChannelsOf(
   return byPartner
 }
 
+/**
+ * Every DM the viewer is in — one-to-one and group — as somewhere to start a
+ * conversation from the launcher, newest first.
+ *
+ * Not {@link dmChannelsOf}: People keys a DM by its one partner and so drops a
+ * group DM, and the launcher's picker always listed both, by the name the
+ * relay gave the channel ("DM", "Group DM (3)"). An archived one is not
+ * somewhere to write.
+ */
+export function dmConversationsOf(metadata: readonly SignedEvent[]): { address: string; title: string }[] {
+  const seen = new Set<string>()
+  const out: { address: string; title: string }[] = []
+  for (const event of [...metadata].sort((a, b) => b.created_at - a.created_at)) {
+    if (!tagValues(event, 't').includes('dm')) continue
+    const uuid = tagValues(event, 'd')[0]
+    if (!uuid || seen.has(uuid)) continue
+    seen.add(uuid)
+    if (event.tags.some((t) => t[0] === 'archived')) continue
+    out.push({ address: `${KIND_CHANNEL_METADATA}:${event.pubkey}:${uuid}`, title: tagValues(event, 'name')[0] ?? 'DM' })
+  }
+  return out
+}
+
 /** DM channels whose `39000` names no participant, so the `39002` must. */
 function untaggedDms(metadata: readonly SignedEvent[]): string[] {
   return metadata

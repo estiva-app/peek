@@ -55,7 +55,7 @@ import {
 import { relayFailureKind } from '@/nostr/relayRead'
 export { isFromCopy } from '@/nostr/foreign'
 import type { ReadSource } from '@/nostr/readFrom'
-import { fileThreadsAsViewer } from '@/nostr/fileConversation'
+import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
@@ -729,6 +729,21 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Start a conversation in one of the person's DMs from the launcher (REC-1):
+   * the message the DM's own composer sends — `buildMessage`, by Peek's chat
+   * code — since a DM is not a Folder and the Folder's Start a conversation is
+   * not offered on one (SPEC §3.2).
+   */
+  const startConversationInDm = useCallback(
+    async (args: { channel: string; body: string }): Promise<ActResult> => {
+      const v = viewer()
+      if (!v) return { ok: false, reason: 'Sign in to write.' }
+      return commentAsViewer({ container: { kind: 'channel', h: args.channel }, body: args.body }, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** See `creatableUnderAsViewer`. Null when signed out, as everything here is. */
   const creatableUnder = useCallback(
     async (parentKind: number) => {
@@ -780,6 +795,7 @@ export function useForeignObjects() {
     deleteFolder,
     moveFile,
     applyAction,
+    startConversationInDm,
     threads,
     fileThreads,
     replyToComment,

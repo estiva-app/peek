@@ -21,7 +21,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import {
   PARENT_FIELD,
-  asCreateTopic,
+  asLauncherCreation,
   changeActionFrom,
   changeVocabulariesFrom,
   creationsFor,
@@ -203,7 +203,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   */
   const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
 
-  const { creatableUnder, applyAction, resolveObject } = useForeignObjects()
+  const { creatableUnder, applyAction, startConversationInDm, resolveObject } = useForeignObjects()
   const { setMember } = useMembership()
 
   /*
@@ -321,8 +321,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
             // The noun of the kind it goes on — the app's own for its own kind (INT-9), "Folder" on a Folder.
             const converted = launcherActionFrom(creation.action, { parentNoun: creation.parentNoun, submitLabel: creation.action.label })
             if (!converted) continue
-            // A Folder's built-in new file is Peek's Create topic (INT-12).
-            const action = asCreateTopic(creation.action, converted)
+            // A Folder's built-in new file is Peek's Create topic (INT-12); a conversation knows its DMs (REC-1).
+            const action = asLauncherCreation(creation, converted)
             actions.push(action)
             parents[action.id] = creation.parents
           }
@@ -430,11 +430,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
               // Every kind, sorted back to the declaring app, as a section reads it (MAN-8).
               const found = creationsFor(app, await readKinds(app.parentKind as number))
               if (!found) return []
-              return found.filter(({ action }) => isProposable(action)).flatMap(({ action, parents, parentNoun }) => {
+              return found.filter(({ action }) => isProposable(action)).flatMap((creation) => {
+                const { action, parents, parentNoun } = creation
                 // The app's own word for the parent, not "Parent" (R10).
                 const converted = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
                 if (!converted) return []
-                const launcher = asCreateTopic(action, converted)
+                const launcher = asLauncherCreation(creation, converted)
                 return [
                   {
                     appId: app.id,
@@ -633,6 +634,23 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     }
     setSubmitting(true)
     setSubmitError(null)
+    /*
+      A conversation started in a DM is the DM's own message, sent by Peek's
+      chat code as its composer sends one (REC-1): the Folder's Start a
+      conversation is not offered on a DM, which is no Folder (SPEC §3.2).
+    */
+    if (action.dmParents?.includes(parent)) {
+      const sent = await startConversationInDm({ channel: parent.split(':')[2] ?? '', body: properties.message ?? '' })
+      setSubmitting(false)
+      if (!sent.ok) {
+        setSubmitError(sent.reason ?? 'The relay rejected it.')
+        return
+      }
+      // C5, as a conversation started in a Folder says it.
+      showToast({ label: `Created in ${appLabel}`, type: 'success' })
+      onClose()
+      return
+    }
     let result: Awaited<ReturnType<typeof applyAction>>
     try {
       // The parent is addressed, not named: `applyAction` resolves the manifest from the object —
