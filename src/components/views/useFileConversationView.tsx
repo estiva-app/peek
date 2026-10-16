@@ -40,7 +40,7 @@ import {
   TOPIC_NOT_CREATED,
   topicTextBack,
 } from '@/api'
-import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
+import { groupReactions, offersEditAndDelete, REACTION_HORIZON, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
 import { notSavedNote, notSentNote } from '@/lib/notSent'
@@ -555,7 +555,8 @@ export function useFileConversationView({
     <>
         <div className={STREAM_SPACER} />
         <div className={STREAM}>
-          {isLoading && <SkeletonConversationList />}
+          {/* Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above. */}
+          {(isLoading || conversation?.earlier) && <SkeletonConversationList />}
           {failed && (
             <EmptyState
               scope="section"
@@ -599,6 +600,15 @@ export function useFileConversationView({
             rather than left to conclude nobody reacted.
           */}
           {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} container="conversation" />}
+          {/*
+            The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
+            messages are here, so they do not move up when the rest lands under a reader at the bottom.
+          */}
+          {view && !view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
+            <div className="invisible" aria-hidden>
+              <ReactionHorizon omitted={1} container="conversation" />
+            </div>
+          )}
         </div>
     </>
   )

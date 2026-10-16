@@ -13,9 +13,21 @@ import {
   MAX_REQS_IN_FLIGHT,
   REQS_PER_WINDOW,
   SPILL_AFTER_MS,
-  WINDOW_MS,
 } from './socketRead'
-import { createFrameShaper, FRAMES_PER_SECOND, FRAMES_PER_WINDOW, otherFramesSince, SHAPED_WINDOW_MS, resetSocketFrames, sendingAsRead } from './socketFrames'
+import {
+  createFrameShaper,
+  FIRST_GRACE_MS,
+  FIRST_HOLD_MS,
+  FIRST_RESERVE,
+  FRAMES_PER_SECOND,
+  FRAMES_PER_WINDOW,
+  otherFramesSince,
+  readingFirst,
+  SHAPED_WINDOW_MS,
+  resetSocketFrames,
+  sendingAsRead,
+  sendingFirst,
+} from './socketFrames'
 import { queryRelay, setSocketReader } from './bridge'
 import { relayReads, resetRelayMeter } from './relayMeter'
 
@@ -100,6 +112,45 @@ describe('socket reads', () => {
     expect(subs.filter((s) => !s.closed)).toHaveLength(MAX_REQS_IN_FLIGHT)
     for (const sub of subs) sub.onEose?.()
     expect(await answer).toEqual({ ok: true, events: [] })
+  })
+
+  it(`sends a first page's REQ while ${MAX_REQS_IN_FLIGHT} others wait on the relay, and answers it first (PEE-7)`, async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const wide = Array.from({ length: (MAX_REQS_IN_FLIGHT + 1) * 10 }, (_, i) => ({ kinds: [9], '#h': [`f${i}`] }))
+    const others = read('https://relay', wide, ME)
+    await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT))
+    const page = read('https://relay', [{ ids: ['newest'] }], ME, { lane: 'first' })
+    await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT + 1))
+    const sub = subs.at(-1)!
+    expect(sub.filters).toEqual([{ ids: ['newest'] }])
+    sub.onEvent(event('newest'))
+    sub.onEose?.()
+    expect(await page).toEqual({ ok: true, events: [event('newest')] })
+    for (const s of subs) s.onEose?.()
+    await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT + 2))
+    subs.at(-1)!.onEose?.()
+    expect(await others).toEqual({ ok: true, events: [] })
+  })
+
+  it('sends a first page over HTTP when the socket has no room for it within a click’s wait, and on the socket once it has (PEE-7)', async () => {
+    vi.useFakeTimers()
+    resetSocketFrames()
+    const shaper = createFrameShaper(() => {})
+    for (let i = 0; i < FRAMES_PER_WINDOW; i++) shaper.send(`["REQ","peek-${i}",{}]`)
+    await vi.advanceTimersByTimeAsync(4_000)
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const full = read('https://relay', [{ ids: ['newest'] }], ME, { lane: 'first' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(subs).toHaveLength(0)
+    expect(await full).toBeNull()
+    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
+    const page = read('https://relay', [{ ids: ['newest'] }], ME, { lane: 'first' })
+    await vi.waitFor(() => expect(subs).toHaveLength(1))
+    subs[0].onEose?.()
+    expect(await page).toEqual({ ok: true, events: [] })
+    resetSocketFrames()
   })
 
   it('sends a read for a relay the tab is not connected to over HTTP', async () => {
@@ -362,6 +413,42 @@ describe('socket frames', () => {
     s.send('["AUTH",{"id":"y"}]')
     expect(out.at(-1)).toBe('["AUTH",{"id":"y"}]')
     expect(s.waiting()).toBe(1)
+  })
+
+  it('keeps a first page room while it is read: its REQ goes at once, the others wait, and take the room once it answers (PEE-7)', async () => {
+    const { out, shaper: s } = shaper()
+    const answered = readingFirst()
+    for (let i = 0; i < FRAMES_PER_SECOND; i++) s.send(`["REQ","peek-${i}",{}]`)
+    expect(out).toHaveLength(FRAMES_PER_SECOND - FIRST_RESERVE)
+    sendingFirst(() => s.send('["REQ","first",{}]'))
+    expect(out.at(-1)).toBe('["REQ","first",{}]')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(out).toHaveLength(FRAMES_PER_SECOND - FIRST_RESERVE + 1)
+    answered()
+    await vi.advanceTimersByTimeAsync(FIRST_GRACE_MS + 1)
+    expect(out).toHaveLength(FRAMES_PER_SECOND)
+    expect(s.waiting()).toBe(1)
+  })
+
+  it(`keeps a first page the relay never answers its room for ${FIRST_HOLD_MS} ms, not until the read times out (PEE-7)`, async () => {
+    const { out, shaper: s } = shaper()
+    readingFirst()
+    await vi.advanceTimersByTimeAsync(FIRST_HOLD_MS)
+    for (let i = 0; i < FRAMES_PER_SECOND; i++) s.send(`["REQ","peek-${i}",{}]`)
+    expect(out).toHaveLength(FRAMES_PER_SECOND)
+  })
+
+  it('sends a first page’s REQ that must wait for room before the frames that were waiting already (PEE-7)', async () => {
+    const { out, shaper: s } = shaper()
+    for (let i = 0; i < FRAMES_PER_SECOND + 2; i++) s.send(`["REQ","peek-${i}",{}]`)
+    sendingFirst(() => s.send('["REQ","first",{}]'))
+    expect(out).not.toContain('["REQ","first",{}]')
+    await vi.advanceTimersByTimeAsync(1_001)
+    expect(out.slice(FRAMES_PER_SECOND, FRAMES_PER_SECOND + 3)).toEqual([
+      '["REQ","first",{}]',
+      `["REQ","peek-${FRAMES_PER_SECOND}",{}]`,
+      `["REQ","peek-${FRAMES_PER_SECOND + 1}",{}]`,
+    ])
   })
 })
 

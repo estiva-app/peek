@@ -37,6 +37,7 @@ import { FILE_PARENTS_RETRY_MS, resetFileParentsForTests, useFileParents } from 
 const PK = 'b'.repeat(64)
 const I1 = `30851:${PK}:i1`
 const I2 = `30851:${PK}:i2`
+const I3 = `30851:${PK}:i3`
 const PROJECT = `30850:${PK}:project`
 
 beforeEach(() => {
@@ -65,19 +66,31 @@ describe('useFileParents', () => {
     expect(relay.asked).toEqual([[I1], [I2]])
   })
 
-  it('keeps a file the relay could tell nothing about out of the answer, and asks again with the next file', async () => {
-    relay.answer = () => ({})
-    const { result, rerender } = renderHook(({ addresses }) => useFileParents(addresses), {
-      initialProps: { addresses: [I1] },
-    })
-    await waitFor(() => expect(relay.asked).toEqual([[I1]]))
-    rerender({ addresses: [I1] })
-    expect(result.current).toEqual({})
-    expect(relay.asked).toEqual([[I1]])
-    relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
-    rerender({ addresses: [I1, I2] })
-    await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT }))
-    expect(relay.asked).toEqual([[I1], [I1, I2]])
+  it('keeps a file the relay could tell nothing about out of the answer, and asks again with the next file named a while later — not before, not by itself', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      relay.answer = () => ({})
+      const { result, rerender } = renderHook(({ addresses }) => useFileParents(addresses), {
+        initialProps: { addresses: [I1] },
+      })
+      await waitFor(() => expect(relay.asked).toEqual([[I1]]))
+      rerender({ addresses: [I1] })
+      expect(result.current).toEqual({})
+      relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+      rerender({ addresses: [I1, I2] })
+      await waitFor(() => expect(result.current).toEqual({ [I2]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I2]])
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FILE_PARENTS_RETRY_MS * 3)
+      })
+      // An idle tab asks nothing: the relay may never answer it.
+      expect(relay.asked).toEqual([[I1], [I2]])
+      rerender({ addresses: [I1, I2, I3] })
+      await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT, [I3]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I2], [I1, I3]])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('asks again after a refused read, on the next change in what is named', async () => {

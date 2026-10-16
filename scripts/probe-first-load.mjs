@@ -330,7 +330,12 @@ const legs = {
       ...act('long topic', [newest(w.long)], leaf(w.long)), ...settled(), '--wait', '5000',
       ...report,
     ],
-    phases: [['200-message topic, first open', 0, 'long topic']],
+    /*
+      PEE-7: when its messages show — the newest first, with the older ones' placeholder above them, printed apart.
+      Not "200 of 200": the topics hold messages sent after it (QA-2's "Switch probe A" has ~430 comments), so the
+      newest page need not carry it.
+    */
+    phases: [['200-message topic, first open', 0, 'long topic', 'messages']],
   }),
   new: (w, title) => ({
     url: '/app/folders',
@@ -444,6 +449,7 @@ function print({ as, leg, run, docs, http429, opened, reads }, phases) {
     if (before) extra.push(`sign-in bounce ${before} ms`)
     if (phase.marks.composer !== undefined && markName !== 'composer') extra.push(`composer ${phase.marks.composer - phase.at} ms`)
     if (phase.marks.messages !== undefined) extra.push(`first message ${phase.marks.messages - phase.at} ms`)
+    if (markName !== 'allTextsNoPulse') extra.push(`no placeholder left ${phase.marks.allTextsNoPulse === undefined ? 'never' : `${phase.marks.allTextsNoPulse - phase.at} ms`}`)
     if (phase.jumps.length) extra.push(`jumps ${JSON.stringify(phase.jumps.map(([t, what]) => [t - phase.at, what]))}`)
     if ((phase.editors ?? []).filter(([, e]) => e === 'composer').length > 1) extra.push(`composer mounted ${phase.editors.filter(([, e]) => e === 'composer').length}×`)
     if ((phase.paths ?? []).length > 1) extra.push(`paths ${phase.paths.length}`)

@@ -48,6 +48,13 @@ import {
 } from '@estiva-app/protocol'
 import type { ReadLane } from '@estiva-app/platform'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+
+/**
+ * The pacer's lanes, and `first`: a file's first page while the person waits on
+ * its placeholder (PEE-7) — a click's read that goes ahead of every other
+ * (`socketRead.ts`, `socketFrames.ts`). Over HTTP it is a click's.
+ */
+export type QueryLane = ReadLane | 'first'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
 import { relayBudget } from './relayBudget'
@@ -170,17 +177,18 @@ export async function queryRelay(
    * `ahead` for what Desk loads before it is asked for (PEE-5): after every click, over HTTP only when the reader lets
    * it. A function when the person may join the read while it waits: asked again then, and `click` sends it at once.
    */
-  lane: ReadLane | (() => ReadLane) = 'click',
+  lane: QueryLane | (() => QueryLane) = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   const laneNow = typeof lane === 'function' ? lane : () => lane
   const asked = laneNow()
   if (!socketReader && asked === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
-  if (asked === 'click') clickReads.open += 1
+  const click = asked !== 'ahead'
+  if (click) clickReads.open += 1
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
     if (!answer) {
-      const release = asked === 'ahead' ? await aheadPost(() => laneNow() === 'click') : null
+      const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {
         const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
         answer = parseQueryResponse(status, text)
@@ -189,7 +197,7 @@ export async function queryRelay(
       }
     }
   } finally {
-    if (asked === 'click') {
+    if (click) {
       clickReads.open -= 1
       clickReads.lastAt = Date.now()
     }
@@ -211,7 +219,7 @@ export type SocketReader = ((
   relayUrl: string,
   filters: Record<string, unknown>[],
   pubkey?: string,
-  options?: { lane?: ReadLane },
+  options?: { lane?: QueryLane },
 ) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>) & {
   /** Move the `ahead` reads still waiting into the click lane (PEE-5): the person just acted. */
   promoteAhead?(): void
