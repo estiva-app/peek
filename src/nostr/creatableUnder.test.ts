@@ -25,6 +25,7 @@ import { creatableUnderAsViewer, forgetUrlShapes } from './foreign'
 const ME = 'a'.repeat(64)
 const OTHER = 'b'.repeat(64)
 const THIRD = 'c'.repeat(64)
+const FOURTH = '6'.repeat(64)
 const RELAY = 'd'.repeat(64)
 const PEEK_APP = 'e'.repeat(64)
 const SHIP_APP = '8'.repeat(64)
@@ -144,7 +145,10 @@ const leaf = event({
 const folder = [event({ kind: 39000, tags: [['d', QA], ['name', 'QA']] }), event({ kind: 30890, tags: [['d', QA]] })]
 /** Ship's record channel: a channel, never a Folder — no state. */
 const record = event({ kind: 39000, tags: [['d', RECORD], ['name', 'project-5d1e8f9a']] })
-/** The relay names a DM "DM" and a group one by its size; newest first in the picker. */
+/**
+ * The relay names a DM "DM" and a group one by its size; the picker names each
+ * after the people in it, as People does, newest first.
+ */
 const groupDm = event({ kind: 39000, tags: [['d', GROUP_DM], ['name', 'Group DM (3)'], ['t', 'dm'], ['p', ME], ['p', OTHER], ['p', THIRD]] })
 const dm = event({ kind: 39000, tags: [['d', DM], ['name', 'DM'], ['t', 'dm'], ['p', ME], ['p', OTHER]] })
 /** An archived DM is not somewhere to write. */
@@ -152,6 +156,20 @@ const archivedDm = event({
   kind: 39000,
   tags: [['d', '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5d'], ['name', 'Archived DM'], ['t', 'dm'], ['p', ME], ['p', THIRD], ['archived']],
 })
+/** An older DM whose `39000` names nobody: its `39002` roster does. */
+const UNTAGGED_DM = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5e'
+const untaggedDm = event({ kind: 39000, tags: [['d', UNTAGGED_DM], ['name', 'DM'], ['t', 'dm']] })
+const untaggedRoster = event({ kind: 39002, tags: [['d', UNTAGGED_DM], ['p', ME], ['p', FOURTH]] })
+/** A DM with somebody who has no profile keeps the relay's name: a key is not a name. */
+const NAMELESS_DM = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5f'
+const namelessDm = event({ kind: 39000, tags: [['d', NAMELESS_DM], ['name', 'DM'], ['t', 'dm'], ['p', ME], ['p', 'f'.repeat(64)]] })
+const profile = (pubkey: string, content: Record<string, unknown>) => event({ kind: 0, pubkey, content: JSON.stringify(content) })
+/** `display_name` before `name`, as People reads them. */
+const profiles = [
+  profile(OTHER, { display_name: 'Bob Ellis', name: 'bob' }),
+  profile(THIRD, { name: 'Cara' }),
+  profile(FOURTH, { display_name: 'Dan Ito' }),
+]
 
 const matches = (e: TestEvent, f: Record<string, unknown>) => {
   if (f.kinds && !(f.kinds as number[]).includes(e.kind)) return false
@@ -172,7 +190,7 @@ function relayOver(world: TestEvent[], refuse?: (f: Record<string, unknown>) => 
       : { ok: true as const, events: world.filter((e) => filters.some((f) => matches(e, f))) }
 }
 
-const world = (peek: TestEvent) => [peek, ship, leaf, ...folder, record, groupDm, dm, archivedDm]
+const world = (peek: TestEvent) => [peek, ship, leaf, ...folder, record, untaggedDm, untaggedRoster, namelessDm, groupDm, dm, archivedDm, ...profiles]
 const titles = (list?: { title: string }[]) => list?.map((p) => p.title)
 
 beforeEach(() => {
@@ -190,8 +208,16 @@ describe.each([
 
     const conversation = read?.actions.find((a) => a.id === 'start-a-conversation')
     expect(conversation?.declaredBy?.address).toBe(FOLDER_ACTIONS_ADDRESS)
-    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['QA', 'DM', 'Group DM (3)'])
-    expect(read?.dms).toEqual([`39000:${RELAY}:${DM}`, `39000:${RELAY}:${GROUP_DM}`])
+    expect(read?.parentsFor?.['start-a-conversation']?.[0]?.title).toBe('QA')
+    expect(read?.dms).toEqual([NAMELESS_DM, UNTAGGED_DM, DM, GROUP_DM].map((d) => `39000:${RELAY}:${d}`))
+  })
+
+  it('names each DM after the people in it, as People does — the other person, or the others joined', async () => {
+    queryRelay.mockImplementation(relayOver(world(peek)))
+    const read = await creatableUnderAsViewer(39000, URL, token)
+
+    // Newest first: the nameless one, the roster-named one, the one-to-one, the group.
+    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['QA', 'DM', 'Dan Ito', 'Bob Ellis', 'Bob Ellis, Cara'])
   })
 
   it('offers each creation once — Ship’s New project and Leaf’s New document beside the Folder’s two — each into Folders only', async () => {
@@ -217,7 +243,7 @@ describe('when the relay refuses the Folder listing', () => {
     const read = await creatableUnderAsViewer(39000, URL, token)
 
     expect(read?.actions.map((a) => a.id)).toEqual(['start-a-conversation'])
-    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['DM', 'Group DM (3)'])
+    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['DM', 'Dan Ito', 'Bob Ellis', 'Bob Ellis, Cara'])
   })
 
   it('offers nothing when there is no DM either, rather than a picker with nowhere to go', async () => {

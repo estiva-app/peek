@@ -126,6 +126,8 @@ const WORLD: TestEvent[] = [
   event({ kind: 30890, tags: [['d', QA]] }),
   event({ kind: 39000, tags: [['d', RECORD], ['name', 'project-5d1e8f9a']] }),
   event({ kind: 39000, tags: [['d', DM], ['name', 'DM'], ['t', 'dm'], ['p', ME], ['p', OTHER]] }),
+  // The other person's profile, which names the DM in the picker as on People (REC-1).
+  event({ kind: 0, pubkey: OTHER, content: JSON.stringify({ display_name: 'Bob Ellis' }) }),
 ]
 
 function relayOver(world: TestEvent[]) {
@@ -189,7 +191,7 @@ beforeEach(() => {
 })
 
 describe('the launcher, with Peek’s listing claiming no Folder and no message', () => {
-  it('offers Start a conversation and Create topic once each, and Folders and the DM to start one in, never a record channel', async () => {
+  it('offers Start a conversation and Create topic once each, and Folders and the DM — named after the person — to start one in, never a record channel', async () => {
     open()
     const actions = await screen.findByRole('group', { name: 'Actions' })
     expect(await within(actions).findAllByRole('option', { name: /Start a conversation/ })).toHaveLength(1)
@@ -197,7 +199,7 @@ describe('the launcher, with Peek’s listing claiming no Folder and no message'
 
     await userEvent.click(within(actions).getByRole('option', { name: /Start a conversation/ }))
     await userEvent.click(await screen.findByRole('combobox'))
-    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['QA', 'DM'])
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['QA', 'Bob Ellis'])
     // Called what it was called while Peek declared it: its picker holds DMs too, which are no Folder.
     expect(screen.getByRole('combobox', { name: /topic/i })).toBeInTheDocument()
   })
@@ -209,7 +211,7 @@ describe('the launcher, with Peek’s listing claiming no Folder and no message'
   })
 
   it('starts a conversation in a DM there, as the DM’s own message', async () => {
-    await startConversation('DM', 'Lunch at one?')
+    await startConversation('Bob Ellis', 'Lunch at one?')
 
     const [message] = signed()
     expect(signed()).toHaveLength(1)

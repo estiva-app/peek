@@ -33,7 +33,8 @@ import { publishSigned, queryRelay, signViaEstivaId, type QueryLane } from './br
 import { readFrom, type ReadSource } from './readFrom'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
-import { dmChannelFilters, dmChannelsOf, dmConversationsOf, KIND_CHANNEL_MEMBERS } from './dms'
+import { dmChannelFilters, dmChannelsOf, dmConversationsOf, dmPeopleOf, KIND_CHANNEL_MEMBERS, unnamedDmsOf } from './dms'
+import { profilesOf } from './workspacePeople'
 import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
   decodeNevent,
@@ -1352,6 +1353,24 @@ export function commentedFileOf(event: SignedEvent): string | null {
 }
 
 /**
+ * The viewer's DMs, named after the people in them as People names them
+ * (`profilesOf`) — Start a conversation's picker (REC-1). Three reads at most:
+ * the DMs, the rosters of any that name nobody, and the others' profiles.
+ * A refused roster or profile read costs names, never the DM.
+ */
+async function dmConversationsAsViewer(query: QueryFn, me: string): Promise<{ address: string; title: string }[]> {
+  const metadata = (await query(dmChannelFilters(me))) as SignedEvent[]
+  const unnamed = unnamedDmsOf(metadata)
+  const members = unnamed.length
+    ? ((await query([{ kinds: [KIND_CHANNEL_MEMBERS], '#d': unnamed }]).catch(() => [])) as SignedEvent[])
+    : []
+  const others = dmPeopleOf(metadata, me, members)
+  const profiles = others.length ? ((await query([{ kinds: [0], authors: others }]).catch(() => [])) as SignedEvent[]) : []
+  const names = new Map([...profilesOf(profiles)].map(([pubkey, profile]) => [pubkey, profile.name]))
+  return dmConversationsOf(metadata, me, names, members)
+}
+
+/**
  * Ship's object-creating actions, from its live manifest, and the objects a new
  * one could hang under (PRO-4).
  *
@@ -1382,7 +1401,8 @@ export function commentedFileOf(event: SignedEvent): string | null {
  * Every creation on a Folder goes in one, so its choices are the Folders a
  * person navigates by (`topLevelFolders`) — `parentsFor`, keyed by action id —
  * and not the newest `kind:39000`s, which include DMs and record channels.
- * Start a conversation adds the person's DMs after the Folders, named in `dms`.
+ * Start a conversation adds the person's DMs after the Folders, named in `dms`
+ * and after the people in them.
  */
 export async function creatableUnderAsViewer(
   parentKind: number,
@@ -1440,9 +1460,9 @@ export async function creatableUnderAsViewer(
   const conversation = borrowed.find(isStartConversation)
   const [listed, dmRead] = await Promise.allSettled([
     listFolders(query),
-    conversation ? query(dmChannelFilters(token.pubkey)) : Promise.resolve([]),
+    conversation ? dmConversationsAsViewer(query, token.pubkey) : Promise.resolve([]),
   ])
-  const dms = dmRead.status === 'fulfilled' ? dmConversationsOf(dmRead.value) : []
+  const dms = dmRead.status === 'fulfilled' ? dmRead.value : []
   if (dmRead.status === 'rejected') console.warn('[nostr] listing DMs to start a conversation in failed:', dmRead.reason)
   const withDms = (folders: { address: string; title: string }[]) =>
     conversation && dms.length > 0

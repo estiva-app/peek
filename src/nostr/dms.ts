@@ -88,27 +88,65 @@ export function dmChannelsOf(
   return byPartner
 }
 
-/**
- * Every DM the viewer is in — one-to-one and group — as somewhere to start a
- * conversation from the launcher, newest first.
- *
- * Not {@link dmChannelsOf}: People keys a DM by its one partner and so drops a
- * group DM, and the launcher's picker always listed both, by the name the
- * relay gave the channel ("DM", "Group DM (3)"). An archived one is not
- * somewhere to write.
- */
-export function dmConversationsOf(metadata: readonly SignedEvent[]): { address: string; title: string }[] {
+/** The newest `39000` of each DM the viewer is in and has not archived, newest first. */
+function liveDms(metadata: readonly SignedEvent[]): SignedEvent[] {
   const seen = new Set<string>()
-  const out: { address: string; title: string }[] = []
+  const out: SignedEvent[] = []
   for (const event of [...metadata].sort((a, b) => b.created_at - a.created_at)) {
     if (!tagValues(event, 't').includes('dm')) continue
     const uuid = tagValues(event, 'd')[0]
     if (!uuid || seen.has(uuid)) continue
     seen.add(uuid)
-    if (event.tags.some((t) => t[0] === 'archived')) continue
-    out.push({ address: `${KIND_CHANNEL_METADATA}:${event.pubkey}:${uuid}`, title: tagValues(event, 'name')[0] ?? 'DM' })
+    if (!event.tags.some((t) => t[0] === 'archived')) out.push(event)
   }
   return out
+}
+
+/** Everyone but the viewer in a DM: its `p` tags, or its `39002` roster for one that names nobody. */
+function othersIn(event: SignedEvent, me: string, rosters: ReadonlyMap<string | undefined, string[]>): string[] {
+  const participants = tagValues(event, 'p')
+  return [...new Set((participants.length ? participants : (rosters.get(tagValues(event, 'd')[0]) ?? [])).filter((p) => p !== me))]
+}
+
+const rostersOf = (members: readonly SignedEvent[]) => new Map(members.map((m) => [tagValues(m, 'd')[0], tagValues(m, 'p')]))
+
+/** The DMs whose `39000` names no participant, whose `39002` must — see {@link dmConversationsOf}. */
+export function unnamedDmsOf(metadata: readonly SignedEvent[]): string[] {
+  return untaggedDms(liveDms(metadata))
+}
+
+/** The people besides the viewer in any of their DMs — whose names {@link dmConversationsOf} needs. */
+export function dmPeopleOf(metadata: readonly SignedEvent[], me: string, members: readonly SignedEvent[] = []): string[] {
+  const rosters = rostersOf(members)
+  return [...new Set(liveDms(metadata).flatMap((event) => othersIn(event, me, rosters)))]
+}
+
+/**
+ * Every DM the viewer is in — one-to-one and group — as somewhere to start a
+ * conversation from the launcher, newest first.
+ *
+ * Not {@link dmChannelsOf}: People keys a DM by its one partner and so drops a
+ * group DM, and the launcher's picker lists both. Each is named after the
+ * people in it, by the name People and the sidebar give them (`names`, from
+ * `profilesOf`): the other person, or the others joined (Miky, REC-1). A DM
+ * with somebody who has no name yet keeps the relay's ("DM", "Group DM (3)"),
+ * since a key is not a name. An archived one is not somewhere to write.
+ */
+export function dmConversationsOf(
+  metadata: readonly SignedEvent[],
+  me: string,
+  names: ReadonlyMap<string, string>,
+  members: readonly SignedEvent[] = [],
+): { address: string; title: string }[] {
+  const rosters = rostersOf(members)
+  return liveDms(metadata).map((event) => {
+    const others = othersIn(event, me, rosters).map((p) => names.get(p))
+    const named = others.length > 0 && others.every((n): n is string => !!n)
+    return {
+      address: `${KIND_CHANNEL_METADATA}:${event.pubkey}:${tagValues(event, 'd')[0]}`,
+      title: named ? (others as string[]).join(', ') : (tagValues(event, 'name')[0] ?? 'DM'),
+    }
+  })
 }
 
 /** DM channels whose `39000` names no participant, so the `39002` must. */
