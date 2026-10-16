@@ -146,3 +146,17 @@ export function messageEmptyState(state: MessageSearchState, query: string): str
         : 'No messages matched — message search needs a whole word.'
   }
 }
+
+/**
+ * The sentence the Files section adds (SUM-7), or `null`. Only a search that
+ * did not happen is said: "nothing matched" is the launcher's own empty line,
+ * and signing in is already asked by the messages' line.
+ */
+export function fileEmptyState(state: MessageSearchState): string | null {
+  if (state.kind !== 'failed' || state.failure === 'not_a_member') return null
+  return state.failure === 'refused'
+    ? 'The relay refused the file search, so files are not included.'
+    : state.failure === 'rate_limited'
+      ? 'The relay is busy, so files are not included. Try again in a moment.'
+      : 'Could not reach the relay, so files are not included.'
+}
