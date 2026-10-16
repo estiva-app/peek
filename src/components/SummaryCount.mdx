@@ -1,0 +1,40 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/SummaryCount" />
+
+# SummaryCount
+
+The line under a summary field once the text runs past about 240 characters: how
+many it is, and that one or two sentences read best. A warning, never a refusal
+(SPEC §6.12; Miky, 15 October, on the short-summary prototype).
+
+**Seen in** — *Topics/StartTopicDialog*, as **A long summary**; in a topic's
+Details, under the Summary field while it is being edited.
+
+## When
+
+- Under any field where a file's summary is typed: Start a topic's Summary, and
+  Details' Summary while editing.
+
+## When not
+
+- To stop a save. Nothing is refused for length; the count only says it.
+- For Start a topic's whole Summary field, label and helper included: that is
+  **SummaryField**, which draws this under its box.
+
+## How
+
+```tsx
+import { SummaryCount } from '@/components/SummaryField'
+
+<Textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
+<SummaryCount text={draft} />
+```
+
+## What it owns
+
+- **The count as a person counts it**: the text as it would be saved, on one
+  line and trimmed, letter by letter (`summaryLength`), so a run of spaces or a
+  line break does not tip it over.
+- **The threshold and the words**, so Start a topic and Details say the same
+  thing at the same length, as Ship's summary field does.

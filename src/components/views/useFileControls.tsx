@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { reloadFoldersOnScreen, useForeignObjects, useMembership } from '@/api'
+import { reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -132,6 +132,8 @@ export function useFileControls({
 } {
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
+  // The Desk's Open work draws this tab's held copy of a file: asked again after a rename or a summary change, its row shows it.
+  const reloadHeld = useReloadHeldObject()
   const { showToast } = useToast()
   const membership = useMembership()
   /*
@@ -436,6 +438,7 @@ export function useFileControls({
         ? { ...current, file: { ...file, slots: { ...file.slots, title: { ...file.slots.title, value: title } } } }
         : current,
     )
+    if (file.address) void reloadHeld(file.address)
     onRenamed?.(file)
     return null
   }
@@ -459,6 +462,7 @@ export function useFileControls({
       const actions = file.actions.map((a) => (a === action ? { ...a, current: summary } : a))
       return { ...current, file: { ...file, slots, actions } }
     })
+    if (file.address) void reloadHeld(file.address)
     onRenamed?.(file)
     return null
   }
