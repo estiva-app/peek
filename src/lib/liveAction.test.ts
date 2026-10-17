@@ -151,20 +151,17 @@ describe('a Folder’s built-ins: Create topic and Start a conversation (INT-12,
         noun: 'folder',
         parentsFor: {
           'create-file': [{ address: '39000:relay:qa', title: 'QA' }],
-          'start-a-conversation': [
-            { address: '39000:relay:qa', title: 'QA' },
-            { address: DM, title: 'A DM' },
-          ],
+          'start-a-conversation': [{ address: DM, title: 'A DM' }],
         },
         dms: [DM],
       },
     ],
   ])
 
-  it('are offered by the app that may sign them — a conversation in Folders and DMs, a topic in Folders — and by no other', () => {
+  it('are offered by the app that may sign them — a conversation in DMs, a topic in Folders — and by no other', () => {
     const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
     expect(peek.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label), c.dms])).toEqual([
-      ['start-a-conversation', 'topic', ['QA', 'A DM'], [DM]],
+      ['start-a-conversation', 'topic', ['A DM'], [DM]],
       ['create-file', 'Folder', ['QA'], undefined],
     ])
     expect(creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)).toEqual([])

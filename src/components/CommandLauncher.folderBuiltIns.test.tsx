@@ -195,7 +195,7 @@ beforeEach(() => {
 })
 
 describe('the launcher, with Peek’s listing claiming no Folder and no message', () => {
-  it('offers Start a conversation and Create topic once each, and Folders and the DM — named after the person — to start one in, never a record channel', async () => {
+  it('offers Start a conversation and Create topic once each, and only the DM — named after the person — to start one in, never a Folder nor a record channel', async () => {
     open()
     const actions = await screen.findByRole('group', { name: 'Actions' })
     expect(await within(actions).findAllByRole('option', { name: /Start a conversation/ })).toHaveLength(1)
@@ -203,16 +203,17 @@ describe('the launcher, with Peek’s listing claiming no Folder and no message'
 
     await userEvent.click(within(actions).getByRole('option', { name: /Start a conversation/ }))
     await userEvent.click(await screen.findByRole('combobox'))
-    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['QA', 'Bob Ellis'])
-    // Called what it was called while Peek declared it: its picker holds DMs too, which are no Folder.
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['Bob Ellis'])
+    // Called what it was called while Peek declared it: its picker holds DMs, which are no Folder.
     expect(screen.getByRole('combobox', { name: /topic/i })).toBeInTheDocument()
   })
 
-  it('starts a conversation in a Folder as a kind:9 carrying only the Folder', async () => {
-    await startConversation('QA', 'Shall we split the release?')
-
-    expect(signed()).toEqual([expect.objectContaining({ kind: 9, pubkey: ME, tags: [['h', QA]], content: 'Shall we split the release?' })])
-    expect(published()).toEqual(['f'.repeat(64)])
+  it('does not offer Start a conversation to a person with no DM, and still offers Create topic', async () => {
+    queryRelay.mockImplementation(relayOver(WORLD.filter((e) => !e.tags.some((t) => t[0] === 't' && t[1] === 'dm'))))
+    open()
+    const actions = await screen.findByRole('group', { name: 'Actions' })
+    expect(await within(actions).findByRole('option', { name: /Create topic/ })).toBeInTheDocument()
+    expect(within(actions).queryByRole('option', { name: /Start a conversation/ })).not.toBeInTheDocument()
   })
 
   it('starts a conversation in a DM there, as the DM’s own message', async () => {

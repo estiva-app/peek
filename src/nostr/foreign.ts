@@ -1401,8 +1401,9 @@ async function dmConversationsAsViewer(query: QueryFn, me: string): Promise<{ ad
  * Every creation on a Folder goes in one, so its choices are the Folders a
  * person navigates by (`topLevelFolders`) — `parentsFor`, keyed by action id —
  * and not the newest `kind:39000`s, which include DMs and record channels.
- * Start a conversation adds the person's DMs after the Folders, named in `dms`
- * and after the people in them.
+ * Start a conversation is the exception: its choices are the person's DMs
+ * only, named in `dms` and after the people in them, and with none it is not
+ * offered.
  */
 export async function creatableUnderAsViewer(
   parentKind: number,
@@ -1450,44 +1451,46 @@ export async function creatableUnderAsViewer(
   if (parentKind !== KIND_CHANNEL_METADATA || borrowed.length === 0) return { ...resolved, parents }
 
   /*
-    Start a conversation is the Folder's (SPEC §3.2, interop 0.58), offered
-    only on a Folder with state — and Peek's picker also lists the person's
-    DMs beside them (Miky, REC-1: Start a conversation stays mainly Peek's).
-    A DM is not a Folder, so it is read here by Peek's own chat code and a
-    conversation started in one is Peek's message (`dms`), not the Folder's
-    action. Asked beside the listing, so neither waits for the other.
+    Start a conversation is the Folder's built-in (SPEC §3.2, interop 0.58),
+    and Peek offers it in the person's DMs only. A DM is not a Folder, so it is
+    read here by Peek's own chat code and a conversation started in one is
+    Peek's message (`dms`), not the Folder's action. With no DM it is not
+    offered. Every other creation on a Folder goes into the Folders, from the
+    listing, asked beside the DMs so neither waits for the other.
   */
+  // Not into a Folder: Peek has no screen for a Folder's own chat, so it could not be read (parked, Miky 2026-10-17, REC-1 2726532e).
   const conversation = borrowed.find(isStartConversation)
+  const others = borrowed.filter((a) => a !== conversation)
   const [listed, dmRead] = await Promise.allSettled([
-    listFolders(query),
+    others.length > 0 ? listFolders(query) : Promise.resolve([]),
     conversation ? dmConversationsAsViewer(query, token.pubkey) : Promise.resolve([]),
   ])
   const dms = dmRead.status === 'fulfilled' ? dmRead.value : []
   if (dmRead.status === 'rejected') console.warn('[nostr] listing DMs to start a conversation in failed:', dmRead.reason)
-  const withDms = (folders: { address: string; title: string }[]) =>
-    conversation && dms.length > 0
-      ? { parentsFor: { [conversation.id]: [...folders, ...dms] }, dms: dms.map((dm) => dm.address) }
-      : {}
+  const inDms = conversation && dms.length > 0 ? conversation : undefined
+  const actions = resolved.actions.filter((a) => a !== conversation || inDms)
+  const conversationParents = inDms ? { [inDms.id]: dms } : {}
+  const dmAddresses = inDms ? { dms: dms.map((dm) => dm.address) } : {}
 
   if (listed.status === 'rejected') {
     /*
       Which channels are Folders is the listing's to say, so a refused one
-      costs every Folder row — but not Start a conversation in a DM, which
-      needs none of it. It stays while there is a DM to start one in.
+      costs every creation that needs a Folder — but not Start a conversation,
+      which goes into DMs.
     */
     console.warn('[nostr] listing Folders for a creation on one failed:', listed.reason)
-    const kept = resolved.actions.filter((a) => !a.declaredBy || (a === conversation && dms.length > 0))
-    return { ...resolved, actions: kept, parents, ...withDms([]) }
+    const kept = actions.filter((a) => !a.declaredBy || a === conversation)
+    return { ...resolved, actions: kept, parents, parentsFor: conversationParents, ...dmAddresses }
   }
   const folders = topLevelFolders(listed.value).flatMap((folder) =>
     folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
   )
-  const extra = withDms(folders)
   return {
     ...resolved,
+    actions,
     parents,
-    parentsFor: { ...Object.fromEntries(borrowed.map((a) => [a.id, folders])), ...extra.parentsFor },
-    ...(extra.dms ? { dms: extra.dms } : {}),
+    parentsFor: { ...Object.fromEntries(others.map((a) => [a.id, folders])), ...conversationParents },
+    ...dmAddresses,
   }
 }
 
