@@ -30,15 +30,28 @@ function storedShape(value: unknown): LoadingShape | undefined {
   }
 }
 
-let held: Map<string, LoadingShape> | undefined
+/**
+ * A card's shape, and the height it drew at in px. The height is what holds a
+ * summary of two lines: the kit clamps a summary to two, and its placeholder
+ * has room for one (17 Oct, 114 → 134 px on production).
+ */
+export type CardShape = LoadingShape & { height?: number }
 
-function shapes(): Map<string, LoadingShape> {
+function storedCardShape(value: unknown): CardShape | undefined {
+  const shape = storedShape(value)
+  const height = (value as { height?: unknown } | undefined)?.height
+  return shape && typeof height === 'number' && height > 0 && height < 2000 ? { ...shape, height: Math.round(height) } : shape
+}
+
+let held: Map<string, CardShape> | undefined
+
+function shapes(): Map<string, CardShape> {
   if (held) return held
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
     held = new Map()
     for (const entry of Array.isArray(stored) ? stored : []) {
-      const shape = Array.isArray(entry) && typeof entry[0] === 'string' ? storedShape(entry[1]) : undefined
+      const shape = Array.isArray(entry) && typeof entry[0] === 'string' ? storedCardShape(entry[1]) : undefined
       if (shape) held.set(entry[0] as string, shape)
     }
   } catch {
@@ -54,11 +67,11 @@ function shapes(): Map<string, LoadingShape> {
  * not-available memory beside it (`unavailableCards`), and cleared with the
  * rest of the device's copy (`deviceCopy`).
  */
-export function cardShapeOf(reference: string, kind: LinkedKind): LoadingShape | undefined {
+export function cardShapeOf(reference: string, kind: LinkedKind): CardShape | undefined {
   return shapes().get(reference) ?? FIRST_DRAW[kind]
 }
 
-export function noteCardShape(reference: string, shape: LoadingShape): void {
+export function noteCardShape(reference: string, shape: CardShape): void {
   const current = shapes()
   // Already the card drawn last, as it is now: nothing to move or write.
   if ([...current.keys()].at(-1) === reference && JSON.stringify(current.get(reference)) === JSON.stringify(shape)) return
