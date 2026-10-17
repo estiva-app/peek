@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { CardUnder, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkState, type LoadingShape } from '@estiva-app/ui'
 import { useConversationBadges } from '@/api'
@@ -8,7 +8,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { filePath } from '@/lib/objectUrl'
 import { openConversation } from '@/lib/threadOpener'
 import { referenceTypeWord } from '@/lib/textParsing'
-import { cardShapeOf, noteCardShape } from '@/lib/cardShapes'
+import { cardShapeOf, noteCardShape, type CardShape } from '@/lib/cardShapes'
 import { rememberedUnavailable } from '@/lib/unavailableCards'
 import { Reference } from './Reference'
 import { useHeldCard } from './useHeldCard'
@@ -129,12 +129,14 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
   }, [busy, onAct])
 
   let link: LinkState | null
+  let loadingShape: CardShape | undefined
   const notAvailable: LinkState = { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
   if (object === 'loading') {
     // Found not available the last time this device asked: its one-line row from the first paint, not a card's height (OPT-10).
     // Otherwise a placeholder of the card's own height, so the conversation does not move as it loads.
     const kind = linkedKindOf(uri)
-    link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: compact ? undefined : cardShapeOf(naddr, kind) }
+    loadingShape = rememberedUnavailable(naddr) || compact ? undefined : cardShapeOf(naddr, kind)
+    link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: loadingShape }
   } else if (object === null) {
     // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
     link = gone || rememberedUnavailable(naddr) ? notAvailable : null
@@ -149,15 +151,31 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
         : {}),
     })
   }
+  /*
+    The drawn card's shape and height, kept for its placeholder next time. The
+    height holds what the shape cannot say: a summary the kit wraps to two lines.
+  */
   const shape = !compact && link?.state === 'ready' ? loadingShapeOf(link.linked) : undefined
   const shapeKey = shape && JSON.stringify(shape)
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (shapeKey) noteCardShape(naddr, JSON.parse(shapeKey) as LoadingShape)
+    const card = box.current?.firstElementChild
+    if (!shapeKey || !card) return
+    const drawn = JSON.parse(shapeKey) as LoadingShape
+    const note = () => {
+      const height = Math.round(card.getBoundingClientRect().height)
+      noteCardShape(naddr, height > 0 ? { ...drawn, height } : drawn)
+    }
+    note()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(note)
+    observer.observe(card)
+    return () => observer.disconnect()
   }, [naddr, shapeKey])
   if (!link) return null
   return (
     <LinkClicks block>
-      <div data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr}>
+      <div ref={box} data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr} style={loadingShape?.height ? { minHeight: loadingShape.height } : undefined}>
         {compact ? <LinkRow link={link} /> : <CardUnder link={link} />}
         {error && (
           <FieldLine tone="error" className="mt-1">

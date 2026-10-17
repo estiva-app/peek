@@ -79,6 +79,19 @@ describe('an issue card under a message keeps its height while it loads', () => 
     expect(placeholderLines(again.container)).toBe(3)
   })
 
+  it('holds the height it drew at last time, which a summary wrapped to two lines needs (17 Oct, 114 → 134 px)', async () => {
+    const issue = issueNaddr('issue-4')
+    const measured = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 134 } as DOMRect)
+    resolveObject.mockResolvedValue(object('issue-4', 'A summary long enough to wrap onto a second line in the card.'))
+    const first = render(<MessageCard uri={`nostr:${issue}`} />)
+    await waitFor(() => expect(first.container.textContent).toContain('A summary long enough'))
+    first.unmount()
+    measured.mockRestore()
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    const again = render(<MessageCard uri={`nostr:${issue}`} />)
+    expect((again.container.querySelector('[data-card]') as HTMLElement).style.minHeight).toBe('134px')
+  })
+
   it('draws "not available." from the first paint for a card this device found not available', async () => {
     const issue = issueNaddr('issue-3')
     resolveObject.mockResolvedValue({ ...object('issue-3'), unreachable: true, noun: 'issue' })
