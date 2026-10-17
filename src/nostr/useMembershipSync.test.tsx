@@ -20,7 +20,7 @@ vi.mock('./mutes', () => ({
   fetchMutes: (...args: unknown[]) => (args[1] === 'copy' ? Promise.resolve({ state: 'unreachable' }) : relay.fetchMutes(...args)),
 }))
 vi.mock('./bridge', () => ({ signViaEstivaId: relay.signViaEstivaId, publishSigned: relay.publishSigned }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'c'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'c'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
 
 import { useMembershipSync } from './useMembershipSync'

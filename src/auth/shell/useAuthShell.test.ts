@@ -44,7 +44,7 @@ function storeLiveToken({ withRefreshToken = true } = {}) {
 function stubRefresh(response: { ok: boolean; body?: Record<string, unknown> }) {
   const calls: unknown[] = []
   globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
-    calls.push(JSON.parse(init?.body ?? '{}'))
+    calls.push(Object.fromEntries(new URLSearchParams(init?.body ?? '')))
     return { ok: response.ok, status: response.ok ? 200 : 400, json: async () => response.body ?? {} }
   }) as never
   return calls

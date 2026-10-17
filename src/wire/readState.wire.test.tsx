@@ -22,6 +22,7 @@ vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: tr
 vi.mock('@/auth/estivaId', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/auth/estivaId')>()),
   validToken: () => ({ accessToken: 'wire-token', pubkey: 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' }),
+  storedToken: () => ({ accessToken: 'wire-token', pubkey: 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' }),
 }))
 
 const FOLDER = '05bebd5b-1b6e-4f47-9d3e-6b7a1c2d3e4f'

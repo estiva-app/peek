@@ -117,7 +117,7 @@ const FRONTIER = {
   merged: new Proxy({}, { get: () => 1_786_999_000 }) as Record<string, number>,
 }
 vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }), storedToken: () => ({ pubkey: 'me' }) }))
 
 const publish = vi.fn<(next: { snoozed: Record<string, number>; dismissed: Record<string, number> }) => Promise<void>>(
   async () => undefined,

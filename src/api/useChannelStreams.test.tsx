@@ -28,7 +28,7 @@ vi.mock('@/nostr/bridge', () => ({
     return { ok: true, events }
   },
 }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: viewer.pubkey, accessToken: 't' }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: viewer.pubkey, accessToken: 't' }), storedToken: () => ({ pubkey: viewer.pubkey, accessToken: 't' }) }))
 const viewer = vi.hoisted(() => ({ pubkey: 'c'.repeat(64) }))
 vi.mock('./foreign', () => {
   // Stable per viewer: a fresh function per render re-runs every effect.

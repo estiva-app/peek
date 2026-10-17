@@ -21,8 +21,9 @@
  *
  * So signing out here signs you out of every Estiva app. That is a deliberate
  * decision rather than an inherited one — see PEEK-122 for the trade-off, and
- * for the one thing it does not do: tokens already issued live up to an hour,
- * so another app's *already-open* tab keeps working until its token expires.
+ * for the one thing it does not do: tokens already issued live out their
+ * lifetime (Estiva ID's policy, read from `expires_in`), so another app's
+ * *already-open* tab keeps working until its token expires.
  */
 import { useCallback } from 'react'
 import { beginSignOut } from './estivaId'

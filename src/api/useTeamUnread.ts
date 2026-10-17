@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
 import { useMembership } from '@/api'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { useLiveClient } from '@/nostr/useLiveClient'
 import { relayFailureKind } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
@@ -183,7 +183,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     // has said what the person is a member of (§11.8): an unknown set is not
     // an empty one, and judging over it would put every dot out and then relight.
     if (!frontier.ready || membership.state === 'unknown') return { unread, member: memberIn }
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     for (const folder of ids) {
       const messages = placed.streams[folder]
       memberIn[folder] = teamHasMemberStream(messages ?? [], membership.isMember)
@@ -239,7 +239,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       membership: membership.state,
       termsOf: membership.termsOf,
       isMentioned: membership.isMentioned,
-      me: validToken()?.pubkey,
+      me: heldToken()?.pubkey,
       held: { at: placed.at, streams: placed.streams },
       horizonSeconds: HORIZON_SECONDS,
       result: judged,

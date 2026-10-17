@@ -49,7 +49,7 @@ const frontier = vi.hoisted(() => ({
   version: 0,
   listeners: new Set<() => void>(),
 }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }), storedToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/nostr/useReadStateSync', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {

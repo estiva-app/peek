@@ -41,7 +41,7 @@
  * no other way to find out.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validToken } from '@/auth/estivaId'
+import { heldToken, useSessionResumed } from '@/auth/heldSession'
 import type { RelaySeam } from './openWork'
 import { type InstantMap, type ScreenerBlob, fetchScreener, publishScreener, screenerToPublish } from './screener'
 
@@ -73,15 +73,18 @@ export interface ScreenerSync {
 
 function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
   if (!relayUrl) return null
-  // Asked at call time, never cached: `validToken()` is null during every silent
-  // renewal, and a snapshot taken at mount disables publishing for a whole page
-  // load once it goes stale (PEEK-108).
-  const token = validToken()
+  // Asked at call time, never cached: a snapshot taken at mount disables
+  // publishing for a whole page load once it goes stale (PEEK-108). The held
+  // token, so a page opened offline on an expired one still reads the device
+  // copy; its relay read fails at `/sign` and counts as unreachable (AUT-3).
+  const token = heldToken()
   if (!token) return null
   return { relayUrl, accessToken: token.accessToken, pubkey: token.pubkey }
 }
 
 export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSync {
+  // Read again once a renewal ends a stretch on an expired token (AUT-3).
+  const resumed = useSessionResumed()
   const [relayBlob, setRelayBlob] = useState<ScreenerBlob | undefined>(undefined)
   const [cachedBlob, setCachedBlob] = useState<ScreenerBlob | undefined>(undefined)
   const [state, setState] = useState<ScreenerState>('unknown')
@@ -129,7 +132,7 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
     return () => {
       cancelled = true
     }
-  }, [relayUrl])
+  }, [relayUrl, resumed])
 
   const publish = useCallback(
     async (next: { snoozed: InstantMap; dismissed: InstantMap }) => {

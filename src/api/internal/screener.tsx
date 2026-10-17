@@ -49,7 +49,7 @@ import { useChannelStreams } from '@/api/useChannelStreams'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { useMembership } from '@/api/internal/membership'
 import { useForeignObjects } from '@/api/foreign'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { useScreenerSync } from '@/nostr/useScreenerSync'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
@@ -334,7 +334,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     // is absent, and absent reads as "new" for every member file — and every
     // DM — at once.
     if (!frontier.ready) return { items: [], previews }
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     const horizonSeconds = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
     const dmRows = foldDmScreenerRows(
@@ -433,7 +433,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       termsOf: membership.termsOf,
       isMentioned: membership.isMentioned,
       isUrgent: membership.isUrgent,
-      me: validToken()?.pubkey,
+      me: heldToken()?.pubkey,
       nowSeconds: Math.floor(now / 1000),
       horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
     })

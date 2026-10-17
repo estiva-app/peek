@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LiveClient } from '@estiva-app/platform'
 import type { RelayState, SignedEvent } from '@estiva-app/protocol'
 
-vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => null, storedToken: () => null }))
 vi.mock('./liveTopics', () => ({ getLiveClient: () => null }))
 
 import {

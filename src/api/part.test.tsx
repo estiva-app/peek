@@ -8,7 +8,7 @@ import { render, waitFor } from '@testing-library/react'
 const resolve = vi.hoisted(() => vi.fn())
 const paused = vi.hoisted(() => ({ ms: 0 }))
 vi.mock('./relayUrl', () => ({ RELAY_URL: 'https://estiva.example', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
 vi.mock('@/nostr/relayBudget', () => ({ relayBudget: { pausedForMs: () => paused.ms } }))
 vi.mock('@/nostr/foreign', () => ({
   resolveObjectAsViewer: resolve,

@@ -103,7 +103,7 @@ vi.mock('@/api/foreign', () => {
   }
   return { useForeignObjects: () => objects }
 })
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }), storedToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 /**
  * Present, and holding both signals: the wide filter the dot now rides
  * (FOL-40), and the projection's `onForeignActivity`, which the Folder's own

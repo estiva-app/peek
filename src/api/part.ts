@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react'
 import { KIND, resolveCommentAnchor, resolvePart, type Block, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { absenceAsViewer, blockLinkAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
 import { relayBudget } from '@/nostr/relayBudget'
 import { RELAY_URL, hasRelay } from './relayUrl'
@@ -61,7 +61,7 @@ export interface PartPointerView {
 
 /** Read one part once, as the signed-in viewer. Null when nobody is signed in. */
 async function readPart(pointer: PartPointerView): Promise<PartView | null> {
-  const token = validToken()
+  const token = heldToken()
   if (!RELAY_URL || !token) return null
   const object = await resolveObjectAsViewer(pointer.address, RELAY_URL, token)
   // `unreachable` is interop's stand-in for an address the read could not see

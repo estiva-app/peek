@@ -298,6 +298,18 @@ try {
   // PROBE_HOOK=<url>: `window.__probeHook(query)` GETs `<url><query>` from node and returns the text, for a run
   // that needs another process mid-way (probe-switch's QA-2 post). A page fetch of 127.0.0.1 is blocked by Chromium.
   if (process.env.PROBE_HOOK) await page.exposeFunction('__probeHook', (query) => fetch(`${process.env.PROBE_HOOK}${query}`).then((r) => r.text()))
+  // `await __probeIdDown(true)` in an `--eval`: every page's fetches to Estiva ID fail as with no network, until
+  // `__probeIdDown(false)` (AUT-3's offline open). `/sign` goes with it, so the relay cannot be read either.
+  // Navigations still pass, so a page that leaves for Estiva ID shows in `pages`.
+  let idDown = false
+  await context.exposeBinding('__probeIdDown', (_source, on) => {
+    idDown = Boolean(on)
+    return idDown
+  })
+  await context.route(
+    (url) => url.origin === idOrigin.origin,
+    (route) => (idDown && !route.request().isNavigationRequest() ? route.abort('internetdisconnected') : route.fallback()),
+  )
   await page.goto(new URL(options.url, options.base).href)
   report.signedIn = await signedIn(page)
   report.url = page.url()

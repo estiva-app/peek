@@ -96,6 +96,8 @@ export const {
   redirectUri,
   completeSignIn,
   refreshAccessToken,
+  renew,
+  scheduleRenewal,
   storedToken,
   validToken,
   beginSignOut,
