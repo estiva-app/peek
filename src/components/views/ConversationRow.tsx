@@ -22,6 +22,8 @@ interface ConversationRowProps {
   readOnly: boolean
   /** The same object on every render — the view's — so it never re-draws a row by itself. */
   actions: RowHandlers
+  /** The file whose conversation this is: an edit linking it adds no card (§13.6.2). */
+  writtenOn?: string
 }
 
 /**
@@ -31,7 +33,7 @@ interface ConversationRowProps {
  * identity. Without this, one new message re-drew every card of a long topic.
  */
 export const ConversationRow = memo(
-  function ConversationRow({ c, hasNewReply, isSelected, readOnly, actions }: ConversationRowProps) {
+  function ConversationRow({ c, hasNewReply, isSelected, readOnly, actions, writtenOn }: ConversationRowProps) {
     return (
       <ConversationCard
         authorName={c.authorName}
@@ -60,6 +62,7 @@ export const ConversationRow = memo(
         onBodyChange={(b) => actions.editBody(c.id, b)}
         onFilesChange={(f) => actions.editFiles(c.id, f)}
         onEmbedsChange={(e) => actions.editEmbeds(c.id, e)}
+        writtenOn={writtenOn}
         readOnly={readOnly}
         onClick={readOnly && !c.replyCount ? undefined : () => actions.onOpenThread(c.id)}
         onReply={() => actions.onOpenThread(c.id)}
@@ -73,5 +76,6 @@ export const ConversationRow = memo(
     before.isSelected === after.isSelected &&
     before.readOnly === after.readOnly &&
     before.actions === after.actions &&
+    before.writtenOn === after.writtenOn &&
     (before.c === after.c || JSON.stringify(before.c) === JSON.stringify(after.c)),
 )

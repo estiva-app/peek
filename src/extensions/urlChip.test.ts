@@ -2,8 +2,8 @@
 /**
  * An app link in Peek's message box — OPT-19 (Miky, 14 Oct). It reads as its
  * chip, pasted or typed, and the message keeps the URL; Ctrl+Z gives the URL
- * back; a block link, a URL no app claims and a URL over selected words stay
- * links. Pasted through `view.pasteText`, ProseMirror's own paste path, with
+ * back; a block link reads as its file's chip (Decided 16 Oct, 4136f999); a
+ * URL no app claims and a URL over selected words stay links. Pasted through `view.pasteText`, ProseMirror's own paste path, with
  * Peek's link mark (its autolink and paste rule) in the editor.
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,9 +11,12 @@ import { Editor } from '@tiptap/core'
 import { LinkChips, ReferenceNode } from '@estiva-app/ui/editor'
 import { peekStarterKit } from './editorKit'
 import { serializeTiptapToText } from '@/lib/textParsing'
+import { linkTargetOf } from '@/lib/boxCard'
+import { referenceOfLink, type PartPointer } from '@estiva-app/protocol'
 
 const ISSUE_URL = 'https://ship.estiva.app/issue/live-widget-probe-marker-b389d20f-b741-4ba8-a28f-97cac351c4c9'
-const ISSUE_URI = 'nostr:naddr1example'
+const BLOCK_URL = `${ISSUE_URL}#block-8373a025427f`
+const ISSUE = `30851:${'a'.repeat(64)}:b389d20f-b741-4ba8-a28f-97cac351c4c9`
 
 let editor: Editor | undefined
 afterEach(() => {
@@ -21,9 +24,11 @@ afterEach(() => {
   editor = undefined
 })
 
-function setup() {
+/** Peek's `LinkChips`, its resolver answering only for the issue and whatever `blockOf` names. */
+function setup({ blockOf = () => undefined }: { blockOf?: (url: string) => PartPointer | undefined } = {}) {
+  const target = (url: string) => linkTargetOf(url, { resolveLink: (u) => (u === ISSUE_URL ? ISSUE : undefined), blockOf })
   editor = new Editor({
-    extensions: [peekStarterKit, ReferenceNode, LinkChips.configure({ referenceOf: (url) => (url === ISSUE_URL ? ISSUE_URI : undefined), ask: null })],
+    extensions: [peekStarterKit, ReferenceNode, LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, target), ask: null })],
     content: '<p></p>',
   })
   return editor
@@ -70,12 +75,14 @@ describe('an app link in the message box (OPT-19)', () => {
     expect(chips(e)).toEqual([ISSUE_URL])
   })
 
-  it('a block link and a URL no app claims stay links', () => {
-    const e = setup()
-    paste(e, `${ISSUE_URL}#block-8373a025427f`)
+  it('a pasted block link becomes its file chip and is sent as the link; a URL no app claims stays a link', () => {
+    // Peek's rule (`knownLinkTarget`): a link to one block reads as its file (Decided 16 Oct).
+    const e = setup({ blockOf: (url) => (url === BLOCK_URL ? { address: ISSUE, block: '8373a025427f' } : undefined) })
+    paste(e, BLOCK_URL)
     e.commands.insertContent(' ')
     paste(e, 'https://example.com/x')
-    expect(chips(e)).toEqual([])
+    expect(chips(e)).toEqual([BLOCK_URL])
+    expect(serializeTiptapToText(e)).toBe(`${BLOCK_URL} https://example.com/x`)
   })
 
   it('a URL pasted over selected words is a link on them, not a chip', () => {

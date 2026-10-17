@@ -648,6 +648,28 @@ describe('a channel conversation (REM-1)', () => {
     expect(published.tags.filter((t) => t[0] === 'imeta')).toHaveLength(1)
     expect(published.tags.find((t) => t[0] === 'imeta')).toContain('x fff')
   })
+
+  it('✕ on a sent card is an edit carrying the whole folded set, that card none and the other kept (4136f999)', async () => {
+    const issue = `30851:${CATH}:f0b27d90-d5b9-40e7-8078-865ab36a421c`
+    const other = `30851:${CATH}:e0b27d90-d5b9-40e7-8078-865ab36a421c`
+    await editCommentAsViewer(
+      {
+        container: dmContainer,
+        targetEventId: picture.id,
+        body: 'Here it is',
+        embeds: [{ value: issue, layout: 'none' }, { value: other, layout: 'detailed' }],
+      },
+      'https://relay.test',
+      token,
+    )
+    const published = signed()
+    expect(published.kind).toBe(40003)
+    expect(published.content).toBe('Here it is')
+    expect(published.tags.filter((t) => t[0] === 'embed')).toEqual([
+      ['embed', issue, 'none'],
+      ['embed', other, 'detailed'],
+    ])
+  })
 })
 
 /*

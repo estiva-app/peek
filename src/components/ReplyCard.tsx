@@ -21,8 +21,9 @@ import { type ReactionData, type FileAttachment } from '@/api'
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightButton } from './ui/HighlightButton'
-import { CardButton } from './ui/CardButton'
-import { cardsToEdit, loadCards } from '@/extensions/cardChoices'
+import { BoxCardUnder } from './ui/BoxCard'
+import { useBoxCard } from './ui/useBoxCard'
+import { withoutCard } from '@/lib/boxCard'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
 import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
@@ -128,6 +129,8 @@ interface ReplyCardProps {
   onFilesChange?: (files: FileAttachment[]) => void
   /** The reply's card set after an edit changed it — OPT-17. */
   onEmbedsChange?: (embeds: Embed[]) => void
+  /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
+  writtenOn?: string
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   /** True when this reply triggered the parent conv's resolution (compose `→ msg` in the
    *  thread panel). When set, edit mode surfaces the resolution as a resolutionBlock so
@@ -181,6 +184,7 @@ export function ReplyCard({
   messageId,
   onFilesChange,
   onEmbedsChange,
+  writtenOn,
   onReactionsChange,
   ownsResolution = false,
   resolutionMsg,
@@ -319,6 +323,8 @@ export function ReplyCard({
   })
 
   editEditorRef.current = editEditor
+  // The edit's own default card: only for a file it links first (§13.6.2).
+  const editBox = useBoxCard(isEditing ? editEditor : null, { here: writtenOn, previousBody: bodyState })
 
   useEffect(() => {
     if (!editEditor) return
@@ -349,8 +355,6 @@ export function ReplyCard({
         })
       }
       editEditor.commands.setContent(content)
-      // The cards come back from the folded tags, as in ConversationCard (OPT-17).
-      loadCards(editEditor, embeds)
       setTimeout(() => editEditor.commands.focus('end'), 0)
     } else {
       editEditor.commands.clearContent()
@@ -407,7 +411,8 @@ export function ReplyCard({
     const nextFiles = editAttachments.result()
     if (nextFiles) onFilesChange?.(nextFiles)
     editAttachments.commit()
-    const nextCards = cardsToEdit(editEditor, embeds)
+    // A file this edit links first gets its card, in the same edit (§13.6.2).
+    const nextCards = editBox.toEdit(embeds)
     if (nextCards) onEmbedsChange?.(nextCards)
     setIsEditing(false)
   }
@@ -507,7 +512,6 @@ export function ReplyCard({
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
                     <HighlightButton editor={editEditor} container={editBoxRef} />
-                    <CardButton editor={editEditor} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
@@ -527,6 +531,10 @@ export function ReplyCard({
                   </div>
                 </div>
               </div>
+            </div>
+            {/* A file this edit links first: its card, as Save will add it, with its ✕. */}
+            <div className="mt-2 pl-8 empty:hidden">
+              <BoxCardUnder box={editBox} parts={false} />
             </div>
           </div>
         ) : (
@@ -573,7 +581,18 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} />
+              <MessageBody
+                body={bodyState}
+                nostrReferences={nostrReferences}
+                nostrBlockId={nostrBlockId}
+                resolvedObjects={resolvedObjects}
+                urgentMentions={urgentMentions}
+                parts={parts}
+                embeds={embeds}
+                authorName={authorName}
+                // The author's ✕, offered where Edit is: an edit with that card `none` and every other kept (§13.6.2).
+                onRemoveCard={isOwnMessage && !readOnly && onEmbedsChange ? (value) => onEmbedsChange(withoutCard(embeds, value)) : undefined}
+              />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a
