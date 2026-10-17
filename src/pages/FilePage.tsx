@@ -5,12 +5,11 @@ import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
-import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder } from '@/api'
+import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder, useRememberFile } from '@/api'
 import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
-import { rememberRecent } from '@/lib/recents'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
 /**
@@ -158,13 +157,9 @@ export function FilePage() {
     so a topic started since #194, which is a bare file and opens here, was
     never recent. Written once the file has resolved, with the title the
     header shows, since a file has no live list the launcher could read a
-    title from (`lib/recents`).
+    title from (`lib/recents`) — and its summary and an issue's project (SUM-7).
   */
-  const resolvedAddress = file?.address
-  const fileTitle = file?.slots.title?.value
-  useEffect(() => {
-    if (resolvedAddress && fileTitle) rememberRecent({ kind: 'file', id: resolvedAddress, title: fileTitle })
-  }, [resolvedAddress, fileTitle])
+  useRememberFile(file)
 
   /*
     A link to a comment lands on the comment (FOL-36) — `ObjectPage`'s and the

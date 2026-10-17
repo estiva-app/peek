@@ -36,7 +36,8 @@ import {
   unregisterActiveConversation,
   unregisterTopicConversation,
 } from '@/lib/conversationRegistry'
-import { ReferenceSourcesSync, referenceSections, subscribeReferences, useReferenceFolder } from './references'
+import { resetRecentsForTests } from '@/lib/recents'
+import { ReferenceSourcesSync, referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
 
 const AUTHOR = 'a'.repeat(64)
 const EVENT = (n: number) => String(n).repeat(64).slice(0, 64)
@@ -133,5 +134,64 @@ describe('referenceSections', () => {
     unsubscribe()
     sync.unmount()
     relay.pubkey = 'v'.repeat(64)
+  })
+
+  it('gives a file with a summary its second line, and one without none (SUM-7)', async () => {
+    relay.files.mockImplementation(async (_files, tier) => [
+      { ...file(30851, 'with', 'Quarter close', tier, 'Finance'), summary: 'Check the Q4 numbers before Friday' },
+      file(30840, 'without', 'Launch notes', tier),
+    ])
+    const folder = renderHook(() => useReferenceFolder({ files: [] } as never, null))
+    await waitFor(() => expect(referenceSections('')[1].items).toHaveLength(2))
+    const items = referenceSections('')[1].items
+    const withSummary = items.find((i) => i.label === 'Quarter close')
+    const without = items.find((i) => i.label === 'Launch notes')!
+    expect(withSummary).toMatchObject({ label: 'Quarter close', summary: 'Check the Q4 numbers before Friday', description: 'Finance' })
+    expect(without.summary).toBeUndefined()
+    folder.unmount()
+  })
+})
+
+describe('useRememberFile — the launcher’s Recent (SUM-7)', () => {
+  const opened = (summary?: string) =>
+    ({ address: address(30851, 'open'), kind: 30851, slots: { title: { value: 'Quarter close' }, ...(summary ? { subtitle: { value: summary } } : {}) } }) as never
+  const stored = () => JSON.parse(window.localStorage.getItem('estiva-peek:recents') ?? '[]')[0]
+  beforeEach(() => {
+    window.localStorage.removeItem('estiva-peek:recents')
+    resetRecentsForTests()
+  })
+
+  it('remembers an opened file with its summary and an issue’s project, and reads it once per change, not per refresh', async () => {
+    relay.files.mockImplementation(async (_files, tier) => [
+      { ...file(30851, 'open', 'Quarter close', tier, 'Finance'), summary: 'Check the Q4 numbers' },
+    ])
+    const hook = renderHook(({ f }) => useRememberFile(f), { initialProps: { f: opened('Check the Q4 numbers') } })
+    await waitFor(() => expect(stored()).toMatchObject({ kind: 'file', id: address(30851, 'open'), title: 'Quarter close', summary: 'Check the Q4 numbers', caption: 'Finance' }))
+    // A refresh of the same file hands over a new object: nothing is read again.
+    hook.rerender({ f: opened('Check the Q4 numbers') })
+    expect(relay.files).toHaveBeenCalledTimes(1)
+    hook.unmount()
+  })
+
+  it('remembers a file with no summary by its title alone, as before', async () => {
+    relay.files.mockImplementation(async (_files, tier) => [file(30840, 'open', 'Quarter close', tier)])
+    renderHook(() => useRememberFile(opened()))
+    await waitFor(() => expect(stored()).toEqual({ kind: 'file', id: address(30851, 'open'), title: 'Quarter close' }))
+  })
+
+  it('lists the file as soon as it opens, even if the person leaves before the relay answers', () => {
+    relay.files.mockImplementation(() => new Promise(() => {}))
+    const hook = renderHook(() => useRememberFile(opened('Check the Q4 numbers')))
+    hook.unmount()
+    expect(stored()).toMatchObject({ kind: 'file', id: address(30851, 'open'), title: 'Quarter close' })
+  })
+
+  it('asks again on the next refresh when the read failed, and then shows the summary', async () => {
+    relay.files.mockRejectedValueOnce(new Error('429'))
+    relay.files.mockImplementation(async (_files, tier) => [{ ...file(30851, 'open', 'Quarter close', tier, 'Finance'), summary: 'Check the Q4 numbers' }])
+    const hook = renderHook(({ f }) => useRememberFile(f), { initialProps: { f: opened('Check the Q4 numbers') } })
+    await waitFor(() => expect(relay.files).toHaveBeenCalledTimes(1))
+    hook.rerender({ f: opened('Check the Q4 numbers') })
+    await waitFor(() => expect(stored()).toMatchObject({ summary: 'Check the Q4 numbers', caption: 'Finance' }))
   })
 })

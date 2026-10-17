@@ -6,10 +6,10 @@ import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, reloadFoldersOnScreen, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
+import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
-import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { fileEmptyState, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -202,6 +202,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     results were never shown, and the relay was asked anyway on every pause.
   */
   const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
+  const { state: fileState, hits: fileHits } = useFileSearch(level.kind === 'first' ? query : '')
 
   const { creatableUnder, applyAction, startConversationInDm, resolveObject } = useForeignObjects()
   const { setMember } = useMembership()
@@ -750,9 +751,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     topic's circle is never a status — a recent does not know whether the topic
     is resolved — so it is an icon like the others, not a mark of its own.
   */
-  const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
+  /*
+    With a summary, it is the second line and an issue's project moves up beside
+    the title, as `[` draws it; without one, an issue's project is the second
+    line, and anything else is the title alone (SUM-7, the SearchRow story).
+  */
+  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
+    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
     icon: icon(FILE_ICONS[fileGlyphOfAddress(f.id)]),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
@@ -946,28 +953,43 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       }
     })
 
+    /*
+      Files whose title holds what was typed (SUM-7), found and ranked as `[`
+      finds them — the best match first, an open one before a closed or
+      archived one — and never the file already open, as Recent skips it.
+    */
+    const fileRows = fileHits
+      .filter((hit) => !(openFileRef && refNamesFile(openFileRef, hit.id)))
+      .slice(0, 5)
+      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
+
     const searching = messageState.kind === 'searching'
     const messageNote = searching ? null : messageEmptyState(messageState, query)
+    // One relay that failed both searches is said once, by the messages' line.
+    const fileNote = messageState.kind === 'failed' ? null : fileEmptyState(fileState)
     const groups: CommandPaletteGroup[] = [
       { label: 'Apps', rows: apps },
       ...(sentence ? [ask] : []),
       { label: 'This conversation', rows: changes },
       { label: 'People', rows: peopleHits },
       { label: 'Actions', rows: actionHits },
+      { label: 'Files', rows: fileRows },
       { label: 'Messages', rows: messageRows },
       ...(!sentence ? [ask] : []),
     ]
     const anyRows = groups.some((g) => g.rows.length > 0)
+    const searchingFiles = fileState.kind === 'searching'
     return {
       groups,
-      pending: searching ? 'Searching messages…' : undefined,
+      pending: searching ? 'Searching messages…' : searchingFiles ? 'Searching files…' : undefined,
       notes: [
+        ...(fileNote ? [fileNote] : []),
         // A plain "No messages matched" says nothing new beside rows that did match;
         // the whole-word hint does, mid-word, where a flat "none" would be wrong.
         ...(messageNote && !(anyRows && messageNote === 'No messages matched.') ? [messageNote] : []),
         ...(unroutable > 0 ? [`${unroutable} more in conversations not in your sidebar.`] : []),
       ],
-      empty: !anyRows && !searching ? `Nothing is called “${typed}”. Try a person or an app.` : undefined,
+      empty: !anyRows && !searching && !searchingFiles ? `Nothing is called “${typed}”. Try a person or an app.` : undefined,
     }
   }
 

@@ -23,13 +23,19 @@ import { useSyncExternalStore } from 'react'
  * written with the id, as it was when the file was opened, and refreshed the
  * next time it is: a rename shows after the next visit, and a deleted file
  * stays until it is forgotten or the row is picked and the page says so.
+ *
+ * Its summary and an issue's project ride along by the same rule (SUM-7): as
+ * they were when it was last opened.
  */
 
 export type Recent =
   | { kind: 'topic'; id: string }
   | { kind: 'person'; id: string }
-  /** `id` is the file's address — `<kind>:<pubkey>:<d>`, what `filePath` takes. */
-  | { kind: 'file'; id: string; title: string }
+  /**
+   * `id` is the file's address — `<kind>:<pubkey>:<d>`, what `filePath` takes.
+   * `summary` is the file's own (SPEC §6.12); `caption` is an issue's project.
+   */
+  | { kind: 'file'; id: string; title: string; summary?: string; caption?: string }
 
 const KEY = 'estiva-peek:recents'
 /** More than the launcher shows, so a forgotten or unreachable one leaves a next one behind it. */
@@ -41,10 +47,11 @@ const listeners = new Set<() => void>()
 /** What storage holds is whatever was written there once; only a well-formed entry is a recent. */
 function isRecent(r: unknown): r is Recent {
   if (typeof r !== 'object' || r === null) return false
-  const { kind, id, title } = r as { kind?: unknown; id?: unknown; title?: unknown }
+  const { kind, id, title, summary, caption } = r as { kind?: unknown; id?: unknown; title?: unknown; summary?: unknown; caption?: unknown }
   if (typeof id !== 'string') return false
   if (kind === 'topic' || kind === 'person') return true
-  return kind === 'file' && typeof title === 'string'
+  const optional = (value: unknown) => value === undefined || typeof value === 'string'
+  return kind === 'file' && typeof title === 'string' && optional(summary) && optional(caption)
 }
 
 function read(): Recent[] {
@@ -73,14 +80,23 @@ const same = (a: Pick<Recent, 'kind' | 'id'>, b: Pick<Recent, 'kind' | 'id'>) =>
 
 /**
  * Put this one first. Opening it again moves it up rather than listing it
- * twice — and, for a file, brings its title up to date, which is the only
- * refresh a stored title gets.
+ * twice — and, for a file, brings its title, summary and project up to date,
+ * which is the only refresh they get.
  */
 export function rememberRecent(recent: Recent) {
   const current = read()
   const first = current[0]
-  if (first && same(first, recent) && (first.kind !== 'file' || recent.kind !== 'file' || first.title === recent.title)) return
+  const unchanged =
+    first?.kind !== 'file' ||
+    recent.kind !== 'file' ||
+    (first.title === recent.title && first.summary === recent.summary && first.caption === recent.caption)
+  if (first && same(first, recent) && unchanged) return
   write([recent, ...current.filter((r) => !same(r, recent))].slice(0, KEEP))
+}
+
+/** The file's entry as it was last remembered, or undefined. */
+export function rememberedFile(id: string): Extract<Recent, { kind: 'file' }> | undefined {
+  return read().find((r): r is Extract<Recent, { kind: 'file' }> => r.kind === 'file' && r.id === id)
 }
 
 export function forgetRecent(recent: Pick<Recent, 'kind' | 'id'>) {

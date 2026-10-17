@@ -11,7 +11,7 @@
  * and kept fresh by the components that can read the relay; a search answer
  * landing tells the open list to draw again (`subscribeReferences`).
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/editor'
 import {
   FILE_TIER,
@@ -21,8 +21,9 @@ import {
   referenceSearch,
   type ReferenceCandidate,
 } from '@estiva-app/conversation'
-import { KIND_BARE_FILE, type FolderContents } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type FolderContents, type ForeignObject } from '@estiva-app/interop'
 import { referenceConversations, type ConversationMessage } from '@/lib/conversationRegistry'
+import { rememberedFile, rememberRecent } from '@/lib/recents'
 import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { fileCandidatesAsViewer, searchFileReferencesAsViewer } from '@/nostr/foreign'
@@ -103,7 +104,15 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
     return { id: candidate.id, label: candidate.title, snippet: candidate.caption, uri: candidate.uri, search: candidate.search }
   }
   // The title alone: the row's icon says what it is (Katerina, 7 October), so "Topic:" before it said it twice.
-  return { id: candidate.id, label: candidate.title, snippet: '', uri: candidate.uri, description: candidate.caption || undefined }
+  // A file's summary is the row's second line, and an issue's project moves up beside its title (SUM-7).
+  return {
+    id: candidate.id,
+    label: candidate.title,
+    snippet: '',
+    uri: candidate.uri,
+    description: candidate.caption || undefined,
+    summary: candidate.summary,
+  }
 }
 
 /** The two sections `[` draws for what was typed. */
@@ -204,4 +213,49 @@ export function ReferenceSourcesSync() {
   }, [key, viewer])
 
   return null
+}
+
+/**
+ * Puts the file on screen first in the launcher's Recent (FOL-36), with the
+ * title the header shows, its summary, and an issue's project (SUM-7) — the
+ * row `[` would draw for it, so the two read alike. An issue's project costs
+ * one read, and only when the address, title or summary changed, never on a
+ * refresh of the same file.
+ *
+ * The file goes first as soon as its title is known, with what was last
+ * remembered for it, so leaving before the read answers still lists it. The
+ * answer then brings the summary and project up to date while it is still
+ * the file open; a file `[` does not offer is its title alone, as before, and
+ * a read that fails keeps what was there and is asked again on the next refresh.
+ */
+export function useRememberFile(file: ForeignObject | null | undefined) {
+  const viewer = useRelayViewer()
+  const remembered = useRef('')
+  useEffect(() => {
+    const id = file?.address
+    const title = file?.slots.title?.value
+    if (!file || !id || !title) return
+    const key = `${id}\n${title}\n${file.slots.subtitle?.value ?? ''}`
+    if (remembered.current === key) return
+    remembered.current = key
+    const known = rememberedFile(id)
+    const recent = (row: { summary?: string; caption?: string } | undefined) => ({
+      kind: 'file' as const,
+      id,
+      title,
+      ...(row?.summary ? { summary: row.summary } : {}),
+      ...(row?.caption ? { caption: row.caption } : {}),
+    })
+    rememberRecent(recent(known))
+    const v = viewer()
+    if (!v) return
+    fileCandidatesAsViewer([file], FILE_TIER.recent, v.relayUrl, v.token).then(
+      ([row]) => {
+        if (remembered.current === key) rememberRecent(recent(row))
+      },
+      () => {
+        if (remembered.current === key) remembered.current = ''
+      },
+    )
+  }, [file, viewer])
 }

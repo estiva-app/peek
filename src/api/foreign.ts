@@ -47,6 +47,7 @@ import {
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
   searchMessagesAsViewer,
+  searchFileReferencesAsViewer,
   threadsAsViewer,
   replyToCommentAsViewer,
   type ActResult,
@@ -59,6 +60,8 @@ import type { ReadSource } from '@/nostr/readFrom'
 import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
+import { rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
@@ -1163,5 +1166,50 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
       ? { kind: 'signed-out' }
       : (fresh?.state ?? { kind: 'searching' })
 
+  return { state, hits: fresh?.hits ?? [] }
+}
+
+/** How short a typed title is still not asked of the relay — `[`'s own floor. */
+const FILE_SEARCH_MIN = 2
+
+/**
+ * The launcher's Files (SUM-7, Miky at kickoff): the files whose current
+ * title holds what was typed, as `[`'s search tier finds them — each with its
+ * summary, and an issue with its project. Titles only, never a body. Asked
+ * after the same pause as messages, and only from two letters, as `[` asks;
+ * ranked as `[` ranks them, the best match and an open file first.
+ */
+export function useFileSearch(query: string): { state: MessageSearchState; hits: ReferenceCandidate[] } {
+  const viewer = useRelayViewer()
+  const [answer, setAnswer] = useState<{ term: string; state: MessageSearchState; hits: ReferenceCandidate[] } | null>(null)
+  const typed = query.trim()
+  const term = typed.length >= FILE_SEARCH_MIN ? typed : ''
+
+  useEffect(() => {
+    if (!term || !hasRelay) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      const v = viewer()
+      if (!v) {
+        if (!cancelled) setAnswer({ term, state: { kind: 'signed-out' }, hits: [] })
+        return
+      }
+      searchFileReferencesAsViewer(term, v.relayUrl, v.token)
+        .then((found) => rankReferences({ messages: [], files: found, query: term, ownKinds: [KIND_BARE_FILE], caps: { messages: 0, files: found.length } }).files)
+        .then((hits) => {
+          if (!cancelled) setAnswer({ term, state: { kind: 'done', count: hits.length }, hits })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setAnswer({ term, state: { kind: 'failed', failure: relayFailureKind(error) }, hits: [] })
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [term, viewer])
+
+  const fresh = answer?.term === term ? answer : null
+  const state: MessageSearchState = !term ? { kind: 'idle' } : !hasRelay ? { kind: 'signed-out' } : (fresh?.state ?? { kind: 'searching' })
   return { state, hits: fresh?.hits ?? [] }
 }
