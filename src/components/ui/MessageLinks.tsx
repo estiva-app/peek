@@ -17,7 +17,7 @@ import { useHeldCard } from './useHeldCard'
   A message's links, drawn by the kit (`@estiva-app/ui` 0.75): a chip in a
   sentence, a row alone on its line, the card its author chose under the
   message (why:
-  https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
   Peek adds what only it knows: where its own links land, and that a click on a
   link is not a click on the message around it.
 */

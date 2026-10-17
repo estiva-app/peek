@@ -10,7 +10,7 @@ import { previewText, referenceTypeWord } from '@/lib/textParsing'
   What a link stands for, as the kit's link widgets draw it (`@estiva-app/ui`
   0.75: LinkChip, LinkRow, LinkCard), built from interop's projection — the
   same object Peek's own card drew, mapped onto the shape Miky approved (why:
-  https://github.com/estiva-app/estiva-docs/blob/main/decisions/where-a-link-sits-and-which-file-gets-the-card.md).
+  https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md).
 */
 
 const COLOURS: readonly StatusColour[] = ['neutral', 'blue', 'green', 'muted']
