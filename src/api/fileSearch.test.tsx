@@ -50,6 +50,19 @@ describe('useFileSearch', () => {
     expect(result.current.hits.map((h) => h.title)).toEqual(['Ledger reconciliation', 'Old ledger notes'])
   })
 
+  it('while a new word is searched, shows none of the files the earlier word found', async () => {
+    relay.search.mockResolvedValueOnce([hit('rec', 'Ledger reconciliation')])
+    const { result, rerender } = renderHook(({ q }) => useFileSearch(q), { initialProps: { q: 'ledger' } })
+    await pause()
+    expect(result.current.hits).toHaveLength(1)
+
+    relay.search.mockImplementation(() => new Promise(() => {}))
+    rerender({ q: 'notes' })
+    await pause()
+    expect(result.current.state).toEqual({ kind: 'searching' })
+    expect(result.current.hits).toEqual([])
+  })
+
   it('asks the relay nothing for one letter', async () => {
     const { result } = renderHook(() => useFileSearch('l'))
     await pause()
