@@ -250,6 +250,18 @@ describe.each([
   })
 })
 
+describe('when the relay refuses the DM read', () => {
+  const dmRead = (f: Record<string, unknown>) => Array.isArray(f['#t']) && (f['#t'] as string[]).includes('dm')
+
+  it('drops Start a conversation rather than offer it with nowhere to go, and keeps the rest in Folders', async () => {
+    queryRelay.mockImplementation(relayOver(world(peekUnclaimed), dmRead))
+    const read = await creatableUnderAsViewer(39000, URL, token)
+
+    expect(read?.actions.map((a) => a.id)).toEqual(['create-file', 'add-document', 'add-project'])
+    for (const id of ['create-file', 'add-project', 'add-document']) expect(titles(read?.parentsFor?.[id])).toEqual(['QA'])
+  })
+})
+
 describe('when the relay refuses the Folder listing', () => {
   const listing = (f: Record<string, unknown>) => (f.kinds as number[] | undefined)?.includes(30890) === true && !f['#d']
 

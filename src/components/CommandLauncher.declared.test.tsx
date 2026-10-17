@@ -25,7 +25,7 @@
  * to stop the launcher making.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
@@ -112,7 +112,9 @@ const creatableUnder = vi.fn(async (parentKind: number) => {
       // A retired topic's channel, restored until FOL-25 deletes it — the
       // relay still lists it among the newest `39000`s (FOL-26).
       { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
-      // The person's DM, which Peek's picker lists beside their Folders (REC-1).
+      // The person's DM. The read gives Start a conversation DMs only (REC-1,
+      // 2026-10-17); the Folders here stand for an older read or a prefilled
+      // draft, which the launcher must still refuse at the send.
       { address: DM, title: 'DM' },
     ]
     return {
@@ -252,34 +254,37 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(screen.queryByRole('option', { name: 'Folders: Universal navigation concept' })).not.toBeInTheDocument()
   })
 
-  it('publishes a conversation into the topic that was picked', async () => {
-    /*
-      The positive assertion, which is the one this file went without for the
-      three dead rows: a suite of "must not publish" passes identically against
-      a form that cannot.
-
-      `value` carries the declared property and nothing else — the parent is not
-      a property, it travels as the address the runtime resolves the manifest
-      and the Folder from.
-    */
+  async function startIn(where: string) {
     await openLiveConversationForm()
-
     await userEvent.type(await screen.findByLabelText(/message/i), 'Shall we split PRO-18?')
     await userEvent.click(screen.getByLabelText(/topic/i))
     // By role: text also finds the option in the list before it has opened
     // (see `createIssue` in CommandLauncher.live.test.tsx).
-    await userEvent.click(await screen.findByRole('option', { name: 'Intelligence in Peek' }))
+    await userEvent.click(await screen.findByRole('option', { name: where }))
     // Exact, not a pattern: the form's chip carries a "Leave Start a
     // conversation" button that a loose match also finds.
     await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
+  }
 
-    expect(applyAction).toHaveBeenCalledTimes(1)
-    const call = applyAction.mock.calls[0]?.[0] as Parameters<typeof applyAction>[0] & { declaredBy?: string }
-    expect(call?.actionId).toBe('start-a-conversation')
-    expect(call?.value).toEqual({ message: 'Shall we split PRO-18?' })
-    expect(call?.naddr.startsWith('naddr')).toBe(true)
-    // The Folder's own action, built with the specification's manifest — Peek's declares none (REC-1).
-    expect(call?.declaredBy).toBe(FOLDER_ACTIONS_ADDRESS)
+  it('publishes a conversation into the DM that was picked, as the DM’s own message', async () => {
+    /*
+      The positive assertion, which is the one this file went without for the
+      three dead rows: a suite of "must not publish" passes identically against
+      a form that cannot.
+    */
+    await startIn('DM')
+
+    await waitFor(() => expect(startConversationInDm).toHaveBeenCalledTimes(1))
+    expect(startConversationInDm).toHaveBeenCalledWith({ channel: DM_ID, body: 'Shall we split PRO-18?' })
+    expect(applyAction).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing into a Folder, even one that reached the picker, and says where to start one (REC-1)', async () => {
+    // Peek has no screen for a Folder's own chat, so a message there could not be read (Miky, 2026-10-17).
+    await startIn('Intelligence in Peek')
+
+    expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
+    expect(applyAction).not.toHaveBeenCalled()
     expect(startConversationInDm).not.toHaveBeenCalled()
   })
 

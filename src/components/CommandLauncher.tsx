@@ -632,6 +632,11 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       setSubmitError('That topic has moved to a file. Open it from Topics and write there.')
       return
     }
+    // DMs only, also for a prefilled draft: Peek has no screen for a Folder's own chat (parked, Miky 2026-10-17, REC-1 2726532e).
+    if (action.id === 'start-a-conversation' && !action.dmParents?.includes(parent)) {
+      setSubmitError('Start a conversation in one of your DMs.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     /*

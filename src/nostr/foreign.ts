@@ -1480,8 +1480,10 @@ export async function creatableUnderAsViewer(
     */
     console.warn('[nostr] listing Folders for a creation on one failed:', listed.reason)
     const kept = actions.filter((a) => !a.declaredBy || a === conversation)
+    if (kept.length === 0) return null
     return { ...resolved, actions: kept, parents, parentsFor: conversationParents, ...dmAddresses }
   }
+  if (actions.length === 0) return null
   const folders = topLevelFolders(listed.value).flatMap((folder) =>
     folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
   )

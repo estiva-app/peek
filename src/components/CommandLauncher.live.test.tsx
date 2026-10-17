@@ -400,7 +400,7 @@ describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
             manifest: FOLDER_ACTIONS_ADDRESS,
             parentsFor: {
               'add-project': [{ address: QA_FOLDER, title: 'QA' }],
-              'start-a-conversation': [{ address: QA_FOLDER, title: 'QA' }, A_DM],
+              'start-a-conversation': [A_DM],
             },
             dms: [A_DM.address],
           }

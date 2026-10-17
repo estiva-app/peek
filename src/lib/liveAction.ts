@@ -196,9 +196,10 @@ export interface CreatableKindRead {
   /** An action's own choices, when they are not `parents` — any creation on a Folder. */
   parentsFor?: Record<string, { address: string; title: string }[]>
   /**
-   * The parents among Start a conversation's that are the person's DMs, by
-   * address: a conversation there is Peek's own message, not the Folder's
-   * action, since a DM is not a Folder (SPEC §3.2).
+   * Start a conversation's parents, which are the person's DMs only (REC-1,
+   * 2026-10-17), by address: a conversation there is Peek's own message, not
+   * the Folder's action, since a DM is not a Folder (SPEC §3.2). The launcher
+   * refuses to send one anywhere else.
    */
   dms?: string[]
 }
@@ -258,7 +259,7 @@ export function creationsFor(
         // The app's own noun for its own kind (INT-9); for another's, what that
         // kind's projection says, and a Folder is a Folder whoever draws it.
         // Start a conversation keeps the noun it had while Peek declared it:
-        // its picker holds DMs too, which are no Folder.
+        // its picker holds DMs, which are no Folder.
         parentNoun:
           builtIn && !conversation
             ? 'Folder'
