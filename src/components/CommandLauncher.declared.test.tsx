@@ -283,9 +283,10 @@ describe('an app is offered what it declares, and nothing else', () => {
     // Peek has no screen for a Folder's own chat, so a message there could not be read (Miky, 2026-10-17).
     await startIn('Intelligence in Peek')
 
-    expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
+    // The send is the click's first await, so by now either path would have been called.
     expect(applyAction).not.toHaveBeenCalled()
     expect(startConversationInDm).not.toHaveBeenCalled()
+    expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
   })
 
   it('offers nothing for an app that declares nothing, and says which app', async () => {
