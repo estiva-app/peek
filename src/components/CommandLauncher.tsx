@@ -753,12 +753,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   */
   /*
     With a summary, it is the second line and an issue's project moves up beside
-    the title, as `[` draws it; without one, the row is the title alone (SUM-7).
+    the title, as `[` draws it; without one, an issue's project is the second
+    line, and anything else is the title alone (SUM-7, the SearchRow story).
   */
   const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
-    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : {}),
+    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
     icon: icon(FILE_ICONS[fileGlyphOfAddress(f.id)]),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
@@ -953,19 +954,19 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     })
 
     /*
-      Files whose title holds what was typed (SUM-7), as `[` finds them. With
-      no summary, an issue's project is its second line, as in `[` and the
-      approved SearchRow story; a Recent row has no such line today and keeps
-      none.
+      Files whose title holds what was typed (SUM-7), found and ranked as `[`
+      finds them — the best match first, an open one before a closed or
+      archived one — and never the file already open, as Recent skips it.
     */
-    const fileRows = fileHits.slice(0, 5).map((hit) => {
-      const row = fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption })
-      return hit.summary || !hit.caption ? row : { ...row, description: hit.caption }
-    })
+    const fileRows = fileHits
+      .filter((hit) => !(openFileRef && refNamesFile(openFileRef, hit.id)))
+      .slice(0, 5)
+      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
 
     const searching = messageState.kind === 'searching'
     const messageNote = searching ? null : messageEmptyState(messageState, query)
-    const fileNote = fileEmptyState(fileState)
+    // One relay that failed both searches is said once, by the messages' line.
+    const fileNote = messageState.kind === 'failed' ? null : fileEmptyState(fileState)
     const groups: CommandPaletteGroup[] = [
       { label: 'Apps', rows: apps },
       ...(sentence ? [ask] : []),

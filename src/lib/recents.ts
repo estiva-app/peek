@@ -94,6 +94,11 @@ export function rememberRecent(recent: Recent) {
   write([recent, ...current.filter((r) => !same(r, recent))].slice(0, KEEP))
 }
 
+/** The file's entry as it was last remembered, or undefined. */
+export function rememberedFile(id: string): Extract<Recent, { kind: 'file' }> | undefined {
+  return read().find((r): r is Extract<Recent, { kind: 'file' }> => r.kind === 'file' && r.id === id)
+}
+
 export function forgetRecent(recent: Pick<Recent, 'kind' | 'id'>) {
   write(read().filter((r) => !same(r, recent)))
 }

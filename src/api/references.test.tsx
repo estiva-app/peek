@@ -178,4 +178,20 @@ describe('useRememberFile — the launcher’s Recent (SUM-7)', () => {
     renderHook(() => useRememberFile(opened()))
     await waitFor(() => expect(stored()).toEqual({ kind: 'file', id: address(30851, 'open'), title: 'Quarter close' }))
   })
+
+  it('lists the file as soon as it opens, even if the person leaves before the relay answers', () => {
+    relay.files.mockImplementation(() => new Promise(() => {}))
+    const hook = renderHook(() => useRememberFile(opened('Check the Q4 numbers')))
+    hook.unmount()
+    expect(stored()).toMatchObject({ kind: 'file', id: address(30851, 'open'), title: 'Quarter close' })
+  })
+
+  it('asks again on the next refresh when the read failed, and then shows the summary', async () => {
+    relay.files.mockRejectedValueOnce(new Error('429'))
+    relay.files.mockImplementation(async (_files, tier) => [{ ...file(30851, 'open', 'Quarter close', tier, 'Finance'), summary: 'Check the Q4 numbers' }])
+    const hook = renderHook(({ f }) => useRememberFile(f), { initialProps: { f: opened('Check the Q4 numbers') } })
+    await waitFor(() => expect(relay.files).toHaveBeenCalledTimes(1))
+    hook.rerender({ f: opened('Check the Q4 numbers') })
+    await waitFor(() => expect(stored()).toMatchObject({ summary: 'Check the Q4 numbers', caption: 'Finance' }))
+  })
 })

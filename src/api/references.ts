@@ -23,7 +23,7 @@ import {
 } from '@estiva-app/conversation'
 import { KIND_BARE_FILE, type FolderContents, type ForeignObject } from '@estiva-app/interop'
 import { referenceConversations, type ConversationMessage } from '@/lib/conversationRegistry'
-import { rememberRecent } from '@/lib/recents'
+import { rememberedFile, rememberRecent } from '@/lib/recents'
 import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { fileCandidatesAsViewer, searchFileReferencesAsViewer } from '@/nostr/foreign'
@@ -220,8 +220,13 @@ export function ReferenceSourcesSync() {
  * title the header shows, its summary, and an issue's project (SUM-7) — the
  * row `[` would draw for it, so the two read alike. An issue's project costs
  * one read, and only when the address, title or summary changed, never on a
- * refresh of the same file. A file `[` does not offer, or a read that fails,
- * is remembered by its title alone, as before.
+ * refresh of the same file.
+ *
+ * The file goes first as soon as its title is known, with what was last
+ * remembered for it, so leaving before the read answers still lists it. The
+ * answer then brings the summary and project up to date while it is still
+ * the file open; a file `[` does not offer is its title alone, as before, and
+ * a read that fails keeps what was there and is asked again on the next refresh.
  */
 export function useRememberFile(file: ForeignObject | null | undefined) {
   const viewer = useRelayViewer()
@@ -233,13 +238,24 @@ export function useRememberFile(file: ForeignObject | null | undefined) {
     const key = `${id}\n${title}\n${file.slots.subtitle?.value ?? ''}`
     if (remembered.current === key) return
     remembered.current = key
+    const known = rememberedFile(id)
+    const recent = (row: { summary?: string; caption?: string } | undefined) => ({
+      kind: 'file' as const,
+      id,
+      title,
+      ...(row?.summary ? { summary: row.summary } : {}),
+      ...(row?.caption ? { caption: row.caption } : {}),
+    })
+    rememberRecent(recent(known))
     const v = viewer()
-    const rows = v ? fileCandidatesAsViewer([file], FILE_TIER.recent, v.relayUrl, v.token) : Promise.resolve([])
-    void rows
-      .catch(() => [])
-      .then(([row]) => {
-        if (remembered.current !== key) return
-        rememberRecent({ kind: 'file', id, title, ...(row?.summary ? { summary: row.summary } : {}), ...(row?.caption ? { caption: row.caption } : {}) })
-      })
+    if (!v) return
+    fileCandidatesAsViewer([file], FILE_TIER.recent, v.relayUrl, v.token).then(
+      ([row]) => {
+        if (remembered.current === key) rememberRecent(recent(row))
+      },
+      () => {
+        if (remembered.current === key) remembered.current = ''
+      },
+    )
   }, [file, viewer])
 }

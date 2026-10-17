@@ -219,6 +219,15 @@ describe('Cmd+K finds a file by its title, with its summary (SUM-7)', () => {
     await type('ledger')
     expect(await screen.findByText(/files are not included/i)).toBeInTheDocument()
   })
+
+  it('says a relay that failed both searches once, not once per section', async () => {
+    messageSearch.mockReturnValue({ state: { kind: 'failed', failure: 'refused' }, hits: [] })
+    fileSearch.mockReturnValue({ state: { kind: 'failed', failure: 'refused' }, hits: [] })
+    open()
+    await type('ledger')
+    expect(await screen.findByText(/refused the search/i)).toBeInTheDocument()
+    expect(screen.queryByText(/files are not included/i)).toBeNull()
+  })
 })
 
 describe('Recent shows a file’s summary before anything is typed (SUM-7)', () => {
@@ -229,16 +238,18 @@ describe('Recent shows a file’s summary before anything is typed (SUM-7)', () 
       JSON.stringify([
         { kind: 'file', id: `30851:${AUTHOR}:a`, title: 'Ledger reconciliation', summary: SUMMARY, caption: 'Finance' },
         { kind: 'file', id: `30851:${AUTHOR}:b`, title: 'Ledger archive', caption: 'Finance' },
+        { kind: 'file', id: `30842:${AUTHOR}:c`, title: 'Ledger notes' },
       ]),
     )
     resetRecentsForTests()
   })
 
-  it('a file with a summary shows it, with an issue’s project; one without is today’s row, the title alone', async () => {
+  it('a file with a summary shows it, with an issue’s project; without one, an issue keeps its project, as under Files, and a page its title alone', async () => {
     open()
     expect(await screen.findByText('Recent')).toBeInTheDocument()
     expect(optionNamed('Ledger reconciliation').textContent).toContain(SUMMARY)
     expect(optionNamed('Ledger reconciliation').textContent).toContain('Finance')
-    expect(optionNamed('Ledger archive').textContent).not.toContain('Finance')
+    expect(optionNamed('Ledger archive').textContent).toContain('Finance')
+    expect(optionNamed('Ledger notes').textContent).not.toContain('Finance')
   })
 })
