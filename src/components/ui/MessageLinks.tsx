@@ -158,20 +158,30 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
   const shape = !compact && link?.state === 'ready' ? loadingShapeOf(link.linked) : undefined
   const shapeKey = shape && JSON.stringify(shape)
   const box = useRef<HTMLDivElement>(null)
+  const kindOfCard = linkedKindOf(uri)
   useEffect(() => {
     const card = box.current?.firstElementChild
     if (!shapeKey || !card) return
     const drawn = JSON.parse(shapeKey) as LoadingShape
+    // A card not on screen (a closed panel) measures 0: it keeps the height it last drew at.
     const note = () => {
       const height = Math.round(card.getBoundingClientRect().height)
-      noteCardShape(naddr, height > 0 ? { ...drawn, height } : drawn)
+      noteCardShape(naddr, height > 0 ? { ...drawn, height } : { ...drawn, height: cardShapeOf(naddr, kindOfCard)?.height })
     }
     note()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(note)
+    // A window being resized changes every card's height each frame: note it once it settles.
+    let settle: ReturnType<typeof setTimeout> | undefined
+    const observer = new ResizeObserver(() => {
+      clearTimeout(settle)
+      settle = setTimeout(note, 500)
+    })
     observer.observe(card)
-    return () => observer.disconnect()
-  }, [naddr, shapeKey])
+    return () => {
+      observer.disconnect()
+      clearTimeout(settle)
+    }
+  }, [naddr, shapeKey, kindOfCard])
   if (!link) return null
   return (
     <LinkClicks block>
