@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { RELAY_URL, hasRelay } from './relayUrl'
 import {
@@ -89,7 +90,7 @@ import type {
 export function useRelayViewer() {
   return useCallback(() => {
     const relayUrl = RELAY_URL
-    const token = validToken()
+    const token = heldToken()
     return relayUrl && token ? { relayUrl, token } : null
   }, [])
 }

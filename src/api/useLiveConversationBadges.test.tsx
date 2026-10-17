@@ -34,7 +34,7 @@ vi.mock('@/api', () => ({
 vi.mock('@/nostr/useReadStateSync', () => ({
   useReadFrontier: () => ({ ready: true, marker: () => undefined, merged: {} }),
 }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => null, storedToken: () => null }))
 vi.mock('./useChannelStreams', () => ({
   useChannelStreams: (channels: readonly string[]) => {
     api.tracked.push([...channels])

@@ -10,7 +10,7 @@ import type { SignedEvent } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'v'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'v'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'v'.repeat(64) }) }))
 
 const relay = vi.hoisted(() => ({
   titles: {} as Record<string, string>,

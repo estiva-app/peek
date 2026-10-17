@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { topicChannelFlags } from './topicUnread'
@@ -90,7 +90,7 @@ export function useTopicUnread(
     // Not judged until the first merge has landed: before that every marker is
     // absent, and "absent" would light the whole sidebar.
     if (!frontier.ready) return { unread, urgent }
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     for (const [id, folder] of pairs) {
       const messages = held.streams[folder]
       // Not asked about, or not answered yet: no entry, so no dot either way.

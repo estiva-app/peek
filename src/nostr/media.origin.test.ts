@@ -9,7 +9,7 @@ const sign = vi.hoisted(() => vi.fn())
 const fetchBlob = vi.hoisted(() => vi.fn())
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://estiva.example' }))
 vi.mock('./bridge', () => ({ signViaEstivaId: sign }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
 vi.mock('@estiva-app/protocol', () => ({ fetchBlob }))
 
 import { blobObjectUrl, clearBlobCache, safeBlobType } from './media'

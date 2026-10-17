@@ -30,7 +30,7 @@
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
 import { fileContext } from '@estiva-app/conversation'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import type { StreamTerms } from '@/api/streamUnread'
 import { authorOfAddress } from '@/nostr/membership'
 import { type MembershipState, useMembershipSync } from '@/nostr/useMembershipSync'
@@ -73,13 +73,14 @@ const INERT: MembershipSeam = {
 const MembershipContext = createContext<MembershipSeam | null>(null)
 
 /*
-  `validToken()` is null during every silent renewal (PEEK-108). A render in
-  that window must not read the viewer as nobody, or every dot goes out and
+  The held token, expired or not (AUT-3), so it is null only once signed out;
+  `validToken()` was null during every silent renewal (PEEK-108). A render in
+  such a window must not read the viewer as nobody, or every dot goes out and
   comes back: the last pubkey seen stands until a token says otherwise.
 */
 let lastPubkey: string | undefined
 function viewerPubkey(): string | undefined {
-  const pubkey = validToken()?.pubkey
+  const pubkey = heldToken()?.pubkey
   if (pubkey) lastPubkey = pubkey
   return lastPubkey
 }

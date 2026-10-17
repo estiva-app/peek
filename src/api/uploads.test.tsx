@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 vi.mock('./relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'p'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'p'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'p'.repeat(64) }) }))
 vi.mock('@/nostr/bridge', () => ({ signViaEstivaId: vi.fn() }))
 
 const uploadBlob = vi.fn()

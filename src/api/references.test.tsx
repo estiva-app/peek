@@ -12,7 +12,7 @@ import { render, renderHook, waitFor } from '@testing-library/react'
 import { FILE_TIER, messageReference, type ReferenceCandidate } from '@estiva-app/conversation'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: relay.pubkey }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: relay.pubkey }), storedToken: () => ({ accessToken: 't', pubkey: relay.pubkey }) }))
 
 const relay = vi.hoisted(() => ({
   pubkey: 'v'.repeat(64),

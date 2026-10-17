@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { useForeignObjects, useMembership } from '@/api'
-import { validToken } from '@/auth/estivaId'
+import { heldToken, useSessionResumed } from '@/auth/heldSession'
 import { fileContext, isCommentOn, isReply, THREAD_RULE_FROM } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
@@ -144,6 +144,8 @@ export function useConversationBadges(
   counts: Record<string, number>
   unread: Record<string, boolean>
 } {
+  // Read again once a renewal ends a stretch on an expired token (AUT-3).
+  const resumed = useSessionResumed()
   const { conversations } = useForeignObjects()
   const frontier = useReadFrontier()
   const membership = useMembership()
@@ -165,7 +167,7 @@ export function useConversationBadges(
         .join(','),
     [files],
   )
-  const holdKey = hold && key ? `${validToken()?.pubkey ?? ''} ${key}` : ''
+  const holdKey = hold && key ? `${heldToken()?.pubkey ?? ''} ${key}` : ''
   // A list come back to draws its last answer in its first render (OPT-4).
   const [held, setHeld] = useState<Record<string, ConversationMessage[]>>(
     () => (holdKey && heldBadges.peek(holdKey)?.value?.conversations) || {},
@@ -236,7 +238,7 @@ export function useConversationBadges(
     // `files` is deliberately not a dependency — `key` is its identity. Adding
     // it would restore the re-ask on every refresh that `key` exists to avoid.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, conversations, holdKey])
+  }, [key, conversations, holdKey, resumed])
 
   // The answer, with what the socket has said since (OPT-5).
   const current = useMemo(
@@ -256,7 +258,7 @@ export function useConversationBadges(
     const counts: Record<string, number> = {}
     const unread: Record<string, boolean> = {}
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
     for (const [ref, messages] of Object.entries(current)) {
       // Comments, not their replies, which are here for the dot (CON-34): the count `conversationCountsOf` gives.
