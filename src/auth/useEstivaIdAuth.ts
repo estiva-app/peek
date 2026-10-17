@@ -34,6 +34,16 @@ import { noteSessionResumed } from './heldSession'
 /** How long the way in waits for a renewal before entering on what the device holds. A renewal takes 100–300 ms. */
 export const RENEWAL_WAIT_MS = 3_000
 
+/**
+ * Whether a token due at `expiresAt` has really run out by now. The package
+ * sets `expiresAt` 30 s before the token's end, and a routine renewal lands
+ * within a second of it; one landing past the end followed a stretch with no
+ * live token, when relay reads failed.
+ */
+function ranOut(expiresAt: number | null): boolean {
+  return expiresAt !== null && Date.now() > expiresAt + 30_000
+}
+
 export function useEstivaIdAuth() {
   // Seeded synchronously: the token is already in storage on first render —
   // after the callback redirect, or another tab's sign-in — so there is no
@@ -42,9 +52,14 @@ export function useEstivaIdAuth() {
   // An expired token with a refresh token beside it: renewed before anything
   // is decided, and the shell is not shown meanwhile.
   const [renewing, setRenewing] = useState(() => expiresAt === null && Boolean(storedToken()?.refreshToken))
-  // Entered on an expired token: the renewal that ends it tells the reads that
-  // ran once per mount to read the relay again (`heldSession.ts`).
+  // Entered on an expired token, or a renewal that landed after the token had
+  // run out (asleep, offline, a throttled tab): the renewal that ends it tells
+  // the reads that ran meanwhile to read the relay again (`heldSession.ts`).
   const lapsed = useRef(false)
+  const expiry = useRef(expiresAt)
+  useEffect(() => {
+    expiry.current = expiresAt
+  }, [expiresAt])
 
   useEffect(() => {
     if (!renewing) return
@@ -122,11 +137,13 @@ export function useEstivaIdAuth() {
       }
       person.current ??= token?.pubkey
       // Another tab's renewal ends this one's stretch on an expired token too.
-      if (token && lapsed.current && token.expiresAt > Date.now()) {
+      if (token && token.expiresAt > Date.now() && (lapsed.current || ranOut(expiry.current))) {
         lapsed.current = false
         noteSessionResumed()
       }
-      setExpiresAt(token?.expiresAt ?? null)
+      // An expired token another tab wrote does not sign this tab in: only a
+      // tab already in renews one in place.
+      setExpiresAt((current) => (token && (current !== null || token.expiresAt > Date.now()) ? token.expiresAt : null))
     }
     window.addEventListener('storage', follow)
     return () => window.removeEventListener('storage', follow)
@@ -142,7 +159,7 @@ export function useEstivaIdAuth() {
     if (!signedIn) return
     const schedule = scheduleRenewal({
       onRenewed: (token) => {
-        if (lapsed.current) {
+        if (lapsed.current || ranOut(expiry.current)) {
           lapsed.current = false
           noteSessionResumed()
         }

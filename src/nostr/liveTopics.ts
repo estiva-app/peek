@@ -273,6 +273,17 @@ export function credentialMissing(): void {
   recordCredentialFailure('session_expired')
 }
 
+/**
+ * The socket's `/sign` failed. Estiva ID refusing the token is held for the
+ * grace period as before; no answer at all is not an ended sign-in either
+ * while a refresh token is held (the same reason as {@link credentialMissing}).
+ */
+export function signFailed(error: unknown): void {
+  const reason = reasonForSignFailure(error)
+  if (reason === 'network' && storedToken()?.refreshToken) return
+  recordCredentialFailure(reason)
+}
+
 function build(relayUrl: string): Wiring {
   const client = holder.get({
     relayUrl,
@@ -293,7 +304,7 @@ function build(relayUrl: string): Wiring {
       // The difference between "expired" and "this app cannot verify the
       // token" decides whether sending somebody to sign in again helps or
       // wastes their time.
-      onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
+      onSignFailure: signFailed,
     },
     log: relayLog,
     // The socket reader counts these frames against buzz's budget (OPT-2).

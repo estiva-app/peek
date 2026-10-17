@@ -134,6 +134,47 @@ describe('useEstivaIdAuth', () => {
     expect(resumed.result.current).toBe(before + 1)
   })
 
+  it('a token that ran out while offline mid-session tells the reads to ask the relay again once it renews', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: 60_000, refreshToken: 'r1' })
+    let online = false
+    globalThis.fetch = (async () => {
+      if (!online) throw new TypeError('Failed to fetch')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' }),
+      } as Response
+    }) as typeof fetch
+    const { result } = renderHook(() => useEstivaIdAuth())
+    const resumed = renderHook(() => useSessionResumed())
+    const before = resumed.result.current
+
+    // Due, then a minute with no network: the token's real end has passed.
+    await act(() => vi.advanceTimersByTimeAsync(120_000))
+    expect(result.current.isAuthenticated).toBe(true)
+    online = true
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
+    expect(resumed.result.current).toBe(before + 1)
+  })
+
+  it('a routine renewal before the token runs out does not make the reads ask again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: 60_000, refreshToken: 'r1' })
+    stubTokenEndpoint({ ok: true, body: { access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' } })
+    renderHook(() => useEstivaIdAuth())
+    const resumed = renderHook(() => useSessionResumed())
+    const before = resumed.result.current
+
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
+    expect(resumed.result.current).toBe(before)
+  })
+
   it('a renewal the network never answers does not hold a blank page: it enters on what the device holds', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     storeToken({ expiresInMs: -1000, refreshToken: 'r1' })
@@ -198,6 +239,15 @@ describe('one session for every tab (PEE-3)', () => {
     else localStorage.setItem(TOKEN_KEY, value)
     window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: value, storageArea: localStorage }))
   }
+
+  it('an expired token another tab writes does not sign in a tab that is out', () => {
+    const { result } = renderHook(() => useEstivaIdAuth())
+    expect(result.current.isAuthenticated).toBe(false)
+    act(() =>
+      otherTabWrites(JSON.stringify({ accessToken: 'old.token.sig', expiresAt: Date.now() - 60_000, pubkey: 'a'.repeat(64) })),
+    )
+    expect(result.current.isAuthenticated).toBe(false)
+  })
 
   it('another tab signing out drops this one to the shell at once', () => {
     storeToken()
