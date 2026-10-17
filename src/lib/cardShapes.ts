@@ -13,13 +13,34 @@ const FIRST_DRAW: Partial<Record<LinkedKind, LoadingShape>> = {
   issue: { subtitle: false, summary: false, footer: 'pickers' },
 }
 
+const FOOTERS: readonly unknown[] = ['pickers', 'people', 'line', 'none']
+
+/** A stored shape read back, only the parts a placeholder draws; anything else stored there is dropped. */
+function storedShape(value: unknown): LoadingShape | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const { subtitle, summary, rows, latest, ring, footer } = value as Record<string, unknown>
+  return {
+    subtitle: subtitle === true,
+    summary: summary === true,
+    // A project card lists at most a few of its issues; a bad number must not draw a page of bars.
+    rows: typeof rows === 'number' && Number.isInteger(rows) ? Math.min(Math.max(rows, 0), 10) : 0,
+    latest: latest === true,
+    ring: ring === true,
+    footer: FOOTERS.includes(footer) ? (footer as LoadingShape['footer']) : 'line',
+  }
+}
+
 let held: Map<string, LoadingShape> | undefined
 
 function shapes(): Map<string, LoadingShape> {
   if (held) return held
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
-    held = new Map(Array.isArray(stored) ? stored.filter((entry): entry is [string, LoadingShape] => Array.isArray(entry) && typeof entry[0] === 'string' && !!entry[1] && typeof entry[1] === 'object') : [])
+    held = new Map()
+    for (const entry of Array.isArray(stored) ? stored : []) {
+      const shape = Array.isArray(entry) && typeof entry[0] === 'string' ? storedShape(entry[1]) : undefined
+      if (shape) held.set(entry[0] as string, shape)
+    }
   } catch {
     held = new Map()
   }
@@ -39,7 +60,8 @@ export function cardShapeOf(reference: string, kind: LinkedKind): LoadingShape |
 
 export function noteCardShape(reference: string, shape: LoadingShape): void {
   const current = shapes()
-  if (JSON.stringify(current.get(reference)) === JSON.stringify(shape)) return
+  // Already the card drawn last, as it is now: nothing to move or write.
+  if ([...current.keys()].at(-1) === reference && JSON.stringify(current.get(reference)) === JSON.stringify(shape)) return
   const next = new Map(current)
   // Newest last, so the cap drops the cards drawn longest ago.
   next.delete(reference)

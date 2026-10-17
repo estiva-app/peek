@@ -2,7 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { encodeNaddr } from '@estiva-app/protocol'
-import { clearCardShapes } from '@/lib/cardShapes'
 import { clearUnavailableCards } from '@/lib/unavailableCards'
 
 const resolveObject = vi.fn()
@@ -29,12 +28,14 @@ vi.mock('@/api', async () => {
 
 const { MessageCard } = await import('./MessageLinks')
 
-const issue = encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier: 'issue-1', relays: [] })
+// Each test its own issue, so what one test's card left on the device does not shape the next one's.
+const issueNaddr = (identifier: string) => encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier, relays: [] })
 
-function object(summary?: string): ForeignObject {
+function object(identifier: string, summary?: string): ForeignObject {
+  const issue = issueNaddr(identifier)
   return {
-    ref: `30851:${'a'.repeat(64)}:issue-1`,
-    address: `30851:${'a'.repeat(64)}:issue-1`,
+    ref: `30851:${'a'.repeat(64)}:${identifier}`,
+    address: `30851:${'a'.repeat(64)}:${identifier}`,
     eventId: 'e'.repeat(64),
     naddr: issue,
     kind: 30851,
@@ -57,19 +58,19 @@ function placeholderLines(container: HTMLElement): number | undefined {
 
 beforeEach(() => {
   resolveObject.mockReset()
-  clearCardShapes()
   clearUnavailableCards()
 })
 
 describe('an issue card under a message keeps its height while it loads', () => {
   it('holds room for only a title and its pickers on a first draw, as Peek draws an issue with no summary', () => {
     resolveObject.mockReturnValue(new Promise(() => {}))
-    const { container } = render(<MessageCard uri={`nostr:${issue}`} />)
+    const { container } = render(<MessageCard uri={`nostr:${issueNaddr('issue-1')}`} />)
     expect(placeholderLines(container)).toBe(2)
   })
 
   it('holds room for the summary it drew with last time on this device', async () => {
-    resolveObject.mockResolvedValue(object('Loads at the height it draws at.'))
+    const issue = issueNaddr('issue-2')
+    resolveObject.mockResolvedValue(object('issue-2', 'Loads at the height it draws at.'))
     const first = render(<MessageCard uri={`nostr:${issue}`} />)
     await waitFor(() => expect(first.container.textContent).toContain('Loads at the height it draws at.'))
     first.unmount()
@@ -79,7 +80,8 @@ describe('an issue card under a message keeps its height while it loads', () => 
   })
 
   it('draws "not available." from the first paint for a card this device found not available', async () => {
-    resolveObject.mockResolvedValue({ ...object(), unreachable: true, noun: 'issue' })
+    const issue = issueNaddr('issue-3')
+    resolveObject.mockResolvedValue({ ...object('issue-3'), unreachable: true, noun: 'issue' })
     const first = render(<MessageCard uri={`nostr:${issue}`} />)
     await waitFor(() => expect(first.container.textContent).toContain('not available'))
     first.unmount()
