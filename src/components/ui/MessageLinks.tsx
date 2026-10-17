@@ -1,6 +1,6 @@
-import { useCallback, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { CardUnder, FieldLine, LinkChip, LinkRow, type LinkState } from '@estiva-app/ui'
+import { CardUnder, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkState, type LoadingShape } from '@estiva-app/ui'
 import { useConversationBadges } from '@/api'
 import { linkedKindOf, linkStateOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
@@ -8,6 +8,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { filePath } from '@/lib/objectUrl'
 import { openConversation } from '@/lib/threadOpener'
 import { referenceTypeWord } from '@/lib/textParsing'
+import { cardShapeOf, noteCardShape } from '@/lib/cardShapes'
 import { rememberedUnavailable } from '@/lib/unavailableCards'
 import { Reference } from './Reference'
 import { useHeldCard } from './useHeldCard'
@@ -131,7 +132,9 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
   const notAvailable: LinkState = { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
   if (object === 'loading') {
     // Found not available the last time this device asked: its one-line row from the first paint, not a card's height (OPT-10).
-    link = rememberedUnavailable(naddr) ? notAvailable : linkStateOf(uri, 'loading')
+    // Otherwise a placeholder of the card's own height, so the conversation does not move as it loads.
+    const kind = linkedKindOf(uri)
+    link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: compact ? undefined : cardShapeOf(naddr, kind) }
   } else if (object === null) {
     // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
     link = gone || rememberedUnavailable(naddr) ? notAvailable : null
@@ -146,6 +149,11 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
         : {}),
     })
   }
+  const shape = !compact && link?.state === 'ready' ? loadingShapeOf(link.linked) : undefined
+  const shapeKey = shape && JSON.stringify(shape)
+  useEffect(() => {
+    if (shapeKey) noteCardShape(naddr, JSON.parse(shapeKey) as LoadingShape)
+  }, [naddr, shapeKey])
   if (!link) return null
   return (
     <LinkClicks block>

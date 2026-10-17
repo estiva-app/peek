@@ -33,6 +33,7 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
+import { clearCardShapes } from '@/lib/cardShapes'
 import { clearUnavailableCards } from '@/lib/unavailableCards'
 
 /**
@@ -101,6 +102,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   if (previous && previous !== scope) {
     clearPagePictures()
     clearUnavailableCards()
+    clearCardShapes()
   }
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
@@ -195,6 +197,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   toKeep.length = 0
   clearPagePictures()
   clearUnavailableCards()
+  clearCardShapes()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(
