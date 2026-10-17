@@ -14,10 +14,9 @@
  *
  * The first half of this file asserts the launcher stops claiming they do.
  *
- * **One of the three works now.** Peek declares `start-a-conversation`, so the
- * row is back and it publishes — interop 0.16.0 resolves a channel record to
- * its own `d`, which is what gives an action on a topic somewhere to write
- * (0 of 40 `kind:39000` events on production carry `h` or `buzz-channel`).
+ * **One of the three works now.** `start-a-conversation` is back and it
+ * publishes. Peek declared it first; since interop 0.58 it is the Folder's
+ * built-in, and Peek offers it in the person's DMs only (REC-1, 2026-10-17).
  *
  * The other two stay absent and are asserted absent. Ship's `add-project` and
  * Peek's `create-topic` each create a container that does not exist yet, which
