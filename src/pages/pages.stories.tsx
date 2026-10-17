@@ -43,7 +43,7 @@ const URGENT: DeskRow[] = [
 ]
 
 const OPEN_WORK: DeskRow[] = [
-  // A file's summary is the row's second line (SPEC §6.12); one with none stays one line.
+  // A file's summary (SPEC §6.12) shows when its name is hovered; the row is one line either way (SUM-9).
   row('o1', 'file', 'Launch checklist for v2 of the mobile app', {
     isUnread: true,
     glyph: 'topic',
