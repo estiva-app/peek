@@ -1,0 +1,45 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ComposeBoxStories from './ComposeBox.stories'
+
+<Meta title="Writing & text/MessageCard" />
+
+# MessageCard
+
+One file's card under a message, or under the box writing one (SPEC §13.6.2):
+the kit's `CardUnder`, held live by `useHeldCard`.
+
+<Canvas of={ComposeBoxStories.AnIssueAloneOnItsLine} />
+
+**Seen in** — *Writing & text/Composer/ComposeBox* → **An Issue Alone On Its
+Line**, under the box with its ✕.
+
+## When
+
+- Under a sent message, for each `embed` its body names: `MessageBody` places it.
+- Under a message box, for the one file's default card: `BoxCardUnder` places it.
+
+## When not
+
+- A link inside the text → `MessageChip`, or `MessageRow` for a line that is
+  only the link.
+- One block of a file → `PartCard` inside `MessagePart`.
+
+## How
+
+```tsx
+import { MessageCard } from '@/components/ui/MessageLinks'
+
+// Under a box: the ✕ always shows.
+<MessageCard uri={reference} onRemove={box.remove} />
+// Under the author's own sent message: the ✕ waits for hover or focus.
+<MessageCard uri={card.reference} onRemove={() => remove(card.value)} revealOnHover />
+```
+
+## What it owns
+
+- **The ✕.** Only with `onRemove`; `revealOnHover` keeps it out of sight until
+  hover or focus (always on touch). A reader who cannot edit the message gets none.
+- **An old `compact` card.** Drawn as the file's row, as it drew before the
+  kit, with no ✕.
+- **Changes from the card.** Any reader may change the file from it, each
+  change written and read back; its comment count's dot is a member's only.
