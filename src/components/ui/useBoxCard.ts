@@ -17,6 +17,8 @@ const ASKED = 24
 
 const CONTEXT: Pick<BoxLinkContext, 'resolveLink' | 'blockOf'> = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
 
+const NO_LINKS: BoxLinks = { values: [], parts: [] }
+
 function linksOf(body: string, here: string | undefined, previousBody: string | undefined): BoxLinks {
   return boxLinksOf(body, { ...CONTEXT, here, previous: previousBody === undefined ? undefined : namedBefore(previousBody, CONTEXT) })
 }
@@ -69,7 +71,8 @@ export function useBoxCard(editor: Editor | null, { here, previousBody }: { here
     }
   }, [editor])
 
-  const urlKey = [...new Set([...findUrls(text), ...findUrls(previousBody ?? '')])].slice(0, ASKED).join('\n')
+  // Only while a box is open: an edit box's card hook sits on every sent message, and nothing is asked for one not being edited.
+  const urlKey = editor ? [...new Set([...findUrls(text), ...findUrls(previousBody ?? '')])].slice(0, ASKED).join('\n') : ''
   useEffect(() => {
     if (!urlKey) return
     let live = true
@@ -81,7 +84,7 @@ export function useBoxCard(editor: Editor | null, { here, previousBody }: { here
     }
   }, [urlKey])
 
-  const links = linksOf(text, here, previousBody)
+  const links = editor ? linksOf(text, here, previousBody) : NO_LINKS
   const card = links.card && !removed.has(links.card) ? links.card : undefined
 
   const now = () => {

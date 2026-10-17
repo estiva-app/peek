@@ -37,6 +37,7 @@ import {
   type ConversationContainer,
 } from './fileConversation'
 import { forgetUrlShapes } from './foreign'
+import { boxLinksOf, embedsToSend } from '@/lib/boxCard'
 
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const MIKY = 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2'
@@ -367,6 +368,13 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     const tags = signed().tags
     expect(tags.filter((t) => t[0] === 'urgent')).toEqual([['urgent', CATH]])
     expect(tags).toContainEqual(['p', CATH])
+  })
+
+  it('the box’s one file goes out as its detailed embed, and the file the conversation is on gets none (4136f999)', async () => {
+    const body = `See ${OTHER_NADDR}, unlike ${OWN_NADDR}`
+    const links = boxLinksOf(body, { resolveLink: () => undefined, blockOf: () => undefined, here: ADDRESS })
+    await commentAsViewer({ container, body, embeds: embedsToSend(links, new Set()) }, 'https://relay.test', token)
+    expect(signed().tags.filter((t) => t[0] === 'embed')).toEqual([['embed', OTHER, 'detailed']])
   })
 
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {

@@ -384,6 +384,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     if (!editor) return
     const draft = draftKey ? drafts.readDraft(draftKey) : undefined
     const text = draft?.text ?? ''
+    // Another conversation's message: a ✕ was for that one, and a draft keeps none.
+    boxRef.current?.restore(new Set())
     // The urgent chips come back urgent: the text alone gives ordinary mentions (CON-31).
     editor.commands.setContent(
       text ? withUrgentMentions(textToTiptapContent(text), draft?.urgent) : { type: 'doc', content: [{ type: 'paragraph' }] },

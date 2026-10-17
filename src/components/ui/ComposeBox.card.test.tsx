@@ -96,11 +96,37 @@ describe('ComposeBox — one file’s card under the box', () => {
     expect(sent(second.onSend)?.embeds).toBeUndefined()
   })
 
-  it('the issue whose conversation this is gets no card', async () => {
-    const { onSend, send, container } = await boxWith(`about ${ref(ISSUE)}`, ISSUE)
-    expect(container.querySelector('[data-box-under]')).toBeNull()
+  it('the issue whose conversation this is gets no card, and the one other file it names does', async () => {
+    const { onSend, send, container } = await boxWith(`about ${ref(ISSUE)} and ${ref(OTHER)}`, ISSUE)
+    await waitFor(() => expect(container.querySelector('[data-box-under]')?.textContent).toContain('The other one'))
+    expect(container.querySelector('[data-box-under]')?.textContent).not.toContain('The plan')
     fireEvent.mouseDown(send)
-    expect(sent(onSend)?.embeds).toBeUndefined()
+    expect(sent(onSend)?.embeds).toEqual([{ value: OTHER, layout: 'detailed' }])
+  })
+
+  it('a ✕ in one conversation’s draft is not carried into another’s', async () => {
+    const onSend = vi.fn<(payload: SendPayload) => void>()
+    const drafts = createDraftStore(memoryStorage())
+    const first = draftKeys.container('topic-1')
+    const second = draftKeys.container('topic-2')
+    drafts.write(first, `the plan ${ref(ISSUE)}`)
+    drafts.write(second, `also ${ref(ISSUE)}`)
+    const box = (key: string) => (
+      <MemoryRouter>
+        <DebugProvider>
+          <PeekDataProvider>
+            <ComposeBox draftKey={key} drafts={drafts} onSend={onSend} resolvedObjects={RESOLVED} />
+          </PeekDataProvider>
+        </DebugProvider>
+      </MemoryRouter>
+    )
+    const { container, rerender } = render(box(first))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove card' }))
+    await waitFor(() => expect(container.querySelector('[data-box-under]')).toBeNull())
+    rerender(box(second))
+    await waitFor(() => expect(container.querySelector('[data-box-under]')?.textContent).toContain('The plan'))
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Send' }))
+    expect(sent(onSend)?.embeds).toEqual([{ value: ISSUE, layout: 'detailed' }])
   })
 
   it('a lone link draws its row in the box, and there is no Card button', async () => {

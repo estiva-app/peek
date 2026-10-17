@@ -355,26 +355,39 @@ export async function referenceFromUrlAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<UrlReference | null> {
-  const query = viewerQuery(relayUrl, token)
   try {
-    const hit = matchObjectUrl(url, await urlShapes(query))
-    if (!hit) return null
-    if (hit.by === 'id') return { eventId: hit.identifier }
-    // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
-    // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
-    // `(kind, d)` could take a link's mention.
-    const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-    // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
-    if (hit.kind !== undefined) filter.kinds = [hit.kind]
-    const found = await query([filter])
-    const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
-    if (authors.size !== 1) return null
-    const address = `${[...authors][0]}:${hit.identifier}`
-    return hit.block === undefined ? { address } : { address, block: hit.block }
+    return await askReferenceFromUrlAsViewer(url, relayUrl, token)
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
   }
+}
+
+/**
+ * {@link referenceFromUrlAsViewer}, rejecting when the relay could not be
+ * asked instead of answering null, so a caller that remembers the answer can
+ * ask again (the message box's block links).
+ */
+export async function askReferenceFromUrlAsViewer(
+  url: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<UrlReference | null> {
+  const query = viewerQuery(relayUrl, token)
+  const hit = matchObjectUrl(url, await urlShapes(query))
+  if (!hit) return null
+  if (hit.by === 'id') return { eventId: hit.identifier }
+  // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
+  // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
+  // `(kind, d)` could take a link's mention.
+  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
+  // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
+  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const found = await query([filter])
+  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  if (authors.size !== 1) return null
+  const address = `${[...authors][0]}:${hit.identifier}`
+  return hit.block === undefined ? { address } : { address, block: hit.block }
 }
 
 /**

@@ -43,7 +43,7 @@ import {
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   cardValueOfUrlAsViewer,
-  referenceFromUrlAsViewer,
+  askReferenceFromUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
@@ -148,23 +148,29 @@ export async function askCardValues(urls: readonly string[]): Promise<void> {
   The block a link to one block names (SPEC §13.6.1), once per link for the
   tab, as `cardValues` is: what the message box shows live under it, and the
   file its chip is. Only a link with a fragment is asked; any other names no
-  block. Nothing came back (an outage too) is remembered as no block, so the
-  link stays the URL it is.
+  block. A read that failed (an outage, a 429) is forgotten, so the next ask
+  tries again; until then the link stays the URL it is.
 */
 const blockLinks = new Map<string, Promise<{ address: string; block: string } | null>>()
 const knownBlockLinks = new Map<string, { address: string; block: string } | null>()
 
-/** The file and block a link to one block names, or null. */
+/** The file and block a link to one block names, or null. Rejects when the relay could not be asked, so the caller asks again later. */
 export function blockOfUrl(url: string): Promise<{ address: string; block: string } | null> {
   const token = validToken()
   if (!RELAY_URL || !token || !url.includes('#')) return Promise.resolve(null)
   let answer = blockLinks.get(url)
   if (!answer) {
-    answer = referenceFromUrlAsViewer(url, RELAY_URL, token).then((ref) => {
-      const found = ref?.address !== undefined && ref.block !== undefined ? { address: ref.address, block: ref.block } : null
-      knownBlockLinks.set(url, found)
-      return found
-    })
+    answer = askReferenceFromUrlAsViewer(url, RELAY_URL, token).then(
+      (ref) => {
+        const found = ref?.address !== undefined && ref.block !== undefined ? { address: ref.address, block: ref.block } : null
+        knownBlockLinks.set(url, found)
+        return found
+      },
+      (error: unknown) => {
+        blockLinks.delete(url)
+        throw error
+      },
+    )
     blockLinks.set(url, answer)
   }
   return answer
