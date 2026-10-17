@@ -25,7 +25,7 @@
  * to stop the launcher making.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
@@ -281,21 +281,6 @@ describe('an app is offered what it declares, and nothing else', () => {
     // The Folder's own action, built with the specification's manifest — Peek's declares none (REC-1).
     expect(call?.declaredBy).toBe(FOLDER_ACTIONS_ADDRESS)
     expect(startConversationInDm).not.toHaveBeenCalled()
-  })
-
-  it('starts a conversation in a DM as the DM’s own message, not as the Folder’s action (REC-1)', async () => {
-    // A DM is no Folder, so the Folder's Start a conversation is not for it; Peek's chat code sends it.
-    await openLiveConversationForm()
-
-    await userEvent.type(await screen.findByLabelText(/message/i), 'Lunch at one?')
-    await userEvent.click(screen.getByLabelText(/topic/i))
-    await userEvent.click(await screen.findByRole('option', { name: 'DM' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
-
-    expect(startConversationInDm).toHaveBeenCalledTimes(1)
-    expect(startConversationInDm.mock.calls[0]?.[0]).toEqual({ channel: DM_ID, body: 'Lunch at one?' })
-    expect(applyAction).not.toHaveBeenCalled()
-    await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
 
   it('offers nothing for an app that declares nothing, and says which app', async () => {

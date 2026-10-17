@@ -12,7 +12,6 @@ import {
   MEMBERS_FIELD,
   PARENT_FIELD,
   asCreateTopic,
-  asLauncherCreation,
   creationsFor,
   launcherActionFrom,
   proseSubmission,
@@ -169,17 +168,6 @@ describe('a Folder’s built-ins: Create topic and Start a conversation (INT-12,
       ['create-file', 'Folder', ['QA'], undefined],
     ])
     expect(creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)).toEqual([])
-  })
-
-  it('sends a conversation in a DM as Peek’s own message, and one in a Folder as the Folder’s action', () => {
-    const [conversation] = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
-    const action = asLauncherCreation(conversation, launcherActionFrom(conversation.action, { parentNoun: 'topic' })!)
-    expect(action.dmParents).toEqual([DM])
-    expect(action.declaredBy).toBe(FOLDER_ACTIONS_ADDRESS)
-    // Create topic is not a conversation, and has no DM to go to.
-    const topic = asLauncherCreation({ action: createFile }, launcherActionFrom(createFile, { parentNoun: 'Folder' })!)
-    expect(topic.label).toBe('Create topic')
-    expect(topic).not.toHaveProperty('dmParents')
   })
 
   it('is called Create topic and adds a Members field Peek writes itself', () => {

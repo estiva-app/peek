@@ -274,13 +274,12 @@ describe('a creation another app declares on a Folder (MAN-8)', () => {
       actions: [],
     }),
   })
-  const shipOnly = manifest
   const SHIP_MANIFEST = `31990:${AUTHOR}:estiva-ship`
 
   beforeEach(() => forgetUrlShapes())
 
   it('files the project with Ship’s manifest, and lists it in the Folder', async () => {
-    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    queryRelay.mockImplementation(relayOver([peekManifest, manifest,channel(FOLDER), state(FOLDER, [])]))
     const result = await applyActionAsViewer(
       { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' }, declaredBy: SHIP_MANIFEST },
       'https://relay.test',
@@ -295,7 +294,7 @@ describe('a creation another app declares on a Folder (MAN-8)', () => {
   })
 
   it('refuses without it — the Folder’s own manifest does not declare the action', async () => {
-    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    queryRelay.mockImplementation(relayOver([peekManifest, manifest,channel(FOLDER), state(FOLDER, [])]))
     const result = await applyActionAsViewer({ naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' } }, 'https://relay.test', token)
 
     expect(result.ok).toBe(false)
@@ -303,7 +302,7 @@ describe('a creation another app declares on a Folder (MAN-8)', () => {
   })
 
   it('refuses a manifest nothing offered, rather than acting with it', async () => {
-    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    queryRelay.mockImplementation(relayOver([peekManifest, manifest,channel(FOLDER), state(FOLDER, [])]))
     const result = await applyActionAsViewer(
       { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' }, declaredBy: `31990:${RELAY}:made-up` },
       'https://relay.test',

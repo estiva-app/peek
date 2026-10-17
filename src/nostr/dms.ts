@@ -104,8 +104,22 @@ function liveDms(metadata: readonly SignedEvent[]): SignedEvent[] {
 
 /** Everyone but the viewer in a DM: its `p` tags, or its `39002` roster for one that names nobody. */
 function othersIn(event: SignedEvent, me: string, rosters: ReadonlyMap<string | undefined, string[]>): string[] {
+  return [...new Set(participantsOf(event, rosters).filter((p) => p !== me))]
+}
+
+function participantsOf(event: SignedEvent, rosters: ReadonlyMap<string | undefined, string[]>): string[] {
   const participants = tagValues(event, 'p')
-  return [...new Set((participants.length ? participants : (rosters.get(tagValues(event, 'd')[0]) ?? [])).filter((p) => p !== me))]
+  return participants.length ? participants : (rosters.get(tagValues(event, 'd')[0]) ?? [])
+}
+
+/**
+ * Whether the viewer is in a DM, by its `p` tags or roster. One whose roster
+ * could not be read is kept: the relay returns a DM's `39000` only to its
+ * members, so this is the second check, not the only one.
+ */
+function viewerIn(event: SignedEvent, me: string, rosters: ReadonlyMap<string | undefined, string[]>): boolean {
+  const participants = participantsOf(event, rosters)
+  return participants.length === 0 || participants.includes(me)
 }
 
 const rostersOf = (members: readonly SignedEvent[]) => new Map(members.map((m) => [tagValues(m, 'd')[0], tagValues(m, 'p')]))
@@ -118,7 +132,7 @@ export function unnamedDmsOf(metadata: readonly SignedEvent[]): string[] {
 /** The people besides the viewer in any of their DMs — whose names {@link dmConversationsOf} needs. */
 export function dmPeopleOf(metadata: readonly SignedEvent[], me: string, members: readonly SignedEvent[] = []): string[] {
   const rosters = rostersOf(members)
-  return [...new Set(liveDms(metadata).flatMap((event) => othersIn(event, me, rosters)))]
+  return [...new Set(liveDms(metadata).filter((event) => viewerIn(event, me, rosters)).flatMap((event) => othersIn(event, me, rosters)))]
 }
 
 /**
@@ -139,7 +153,7 @@ export function dmConversationsOf(
   members: readonly SignedEvent[] = [],
 ): { address: string; title: string }[] {
   const rosters = rostersOf(members)
-  return liveDms(metadata).map((event) => {
+  return liveDms(metadata).filter((event) => viewerIn(event, me, rosters)).map((event) => {
     const others = othersIn(event, me, rosters).map((p) => names.get(p))
     const named = others.length > 0 && others.every((n): n is string => !!n)
     return {

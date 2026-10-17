@@ -640,7 +640,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       conversation is not offered on a DM, which is no Folder (SPEC §3.2).
     */
     if (action.dmParents?.includes(parent)) {
-      const sent = await startConversationInDm({ channel: parent.split(':')[2] ?? '', body: properties.message ?? '' })
+      let sent: Awaited<ReturnType<typeof startConversationInDm>>
+      try {
+        sent = await startConversationInDm({ channel: parent.split(':')[2] ?? '', body: properties.message ?? '' })
+      } catch (error) {
+        // A send that throws (signing, the network) says so, as the Folder's path does below.
+        setSubmitting(false)
+        setSubmitError(error instanceof Error ? error.message : String(error))
+        return
+      }
       setSubmitting(false)
       if (!sent.ok) {
         setSubmitError(sent.reason ?? 'The relay rejected it.')

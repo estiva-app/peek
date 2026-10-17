@@ -3,9 +3,11 @@
  * be once republished: the conversation aspect and its two links, and no claim
  * on a Folder (`39000`) or a chat message (`9`) — REC-1, interop 0.58.
  *
- * Only the relay is faked. Every read and every signed event goes through
- * `creatableUnderAsViewer`, `applyActionAsViewer` and Peek's chat code, so what
- * is asserted is the event that would reach the relay.
+ * Only the relay and Estiva ID's signing are faked (the bridge's three calls).
+ * Every read and every event to sign goes through `creatableUnderAsViewer`,
+ * `applyActionAsViewer` and Peek's chat code, so what is asserted is the event
+ * that would reach the relay: its kind, tags, content and signer, and that the
+ * one signed is the one published.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -166,7 +168,9 @@ function open(initialAppId?: string) {
 }
 
 /** What was signed, as the relay would receive it. */
-const signed = () => signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; tags: string[][]; content: string })
+const signed = () => signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; pubkey: string; tags: string[][]; content: string })
+/** The ids of what was published: each must be the one signed. */
+const published = () => publishSigned.mock.calls.map((call) => ((call as unknown[])[1] as { id?: string } | undefined)?.id)
 
 async function startConversation(where: string, text: string) {
   open()
@@ -207,7 +211,8 @@ describe('the launcher, with Peek’s listing claiming no Folder and no message'
   it('starts a conversation in a Folder as a kind:9 carrying only the Folder', async () => {
     await startConversation('QA', 'Shall we split the release?')
 
-    expect(signed()).toEqual([expect.objectContaining({ kind: 9, tags: [['h', QA]], content: 'Shall we split the release?' })])
+    expect(signed()).toEqual([expect.objectContaining({ kind: 9, pubkey: ME, tags: [['h', QA]], content: 'Shall we split the release?' })])
+    expect(published()).toEqual(['f'.repeat(64)])
   })
 
   it('starts a conversation in a DM there, as the DM’s own message', async () => {
@@ -218,6 +223,8 @@ describe('the launcher, with Peek’s listing claiming no Folder and no message'
     expect(message.kind).toBe(9)
     expect(message.tags.filter((t) => t[0] === 'h')).toEqual([['h', DM]])
     expect(message.content).toBe('Lunch at one?')
+    expect(message.pubkey).toBe(ME)
+    expect(published()).toEqual(['f'.repeat(64)])
   })
 
   it('still offers Ship’s New project on a Folder, in Ship’s section', async () => {

@@ -163,6 +163,11 @@ const untaggedRoster = event({ kind: 39002, tags: [['d', UNTAGGED_DM], ['p', ME]
 /** A DM with somebody who has no profile keeps the relay's name: a key is not a name. */
 const NAMELESS_DM = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5f'
 const namelessDm = event({ kind: 39000, tags: [['d', NAMELESS_DM], ['name', 'DM'], ['t', 'dm'], ['p', ME], ['p', 'f'.repeat(64)]] })
+/** A DM between two other people, should a relay answer with one: not the viewer's to write in. */
+const othersDm = event({
+  kind: 39000,
+  tags: [['d', '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a60'], ['name', 'DM'], ['t', 'dm'], ['p', OTHER], ['p', THIRD]],
+})
 const profile = (pubkey: string, content: Record<string, unknown>) => event({ kind: 0, pubkey, content: JSON.stringify(content) })
 /** `display_name` before `name`, as People reads them. */
 const profiles = [
@@ -190,7 +195,7 @@ function relayOver(world: TestEvent[], refuse?: (f: Record<string, unknown>) => 
       : { ok: true as const, events: world.filter((e) => filters.some((f) => matches(e, f))) }
 }
 
-const world = (peek: TestEvent) => [peek, ship, leaf, ...folder, record, untaggedDm, untaggedRoster, namelessDm, groupDm, dm, archivedDm, ...profiles]
+const world = (peek: TestEvent) => [peek, ship, leaf, ...folder, record, untaggedDm, untaggedRoster, namelessDm, othersDm, groupDm, dm, archivedDm, ...profiles]
 const titles = (list?: { title: string }[]) => list?.map((p) => p.title)
 
 beforeEach(() => {
@@ -202,7 +207,7 @@ describe.each([
   ['after Peek’s listing drops its claim', peekUnclaimed],
   ['while Peek’s listing still claims a Folder and a message', peekClaiming],
 ])('a Folder’s creations, %s', (_when, peek) => {
-  it('offers Start a conversation as the Folder’s own, in Folders and then the person’s DMs, never a record channel', async () => {
+  it('offers Start a conversation as the Folder’s own, in Folders and then the person’s DMs, never a record channel nor a DM they are not in', async () => {
     queryRelay.mockImplementation(relayOver(world(peek)))
     const read = await creatableUnderAsViewer(39000, URL, token)
 
