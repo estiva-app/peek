@@ -63,14 +63,13 @@
  * It takes a signer rather than reading a key file so that whichever identity
  * is granted can be handed in without editing this.
  */
-import { KIND, Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-app/protocol'
+import { KIND, Relay, addrToNaddr, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
 import {
   KIND_BARE_FILE,
-  widgetChainProblem,
-  actionProblems,
   resolveForeignEvent,
   resolveForeignObject,
   type QueryFn,
@@ -82,7 +81,6 @@ const DRY_RUN = process.argv.includes('--dry-run')
 /** The first interop with a Folder and a message built in — what every consumer must run before this publishes. */
 const BUILT_INS_SINCE = [0, 58]
 const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/'
-const CLOSED_LIST = 'card, row, table, stat'
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -137,8 +135,14 @@ function dryRunPubkey(): string {
  * itself draw nothing afterwards.
  */
 function interopHasBuiltIns(): { ok: boolean; version: string } {
-  const path = new URL('../node_modules/@estiva-app/interop/package.json', import.meta.url).pathname
-  const version = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version : '0.0.0'
+  // The copy this script imports, wherever the install put it.
+  let path = ''
+  try {
+    path = createRequire(import.meta.url).resolve('@estiva-app/interop/package.json')
+  } catch {
+    path = ''
+  }
+  const version = path && existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version : '0.0.0'
   const [major = 0, minor = 0] = version.split('.').map(Number)
   return { ok: major > BUILT_INS_SINCE[0] || (major === BUILT_INS_SINCE[0] && minor >= BUILT_INS_SINCE[1]), version }
 }
@@ -246,45 +250,25 @@ async function main() {
     `kind:31990` is replaceable, but every consumer that fetched the bad one
     holds it until it refetches.
   */
-  for (const [kind, projection] of Object.entries(manifestContent().projections)) {
-    const problem = widgetChainProblem((projection as { widget: unknown }).widget)
-    if (problem) {
-      console.error(`\n✋ Refusing to publish. kind:${kind} — ${problem}\n`)
-      process.exit(1)
-    }
-  }
-  check('every widget chain terminates in a closed type', true, CLOSED_LIST)
-
   /*
-    Every action is one a caller could actually pick — checked before signing,
-    PRO-16, and INT-9's own watch list said nothing did this yet.
-
-    Peek became a producer of actions in INT-9, and a producer's mistakes here
-    are the ones no consumer can report at the moment they matter: a
-    description that restates its label is accepted by `resolveManifest`,
-    rendered by every consumer, and quietly never chosen by a caller matching
-    on prose (INT-5). An absent `effect` reads as *unknown* in both directions,
-    so a consumer offering only safe actions will not offer it and one avoiding
-    destructive actions may.
-
-    Refused rather than warned, for the same reason the widget check above is:
-    `kind:31990` is replaceable, but every consumer that fetched the bad one
-    holds it until it refetches. This is the one moment the mistake is cheap.
+    Peek claims no kind (REC-1), so the producer checks that stood here — every
+    widget chain closed (PRO-3), every action pickable (PRO-16) — have nothing
+    left to check. What is checked instead is that no claim came back: a `k`
+    tag, a projection or an action would make Peek an owner again. Refused
+    rather than warned: `kind:31990` is replaceable, but every consumer that
+    fetched a bad one holds it until it refetches.
   */
   {
-    const declared = manifestContent().actions ?? []
-    const problems = declared.flatMap((action) =>
-      actionProblems(action).map((problem) => `  ${problem}`),
-    )
-    if (problems.length > 0) {
-      console.error(`\n✋ Refusing to publish. ${problems.length} problem(s) with the actions:\n`)
-      console.error(problems.join('\n') + '\n')
-      process.exit(1)
-    }
+    const content = manifestContent()
+    const projections = Object.keys(content.projections ?? {})
+    const actions = (content.actions ?? []).map((a) => a.id)
+    const claims = buildManifest('0'.repeat(64), Date.now(), APP_URL).tags.filter((t) => t[0] === 'k').map((t) => t[1])
     check(
-      'every declared action is one a caller could pick',
-      true,
-      declared.length === 0 ? 'none declared' : declared.map((a) => a.id).join(', '),
+      'it claims no kind: no k tag, no projection, no action',
+      claims.length === 0 && projections.length === 0 && actions.length === 0,
+      claims.length + projections.length + actions.length === 0
+        ? 'none'
+        : `k ${claims.join(',') || '-'}; projections ${projections.join(',') || '-'}; actions ${actions.join(',') || '-'}`,
     )
   }
 
@@ -297,6 +281,10 @@ async function main() {
     console.log(JSON.stringify(event, null, 2))
     console.log(failures === 0 ? '\nDry run: nothing signed, nothing sent.' : `\nDry run: ${failures} check(s) FAILED; nothing signed, nothing sent.`)
     process.exit(failures === 0 ? 0 : 1)
+  }
+  if (failures > 0) {
+    console.error(`\n✋ Refusing to publish. ${failures} check(s) above failed.\n`)
+    process.exit(1)
   }
   if (!interop.ok) {
     console.error(
@@ -327,20 +315,24 @@ async function main() {
   */
   {
     const handlers = await relay.query([{ kinds: [31990], limit: 50 }])
-    const opener = [...handlers]
-      .sort((a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at)
-      .find((e: SignedEvent) => {
+    // Per link type, as interop reads a template: a file opens by `naddr`, a message by `nevent`.
+    const opensAs = (e: SignedEvent, entity: string) =>
+      e.tags.some((t) => t[0] === 'web' && !!t[1]?.includes('<bech32>') && (!t[2] || t[2] === entity))
+    const newestFirst = [...handlers].sort((a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at)
+    for (const entity of ['naddr', 'nevent']) {
+      const opener = newestFirst.find((e: SignedEvent) => {
         try {
-          return (JSON.parse(e.content) as { aspect?: string }).aspect === 'conversation' && e.tags.some((t) => t[0] === 'web')
+          return (JSON.parse(e.content) as { aspect?: string }).aspect === 'conversation' && opensAs(e, entity)
         } catch {
           return false
         }
       })
-    check(
-      'a consumer looking for the app that opens conversations finds this one',
-      opener?.pubkey === identity.pubkey,
-      opener ? `31990:${opener.pubkey.slice(0, 16)}…:${opener.tags.find((t) => t[0] === 'd')?.[1] ?? ''}` : 'none found',
-    )
+      check(
+        `a consumer looking for the app that opens conversations (${entity}) finds this one`,
+        opener?.pubkey === identity.pubkey,
+        opener ? `31990:${opener.pubkey.slice(0, 16)}…:${opener.tags.find((t) => t[0] === 'd')?.[1] ?? ''}` : 'none found',
+      )
+    }
   }
 
   const [stored] = await relay.query([
@@ -358,11 +350,21 @@ async function main() {
     the runtime's to draw now (interop 0.58). What this manifest still decides
     is where they open, so that is what is checked, on a real one of each.
   */
-  const [folder] = await relay.query([{ kinds: [TOPIC_KIND], limit: 1 }])
-  check('there is a real Folder to open', !!folder)
-  if (folder) {
-    const address = `${TOPIC_KIND}:${folder.pubkey}:${folder.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''}`
-    const resolved = await resolveForeignObject(address, query)
+  /*
+    Several sampled, the first that resolves checked: one channel can be a
+    deleted one with live events, or one this key cannot read, and a single
+    sample would then fail for a reason that is not this manifest's.
+  */
+  const channels = await relay.query([{ kinds: [TOPIC_KIND], limit: 10 }])
+  let resolved: Awaited<ReturnType<typeof resolveForeignObject>> = null
+  for (const channel of channels) {
+    const address = `${TOPIC_KIND}:${channel.pubkey}:${channel.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''}`
+    // An naddr, as a link carries it: the template's `<bech32>` is filled with the reference as given.
+    resolved = await resolveForeignObject(addrToNaddr(address, []), query)
+    if (resolved && !('unreachable' in resolved && resolved.unreachable)) break
+  }
+  check('there is a real Folder to open', channels.length > 0)
+  if (channels.length > 0) {
     check('  …it resolves through the built-in, as a folder', resolved?.noun === 'folder', resolved?.noun ?? 'null')
     check(
       '  …and opens here, from the naddr template',

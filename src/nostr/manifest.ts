@@ -1,18 +1,11 @@
 /**
  * Peek's NIP-89 manifest — the first one Peek has ever published (PRO-6).
  *
- * Until now Peek has only ever been a *consumer*: it reads Ship's manifest and
- * renders Ship's objects. Nothing of Peek's could be rendered anywhere else,
- * so the projection layer has run in exactly one direction since it was built.
- * This is the producer half of closing that loop; Ship rendering one of these
- * is PRO-7.
+ * It was first written as the producer half of the projection layer, with a
+ * projection for each kind Peek claimed (PRO-6, PRO-7).
  *
- * Writing it surfaced three things the mechanism could not express, each of
- * which is now in `interop/projection.ts` and RFC 0.4. That is the point of a
- * second direction, and it is why §13.5 insists the layer must not be published
- * as a package until one exists.
- *
- * **It claims no kind any more** (REC-1). It claimed two, a Folder (`39000`)
+ * **It claims no kind any more** (REC-1), so it holds no projection and no
+ * action. It claimed two, a Folder (`39000`)
  * and a chat message (`9`), with a projection for each and Start a
  * conversation on a Folder. Both now belong to the protocol: every app has
  * them built in (interop 0.58, SPEC §3.2, §7.8), Start a conversation is the
