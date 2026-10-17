@@ -24,8 +24,9 @@ import { type ReactionData, type HighlightType, type FileAttachment } from '@/ap
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightButton } from './ui/HighlightButton'
-import { CardButton } from './ui/CardButton'
-import { cardsToEdit, loadCards } from '@/extensions/cardChoices'
+import { BoxCardUnder } from './ui/BoxCard'
+import { useBoxCard } from './ui/useBoxCard'
+import { withoutCard } from '@/lib/boxCard'
 import { HighlightPill } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
@@ -74,6 +75,8 @@ interface ConversationCardProps {
   embeds?: readonly Embed[]
   /** The address of the file it is shown on ("Mentioned in"): no card for that file under it, only its chip (WID-3). */
   here?: string
+  /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
+  writtenOn?: string
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
@@ -131,6 +134,7 @@ export function ConversationCard({
   parts,
   embeds,
   here,
+  writtenOn,
   nostrBlockId,
   highlightType,
   onHighlightChange,
@@ -215,6 +219,8 @@ export function ConversationCard({
     most of a sent message's 100 ms.
   */
   const [editEditor, setEditEditor] = useState<Editor | null>(null)
+  // The edit's own default card: only for a file it links first (§13.6.2).
+  const editBox = useBoxCard(isEditing ? editEditor : null, { here: writtenOn, previousBody: bodyState })
   const editOptions: EditorHostOptions = {
     extensions: peekEditExtensions,
     editorProps: {
@@ -345,8 +351,6 @@ export function ConversationCard({
         })
       }
       editEditor.commands.setContent(content)
-      // The text says only which references there are; their cards come back from the folded tags (OPT-17).
-      loadCards(editEditor, embeds)
       // Focus and move cursor to end
       setTimeout(() => {
         editEditor.commands.focus('end')
@@ -471,8 +475,8 @@ export function ConversationCard({
     const nextFiles = editAttachments.result()
     if (nextFiles) onFilesChange?.(nextFiles)
     editAttachments.commit()
-    // The cards only when this edit changed them, in the same edit (OPT-17).
-    const nextCards = cardsToEdit(editEditor, embeds)
+    // A file this edit links first gets its card, in the same edit (§13.6.2).
+    const nextCards = editBox.toEdit(embeds)
     if (nextCards) onEmbedsChange?.(nextCards)
     setIsEditing(false)
   }
@@ -588,7 +592,6 @@ export function ConversationCard({
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
                     <HighlightButton editor={editEditor} container={editBoxRef} />
-                    <CardButton editor={editEditor} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
@@ -609,6 +612,10 @@ export function ConversationCard({
                   </div>
                 </div>
               </div>
+            </div>
+            {/* A file this edit links first: its card, as Save will add it, with its ✕. */}
+            <div className="mt-2 pl-8 empty:hidden">
+              <BoxCardUnder box={editBox} parts={false} />
             </div>
           </div>
         ) : (
@@ -640,7 +647,18 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} embeds={embeds} authorName={authorName} here={here} />
+            <MessageBody
+              body={bodyState}
+              nostrReferences={nostrReferences}
+              nostrBlockId={nostrBlockId}
+              urgentMentions={urgentMentions}
+              parts={parts}
+              embeds={embeds}
+              authorName={authorName}
+              here={here}
+              // The author's ✕, offered where Edit is: an edit with that card `none` and every other kept (§13.6.2).
+              onRemoveCard={isOwnMessage && !readOnly && onEmbedsChange ? (value) => onEmbedsChange(withoutCard(embeds, value)) : undefined}
+            />
           </div>
           </>
           )}

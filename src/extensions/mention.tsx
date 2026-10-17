@@ -2,30 +2,34 @@ import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/r
 import Mention from '@tiptap/extension-mention'
 import { CaptionedReference, PersonMention, ReferenceNode, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
-import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconLayoutBottombar, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
+import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
 import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
 import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
-import { InlineChip, KindIcon, inlineChipClassName } from '@estiva-app/ui'
+import { InlineChip, KindIcon, LinkRow, inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
-import type { EmbedLayout } from '@estiva-app/protocol'
 import { Reference } from '@/components/ui/Reference'
-import { cardOfDecorations } from './cardChoices'
+import { linkStateOf } from '@/lib/linked'
+import { isRowOfDecorations } from './loneLinkRows'
 
 /**
- * What a chip with a card chosen wears after it while the message is written
- * (OPT-17, Miky 13 Oct: a marker, not a preview), so the author sees a card is
- * coming before they send. Nothing for `none`.
+ * A line that is only this link, drawn as its row while it is written, as the
+ * sent message will draw it (`loneLinkRows`). A click on it while writing is
+ * not a way out of the draft, as a chip's is not.
  */
-function CardMarker({ card }: { card: EmbedLayout }) {
-  if (card === 'none') return null
-  const words = card === 'detailed' ? 'Detailed card' : 'Compact card'
+function RowInTheBox({ uri, object }: { uri: string; object: ForeignObject | null | undefined }) {
   return (
-    <span data-card-marker={card} aria-label={words} role="img" className="inline-flex align-top h-[1.4em] items-center text-text-muted">
-      <IconLayoutBottombar size={14} stroke={1.5} />
+    <span
+      data-box-row
+      className="block cursor-default"
+      onClickCapture={(event) => {
+        if ((event.target as Element).closest('a')) event.preventDefault()
+      }}
+    >
+      <LinkRow link={linkStateOf(uri, object)} preview={false} />
     </span>
   )
 }
@@ -152,11 +156,22 @@ function messageMentionIcon(uri: string | null) {
 
 /*
   The package's chip, drawn with its own `InlineChip` instead of its node view,
-  only so the card marker can sit after it (OPT-17): the package's view takes
-  nothing beside the caption. The same icon, the same `label: snippet` caption
-  and the same 24ch cap as `CaptionedReference`'s view.
+  so a line that is only this link can draw its row instead (`loneLinkRows`):
+  the package's view takes nothing beside the caption. The same icon, the same
+  `label: snippet` caption and the same 24ch cap as `CaptionedReference`'s view.
 */
 function MessageMentionView({ node, decorations }: NodeViewProps) {
+  const uri: string = node.attrs.uri ?? ''
+  const row = isRowOfDecorations(decorations)
+  // Asked for only while it draws its row; a chip has its caption.
+  const fetched = useResolvedReferences(row && uri ? [uri] : [])
+  if (row) {
+    return (
+      <NodeViewWrapper as="span">
+        <RowInTheBox uri={uri} object={fetched[uri]} />
+      </NodeViewWrapper>
+    )
+  }
   const label = String(node.attrs.label ?? '')
   const snippet = String(node.attrs.snippet ?? '')
   return (
@@ -164,7 +179,6 @@ function MessageMentionView({ node, decorations }: NodeViewProps) {
       <InlineChip icon={messageMentionIcon(node.attrs.uri ?? null)} className="max-w-[24ch]">
         <span className="truncate">{snippet ? `${label}: ${snippet}` : label}</span>
       </InlineChip>
-      <CardMarker card={cardOfDecorations(decorations)} />
     </NodeViewWrapper>
   )
 }
@@ -281,10 +295,10 @@ function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
   const supplied = storage?.supplied?.[uri] ?? storage?.supplied?.[uri.replace(/^nostr:/, '')]
   // Asked for only when nothing was handed in; the hook is called either way.
   const fetched = useResolvedReferences(supplied ? [] : [uri])
+  const object = supplied ?? fetched[uri]
   return (
     <NodeViewWrapper as="span">
-      <Reference uri={uri} object={supplied ?? fetched[uri]} link={false} />
-      <CardMarker card={cardOfDecorations(decorations)} />
+      {isRowOfDecorations(decorations) ? <RowInTheBox uri={uri} object={object} /> : <Reference uri={uri} object={object} link={false} />}
     </NodeViewWrapper>
   )
 }
@@ -294,8 +308,10 @@ function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
  * 14 Oct: a message keeps the link as pasted, and every app link in the box
  * reads as its chip). The package's URL chip (`ReferenceNode` with `href`),
  * which `LinkChips` makes from a pasted, typed or passage URL and
- * `serializeInline` writes back as the URL; drawn as `objectMention` is, with
- * its card's marker. Until the URL is answered it reads as the URL.
+ * `serializeInline` writes back as the URL; drawn as `objectMention` is, its
+ * row alone on its line. A link to one block reads as its file's chip, with
+ * the block live under the box (Decided 16 Oct). Until the URL is answered it
+ * reads as the URL.
  */
 function UrlChipView(props: NodeViewProps) {
   const href = typeof props.node.attrs.href === 'string' ? props.node.attrs.href : ''

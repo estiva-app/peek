@@ -106,13 +106,14 @@ export function MessageRow({ uri, object, unreadable = false }: { uri: string; o
 }
 
 /**
- * The card its author chose under a message (SPEC §13.6.2), with no ✕: taking
- * a card off a sent message is the message box's (4136f999). Any reader may
- * change the file from it (Decided 16 Oct), each change written and read back
+ * The card under a message (SPEC §13.6.2), or under the box writing one. With
+ * `onRemove` it has the kit's ✕: always under a box, on hover under the
+ * author's own sent message (`revealOnHover`). Any reader may change the file
+ * from it (Decided 16 Oct), each change written and read back
  * (`useHeldCard`). Its comment count shows the dot only for a member with
  * something unread (record membership-replaces-following).
  */
-export function MessageCard({ uri, resolved, compact = false }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean }) {
+export function MessageCard({ uri, resolved, compact = false, onRemove, revealOnHover = false }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The ✕ waits for hover or focus: a sent message's. */ revealOnHover?: boolean }) {
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
@@ -186,7 +187,7 @@ export function MessageCard({ uri, resolved, compact = false }: { uri: string; r
   return (
     <LinkClicks block>
       <div ref={box} data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr} style={loadingShape?.height ? { minHeight: loadingShape.height } : undefined}>
-        {compact ? <LinkRow link={link} /> : <CardUnder link={link} />}
+        {compact ? <LinkRow link={link} /> : <CardUnder link={link} onRemove={onRemove} revealOnHover={revealOnHover} />}
         {error && (
           <FieldLine tone="error" className="mt-1">
             {error}

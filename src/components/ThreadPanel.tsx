@@ -131,6 +131,8 @@ function buildThreadRows(
 
 interface ThreadPanelProps {
   conversation: ConversationData
+  /** The file whose conversation this is: a reply or an edit linking it adds no card (§13.6.2). */
+  writtenOn?: string
   /** Merged replies (body/highlight/reactions already applied by the seam). */
   replies: ThreadReply[]
   sentReplies: ThreadReply[]
@@ -257,6 +259,7 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
  */
 export function ThreadPanel({
   conversation,
+  writtenOn,
   replies,
   sentReplies,
   isLoadingReplies = false,
@@ -382,7 +385,7 @@ export function ThreadPanel({
         readOnlyProp && readOnlyNotice == null ? undefined : (
           <div className="p-3">
             {readOnlyNotice ?? composerNotice ?? (
-              <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
+              <ComposeBox onSend={onSendReply} here={writtenOn} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
             )}
           </div>
         )
@@ -447,6 +450,7 @@ export function ThreadPanel({
               messageId={conversation.id}
               onFilesChange={onInitialFilesChange}
               onEmbedsChange={onInitialEmbedsChange}
+              writtenOn={writtenOn}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
               readOnly={readOnly}
@@ -502,6 +506,7 @@ export function ThreadPanel({
                     messageId={reply.id}
                     onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
                     onEmbedsChange={onReplyEmbedsChange ? (e) => onReplyEmbedsChange(reply.id, e) : undefined}
+                    writtenOn={writtenOn}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
                     onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
                     readOnly={readOnly}

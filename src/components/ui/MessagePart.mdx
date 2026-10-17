@@ -1,0 +1,37 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/MessagePart" />
+
+# MessagePart
+
+The frame around one block of another file shown in a message or under a
+message box (SPEC §13.6.1), so its links are clicked as a chip's are.
+
+**Seen in** — no story: the part inside it reads its block from the relay, and
+*Messages/ForeignObject/PartCard* draws that block without the frame.
+
+## When
+
+- Around a `PartCard`, under a sent message (`MessageBody`) and under a message
+  box (`BoxCardUnder`).
+
+## When not
+
+- A whole file under a message → `MessageCard`.
+- A link inside the text → `MessageChip`.
+
+## How
+
+```tsx
+import { MessagePart } from '@/components/ui/MessageLinks'
+
+<MessagePart key={part.address}>
+  <PartCard address={part.address} block={part.block} />
+</MessagePart>
+```
+
+## What it owns
+
+- **The click.** A click on a link or a control inside the part stays there and
+  does not also open the message's thread.
+- **No ✕.** To send a message without a block, delete its link (Miky, 16 Oct).

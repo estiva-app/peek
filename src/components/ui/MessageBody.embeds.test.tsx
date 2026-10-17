@@ -9,7 +9,7 @@
  * (OPT-18).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { addrToNaddr, encodeNevent, type Embed } from '@estiva-app/protocol'
 
 const SHIP = 'cb77583ed45cac74ce4e46c626c1edada0204a6fc4c91f9c7be230b5af36156c'
@@ -200,5 +200,30 @@ describe('the card a link on words asks for (OPT-17)', () => {
     const lookalike = 'https://evil.example/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
     show(`see [this](${lookalike})`, [{ value: ISSUE, layout: 'detailed' }])
     expect(drawn.filter((d) => d.layout === 'card')).toEqual([])
+  })
+})
+
+describe('the author’s ✕ on a sent card (4136f999)', () => {
+  const OTHER = `30851:${SHIP}:e0b27d90-d5b9-40e7-8078-865ab36a421c`
+  const OTHER_REF = `nostr:${addrToNaddr(OTHER, [])}`
+
+  it('takes off the card it is on, by its file, and leaves the other card of an old two-card message', () => {
+    const onRemoveCard = vi.fn()
+    render(
+      <MessageBody
+        body={`${ISSUE_REF} and ${OTHER_REF}`}
+        embeds={[{ value: ISSUE, layout: 'detailed' }, { value: OTHER, layout: 'detailed' }]}
+        onRemoveCard={onRemoveCard}
+      />,
+    )
+    const removes = screen.getAllByRole('button', { name: 'Remove card' })
+    expect(removes).toHaveLength(2)
+    fireEvent.click(removes[1])
+    expect(onRemoveCard).toHaveBeenCalledExactlyOnceWith(OTHER)
+  })
+
+  it('is not offered to a reader who cannot edit the message', () => {
+    render(<MessageBody body={`see ${ISSUE_REF}`} embeds={[{ value: ISSUE, layout: 'detailed' }]} />)
+    expect(screen.queryByRole('button', { name: 'Remove card' })).toBeNull()
   })
 })

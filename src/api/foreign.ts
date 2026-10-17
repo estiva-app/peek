@@ -43,6 +43,7 @@ import {
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   cardValueOfUrlAsViewer,
+  askReferenceFromUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
@@ -69,6 +70,7 @@ import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
 import { joinFolderWatch } from '@/nostr/useLiveFile'
 import { startTopicAsViewer, type StartTopicArgs } from './startTopic'
+import { linkTargetOf } from '@/lib/boxCard'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,
@@ -140,6 +142,57 @@ export function knownCardValue(url: string): string | undefined {
 export async function askCardValues(urls: readonly string[]): Promise<void> {
   const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
   if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
+}
+
+/*
+  The block a link to one block names (SPEC §13.6.1), once per link for the
+  tab, as `cardValues` is: what the message box shows live under it, and the
+  file its chip is. Only a link with a fragment is asked; any other names no
+  block. A read that failed (an outage, a 429) is forgotten, so the next ask
+  tries again; until then the link stays the URL it is.
+*/
+const blockLinks = new Map<string, Promise<{ address: string; block: string } | null>>()
+const knownBlockLinks = new Map<string, { address: string; block: string } | null>()
+
+/** The file and block a link to one block names, or null. Rejects when the relay could not be asked, so the caller asks again later. */
+export function blockOfUrl(url: string): Promise<{ address: string; block: string } | null> {
+  const token = validToken()
+  if (!RELAY_URL || !token || !url.includes('#')) return Promise.resolve(null)
+  let answer = blockLinks.get(url)
+  if (!answer) {
+    answer = askReferenceFromUrlAsViewer(url, RELAY_URL, token).then(
+      (ref) => {
+        const found = ref?.address !== undefined && ref.block !== undefined ? { address: ref.address, block: ref.block } : null
+        knownBlockLinks.set(url, found)
+        return found
+      },
+      (error: unknown) => {
+        blockLinks.delete(url)
+        throw error
+      },
+    )
+    blockLinks.set(url, answer)
+  }
+  return answer
+}
+
+/** What a link to one block names, from what has come back: undefined until it has, and for any other link. */
+export function knownBlockOfUrl(url: string): { address: string; block: string } | undefined {
+  return knownBlockLinks.get(url) ?? undefined
+}
+
+/**
+ * What the message box asks of each link (§7.7): the file it names for a card,
+ * and the block it names for a part. A `LinkChips` `ask`; rejects as
+ * {@link askCardValues} does, so the editor asks again later.
+ */
+export async function askLinks(urls: readonly string[]): Promise<void> {
+  await Promise.all([askCardValues(urls), ...urls.filter((url) => !knownBlockLinks.has(url)).map((url) => blockOfUrl(url))])
+}
+
+/** What an app link in the message box draws as, from what has come back (`linkTargetOf`). A `LinkResolver`. */
+export function knownLinkTarget(url: string): string | undefined {
+  return linkTargetOf(url, { resolveLink: knownCardValue, blockOf: knownBlockOfUrl })
 }
 
 /**

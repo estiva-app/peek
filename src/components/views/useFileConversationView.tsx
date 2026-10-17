@@ -587,6 +587,7 @@ export function useFileConversationView({
                   isSelected={openThreadId === c.id}
                   readOnly={readOnly}
                   actions={rowActions}
+                  writtenOn={container?.kind === 'file' ? container.address : undefined}
                 />
                 </div>
                 </Fragment>
@@ -618,6 +619,7 @@ export function useFileConversationView({
           onSend={handleSend}
           contextLabel={title}
           draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
+          here={container?.kind === 'file' ? container.address : undefined}
         />
       </div>
   )
@@ -649,6 +651,7 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
+        writtenOn={container?.kind === 'file' ? container.address : undefined}
         readOnly={readOnly}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.
         composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}

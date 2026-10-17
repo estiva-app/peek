@@ -741,9 +741,10 @@ export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
     channelUuid: args.container.h,
     targetEventId: args.targetEventId,
     body: args.body,
+    // The whole folded set when it changed: a set replaces (§13.6.2).
+    embeds: args.embeds,
   })
   if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
-  if (args.embeds?.length) unsigned.tags.push(...args.embeds.map((embed) => embedTag(embed.value, embed.layout)))
   return unsigned
 }
 

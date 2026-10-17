@@ -8,7 +8,7 @@
  * rendering as somebody's object.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
+import { askReferenceFromUrlAsViewer, referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -111,6 +111,18 @@ describe('referenceFromUrlAsViewer', () => {
       return { ok: true, events: [issue, { ...issue, id: 'e2', pubkey: 'c'.repeat(64) }] }
     })
     expect(await referenceFromUrlAsViewer(`https://ship.estiva.app/issue/x-${UUID}`, 'https://relay', TOKEN)).toBe(null)
+  })
+
+  it('a refused read rejects for the message box’s block links, so the next ask gets the answer (4136f999)', async () => {
+    let refuse = true
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+      if ((filters[0]?.kinds as number[] | undefined)?.includes(31990)) return { ok: true, events: [manifest, peekManifest] }
+      return refuse ? { ok: false, reason: 'rate-limited' } : { ok: true, events: [issue] }
+    })
+    const url = `https://ship.estiva.app/issue/x-${UUID}`
+    await expect(askReferenceFromUrlAsViewer(url, 'https://relay', TOKEN)).rejects.toThrow()
+    refuse = false
+    expect(await askReferenceFromUrlAsViewer(url, 'https://relay', TOKEN)).toEqual({ address: `30851:${AUTHOR}:${UUID}` })
   })
 
   it('reads the published shapes once for the whole session', async () => {

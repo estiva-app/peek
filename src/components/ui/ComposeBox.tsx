@@ -19,8 +19,8 @@ import { pastedImages, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachFileButton } from './AttachFiles'
 import { HighlightButton } from './HighlightButton'
-import { CardButton } from './CardButton'
-import { cardsToSend, clearCards, loadCards } from '@/extensions/cardChoices'
+import { BoxCardUnder } from './BoxCard'
+import { useBoxCard, type BoxCard } from './useBoxCard'
 import type { Embed } from '@estiva-app/protocol'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
@@ -36,7 +36,7 @@ export interface SendPayload {
   /** Figma frame ids attached via the command launcher's find flow. */
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
-  /** The cards the author chose under the message, one per value (SPEC §13.6.2, OPT-17). */
+  /** The one file's default card, unless ✕ took it off (SPEC §13.6.2; `lib/boxCard`). */
   embeds?: Embed[]
 }
 
@@ -101,6 +101,8 @@ interface ComposeBoxProps {
    * (UIG-40) takes its title and status from here instead of asking.
    */
   resolvedObjects?: Record<string, ForeignObject>
+  /** The file whose conversation this box writes in: linking it adds no card here (§13.6.2). */
+  here?: string
   className?: string
 }
 
@@ -136,7 +138,7 @@ const liveComposers = new Map<string, ComposerEditor>()
  *
  * @registry namesake: Peek's composer, with its drafts, mentions, cards and send to the relay; the package's ComposeBox (0.72) is the comment box Leaf and Ship take, and Peek's move onto it is its own ticket.
  */
-export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, resolvedObjects, className }: ComposeBoxProps) {
+export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, resolvedObjects, here, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
@@ -161,6 +163,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   uploadsRef.current = uploads
 
   const editorRef = useRef<Editor | null>(null)
+  // The card under the box, read at send through a ref for the same reason.
+  const boxRef = useRef<BoxCard | null>(null)
 
   /*
     Send what is written — Enter and the Send button alike (OPT-7). Read
@@ -180,7 +184,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     const files = uploadsRef.current.ready()
     if (!text && !resolution.hasResolution && files.length === 0) return false
     const urgent = extractUrgent(ed)
-    const embeds = cardsToSend(ed)
+    const embeds = boxRef.current?.toSend() ?? []
+    const removed = boxRef.current?.removed()
     const sent = sendFnRef.current?.({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
@@ -189,7 +194,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       files: files.length > 0 ? files : undefined,
       embeds: embeds.length > 0 ? embeds : undefined,
     })
-    clearCards(ed)
     ed.commands.clearContent(true)
     const key = draftKeyRef.current
     if (key) draftsRef.current.clear(key)
@@ -197,8 +201,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     void Promise.resolve(sent).then((outcome) => {
       if (outcome !== false && !isRefusal(outcome)) return
       const back = putBack(key, ed, text, urgent, files)
-      // The cards come back with the text in this composer; a draft keeps only text.
-      if (back.text && !ed.isDestroyed && draftKeyRef.current === key) loadCards(ed, embeds)
+      // A ✕ comes back with the text in this composer; a draft keeps only text, so the card is offered again there.
+      if (back.text && removed && !ed.isDestroyed && draftKeyRef.current === key) boxRef.current?.restore(removed)
       if (isRefusal(outcome)) outcome.say(back)
     })
     return true
@@ -380,8 +384,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     if (!editor) return
     const draft = draftKey ? drafts.readDraft(draftKey) : undefined
     const text = draft?.text ?? ''
-    // Another conversation's message: its cards were chosen for that one, and a draft keeps none (OPT-17).
-    clearCards(editor)
+    // Another conversation's message: a ✕ was for that one, and a draft keeps none.
+    boxRef.current?.restore(new Set())
     // The urgent chips come back urgent: the text alone gives ordinary mentions (CON-31).
     editor.commands.setContent(
       text ? withUrgentMentions(textToTiptapContent(text), draft?.urgent) : { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -399,6 +403,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   }, [draftKey, editor])
 
   editorRef.current = editor
+  const box = useBoxCard(editor, { here })
+  boxRef.current = box
 
   // Register with the global composer registry so the command launcher can
   // insert into "the compose box the user last touched" (focus wins; the most
@@ -495,7 +501,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
             <AttachFileButton onPick={uploads.add} />
             <HighlightButton editor={editor} container={composeRef} />
-            <CardButton editor={editor} />
           </Toolbar>
 
           {(() => {
@@ -539,6 +544,10 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             )
           })()}
         </div>
+      </div>
+      {/* Under the box, as it will be sent: the one file's card with its ✕, or a block link's live part. */}
+      <div className="mt-2 empty:hidden">
+        <BoxCardUnder box={box} resolvedObjects={resolvedObjects} />
       </div>
     </div>
   )
