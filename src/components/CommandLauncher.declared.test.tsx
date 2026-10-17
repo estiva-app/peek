@@ -283,7 +283,10 @@ describe('an app is offered what it declares, and nothing else', () => {
     // Peek has no screen for a Folder's own chat, so a message there could not be read (Miky, 2026-10-17).
     await startIn('Intelligence in Peek')
 
-    // The send is the click's first await, so by now either path would have been called.
+    // Settled either way: a send went out, or the launcher said why not.
+    await waitFor(() =>
+      expect(applyAction.mock.calls.length + (screen.queryByText('Start a conversation in one of your DMs.') ? 1 : 0)).toBeGreaterThan(0),
+    )
     expect(applyAction).not.toHaveBeenCalled()
     expect(startConversationInDm).not.toHaveBeenCalled()
     expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
