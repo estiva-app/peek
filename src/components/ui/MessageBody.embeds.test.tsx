@@ -169,9 +169,15 @@ describe('the card a link on words asks for (OPT-17)', () => {
   // As Peek sends it: the link's object is indexed by an `a` (FOL-38), which alone would attach a row.
   const tagged = (body: string, embeds?: Embed[]) => ({ container: show(body, embeds, { nostrReferences: [ISSUE] }) })
 
-  it('draws no card for a link on words, whatever its embed asks: its target names nothing (protocol 0.38)', () => {
-    tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'detailed' }])
-    expect(drawn).toEqual([])
+  it('draws the card a link on words asks for, and the words stay a link: its target names its file (protocol 0.40)', () => {
+    const c = tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'detailed' }]).container
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'card' }])
+    expect(c.querySelector(`a[href="${ISSUE_URL}"]`)?.textContent).toBe('these words')
+  })
+
+  it('still draws the card a link on words asks for beside a plain web link', () => {
+    tagged(`the plan is [these words](${ISSUE_URL}), see https://example.com/a`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'card' }])
   })
 
   it('draws nothing under it for none', () => {
