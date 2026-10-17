@@ -4,15 +4,17 @@ import { TopicState, type TopicStateType, type TopicStateStatus } from './TopicS
 import { IconButton } from './IconButton'
 import { TopicMoreMenu } from './TopicMoreMenu'
 import { UnreadDot } from './UnreadDot'
+import { WithTooltip } from './WithTooltip'
 import { cn } from '@/lib/utils'
 import { useAvatarSrc } from '@/api'
 
 interface PersonRowProps {
   name: string
   /**
-   * A file's summary (SPEC §6.12), one muted line under the name — Desk rows
-   * only, as the short-summary prototype's `PeekDeskRow` draws it. Absent or
-   * blank, the row is today's single 32px line.
+   * A file's summary (SPEC §6.12), shown when the name is hovered — Desk rows
+   * only. It drew as a second line under the name and was always cut, so the
+   * row is one 32px line either way (Miky, SUM-9, 17 Oct). Absent or blank,
+   * no tooltip.
    */
   summary?: string
   type?: TopicStateType
@@ -126,21 +128,23 @@ export function PersonRow({
     </IconButton>
   )
 
-  /*
-    With a summary the row takes a second line, and the icon and the right
-    slot stay level with the name's line (the prototype's `PeekDeskRow`); with
-    none it is the 32px row it always was.
-  */
-  const summaryLine = summary?.trim() ? summary : undefined
-  const onNameLine = (node: React.ReactNode) =>
-    summaryLine && node ? <span className="flex h-5 shrink-0 items-center">{node}</span> : node
+  const nameText = (
+    <span
+      className={cn(
+        'flex-1 text-body-2 truncate',
+        isUnread ? 'font-medium' : 'font-normal',
+        isSelected || isUnread ? 'text-text-primary' : 'text-text-secondary'
+      )}
+    >
+      {name}
+    </span>
+  )
 
   return (
     // @estiva-escape(no-copied-look, no-raw-element): N8 (Katerina, 24 September: record only): a row that fills on hover and opens on a click, as Checkbox's row also does
     <div
       className={cn(
-        'flex gap-2 px-2 rounded-lg cursor-pointer transition-colors',
-        summaryLine ? 'items-start py-1.5' : 'items-center h-[32px]',
+        'flex items-center gap-2 px-2 h-[32px] rounded-lg cursor-pointer transition-colors',
         isSelected ? 'bg-bg-selected' : isHovered || menuOpen ? 'bg-bg-hover' : '',
         className
       )}
@@ -148,32 +152,25 @@ export function PersonRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {onNameLine(
-        <TopicState
-          type={type}
-          status={type === 'topic' ? topicStatus : 'default'}
-          avatarSrc={avatarSrc ?? (type === 'DM' ? avatarSrcFor(name) : undefined)}
-          memberCount={memberCount}
-          iconClassName={isSelected || isUnread ? 'text-text-primary' : undefined}
-        />
-      )}
+      <TopicState
+        type={type}
+        status={type === 'topic' ? topicStatus : 'default'}
+        avatarSrc={avatarSrc ?? (type === 'DM' ? avatarSrcFor(name) : undefined)}
+        memberCount={memberCount}
+        iconClassName={isSelected || isUnread ? 'text-text-primary' : undefined}
+      />
 
-      <span className={cn('flex min-w-0 flex-1 flex-col', !summaryLine && 'contents')}>
-        <span
-          className={cn(
-            'flex-1 text-body-2 truncate',
-            isUnread ? 'font-medium' : 'font-normal',
-            isSelected || isUnread ? 'text-text-primary' : 'text-text-secondary'
-          )}
-        >
-          {name}
-        </span>
-        {summaryLine && <span className="truncate text-caption text-text-secondary">{summaryLine}</span>}
-      </span>
+      {summary?.trim() ? (
+        <WithTooltip label={summary} wrapperClassName="flex min-w-0 flex-1">
+          {nameText}
+        </WithTooltip>
+      ) : (
+        nameText
+      )}
 
       {/* Right slot - rendered only when there's something to show, so the title
           can use the full row width when idle. Slight layout shift on hover is intentional. */}
-      {onNameLine(isHovered || menuOpen ? (
+      {isHovered || menuOpen ? (
         <div className="w-6 h-6 flex items-center justify-center shrink-0">
           {onRemove ? (
             <IconButton
@@ -219,7 +216,7 @@ export function PersonRow({
         <div className="w-6 h-6 flex items-center justify-center shrink-0" data-member>
           <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Yours" />
         </div>
-      ) : null)}
+      ) : null}
 
     </div>
   )

@@ -11,6 +11,7 @@
  * leaves `/app/desk`.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -80,6 +81,7 @@ const openWork = vi.hoisted(() => ({ remove: vi.fn() }))
 const SECOND = '30851:aa:issue-2'
 const desk = vi.hoisted(() => ({
   openWork: [] as unknown[],
+  urgent: [] as unknown[],
   unread: {} as Record<string, boolean>,
 }))
 vi.mock('@/api', async () => ({
@@ -95,7 +97,7 @@ vi.mock('@/api', async () => ({
     isLoading: false,
   }),
   useDeskLoading: () => false,
-  useDeskItems: () => ({ openWork: desk.openWork, urgent: [] }),
+  useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
   useScreenerItems: () => [],
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
@@ -153,6 +155,7 @@ beforeEach(() => {
   pane.asked = []
   openWork.remove.mockClear()
   desk.openWork = [openWorkFile(ISSUE, 'Issue one')]
+  desk.urgent = []
   desk.unread = {}
 })
 
@@ -169,19 +172,43 @@ describe('Open work keeps the person’s order', () => {
   })
 })
 
-describe('a Desk row shows its file’s summary (SPEC §6.12)', () => {
-  it('draws the summary under the name, and a file with none as its name alone', () => {
+/** Hovers `target` and returns the tooltip's text once it opens, or null when none does. */
+async function hoverTooltip(target: HTMLElement): Promise<string | null> {
+  // `shouldAdvanceTime`: user-event's act wrapper waits on a setTimeout(0), which a clock that never moves never fires.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).hover(target)
+    // Past the tooltip's 300ms wait (D23).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    return screen.queryByRole('tooltip')?.textContent ?? null
+  } finally {
+    vi.useRealTimers()
+  }
+}
+
+describe('a Desk row draws its file’s title alone, its summary (SPEC §6.12) on hover (SUM-9)', () => {
+  it('in Open work: one line, the summary when the name is hovered, and no tooltip for a file with none', async () => {
     desk.openWork = [
       { ...openWorkFile(ISSUE, 'Issue one'), object: { ref: ISSUE, kind: 30851, slots: { subtitle: { value: 'Why the file route moves.' } } } },
       openWorkFile(SECOND, 'Issue two'),
     ]
     mount()
     const left = within(screen.getByTestId('left'))
-    const first = left.getByText('Issue one').parentElement!
-    expect(first.textContent).toBe('Issue oneWhy the file route moves.')
-    const second = left.getByText('Issue two').parentElement!
-    expect(second.textContent).not.toContain('Why the file route moves.')
-    expect(left.getAllByText('Why the file route moves.')).toHaveLength(1)
+    expect(left.queryByText('Why the file route moves.')).toBeNull()
+    // The one with none first, so a tooltip still closing from the other cannot answer for it.
+    expect(await hoverTooltip(left.getByText('Issue two'))).toBeNull()
+    expect(await hoverTooltip(left.getByText('Issue one'))).toBe('Why the file route moves.')
+  })
+
+  it('in Urgent: one line, the summary when the name is hovered', async () => {
+    desk.openWork = []
+    desk.urgent = [{ id: 'u-1', kind: 'file', address: SECOND, fileKind: 30851, title: 'Urgent issue', summary: 'Totals are off by a cent.' }]
+    mount()
+    const left = within(screen.getByTestId('left'))
+    expect(left.queryByText('Totals are off by a cent.')).toBeNull()
+    expect(await hoverTooltip(left.getByText('Urgent issue'))).toBe('Totals are off by a cent.')
   })
 })
 
