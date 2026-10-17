@@ -74,6 +74,14 @@ export function useEstivaIdAuth() {
       lapsed.current = true
       setExpiresAt(storedToken()?.expiresAt ?? null)
       setRenewing(false)
+      // The same renewal, still out (the package hands back the one in
+      // flight). A refusal landing before the schedule has started would
+      // leave nothing armed, since the session is cleared: end it here too.
+      void renew().then((late) => {
+        if (late.outcome !== 'refused') return
+        lost.current = true
+        setExpiresAt(null)
+      })
     }, RENEWAL_WAIT_MS)
     void renew().then((result) => {
       if (!live) return
