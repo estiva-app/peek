@@ -379,7 +379,7 @@ export interface DeskRow {
   */
   kind: 'dm' | 'file'
   name: string
-  /** Files only: its summary, the row's second line (SPEC §6.12). */
+  /** Files only: its summary (SPEC §6.12), shown when the row's name is hovered. */
   summary?: string
   avatarSrc?: string
   /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
