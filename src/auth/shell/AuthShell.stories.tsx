@@ -9,9 +9,9 @@ import { AuthShell } from './AuthShell'
  * tripped loop guard — are one arg away here. Reaching them against a real
  * Estiva ID would mean breaking a deployment on purpose.
  *
- * The copy lives in `contract.ts`, not in this component, and is duplicated
- * verbatim in Ship. Change it there and `contract.test.ts` keeps the two copies
- * honest — editing the string here would only make them drift.
+ * The words live in `@estiva-app/identity` (`SHELL_COPY`) and the screen in
+ * `@estiva-app/ui` (`EntryShell`), shared by every app: change them there, not
+ * here, or Peek drifts from Ship and Leaf (AUT-3).
  */
 const meta = {
   title: 'Frame/AuthShell',

@@ -24,7 +24,9 @@ export interface AuthShellProps {
 export function AuthShell({ state, onContinue }: AuthShellProps) {
   const logo = <PeekLogoBadge size={40} />
 
-  // Waiting states show the badge and nothing else, revealed after 150ms so a fast entry flashes nothing.
+  // Waiting states show the badge and nothing else. In Signal the badge shimmers
+  // and shows at once (`.signal .animate-pulse` overrides the 150 ms reveal), as
+  // before the move; to a screen reader the package says "Loading".
   if (state.phase === 'checking' || state.phase === 'entering' || state.phase === 'ready') {
     return <EntryShell logo={logo} busy />
   }

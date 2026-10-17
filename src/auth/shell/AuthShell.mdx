@@ -49,7 +49,8 @@ import { AuthShell } from '@/auth/shell/AuthShell'
 
 ## What it owns
 
-- **One canvas for every state**, so entry never flashes between two designs.
+- **Not the canvas.** One canvas for every state, so entry never flashes
+  between two designs, is the package's `EntryShell`; Peek gives it its badge.
 - **Which states offer an affordance at all**, through `isRecoverable` — an
   unrecoverable state gets the explanation and no button, because a button that
   cannot work is worse than none.
