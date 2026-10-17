@@ -18,6 +18,7 @@ const ISSUE_REF = `nostr:${addrToNaddr(ISSUE, [])}`
 const EVENT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
 const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 const ISSUE_URL = 'https://ship.estiva.app/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
+
 // What the relay answers for each reference: the issue, nothing yet, or an object this reader cannot see.
 let answer: 'issue' | 'none' | 'unreachable' = 'issue'
 const object = () =>
@@ -174,7 +175,7 @@ describe('the card a link on words asks for (OPT-17)', () => {
     expect(c.querySelector(`a[href="${ISSUE_URL}"]`)?.textContent).toBe('these words')
   })
 
-  it('still draws its card with an extra plain web link: files are counted, not links', () => {
+  it('still draws the card a link on words asks for beside a plain web link', () => {
     tagged(`the plan is [these words](${ISSUE_URL}), see https://example.com/a`, [{ value: ISSUE, layout: 'detailed' }])
     expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'card' }])
   })
