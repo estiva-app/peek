@@ -28,7 +28,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
-import type { ResolvedAction } from '@estiva-app/interop'
+import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -51,7 +51,9 @@ const liveAddIssue: ResolvedAction = {
 }
 
 /**
- * Peek's live manifest declares this one, and only this one (INT-9).
+ * A Folder's Start a conversation — Peek's manifest declared it (INT-9) until
+ * interop 0.58 made it the Folder's built-in (SPEC §3.2), with `declaredBy`
+ * naming the specification.
  *
  * `createsUnder: 'self'` with no link tag — a message names its channel with
  * `h`, which every created event carries anyway, so there is no `setTag` and
@@ -61,17 +63,19 @@ const liveAddIssue: ResolvedAction = {
 const liveStartConversation: ResolvedAction = {
   id: 'start-a-conversation',
   label: 'Start a conversation',
-  description:
-    'Start a new conversation in a topic, as a root message that people can then reply to.',
+  description: 'Start a new conversation in this Folder, as a root message that people can then reply to.',
   effect: 'writes',
   control: 'form',
   fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
   createsUnder: 'self',
+  declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
 }
 
 const TOPIC_AUTHOR = '8b75a34d06c8e4ee' + 'f'.repeat(48)
 const TOPIC_ID = '53e358c2-0ad7-482c-a951-6f9d48dc71eb'
 const RETIRED_CHANNEL = 'e83471a7-cd98-4a62-ac5a-f21e0daedd24'
+const DM_ID = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
+const DM = `39000:${TOPIC_AUTHOR}:${DM_ID}`
 
 /*
   Typed by its signature rather than by a named parameter, so the assertions
@@ -83,6 +87,10 @@ const applyAction = vi.fn<
     created: string
   }>
 >(async () => ({ ok: true as const, created: `30851:${SHIP_AUTHOR}:x` }))
+/** The DM's own message, as its composer sends it (REC-1). */
+const startConversationInDm = vi.fn<(args: { channel: string; body: string }) => Promise<{ ok: true; id: string }>>(
+  async () => ({ ok: true as const, id: 'e'.repeat(64) }),
+)
 /*
   Answers per kind, which it has to now that two apps are probed.
 
@@ -99,14 +107,20 @@ const creatableUnder = vi.fn(async (parentKind: number) => {
     }
   }
   if (parentKind === 39000) {
+    const where = [
+      { address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' },
+      // A retired topic's channel, restored until FOL-25 deletes it — the
+      // relay still lists it among the newest `39000`s (FOL-26).
+      { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
+      // The person's DM, which Peek's picker lists beside their Folders (REC-1).
+      { address: DM, title: 'DM' },
+    ]
     return {
       actions: [liveStartConversation],
-      parents: [
-        { address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' },
-        // A retired topic's channel, restored until FOL-25 deletes it — the
-        // relay still lists it among the newest `39000`s (FOL-26).
-        { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
-      ],
+      parents: where,
+      manifest: FOLDER_ACTIONS_ADDRESS,
+      parentsFor: { 'start-a-conversation': where },
+      dms: [DM],
     }
   }
   // An app that declares nothing creatable. Null is what the runtime returns,
@@ -122,6 +136,7 @@ vi.mock('@/api', async () => {
       resolveObject: vi.fn(),
       resolveFolderProject: vi.fn(),
       applyAction,
+      startConversationInDm,
       creatableUnder,
     }),
   }
@@ -156,6 +171,7 @@ function open(initialAppId: string, initialActionId?: string) {
 
 beforeEach(() => {
   applyAction.mockClear()
+  startConversationInDm.mockClear()
   creatableUnder.mockClear()
   onClose.mockClear()
 })
@@ -172,7 +188,7 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(screen.queryByText('Create project')).not.toBeInTheDocument()
   })
 
-  it('offers Peek’s declared Start a conversation, and still not Create a topic', async () => {
+  it('offers a Folder’s Start a conversation in Peek, and still not Create a topic', async () => {
     /*
       Two of the three rows Miky found dead, and they are dead for different
       reasons — which is why one is back and one is not.
@@ -258,10 +274,13 @@ describe('an app is offered what it declares, and nothing else', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
 
     expect(applyAction).toHaveBeenCalledTimes(1)
-    const call = applyAction.mock.calls[0]?.[0]
+    const call = applyAction.mock.calls[0]?.[0] as Parameters<typeof applyAction>[0] & { declaredBy?: string }
     expect(call?.actionId).toBe('start-a-conversation')
     expect(call?.value).toEqual({ message: 'Shall we split PRO-18?' })
     expect(call?.naddr.startsWith('naddr')).toBe(true)
+    // The Folder's own action, built with the specification's manifest — Peek's declares none (REC-1).
+    expect(call?.declaredBy).toBe(FOLDER_ACTIONS_ADDRESS)
+    expect(startConversationInDm).not.toHaveBeenCalled()
   })
 
   it('offers nothing for an app that declares nothing, and says which app', async () => {

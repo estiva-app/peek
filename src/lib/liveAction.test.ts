@@ -72,10 +72,17 @@ describe('launcherActionFrom', () => {
   })
 })
 
+/** A Folder's Start a conversation, as interop 0.58 offers it: no app's. */
+const startConversation: ResolvedAction = {
+  ...addIssue,
+  id: 'start-a-conversation',
+  label: 'Start a conversation',
+  declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
+}
+const DM = '39000:relay:dm'
+
 describe('creationsFor — an action goes to the app that declared it (MAN-8)', () => {
-  const PEEK_MANIFEST = '31990:0a59:estiva-peek'
   const SHIP_MANIFEST = '31990:88ac:estiva-ship'
-  const startConversation: ResolvedAction = { ...addIssue, id: 'start-a-conversation', label: 'Start a conversation' }
   const addProject: ResolvedAction = {
     ...addIssue,
     id: 'add-project',
@@ -90,14 +97,21 @@ describe('creationsFor — an action goes to the app that declared it (MAN-8)', 
       39000,
       {
         actions: [startConversation, addProject],
-        parents: [{ address: '39000:relay:dm', title: 'A DM' }],
-        manifest: PEEK_MANIFEST,
-        parentsFor: { 'add-project': [{ address: '39000:relay:qa', title: 'QA' }] },
+        parents: [{ address: DM, title: 'A DM' }],
+        manifest: FOLDER_ACTIONS_ADDRESS,
+        parentsFor: {
+          'add-project': [{ address: '39000:relay:qa', title: 'QA' }],
+          'start-a-conversation': [
+            { address: '39000:relay:qa', title: 'QA' },
+            { address: DM, title: 'A DM' },
+          ],
+        },
+        dms: [DM],
       },
     ],
   ])
 
-  it('gives Ship its own issue and its project on a Folder, each with its own parents', () => {
+  it('gives Ship its own issue and its project on a Folder, each with its own parents, and not the Folder’s conversation', () => {
     const ship = creationsFor({ parentKind: 30850, parentNoun: 'project' }, reads)!
     expect(ship.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label)])).toEqual([
       ['add-issue', 'project', ['Payments']],
@@ -105,10 +119,9 @@ describe('creationsFor — an action goes to the app that declared it (MAN-8)', 
     ])
   })
 
-  it('keeps Ship’s action out of Peek’s section, though it arrived on Peek’s kind', () => {
-    const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)!
+  it('keeps Ship’s action out of Peek’s section, though it arrived on a Folder', () => {
+    const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
     expect(peek.map((c) => c.action.id)).toEqual(['start-a-conversation'])
-    expect(peek[0].parents.map((p) => p.label)).toEqual(['A DM'])
   })
 
   it('is nothing when the app’s own kind read nothing, and ignores a kind that failed', () => {
@@ -118,7 +131,7 @@ describe('creationsFor — an action goes to the app that declared it (MAN-8)', 
   })
 })
 
-describe('a Folder’s built-in new file is Peek’s Create topic (INT-12)', () => {
+describe('a Folder’s built-ins: Create topic and Start a conversation (INT-12, REC-1)', () => {
   const PEEK_MANIFEST = '31990:0a59:estiva-peek'
   const createFile: ResolvedAction = {
     ...addIssue,
@@ -132,23 +145,29 @@ describe('a Folder’s built-in new file is Peek’s Create topic (INT-12)', () 
     [
       39000,
       {
-        actions: [{ ...addIssue, id: 'start-a-conversation' }, createFile],
-        parents: [{ address: '39000:relay:dm', title: 'A DM' }],
-        manifest: PEEK_MANIFEST,
-        noun: 'topic',
-        parentsFor: { 'create-file': [{ address: '39000:relay:qa', title: 'QA' }] },
+        actions: [startConversation, createFile],
+        parents: [{ address: DM, title: 'A DM' }],
+        manifest: FOLDER_ACTIONS_ADDRESS,
+        noun: 'folder',
+        parentsFor: {
+          'create-file': [{ address: '39000:relay:qa', title: 'QA' }],
+          'start-a-conversation': [
+            { address: '39000:relay:qa', title: 'QA' },
+            { address: DM, title: 'A DM' },
+          ],
+        },
+        dms: [DM],
       },
     ],
   ])
 
-  it('is offered by the app that may sign it, with Folders to pick from — not by any other', () => {
+  it('are offered by the app that may sign them — a conversation in Folders and DMs, a topic in Folders — and by no other', () => {
     const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
-    expect(peek.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label)])).toEqual([
-      ['start-a-conversation', 'topic', ['A DM']],
-      ['create-file', 'Folder', ['QA']],
+    expect(peek.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label), c.dms])).toEqual([
+      ['start-a-conversation', 'topic', ['QA', 'A DM'], [DM]],
+      ['create-file', 'Folder', ['QA'], undefined],
     ])
-    const other = creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)!
-    expect(other.map((c) => c.action.id)).toEqual(['start-a-conversation'])
+    expect(creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)).toEqual([])
   })
 
   it('is called Create topic and adds a Members field Peek writes itself', () => {

@@ -22,7 +22,7 @@
 import type { ReadLane } from '@estiva-app/platform'
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
-import type { CreatableKindRead } from '@/lib/liveAction'
+import { isStartConversation, type CreatableKindRead } from '@/lib/liveAction'
 import { KIND, parseProfile, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
@@ -33,7 +33,8 @@ import { publishSigned, queryRelay, signViaEstivaId, type QueryLane } from './br
 import { readFrom, type ReadSource } from './readFrom'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
-import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
+import { dmChannelFilters, dmChannelsOf, dmConversationsOf, dmPeopleOf, KIND_CHANNEL_MEMBERS, unnamedDmsOf } from './dms'
+import { profilesOf } from './workspacePeople'
 import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
   decodeNevent,
@@ -1352,6 +1353,24 @@ export function commentedFileOf(event: SignedEvent): string | null {
 }
 
 /**
+ * The viewer's DMs, named after the people in them as People names them
+ * (`profilesOf`) — Start a conversation's picker (REC-1). Three reads at most:
+ * the DMs, the rosters of any that name nobody, and the others' profiles.
+ * A refused roster or profile read costs names, never the DM.
+ */
+async function dmConversationsAsViewer(query: QueryFn, me: string): Promise<{ address: string; title: string }[]> {
+  const metadata = (await query(dmChannelFilters(me))) as SignedEvent[]
+  const unnamed = unnamedDmsOf(metadata)
+  const members = unnamed.length
+    ? ((await query([{ kinds: [KIND_CHANNEL_MEMBERS], '#d': unnamed }]).catch(() => [])) as SignedEvent[])
+    : []
+  const others = dmPeopleOf(metadata, me, members)
+  const profiles = others.length ? ((await query([{ kinds: [0], authors: others }]).catch(() => [])) as SignedEvent[]) : []
+  const names = new Map([...profilesOf(profiles)].map(([pubkey, profile]) => [pubkey, profile.name]))
+  return dmConversationsOf(metadata, me, names, members)
+}
+
+/**
  * Ship's object-creating actions, from its live manifest, and the objects a new
  * one could hang under (PRO-4).
  *
@@ -1372,15 +1391,18 @@ export function commentedFileOf(event: SignedEvent): string | null {
  *
  * **Some of the actions are another app's** (MAN-8): interop 0.40.0 offers, on
  * an object, the creations other apps declare on its kind, each carrying
- * `declaredBy`. Ship's `add-project` arrives here on a Folder, beside Peek's
- * own `start-a-conversation`. `manifest` is the kind's owner's address, so a
- * caller can tell which app an action belongs to; `noun` is what the owner's
- * projection calls one of these, when it says.
+ * `declaredBy`. Ship's `add-project` arrives here on a Folder, beside the
+ * Folder's own built-ins — New file and Start a conversation, which no app
+ * declares (SPEC §3.2, interop 0.58). `manifest` is the kind's owner's
+ * address, so a caller can tell which app an action belongs to; on a Folder
+ * that is the specification's (`FOLDER_ACTIONS_ADDRESS`). `noun` is what the
+ * owner's projection calls one of these, when it says.
  *
- * A borrowed creation on a Folder puts a file in it, so its choices are the
- * Folders a person navigates by (`topLevelFolders`) — `parentsFor`, keyed by
- * action id — and not the newest `kind:39000`s, which include DMs and record
- * channels. Peek's own conversation keeps the list it always had.
+ * Every creation on a Folder goes in one, so its choices are the Folders a
+ * person navigates by (`topLevelFolders`) — `parentsFor`, keyed by action id —
+ * and not the newest `kind:39000`s, which include DMs and record channels.
+ * Start a conversation adds the person's DMs after the Folders, named in `dms`
+ * and after the people in them.
  */
 export async function creatableUnderAsViewer(
   parentKind: number,
@@ -1427,19 +1449,46 @@ export async function creatableUnderAsViewer(
   const borrowed = resolved.actions.filter((a) => a.declaredBy)
   if (parentKind !== KIND_CHANNEL_METADATA || borrowed.length === 0) return { ...resolved, parents }
 
-  let listing: FolderSummary[]
-  try {
-    listing = await listFolders(query)
-  } catch (error: unknown) {
-    // The borrowed rows go, not the owner's: a refused Folder listing must not
-    // cost Peek its own Start a conversation, which needs none of it.
-    console.warn('[nostr] listing Folders for another app’s creation failed:', error)
-    return { ...resolved, actions: resolved.actions.filter((a) => !a.declaredBy), parents }
+  /*
+    Start a conversation is the Folder's (SPEC §3.2, interop 0.58), offered
+    only on a Folder with state — and Peek's picker also lists the person's
+    DMs beside them (Miky, REC-1: Start a conversation stays mainly Peek's).
+    A DM is not a Folder, so it is read here by Peek's own chat code and a
+    conversation started in one is Peek's message (`dms`), not the Folder's
+    action. Asked beside the listing, so neither waits for the other.
+  */
+  const conversation = borrowed.find(isStartConversation)
+  const [listed, dmRead] = await Promise.allSettled([
+    listFolders(query),
+    conversation ? dmConversationsAsViewer(query, token.pubkey) : Promise.resolve([]),
+  ])
+  const dms = dmRead.status === 'fulfilled' ? dmRead.value : []
+  if (dmRead.status === 'rejected') console.warn('[nostr] listing DMs to start a conversation in failed:', dmRead.reason)
+  const withDms = (folders: { address: string; title: string }[]) =>
+    conversation && dms.length > 0
+      ? { parentsFor: { [conversation.id]: [...folders, ...dms] }, dms: dms.map((dm) => dm.address) }
+      : {}
+
+  if (listed.status === 'rejected') {
+    /*
+      Which channels are Folders is the listing's to say, so a refused one
+      costs every Folder row — but not Start a conversation in a DM, which
+      needs none of it. It stays while there is a DM to start one in.
+    */
+    console.warn('[nostr] listing Folders for a creation on one failed:', listed.reason)
+    const kept = resolved.actions.filter((a) => !a.declaredBy || (a === conversation && dms.length > 0))
+    return { ...resolved, actions: kept, parents, ...withDms([]) }
   }
-  const folders = topLevelFolders(listing).flatMap((folder) =>
+  const folders = topLevelFolders(listed.value).flatMap((folder) =>
     folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
   )
-  return { ...resolved, parents, parentsFor: Object.fromEntries(borrowed.map((a) => [a.id, folders])) }
+  const extra = withDms(folders)
+  return {
+    ...resolved,
+    parents,
+    parentsFor: { ...Object.fromEntries(borrowed.map((a) => [a.id, folders])), ...extra.parentsFor },
+    ...(extra.dms ? { dms: extra.dms } : {}),
+  }
 }
 
 /**

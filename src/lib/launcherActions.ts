@@ -109,6 +109,13 @@ export interface LauncherAction {
    * field is never sent to the runtime as a property.
    */
   membersField?: string
+  /**
+   * The parents, by address, that are the person's DMs — Start a
+   * conversation's (REC-1). A DM is not a Folder, so a conversation started in
+   * one is sent as Peek's own message, the one the DM's composer sends, not
+   * as the Folder's action.
+   */
+  dmParents?: string[]
 }
 
 export interface LauncherApp {
@@ -162,7 +169,8 @@ export interface LauncherApp {
   /**
    * Whether this app offers a Folder's built-in actions (SPEC §3.2, INT-12) —
    * which no manifest declares, so the registry says who may: an app that can
-   * sign what they write (`30840` and `1852`, §3.3).
+   * sign what they write (`30840` and `1852` for a new file, §3.3; `kind:9`
+   * for Start a conversation, a built-in since interop 0.58).
    */
   offersFolderBuiltIns?: boolean
   /**
@@ -328,6 +336,10 @@ const PEEK: LauncherApp = {
         INT-9's own watch list names — a row keyed `say` can never match an
         action called `start-a-conversation`, so the `declared` check refuses it
         and the refusal reads as the manifest being absent.
+
+        Since interop 0.58 the live one is no longer Peek's: it is a Folder's
+        built-in (SPEC §3.2), which `offersFolderBuiltIns` below lets Peek
+        offer, with the id unchanged — so this row still matches it.
       */
       id: 'start-a-conversation',
       label: 'Start a conversation',

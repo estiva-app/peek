@@ -26,14 +26,16 @@ const ME = 'a'.repeat(64)
 const QA_FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
 const OTHER_FOLDER = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
 
+/** The Folder's other built-in since interop 0.58 (SPEC §3.2). */
 const startConversation: ResolvedAction = {
   id: 'start-a-conversation',
   label: 'Start a conversation',
-  description: 'Start a new conversation in a topic.',
+  description: 'Start a new conversation in this Folder.',
   effect: 'writes',
   control: 'form',
   fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
   createsUnder: 'self',
+  declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
 }
 
 /** What interop 0.54.0 offers on every Folder. */
@@ -53,7 +55,7 @@ const creatableUnder = vi.fn(async (parentKind: number) =>
     ? {
         actions: [startConversation, createFile],
         parents: [],
-        manifest: `31990:${ME}:estiva-peek`,
+        manifest: FOLDER_ACTIONS_ADDRESS,
         parentsFor: {
           'create-file': [
             { address: `39000:${RELAY}:${OTHER_FOLDER}`, title: 'Estiva HQ' },
@@ -164,7 +166,7 @@ describe('Create topic (INT-12)', () => {
     creatableUnder.mockImplementationOnce(async () => ({
       actions: [startConversation, createFile],
       parents: [],
-      manifest: `31990:${ME}:estiva-peek`,
+      manifest: FOLDER_ACTIONS_ADDRESS,
       parentsFor: { 'create-file': [] },
     }))
     open()
