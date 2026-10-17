@@ -103,6 +103,8 @@ for (let i = 0; i < argv.length; i += 2) {
   else options[name.slice(2)] = value
 }
 if (!options.as) fail(usage)
+for (const age of ['tapped-ago', 'last-used-ago'])
+  if (options[age] !== undefined && !/^\d+$/.test(options[age])) fail(`--${age} takes whole seconds, not ${options[age]}`)
 const timeout = Number(options.timeout)
 
 const executablePath = join(homedir(), '.cache/ms-playwright/chromium-1228/chrome-linux64/chrome')
@@ -141,6 +143,7 @@ try {
   // sign-in the run started older and let end (AUT-4). The next `--click "Continue with passkey"` then comes back
   // signed in, as the tap would.
   relogin = async () => {
+    if (options.session) throw new Error('--relogin needs a QA sign-in; a --session file holds the old one')
     delete options['tapped-ago']
     delete options['last-used-ago']
     await context.addCookies([signInCookie(await sessionFor(options.as))])
@@ -201,9 +204,10 @@ try {
     return loaded.get(p)
   }
   // On the context, not the page: a window the page opens starts loading before its `page` event.
+  const tokenUrl = new URL('/token', options.id).href
   context.on('request', (r) => {
     // The endpoint and the tab only: the body is a refresh token.
-    if (r.method() === 'POST' && r.url().split(/[?#]/)[0] === new URL('/token', options.id).href)
+    if (r.method() === 'POST' && r.url().split(/[?#]/)[0] === tokenUrl)
       report.tokenCalls.push({ at: Date.now(), tab: (() => { try { return context.pages().indexOf(r.frame().page()) } catch { return null } })() })
     if (!r.isNavigationRequest()) return
     try {
