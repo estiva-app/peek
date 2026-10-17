@@ -207,14 +207,15 @@ describe.each([
   ['after Peek’s listing drops its claim', peekUnclaimed],
   ['while Peek’s listing still claims a Folder and a message', peekClaiming],
 ])('a Folder’s creations, %s', (_when, peek) => {
-  it('offers Start a conversation as the Folder’s own, in Folders and then the person’s DMs, never a record channel nor a DM they are not in', async () => {
+  it('offers Start a conversation as the Folder’s own, in the person’s DMs only — never a Folder, a record channel nor a DM they are not in', async () => {
     queryRelay.mockImplementation(relayOver(world(peek)))
     const read = await creatableUnderAsViewer(39000, URL, token)
 
     const conversation = read?.actions.find((a) => a.id === 'start-a-conversation')
     expect(conversation?.declaredBy?.address).toBe(FOLDER_ACTIONS_ADDRESS)
-    expect(read?.parentsFor?.['start-a-conversation']?.[0]?.title).toBe('QA')
-    expect(read?.dms).toEqual([NAMELESS_DM, UNTAGGED_DM, DM, GROUP_DM].map((d) => `39000:${RELAY}:${d}`))
+    const dmAddresses = [NAMELESS_DM, UNTAGGED_DM, DM, GROUP_DM].map((d) => `39000:${RELAY}:${d}`)
+    expect(read?.parentsFor?.['start-a-conversation']?.map((p) => p.address)).toEqual(dmAddresses)
+    expect(read?.dms).toEqual(dmAddresses)
   })
 
   it('names each DM after the people in it, as People does — the other person, or the others joined', async () => {
@@ -222,7 +223,16 @@ describe.each([
     const read = await creatableUnderAsViewer(39000, URL, token)
 
     // Newest first: the nameless one, the roster-named one, the one-to-one, the group.
-    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['QA', 'DM', 'Dan Ito', 'Bob Ellis', 'Bob Ellis, Cara'])
+    expect(titles(read?.parentsFor?.['start-a-conversation'])).toEqual(['DM', 'Dan Ito', 'Bob Ellis', 'Bob Ellis, Cara'])
+  })
+
+  it('does not offer Start a conversation to a person with no DM, and still offers the rest in Folders', async () => {
+    queryRelay.mockImplementation(relayOver([peek, ship, leaf, ...folder, record, othersDm, archivedDm]))
+    const read = await creatableUnderAsViewer(39000, URL, token)
+
+    expect(read?.actions.map((a) => a.id)).toEqual(['create-file', 'add-document', 'add-project'])
+    expect(read?.parentsFor?.['start-a-conversation']).toBeUndefined()
+    for (const id of ['create-file', 'add-project', 'add-document']) expect(titles(read?.parentsFor?.[id])).toEqual(['QA'])
   })
 
   it('offers each creation once — Ship’s New project and Leaf’s New document beside the Folder’s two — each into Folders only', async () => {
@@ -236,6 +246,18 @@ describe.each([
       ['add-document', `31990:${LEAF_APP}:estiva-leaf`],
       ['add-project', `31990:${SHIP_APP}:estiva-ship`],
     ])
+    for (const id of ['create-file', 'add-project', 'add-document']) expect(titles(read?.parentsFor?.[id])).toEqual(['QA'])
+  })
+})
+
+describe('when the relay refuses the DM read', () => {
+  const dmRead = (f: Record<string, unknown>) => Array.isArray(f['#t']) && (f['#t'] as string[]).includes('dm')
+
+  it('drops Start a conversation rather than offer it with nowhere to go, and keeps the rest in Folders', async () => {
+    queryRelay.mockImplementation(relayOver(world(peekUnclaimed), dmRead))
+    const read = await creatableUnderAsViewer(39000, URL, token)
+
+    expect(read?.actions.map((a) => a.id)).toEqual(['create-file', 'add-document', 'add-project'])
     for (const id of ['create-file', 'add-project', 'add-document']) expect(titles(read?.parentsFor?.[id])).toEqual(['QA'])
   })
 })
