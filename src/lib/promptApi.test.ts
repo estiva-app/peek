@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AVAILABILITY_LIMIT_MS, OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadFraction, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
+import { AVAILABILITY_LIMIT_MS, SESSION_OPTIONS, canPrefill, downloadFraction, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -207,23 +207,6 @@ describe('sampling options are required, not optional (measured in Chrome)', () 
         options.samplingMode === 'most-predictable' || options.topK === 1 || options.temperature === 0
       expect(deterministic).toBe(true)
     }
-  })
-
-  it('names an output language, which both browsers asked for', async () => {
-    /*
-      Measured 2026-09-02. Edge 154 named the set it accepts —
-      `[de, en, es, fr, ja]` — where Chrome said `[*]`. Asked for "to ensure
-      optimal output quality and properly attest to output safety", so it is
-      not decoration.
-    */
-    expect(SESSION_OPTIONS[0].outputLanguage).toBe(OUTPUT_LANGUAGE)
-    expect(['de', 'en', 'es', 'fr', 'ja']).toContain(OUTPUT_LANGUAGE)
-  })
-
-  it('falls back to a session with no language rather than none at all', async () => {
-    // A build that rejects the option is still better served by a suggestion
-    // than by silence, so the language is dropped before the feature is.
-    expect(SESSION_OPTIONS.some((o) => !o.outputLanguage && !o.expectedOutputs)).toBe(true)
   })
 
   it('falls back when a build refuses the first spelling', async () => {
@@ -758,21 +741,6 @@ describe('downloadModel falls back to the bare create Edge documents', () => {
     expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length + 1)
     // Still monitored, or a several-gigabyte fetch reports nothing at all.
     expect(create.mock.calls.at(-1)?.[0]).toHaveProperty('monitor')
-  })
-
-  it('keeps SESSION_OPTIONS free of a bare shape, which is the point', () => {
-    /*
-      The bare create is confined to the download, where nothing is generated.
-      A session with default sampling would sample creatively over a
-      colleague's conversation and land it in a form somebody publishes from —
-      which is why every entry here pins determinism.
-    */
-    for (const options of SESSION_OPTIONS) {
-      expect(Object.keys(options).length).toBeGreaterThan(0)
-      expect(
-        options.samplingMode === 'most-predictable' || options.topK === 1 || options.temperature === 0,
-      ).toBe(true)
-    }
   })
 
   it('still answers false where even bare is refused, as on Edge 154', async () => {

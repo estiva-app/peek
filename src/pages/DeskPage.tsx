@@ -309,6 +309,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
+              summary: item.summary,
               glyph: fileGlyph(item.fileKind),
               isUnread: true,
               isUrgent: true,
@@ -334,6 +335,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
+              summary: item.object.slots?.subtitle?.value,
               glyph: fileGlyph(item.object.kind),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
               // Archived where it lives, and still here: Open work is the person's own list (Katerina, 14 October).
@@ -386,6 +388,8 @@ export interface DeskRow {
   */
   kind: 'dm' | 'file'
   name: string
+  /** Files only: its summary (SPEC §6.12), shown when the row's name is hovered. */
+  summary?: string
   avatarSrc?: string
   /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
   glyph?: FileGlyph
@@ -430,6 +434,7 @@ function DeskRowItem({ row }: { row: DeskRow }) {
     <NavItem
       href={row.href}
       label={row.name}
+      tooltip={row.summary}
       icon={
         <TopicState
           type={type}

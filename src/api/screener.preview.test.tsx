@@ -11,7 +11,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import type { ScreenerPreviewSource } from '@/api/internal/screener'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }), storedToken: () => ({ pubkey: 'me' }) }))
 
 const THEM = 'b'.repeat(64)
 vi.mock('@/api/people', () => ({ useMentionNames: () => [{ pubkey: THEM, name: 'Greg Bothman' }] }))

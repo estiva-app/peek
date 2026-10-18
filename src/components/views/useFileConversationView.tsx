@@ -37,8 +37,10 @@ import {
   type ResolutionEvent,
   type ThreadReply,
   type WriteResult,
+  TOPIC_NOT_CREATED,
+  topicTextBack,
 } from '@/api'
-import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
+import { groupReactions, offersEditAndDelete, REACTION_HORIZON, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
 import { notSavedNote, notSentNote } from '@/lib/notSent'
@@ -349,9 +351,14 @@ export function useFileConversationView({
     the send goes out, so the note names this conversation even when the
     person has moved to another by the time the relay answers.
   */
-  const notSent = (where: string, reason: string): SendRefused => ({
-    say: (back) => showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
-  })
+  const notSent = (where: string, reason: string): SendRefused => {
+    // Not posted because its topic was refused (PEE-6): the topic's own note says what came back, once.
+    const topic = reason === TOPIC_NOT_CREATED && container?.kind === 'file' ? container.address : null
+    return {
+      say: (back) =>
+        topic ? topicTextBack(topic, back.text) : showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
+    }
+  }
 
   const handleSend = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
     const attachments = outgoing(files)
@@ -528,14 +535,18 @@ export function useFileConversationView({
     return unregisterThreadOpener
   }, [address, onOpenThread])
 
-  // Close the thread when the file changes.
-  const prevAddress = useRef(address)
+  /*
+    Close the thread when the file changes to another — not when it is gone
+    or still loading, and only when one is open. Closing writes the URL, and a
+    refused new topic's file goes as the person is sent back to its Folder:
+    the write, against the page being left, undid that (PEE-6).
+  */
+  const lastAddress = useRef(address)
   useEffect(() => {
-    if (prevAddress.current !== address) {
-      if (prevAddress.current != null) onOpenThread(null)
-      prevAddress.current = address
-    }
-  }, [address, onOpenThread])
+    if (!address) return
+    if (lastAddress.current && lastAddress.current !== address && openThreadId) onOpenThread(null)
+    lastAddress.current = address
+  }, [address, onOpenThread, openThreadId])
 
   // The stream and its composer, as a Panel's body and footer (estiva-ui 0.37.0): the
   // Panel scrolls the stream and keeps the composer under it. A page with a header of
@@ -544,7 +555,8 @@ export function useFileConversationView({
     <>
         <div className={STREAM_SPACER} />
         <div className={STREAM}>
-          {isLoading && <SkeletonConversationList />}
+          {/* Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above. */}
+          {(isLoading || conversation?.earlier) && <SkeletonConversationList />}
           {failed && (
             <EmptyState
               scope="section"
@@ -575,6 +587,7 @@ export function useFileConversationView({
                   isSelected={openThreadId === c.id}
                   readOnly={readOnly}
                   actions={rowActions}
+                  writtenOn={container?.kind === 'file' ? container.address : undefined}
                 />
                 </div>
                 </Fragment>
@@ -588,6 +601,15 @@ export function useFileConversationView({
             rather than left to conclude nobody reacted.
           */}
           {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} container="conversation" />}
+          {/*
+            The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
+            messages are here, so they do not move up when the rest lands under a reader at the bottom.
+          */}
+          {view && !view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
+            <div className="invisible" aria-hidden>
+              <ReactionHorizon omitted={1} container="conversation" />
+            </div>
+          )}
         </div>
     </>
   )
@@ -597,6 +619,7 @@ export function useFileConversationView({
           onSend={handleSend}
           contextLabel={title}
           draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
+          here={container?.kind === 'file' ? container.address : undefined}
         />
       </div>
   )
@@ -628,6 +651,7 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
+        writtenOn={container?.kind === 'file' ? container.address : undefined}
         readOnly={readOnly}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.
         composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}

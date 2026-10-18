@@ -27,9 +27,10 @@ affordance.
 - As a page. It is the shell that stands in *for* the page while entry is being
   decided.
 - With branding beyond the badge. That is the rule the component exists to keep.
-- Duplicating its copy. The words come from `@estiva-app/identity` — Ship
-  renders the same states with the same copy in plain DOM, and **the shared
-  artifact is the contract in `contract.ts`, not this component.**
+- Duplicating its copy. The words come from `@estiva-app/identity`, and the
+  screen is the package's **EntryShell** (AUT-3), which Ship and Leaf can draw
+  too. This file keeps only Peek's badge and which words and button each
+  state gets.
 
 <Canvas of={AuthShellStories.SessionExpired} />
 
@@ -48,7 +49,8 @@ import { AuthShell } from '@/auth/shell/AuthShell'
 
 ## What it owns
 
-- **One canvas for every state**, so entry never flashes between two designs.
+- **Not the canvas.** One canvas for every state, so entry never flashes
+  between two designs, is the package's `EntryShell`; Peek gives it its badge.
 - **Which states offer an affordance at all**, through `isRecoverable` — an
   unrecoverable state gets the explanation and no button, because a button that
   cannot work is worse than none.

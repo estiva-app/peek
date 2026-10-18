@@ -31,6 +31,21 @@ type Story = StoryObj<typeof meta>
 /** A topic at the top of the Folder — no parent, no `a` tag. */
 export const InAFolder: Story = {}
 
+/** With its optional summary filled in (SPEC §6.12): seeded on the topic as it is started. */
+export const WithASummary: Story = {
+  args: { initialTitle: 'Launch naming', initialSummary: 'Where we pick the product’s name, by Friday.' },
+}
+
+/** Past about 240 characters a count takes the helper's place; nothing is refused. */
+export const ALongSummary: Story = {
+  args: {
+    initialTitle: 'Launch naming',
+    initialSummary:
+      'Where we pick the product’s name, by Friday: the shortlist, the domain checks, the trademark search, who signs off and when, ' +
+      'what each name says to a customer who has never heard of us, and the reasons the last three candidates lost to the ones still standing.',
+  },
+}
+
 /**
  * Started from a Ship project's row. The dialog names the parent and says what
  * follows from it, because a person choosing "under" is choosing where Ship

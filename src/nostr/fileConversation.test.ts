@@ -31,11 +31,13 @@ import {
   editCommentAsViewer,
   fileConversationAsViewer,
   fileThreadsAsViewer,
+  partsAndAnchorOf,
   reactAsViewer,
   resolveAsViewer,
   type ConversationContainer,
 } from './fileConversation'
 import { forgetUrlShapes } from './foreign'
+import { boxLinksOf, embedsToSend } from '@/lib/boxCard'
 
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const MIKY = 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2'
@@ -368,6 +370,13 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(tags).toContainEqual(['p', CATH])
   })
 
+  it('the box’s one file goes out as its detailed embed, and the file the conversation is on gets none (4136f999)', async () => {
+    const body = `See ${OTHER_NADDR}, unlike ${OWN_NADDR}`
+    const links = boxLinksOf(body, { resolveLink: () => undefined, blockOf: () => undefined, here: ADDRESS })
+    await commentAsViewer({ container, body, embeds: embedsToSend(links, new Set()) }, 'https://relay.test', token)
+    expect(signed().tags.filter((t) => t[0] === 'embed')).toEqual([['embed', OTHER, 'detailed']])
+  })
+
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
     await commentAsViewer({ container, body: `See ${OTHER_NADDR}, unlike ${OWN_NADDR}` }, 'https://relay.test', token)
     expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', OTHER]])
@@ -647,6 +656,28 @@ describe('a channel conversation (REM-1)', () => {
     expect(published.tags.filter((t) => t[0] === 'imeta')).toHaveLength(1)
     expect(published.tags.find((t) => t[0] === 'imeta')).toContain('x fff')
   })
+
+  it('✕ on a sent card is an edit carrying the whole folded set, that card none and the other kept (4136f999)', async () => {
+    const issue = `30851:${CATH}:f0b27d90-d5b9-40e7-8078-865ab36a421c`
+    const other = `30851:${CATH}:e0b27d90-d5b9-40e7-8078-865ab36a421c`
+    await editCommentAsViewer(
+      {
+        container: dmContainer,
+        targetEventId: picture.id,
+        body: 'Here it is',
+        embeds: [{ value: issue, layout: 'none' }, { value: other, layout: 'detailed' }],
+      },
+      'https://relay.test',
+      token,
+    )
+    const published = signed()
+    expect(published.kind).toBe(40003)
+    expect(published.content).toBe('Here it is')
+    expect(published.tags.filter((t) => t[0] === 'embed')).toEqual([
+      ['embed', issue, 'none'],
+      ['embed', other, 'detailed'],
+    ])
+  })
 })
 
 /*
@@ -717,4 +748,25 @@ describe('publishConfirmed — success is the relay’s acceptance, and a transi
     expect(result.ok).toBe(false)
     expect(publishSigned).toHaveBeenCalledTimes(PUBLISH_ATTEMPTS)
   }, 15_000)
+})
+
+describe("a comment's anchor keeps its whole run and its words (§13.6, LEAF-7)", () => {
+  const DOC = `30842:${'a'.repeat(64)}:doc`
+
+  it('keeps every block of the run and the quote, so the card reads the selection rather than its first block', () => {
+    const tags = [['A', DOC], ['block', 'p1', 'p2', 'p3'], ['quote', 'ship on Friday.', 'Then we']]
+    expect(partsAndAnchorOf({ kind: 1111, tags })).toEqual([
+      { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1', 'p2', 'p3'], ['quote', 'ship on Friday.', 'Then we']] },
+    ])
+  })
+
+  it('reads a one-block comment as it always did', () => {
+    expect(partsAndAnchorOf({ kind: 1111, tags: [['A', DOC], ['block', 'p1']] })).toEqual([
+      { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1']] },
+    ])
+  })
+
+  it('anchors nothing on a channel message, which names no file', () => {
+    expect(partsAndAnchorOf({ kind: 9, tags: [['block', 'p1', 'p2'], ['quote', 'x']] })).toEqual([])
+  })
 })

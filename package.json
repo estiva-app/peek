@@ -21,12 +21,12 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@estiva-app/conversation": "^0.11.0",
-    "@estiva-app/identity": "^0.2.3",
-    "@estiva-app/interop": "^0.56.0",
+    "@estiva-app/conversation": "^0.12.0",
+    "@estiva-app/identity": "^0.3.0",
+    "@estiva-app/interop": "^0.59.0",
     "@estiva-app/platform": "^0.7.0",
-    "@estiva-app/protocol": "^0.33.0",
-    "@estiva-app/ui": "^0.69.2",
+    "@estiva-app/protocol": "^0.40.0",
+    "@estiva-app/ui": "^0.77.0",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-code-block-lowlight": "^3.22.1",
     "@tiptap/extension-link": "^3.22.1",

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { validToken, type StoredToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { queryRelay } from '@/nostr/bridge'
 import { readFromCopy } from '@/nostr/deviceCopy'
 import {
@@ -64,7 +65,7 @@ function useWorkspaceEvents(): SignedEvent[] | undefined {
   }, [])
   useEffect(() => {
     // The names the copy on the device holds, until the relay's land (PEE-2).
-    const token = validToken()
+    const token = heldToken()
     if (hasRelay && RELAY_URL && token && !workspaceCache) {
       void readFromCopy(RELAY_URL, workspaceFilters(), token.pubkey).then((cached) => {
         if (cached?.length) setEvents((current) => current ?? cached)
@@ -116,7 +117,7 @@ export function useWorkspacePeople(include: readonly string[] = NONE): Person[] 
     if (!hasRelay) return MOCK_PEOPLE
     if (events === undefined) return undefined
     const extra = includeKey ? includeKey.split(',') : []
-    return workspacePeopleOf(events, validToken()?.pubkey, extra).map(toPerson)
+    return workspacePeopleOf(events, heldToken()?.pubkey, extra).map(toPerson)
   }, [events, includeKey])
 }
 
@@ -139,7 +140,7 @@ export function usePeople(): Person[] | undefined {
   return useMemo(() => {
     if (!hasRelay) return MOCK_PEOPLE
     if (events === undefined) return undefined
-    return mentionablePeopleOf(events, validToken()?.pubkey).map(toPerson)
+    return mentionablePeopleOf(events, heldToken()?.pubkey).map(toPerson)
   }, [events])
 }
 
@@ -176,7 +177,7 @@ export function useWorkspaceProfiles(): WorkspaceProfile[] | undefined {
  */
 export function useViewerProfile(): { pubkey: string; profile?: WorkspaceProfile } | undefined {
   const events = useWorkspaceEvents()
-  const pubkey = validToken()?.pubkey
+  const pubkey = heldToken()?.pubkey
   return useMemo(() => {
     if (!hasRelay || !pubkey || events === undefined) return undefined
     const profile = profilesFor(events).get(pubkey)

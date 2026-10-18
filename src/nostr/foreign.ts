@@ -22,23 +22,22 @@
 import type { ReadLane } from '@estiva-app/platform'
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
-import type { CreatableKindRead } from '@/lib/liveAction'
+import { isStartConversation, type CreatableKindRead } from '@/lib/liveAction'
 import { KIND, parseProfile, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
 export const KIND_TOPIC = 39000
 /** NIP-29 channel message — what a Peek message is on the wire. */
 const KIND_MESSAGE = 9
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
+import { publishSigned, queryRelay, signViaEstivaId, type QueryLane } from './bridge'
 import { readFrom, type ReadSource } from './readFrom'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
-import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
+import { dmChannelFilters, dmChannelsOf, dmConversationsOf, dmPeopleOf, KIND_CHANNEL_MEMBERS, unnamedDmsOf } from './dms'
+import { profilesOf } from './workspacePeople'
 import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
-  buildBareFile,
   decodeNevent,
-  encodeNaddr,
   pointerToAddress,
   referenceToPointer,
   type AddressPointer,
@@ -47,6 +46,7 @@ import {
   partTag,
 } from '@estiva-app/protocol'
 import {
+  ARCHIVED_FIELD,
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
@@ -64,6 +64,7 @@ import {
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
+  projectEvents,
   resolveActingManifest,
   resolveParents,
   topLevelFolders,
@@ -85,7 +86,6 @@ import {
   type MovableFile,
   planMoveFromFolders,
   listedBeneath,
-  planPlaceFile,
   planRenameFolder,
   planUnlistFile,
   planArchiveFolder,
@@ -117,7 +117,7 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  *  means refused" in this app started here, one layer below where it was
  *  visible. Callers that must degrade quietly catch it explicitly, which is
  *  better than the information never existing. */
-export function viewerQuery(relayUrl: string, token: StoredToken, lane: ReadLane | (() => ReadLane) = 'click'): QueryFn {
+export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLane | (() => QueryLane) = 'click'): QueryFn {
   return async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
@@ -274,6 +274,20 @@ export async function fileAddressAsViewer(
 }
 
 /**
+ * A file the viewer is publishing, drawn as its resolve will answer once the
+ * relay holds it (PEE-6): the same manifest and the same projection, from the
+ * event in hand rather than from a read — so its title, Folder and actions are
+ * there before the write is. The manifest is memoised, so this usually reads
+ * nothing; with no comments, children or people, as `projectEvents` says.
+ */
+export async function projectOwnFileAsViewer(event: SignedEvent, relayUrl: string, token: StoredToken): Promise<ForeignObject | null> {
+  const identifier = event.tags.find((tag) => tag[0] === 'd')?.[1] ?? ''
+  const manifest = await resolveManifest({ kind: event.kind, pubkey: event.pubkey, identifier, relays: [] }, viewerQuery(relayUrl, token), manifests)
+  if (!manifest) return null
+  return projectEvents([event], () => manifest)[0] ?? null
+}
+
+/**
  * The Folder a file's conversation is written in, for a record that carries
  * no `h` — PEE-33.
  *
@@ -341,26 +355,39 @@ export async function referenceFromUrlAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<UrlReference | null> {
-  const query = viewerQuery(relayUrl, token)
   try {
-    const hit = matchObjectUrl(url, await urlShapes(query))
-    if (!hit) return null
-    if (hit.by === 'id') return { eventId: hit.identifier }
-    // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
-    // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
-    // `(kind, d)` could take a link's mention.
-    const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-    // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
-    if (hit.kind !== undefined) filter.kinds = [hit.kind]
-    const found = await query([filter])
-    const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
-    if (authors.size !== 1) return null
-    const address = `${[...authors][0]}:${hit.identifier}`
-    return hit.block === undefined ? { address } : { address, block: hit.block }
+    return await askReferenceFromUrlAsViewer(url, relayUrl, token)
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
   }
+}
+
+/**
+ * {@link referenceFromUrlAsViewer}, rejecting when the relay could not be
+ * asked instead of answering null, so a caller that remembers the answer can
+ * ask again (the message box's block links).
+ */
+export async function askReferenceFromUrlAsViewer(
+  url: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<UrlReference | null> {
+  const query = viewerQuery(relayUrl, token)
+  const hit = matchObjectUrl(url, await urlShapes(query))
+  if (!hit) return null
+  if (hit.by === 'id') return { eventId: hit.identifier }
+  // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
+  // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
+  // `(kind, d)` could take a link's mention.
+  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
+  // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
+  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const found = await query([filter])
+  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  if (authors.size !== 1) return null
+  const address = `${[...authors][0]}:${hit.identifier}`
+  return hit.block === undefined ? { address } : { address, block: hit.block }
 }
 
 /**
@@ -538,19 +565,46 @@ export async function resolveObjectAsViewer(
 }
 
 /**
+ * The objects drawn from the copy on the device, until the relay's answer
+ * replaces them. Marked by identity: every consumer passes the object as it was
+ * resolved, and one rebuilt from it is no longer known to come from the copy.
+ */
+const drawnFromCopy = new WeakSet<ForeignObject>()
+
+/** Whether this object came from the copy on the device rather than from the relay (PEE-4). */
+export function isFromCopy(object: ForeignObject): boolean {
+  return drawnFromCopy.has(object)
+}
+
+/**
+ * Nothing publishes over the copy (PEE-2): an edit started from it would write
+ * its older value over a newer one. Until the relay's answer replaces it, an
+ * object from the copy offers a comment, which overwrites nothing, and its
+ * pickers — a status, an assignee — so its card can be used at once. A pick
+ * there is one value, and the card sends it only once the relay has answered,
+ * and only if the field still holds what the card showed; otherwise it is
+ * undone with a note (Miky, 2026-10-16, kickoff of "A Ship issue's card drawn
+ * from the copy has its controls at once"). Text, a move and an archive still
+ * wait for the relay.
+ */
+function drawOnly(object: ForeignObject | null): ForeignObject | null {
+  if (!object) return null
+  const pick = (action: ResolvedAction) =>
+    (action.control === 'select' || action.control === 'pubkey') &&
+    !!action.field &&
+    !action.format &&
+    action.field !== ARCHIVED_FIELD &&
+    action.field !== object.parentField
+  const drawn = { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment' || pick(action)) }
+  drawnFromCopy.add(drawn)
+  return drawn
+}
+
+/**
  * The query a read from the copy on the device runs on, with people and
  * manifest caches of its own: what the copy lacks must not be held as a miss or
  * a failure the relay's answer would then wait out (PEE-2).
  */
-/**
- * Nothing publishes over the copy (PEE-2): an edit started from it would write
- * its older value over a newer one. Until the relay's answer replaces it, an
- * object from the copy offers only a comment, which overwrites nothing.
- */
-function drawOnly(object: ForeignObject | null): ForeignObject | null {
-  return object ? { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment') } : null
-}
-
 function fromCopy(relayUrl: string, token: StoredToken) {
   const query = copyQuery(relayUrl, token)
   return { query, people: createPeopleCache().viaRelay(query), cache: createProjectionCache(0) }
@@ -989,60 +1043,6 @@ export async function moveFileAsViewer(
 }
 
 /**
- * Start a topic — a bare file inside a team, SPEC §6.7 (RFC 0.5 §10.7).
- *
- * A new topic is no longer a channel. It is a `kind:30840` carrying the team's
- * channel as `h`, optionally naming the file it sits under with one `a` of any
- * kind, and its conversation is `kind:1111` comments on it — which is what
- * `applyActionAsViewer` already publishes through the bare file's built-in
- * `comment` action. Existing topics stay channels; nothing here touches them.
- *
- * **Two writes when the Folder has state, one when it does not, and the
- * caller says which.** A Folder read by containment lists the new file the
- * moment its `h` is stored. A Folder with a `kind:30890` lists only what its
- * state names, so it also needs a `kind:1852` `add` — and a `1852` against a
- * Folder with *no* state emits state listing nothing, which empties the Folder
- * on every surface (peek#192). `hasState` is required rather than guessed for
- * exactly the reason `renameFolderAsViewer` requires it: the page has just
- * read it, and getting it wrong is silent loss.
- *
- * The file is published before the `add`, so a refused `add` leaves a topic
- * that exists and is reachable by its address, reported as partial — the same
- * order and the same reasoning as a move.
- */
-export async function createTopicAsViewer(
-  args: { folder: string; title: string; parent?: string; hasState: boolean },
-  relayUrl: string,
-  token: StoredToken,
-): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {
-  const fileId = crypto.randomUUID()
-  const unsigned = buildBareFile(token.pubkey, Date.now(), {
-    fileId,
-    title: args.title,
-    channelUuid: args.folder,
-    ...(args.parent ? { parent: args.parent } : {}),
-  })
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  // Never the status code: the relay refuses as 200 with `accepted: false`.
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the topic.' }
-  const address = `${KIND_BARE_FILE}:${token.pubkey}:${fileId}`
-  const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey: token.pubkey, identifier: fileId, relays: [] })
-  const placed = await publishInOrder(
-    planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address, hasState: args.hasState }),
-    relayUrl,
-    token,
-  )
-  if (!placed.ok) {
-    return {
-      ok: false,
-      reason: 'The topic was created but could not be added to this folder’s list. Reload and try adding it again.',
-    }
-  }
-  return { ok: true, address, naddr }
-}
-
-/**
  * Everything in a Folder, whichever app owns it — RFC 0.4 §4 and §5.
  *
  * The sibling of {@link resolveFolderProjectAsViewer} and deliberately not a
@@ -1366,6 +1366,24 @@ export function commentedFileOf(event: SignedEvent): string | null {
 }
 
 /**
+ * The viewer's DMs, named after the people in them as People names them
+ * (`profilesOf`) — Start a conversation's picker (REC-1). Three reads at most:
+ * the DMs, the rosters of any that name nobody, and the others' profiles.
+ * A refused roster or profile read costs names, never the DM.
+ */
+async function dmConversationsAsViewer(query: QueryFn, me: string): Promise<{ address: string; title: string }[]> {
+  const metadata = (await query(dmChannelFilters(me))) as SignedEvent[]
+  const unnamed = unnamedDmsOf(metadata)
+  const members = unnamed.length
+    ? ((await query([{ kinds: [KIND_CHANNEL_MEMBERS], '#d': unnamed }]).catch(() => [])) as SignedEvent[])
+    : []
+  const others = dmPeopleOf(metadata, me, members)
+  const profiles = others.length ? ((await query([{ kinds: [0], authors: others }]).catch(() => [])) as SignedEvent[]) : []
+  const names = new Map([...profilesOf(profiles)].map(([pubkey, profile]) => [pubkey, profile.name]))
+  return dmConversationsOf(metadata, me, names, members)
+}
+
+/**
  * Ship's object-creating actions, from its live manifest, and the objects a new
  * one could hang under (PRO-4).
  *
@@ -1386,15 +1404,19 @@ export function commentedFileOf(event: SignedEvent): string | null {
  *
  * **Some of the actions are another app's** (MAN-8): interop 0.40.0 offers, on
  * an object, the creations other apps declare on its kind, each carrying
- * `declaredBy`. Ship's `add-project` arrives here on a Folder, beside Peek's
- * own `start-a-conversation`. `manifest` is the kind's owner's address, so a
- * caller can tell which app an action belongs to; `noun` is what the owner's
- * projection calls one of these, when it says.
+ * `declaredBy`. Ship's `add-project` arrives here on a Folder, beside the
+ * Folder's own built-ins — New file and Start a conversation, which no app
+ * declares (SPEC §3.2, interop 0.58). `manifest` is the kind's owner's
+ * address, so a caller can tell which app an action belongs to; on a Folder
+ * that is the specification's (`FOLDER_ACTIONS_ADDRESS`). `noun` is what the
+ * owner's projection calls one of these, when it says.
  *
- * A borrowed creation on a Folder puts a file in it, so its choices are the
- * Folders a person navigates by (`topLevelFolders`) — `parentsFor`, keyed by
- * action id — and not the newest `kind:39000`s, which include DMs and record
- * channels. Peek's own conversation keeps the list it always had.
+ * Every creation on a Folder goes in one, so its choices are the Folders a
+ * person navigates by (`topLevelFolders`) — `parentsFor`, keyed by action id —
+ * and not the newest `kind:39000`s, which include DMs and record channels.
+ * Start a conversation is the exception: its choices are the person's DMs
+ * only, named in `dms` and after the people in them, and with none it is not
+ * offered.
  */
 export async function creatableUnderAsViewer(
   parentKind: number,
@@ -1441,19 +1463,50 @@ export async function creatableUnderAsViewer(
   const borrowed = resolved.actions.filter((a) => a.declaredBy)
   if (parentKind !== KIND_CHANNEL_METADATA || borrowed.length === 0) return { ...resolved, parents }
 
-  let listing: FolderSummary[]
-  try {
-    listing = await listFolders(query)
-  } catch (error: unknown) {
-    // The borrowed rows go, not the owner's: a refused Folder listing must not
-    // cost Peek its own Start a conversation, which needs none of it.
-    console.warn('[nostr] listing Folders for another app’s creation failed:', error)
-    return { ...resolved, actions: resolved.actions.filter((a) => !a.declaredBy), parents }
+  /*
+    Start a conversation is the Folder's built-in (SPEC §3.2, interop 0.58),
+    and Peek offers it in the person's DMs only. A DM is not a Folder, so it is
+    read here by Peek's own chat code and a conversation started in one is
+    Peek's message (`dms`), not the Folder's action. With no DM it is not
+    offered. Every other creation on a Folder goes into the Folders, from the
+    listing, asked beside the DMs so neither waits for the other.
+  */
+  // Not into a Folder: Peek has no screen for a Folder's own chat, so it could not be read (parked, Miky 2026-10-17, REC-1 2726532e).
+  const conversation = borrowed.find(isStartConversation)
+  const others = borrowed.filter((a) => a !== conversation)
+  const [listed, dmRead] = await Promise.allSettled([
+    others.length > 0 ? listFolders(query) : Promise.resolve([]),
+    conversation ? dmConversationsAsViewer(query, token.pubkey) : Promise.resolve([]),
+  ])
+  const dms = dmRead.status === 'fulfilled' ? dmRead.value : []
+  if (dmRead.status === 'rejected') console.warn('[nostr] listing DMs to start a conversation in failed:', dmRead.reason)
+  const inDms = conversation && dms.length > 0 ? conversation : undefined
+  const actions = resolved.actions.filter((a) => a !== conversation || inDms)
+  const conversationParents = inDms ? { [inDms.id]: dms } : {}
+  const dmAddresses = inDms ? { dms: dms.map((dm) => dm.address) } : {}
+
+  if (listed.status === 'rejected') {
+    /*
+      Which channels are Folders is the listing's to say, so a refused one
+      costs every creation that needs a Folder — but not Start a conversation,
+      which goes into DMs.
+    */
+    console.warn('[nostr] listing Folders for a creation on one failed:', listed.reason)
+    const kept = actions.filter((a) => !a.declaredBy || a === conversation)
+    if (kept.length === 0) return null
+    return { ...resolved, actions: kept, parents, parentsFor: conversationParents, ...dmAddresses }
   }
-  const folders = topLevelFolders(listing).flatMap((folder) =>
+  if (actions.length === 0) return null
+  const folders = topLevelFolders(listed.value).flatMap((folder) =>
     folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
   )
-  return { ...resolved, parents, parentsFor: Object.fromEntries(borrowed.map((a) => [a.id, folders])) }
+  return {
+    ...resolved,
+    actions,
+    parents,
+    parentsFor: { ...Object.fromEntries(others.map((a) => [a.id, folders])), ...conversationParents },
+    ...dmAddresses,
+  }
 }
 
 /**

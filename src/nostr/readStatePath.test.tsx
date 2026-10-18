@@ -27,6 +27,7 @@ vi.mock('./readStateRelay', async (importOriginal) => ({
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/estivaId', () => ({
   validToken: () => ({ accessToken: 'tok', pubkey: 'me' }),
+  storedToken: () => ({ accessToken: 'tok', pubkey: 'me' }),
   ESTIVA_ID_ORIGIN: 'https://id.estiva.app',
 }))
 

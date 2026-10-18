@@ -41,6 +41,8 @@ export interface ScreenerFile {
   address: string
   kind: number
   title: string
+  /** Its summary (SPEC §6.12), for Desk's Urgent row. */
+  summary?: string
   comments: readonly { id: string; author: string; body: string; createdAt: number }[]
 }
 
@@ -126,6 +128,7 @@ export interface FoldedUrgentFile {
   address: string
   kind: number
   title: string
+  summary?: string
   /** The newest unread urgent comment's instant, unix seconds. */
   at: number
 }
@@ -158,7 +161,7 @@ export function foldUrgentFiles(
       const message = { id: comment.id, at: comment.createdAt, by: comment.author, root: comment.id }
       if (streamHasUnread([message], context, terms, frontier, frontier.isMentioned)) at = comment.createdAt
     }
-    if (at !== undefined) rows.push({ address: file.address, kind: file.kind, title: file.title, at })
+    if (at !== undefined) rows.push({ address: file.address, kind: file.kind, title: file.title, ...(file.summary ? { summary: file.summary } : {}), at })
   }
   rows.sort((a, b) => b.at - a.at)
   return rows

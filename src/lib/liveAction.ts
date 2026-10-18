@@ -37,6 +37,16 @@ export function isFolderBuiltIn(action: Pick<ResolvedAction, 'declaredBy'>): boo
 }
 
 /**
+ * A Folder's Start a conversation: a `kind:9` root in it (SPEC §3.2). Peek's own
+ * manifest declared it until interop 0.58 made it the Folder's built-in.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/folders-belong-to-the-protocol.md
+ */
+export function isStartConversation(action: Pick<ResolvedAction, 'id' | 'declaredBy'>): boolean {
+  return isFolderBuiltIn(action) && action.id === 'start-a-conversation'
+}
+
+/**
  * The Folder's built-in new file, as Peek offers it: **Create topic** (INT-12).
  *
  * The runtime calls it "New file", since it is every app's; Peek says topic
@@ -58,6 +68,16 @@ export function asCreateTopic(resolved: Pick<ResolvedAction, 'id' | 'declaredBy'
     ],
     membersField: MEMBERS_FIELD,
   }
+}
+
+/**
+ * A creation as the launcher offers it: the Folder's new file as Create topic,
+ * and Start a conversation knowing which of its parents are DMs, where Peek
+ * sends the message itself.
+ */
+export function asLauncherCreation(creation: Pick<AppCreation, 'action' | 'dms'>, action: LauncherAction): LauncherAction {
+  const offered = asCreateTopic(creation.action, action)
+  return creation.dms?.length ? { ...offered, dmParents: creation.dms } : offered
 }
 
 /** `title` → `Title`, `dueDate` → `Due date`. A default, replaceable by anything better. */
@@ -173,8 +193,15 @@ export interface CreatableKindRead {
   manifest?: string
   /** What the owner's projection calls one of these, when it says. */
   noun?: string
-  /** An action's own choices, when they are not `parents` — a borrowed creation on a Folder. */
+  /** An action's own choices, when they are not `parents` — any creation on a Folder. */
   parentsFor?: Record<string, { address: string; title: string }[]>
+  /**
+   * Start a conversation's parents, which are the person's DMs only (REC-1,
+   * 2026-10-17), by address: a conversation there is Peek's own message, not
+   * the Folder's action, since a DM is not a Folder (SPEC §3.2). The launcher
+   * refuses to send one anywhere else.
+   */
+  dms?: string[]
 }
 
 /** A creation an app offers, with where it can go and what that is called. */
@@ -182,6 +209,8 @@ export interface AppCreation {
   action: ResolvedAction
   parents: VocabOption[]
   parentNoun: string
+  /** Which of `parents` are DMs — see {@link CreatableKindRead.dms}. */
+  dms?: string[]
 }
 
 /**
@@ -223,16 +252,21 @@ export function creationsFor(
           : own.manifest !== undefined && action.declaredBy?.address === own.manifest
       if (!mine || seen.has(action.id)) continue
       seen.add(action.id)
+      const conversation = isStartConversation(action)
       out.push({
         action,
         parents: (read.parentsFor?.[action.id] ?? read.parents).map((p) => ({ value: p.address, label: p.title })),
         // The app's own noun for its own kind (INT-9); for another's, what that
         // kind's projection says, and a Folder is a Folder whoever draws it.
-        parentNoun: builtIn
-          ? 'Folder'
-          : kind === app.parentKind
-            ? (app.parentNoun ?? 'parent')
-            : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'Folder' : 'parent')),
+        // Start a conversation keeps the noun it had while Peek declared it:
+        // its picker holds DMs, which are no Folder.
+        parentNoun:
+          builtIn && !conversation
+            ? 'Folder'
+            : kind === app.parentKind
+              ? (app.parentNoun ?? 'parent')
+              : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'Folder' : 'parent')),
+        ...(conversation && read.dms?.length ? { dms: read.dms } : {}),
       })
     }
   }

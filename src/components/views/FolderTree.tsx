@@ -370,12 +370,12 @@ function HeaderDialog({
       folders={topLevel ?? []}
       defaultFolder={section}
       onClose={onClose}
-      onCreate={async (title, chosen) => {
+      onCreate={async (title, chosen, summary) => {
         const folder = chosen ?? section
         if (!folder) return false
-        // `hasState` from the summary `listFolders` answered, never guessed: a `kind:1852` against a Folder with no state empties it.
-        const hasState = folders?.find((candidate) => candidate.id === folder)?.hasState ?? false
-        const result = await createTopic({ folder, title, hasState })
+        // `hasState` from the listing `listFolders` answered, never guessed: a `kind:1852` against a Folder with no state empties it.
+        const listed = folders?.find((candidate) => candidate.id === folder)
+        const result = await createTopic({ folder, title, summary, hasState: listed?.hasState ?? false, folderName: listed?.name })
         if (!result.ok) {
           showToast({ label: result.reason, type: 'error' })
           return false

@@ -7,7 +7,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { useEstivaIdAuth } from './useEstivaIdAuth'
+import { RENEWAL_WAIT_MS, useEstivaIdAuth } from './useEstivaIdAuth'
+import { useSessionResumed } from './heldSession'
 
 const TOKEN_KEY = 'peek.estivaId.token'
 
@@ -27,9 +28,10 @@ function storeToken({ expiresInMs = 600_000, refreshToken = undefined as string 
 function stubTokenEndpoint(response: { ok: boolean; body?: Record<string, unknown> }) {
   const calls: unknown[] = []
   globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
-    calls.push(JSON.parse(init?.body ?? '{}'))
+    calls.push(Object.fromEntries(new URLSearchParams(init?.body ?? '')))
     return {
       ok: response.ok,
+      status: response.ok ? 200 : 400,
       json: async () => response.body ?? {},
     } as Response
   }) as typeof fetch
@@ -61,10 +63,135 @@ describe('useEstivaIdAuth', () => {
     expect(result.current.isAuthenticated).toBe(false)
   })
 
-  it('is not authenticated with an expired token', () => {
-    storeToken({ expiresInMs: -1000, refreshToken: 'r1' })
+  it('is not authenticated with an expired token and nothing to renew it with', () => {
+    storeToken({ expiresInMs: -1000 })
     const { result } = renderHook(() => useEstivaIdAuth())
     expect(result.current.isAuthenticated).toBe(false)
+    expect(result.current.renewing).toBe(false)
+  })
+
+  it('coming back with an expired token renews it in place, without leaving the page (AUT-3)', async () => {
+    storeToken({ expiresInMs: -1000, refreshToken: 'r1' })
+    const calls = stubTokenEndpoint({
+      ok: true,
+      body: { access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' },
+    })
+    const { result } = renderHook(() => useEstivaIdAuth())
+    // Nothing is decided while the renewal is out: the shell must not flash.
+    expect(result.current).toMatchObject({ isAuthenticated: false, renewing: true })
+
+    await act(async () => {})
+    expect(calls).toEqual([{ grant_type: 'refresh_token', refresh_token: 'r1', client_id: 'estiva-peek' }])
+    expect(result.current).toMatchObject({ isAuthenticated: true, renewing: false })
+  })
+
+  it('a refused renewal on the way in hands the shell "session ended", to ask on this page', async () => {
+    storeToken({ expiresInMs: -1000, refreshToken: 'spent' })
+    stubTokenEndpoint({ ok: false })
+    const { result } = renderHook(() => useEstivaIdAuth())
+
+    await act(async () => {})
+    expect(result.current).toMatchObject({ isAuthenticated: false, renewing: false })
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBe('session_expired')
+  })
+
+  it('opened while Estiva ID cannot be reached, it enters on what the device holds and renews once the network is back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: -1000, refreshToken: 'r1' })
+    let online = false
+    const calls: unknown[] = []
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      calls.push(Object.fromEntries(new URLSearchParams(init?.body ?? '')))
+      if (!online) throw new TypeError('Failed to fetch')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' }),
+      } as Response
+    }) as typeof fetch
+    const { result } = renderHook(() => useEstivaIdAuth())
+    const resumed = renderHook(() => useSessionResumed())
+    const before = resumed.result.current
+
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    // In, on the expired token, with no sign-in screen and nothing cleared.
+    expect(result.current).toMatchObject({ isAuthenticated: true, renewing: false })
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBeNull()
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r1' })
+
+    online = true
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(calls.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'r1' })
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({
+      accessToken: 'fresh.token.sig',
+      refreshToken: 'r2',
+    })
+    expect(result.current.isAuthenticated).toBe(true)
+    // The reads that ran once on the expired token are told to read the relay again.
+    expect(resumed.result.current).toBe(before + 1)
+  })
+
+  it('a token that ran out while offline mid-session tells the reads to ask the relay again once it renews', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: 60_000, refreshToken: 'r1' })
+    let online = false
+    globalThis.fetch = (async () => {
+      if (!online) throw new TypeError('Failed to fetch')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' }),
+      } as Response
+    }) as typeof fetch
+    const { result } = renderHook(() => useEstivaIdAuth())
+    const resumed = renderHook(() => useSessionResumed())
+    const before = resumed.result.current
+
+    // Due, then a minute with no network: the token's real end has passed.
+    await act(() => vi.advanceTimersByTimeAsync(120_000))
+    expect(result.current.isAuthenticated).toBe(true)
+    online = true
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
+    expect(resumed.result.current).toBe(before + 1)
+  })
+
+  it('a routine renewal before the token runs out does not make the reads ask again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: 60_000, refreshToken: 'r1' })
+    stubTokenEndpoint({ ok: true, body: { access_token: 'fresh.token.sig', expires_in: 600, refresh_token: 'r2' } })
+    renderHook(() => useEstivaIdAuth())
+    const resumed = renderHook(() => useSessionResumed())
+    const before = resumed.result.current
+
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
+    expect(resumed.result.current).toBe(before)
+  })
+
+  it('a renewal the network never answers does not hold a blank page: it enters on what the device holds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: -1000, refreshToken: 'r1' })
+    let fail: (error: Error) => void = () => {}
+    globalThis.fetch = (() => new Promise((_, reject) => (fail = reject))) as typeof fetch
+    const { result, unmount } = renderHook(() => useEstivaIdAuth())
+
+    await act(() => vi.advanceTimersByTimeAsync(RENEWAL_WAIT_MS - 1))
+    expect(result.current).toMatchObject({ isAuthenticated: false, renewing: true })
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(result.current).toMatchObject({ isAuthenticated: true, renewing: false })
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBeNull()
+
+    // Settled, or the client's one renewal in flight starves the next test's.
+    unmount()
+    await act(async () => fail(new TypeError('Failed to fetch')))
+    await act(() => vi.advanceTimersByTimeAsync(500))
   })
 
   it('renews at expiry, and again at the renewed token’s expiry', async () => {
@@ -78,7 +205,7 @@ describe('useEstivaIdAuth', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(60_000))
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({ grantType: 'refresh_token', refreshToken: 'r1' })
+    expect(calls[0]).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'r1' })
     // The rotated token replaces the spent one. Keeping the old one alongside
     // it would eventually present a spent token, which Estiva ID reads as theft.
     expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
@@ -87,7 +214,7 @@ describe('useEstivaIdAuth', () => {
     // The defect: nothing scheduled a second renewal.
     await act(() => vi.advanceTimersByTimeAsync(600_000))
     expect(calls).toHaveLength(2)
-    expect(calls[1]).toMatchObject({ grantType: 'refresh_token', refreshToken: 'r2' })
+    expect(calls[1]).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'r2' })
     expect(result.current.isAuthenticated).toBe(true)
   })
 
@@ -112,6 +239,15 @@ describe('one session for every tab (PEE-3)', () => {
     else localStorage.setItem(TOKEN_KEY, value)
     window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: value, storageArea: localStorage }))
   }
+
+  it('an expired token another tab writes does not sign in a tab that is out', () => {
+    const { result } = renderHook(() => useEstivaIdAuth())
+    expect(result.current.isAuthenticated).toBe(false)
+    act(() =>
+      otherTabWrites(JSON.stringify({ accessToken: 'old.token.sig', expiresAt: Date.now() - 60_000, pubkey: 'a'.repeat(64) })),
+    )
+    expect(result.current.isAuthenticated).toBe(false)
+  })
 
   it('another tab signing out drops this one to the shell at once', () => {
     storeToken()

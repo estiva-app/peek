@@ -149,7 +149,7 @@ export interface ConversationData {
    * The blocks of other objects it shows — its `part` tags (SPEC §13.6.1, COM-2) —
    * and, flagged `anchor`, the block of its own file a comment is anchored to (§13.6).
    */
-  parts?: { address: string; block: string; anchor?: true }[]
+  parts?: { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]
   /**
    * The cards its author asked for, after its edits — its `embed` tags, or the
    * latest edit's that carries any (SPEC §13.6.2). Absent: none.

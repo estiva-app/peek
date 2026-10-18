@@ -35,7 +35,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 }
 
 function SessionGate({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useEstivaIdSession()
+  const { isAuthenticated, renewing } = useEstivaIdSession()
 
   // From here a token expiring is an interruption, not a cold boot, and the
   // shell must ask before navigating away (PEEK-123).
@@ -43,6 +43,9 @@ function SessionGate({ children }: { children: ReactNode }) {
     if (isAuthenticated) markEntered()
   }, [isAuthenticated])
 
+  // A renewal in place is one `fetch`: whatever stands on the page meanwhile (a
+  // saved Desk) stays, rather than the shell flashing over it (AUT-3).
+  if (renewing) return null
   if (!isAuthenticated) return <AuthShellHost />
   return <>{children}</>
 }

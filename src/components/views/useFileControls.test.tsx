@@ -20,6 +20,7 @@ const toasts = vi.hoisted(() => ({ shown: [] as { label: string; actionLabel?: s
 
 vi.mock('@/api', () => ({
   reloadFoldersOnScreen: async () => {},
+  useReloadHeldObject: () => async () => {},
   useMembership: () => {
     // Each render's seam closes over that render's state, as the real one does.
     const state = seam.state

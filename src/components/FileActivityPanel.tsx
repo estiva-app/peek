@@ -32,6 +32,8 @@ const LIVE = { live: true }
  * takes the column while it is open. The column is closed whenever a file
  * is opened, and the header's sidebar button shows it, with this section's
  * empty line when nothing names the file (`useSidePanel`).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/activity-lists-only-mentions-from-elsewhere.md
  */
 export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
@@ -71,7 +73,7 @@ export function FileActivityPanel({ address, mentions }: { address?: string; men
       }),
     [mentions, people, current, now],
   )
-  return <FileActivityPanelView items={items} labelFor={labelFor} />
+  return <FileActivityPanelView items={items} labelFor={labelFor} here={address} />
 }
 
 /**
@@ -135,10 +137,13 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
 export function FileActivityPanelView({
   items,
   labelFor,
+  here,
 }: {
   items: TopicActivityItem[]
   /** Address → the title of the file a mention was said on. Missing while it resolves. */
   labelFor: Map<string, string>
+  /** The file this panel is on: no card for it under a mention, only its chip (WID-3). */
+  here?: string
 }) {
   return (
     <div className="flex flex-col">
@@ -151,7 +156,7 @@ export function FileActivityPanelView({
         nothing here is ever selected and the thread opener is never reached;
         both props are the component's.
       */}
-      <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} />
+      <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} here={here} />
     </div>
   )
 }

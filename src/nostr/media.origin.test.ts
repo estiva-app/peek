@@ -9,7 +9,7 @@ const sign = vi.hoisted(() => vi.fn())
 const fetchBlob = vi.hoisted(() => vi.fn())
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://estiva.example' }))
 vi.mock('./bridge', () => ({ signViaEstivaId: sign }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'a'.repeat(64) }) }))
 vi.mock('@estiva-app/protocol', () => ({ fetchBlob }))
 
 import { blobObjectUrl, clearBlobCache, safeBlobType } from './media'
@@ -23,6 +23,19 @@ beforeEach(() => {
 describe('blobObjectUrl', () => {
   it('refuses another origin before signing anything', async () => {
     await expect(blobObjectUrl('https://evil.example/media/abc.png')).rejects.toThrow(/not this relay/)
+    expect(fetchBlob).not.toHaveBeenCalled()
+    expect(sign).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a host that only ends with the relay’s name', 'https://evilestiva.example/media/abc.png'],
+    ['a subdomain of the relay', 'https://evil.estiva.example/media/abc.png'],
+    ['the relay’s host on another port', 'https://estiva.example:8443/media/abc.png'],
+    ['the relay’s host over plain http', 'http://estiva.example/media/abc.png'],
+    ['a host that only starts with the relay’s name', 'https://estiva.example.evil.com/media/abc.png'],
+    ['the relay’s name as a user part before another host', 'https://estiva.example@evil.example/media/abc.png'],
+  ])('refuses %s before signing or fetching anything', async (_case, url) => {
+    await expect(blobObjectUrl(url)).rejects.toThrow(/not this relay/)
     expect(fetchBlob).not.toHaveBeenCalled()
     expect(sign).not.toHaveBeenCalled()
   })

@@ -6,10 +6,10 @@ import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, reloadFoldersOnScreen, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
+import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
-import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { fileEmptyState, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -21,7 +21,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import {
   PARENT_FIELD,
-  asCreateTopic,
+  asLauncherCreation,
   changeActionFrom,
   changeVocabulariesFrom,
   creationsFor,
@@ -202,8 +202,9 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     results were never shown, and the relay was asked anyway on every pause.
   */
   const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
+  const { state: fileState, hits: fileHits } = useFileSearch(level.kind === 'first' ? query : '')
 
-  const { creatableUnder, applyAction, resolveObject } = useForeignObjects()
+  const { creatableUnder, applyAction, startConversationInDm, resolveObject } = useForeignObjects()
   const { setMember } = useMembership()
 
   /*
@@ -321,8 +322,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
             // The noun of the kind it goes on — the app's own for its own kind (INT-9), "Folder" on a Folder.
             const converted = launcherActionFrom(creation.action, { parentNoun: creation.parentNoun, submitLabel: creation.action.label })
             if (!converted) continue
-            // A Folder's built-in new file is Peek's Create topic (INT-12).
-            const action = asCreateTopic(creation.action, converted)
+            // A Folder's built-in new file is Peek's Create topic (INT-12); a conversation knows its DMs (REC-1).
+            const action = asLauncherCreation(creation, converted)
             actions.push(action)
             parents[action.id] = creation.parents
           }
@@ -430,11 +431,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
               // Every kind, sorted back to the declaring app, as a section reads it (MAN-8).
               const found = creationsFor(app, await readKinds(app.parentKind as number))
               if (!found) return []
-              return found.filter(({ action }) => isProposable(action)).flatMap(({ action, parents, parentNoun }) => {
+              return found.filter(({ action }) => isProposable(action)).flatMap((creation) => {
+                const { action, parents, parentNoun } = creation
                 // The app's own word for the parent, not "Parent" (R10).
                 const converted = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
                 if (!converted) return []
-                const launcher = asCreateTopic(action, converted)
+                const launcher = asLauncherCreation(creation, converted)
                 return [
                   {
                     appId: app.id,
@@ -631,8 +633,38 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       setSubmitError('That topic has moved to a file. Open it from Topics and write there.')
       return
     }
+    // DMs only, also for a prefilled draft: Peek has no screen for a Folder's own chat (parked, Miky 2026-10-17, REC-1 2726532e).
+    if (action.id === 'start-a-conversation' && !action.dmParents?.includes(parent)) {
+      setSubmitError('Start a conversation in one of your DMs.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
+    /*
+      A conversation started in a DM is the DM's own message, sent by Peek's
+      chat code as its composer sends one (REC-1): the Folder's Start a
+      conversation is not offered on a DM, which is no Folder (SPEC §3.2).
+    */
+    if (action.dmParents?.includes(parent)) {
+      let sent: Awaited<ReturnType<typeof startConversationInDm>>
+      try {
+        sent = await startConversationInDm({ channel: parent.split(':')[2] ?? '', body: properties.message ?? '' })
+      } catch (error) {
+        // A send that throws (signing, the network) says so, as the Folder's path does below.
+        setSubmitting(false)
+        setSubmitError(error instanceof Error ? error.message : String(error))
+        return
+      }
+      setSubmitting(false)
+      if (!sent.ok) {
+        setSubmitError(sent.reason ?? 'The relay rejected it.')
+        return
+      }
+      // C5, as a conversation started in a Folder says it.
+      showToast({ label: `Created in ${appLabel}`, type: 'success' })
+      onClose()
+      return
+    }
     let result: Awaited<ReturnType<typeof applyAction>>
     try {
       // The parent is addressed, not named: `applyAction` resolves the manifest from the object —
@@ -719,9 +751,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     topic's circle is never a status — a recent does not know whether the topic
     is resolved — so it is an icon like the others, not a mark of its own.
   */
-  const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
+  /*
+    With a summary, it is the second line and an issue's project moves up beside
+    the title, as `[` draws it; without one, an issue's project is the second
+    line, and anything else is the title alone (SUM-7, the SearchRow story).
+  */
+  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
+    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
     icon: icon(FILE_ICONS[fileGlyphOfAddress(f.id)]),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
@@ -915,28 +953,43 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       }
     })
 
+    /*
+      Files whose title holds what was typed (SUM-7), found and ranked as `[`
+      finds them — the best match first, an open one before a closed or
+      archived one — and never the file already open, as Recent skips it.
+    */
+    const fileRows = fileHits
+      .filter((hit) => !(openFileRef && refNamesFile(openFileRef, hit.id)))
+      .slice(0, 5)
+      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
+
     const searching = messageState.kind === 'searching'
     const messageNote = searching ? null : messageEmptyState(messageState, query)
+    // One relay that failed both searches is said once, by the messages' line.
+    const fileNote = messageState.kind === 'failed' ? null : fileEmptyState(fileState)
     const groups: CommandPaletteGroup[] = [
       { label: 'Apps', rows: apps },
       ...(sentence ? [ask] : []),
       { label: 'This conversation', rows: changes },
       { label: 'People', rows: peopleHits },
       { label: 'Actions', rows: actionHits },
+      { label: 'Files', rows: fileRows },
       { label: 'Messages', rows: messageRows },
       ...(!sentence ? [ask] : []),
     ]
     const anyRows = groups.some((g) => g.rows.length > 0)
+    const searchingFiles = fileState.kind === 'searching'
     return {
       groups,
-      pending: searching ? 'Searching messages…' : undefined,
+      pending: searching ? 'Searching messages…' : searchingFiles ? 'Searching files…' : undefined,
       notes: [
+        ...(fileNote ? [fileNote] : []),
         // A plain "No messages matched" says nothing new beside rows that did match;
         // the whole-word hint does, mid-word, where a flat "none" would be wrong.
         ...(messageNote && !(anyRows && messageNote === 'No messages matched.') ? [messageNote] : []),
         ...(unroutable > 0 ? [`${unroutable} more in conversations not in your sidebar.`] : []),
       ],
-      empty: !anyRows && !searching ? `Nothing is called “${typed}”. Try a person or an app.` : undefined,
+      empty: !anyRows && !searching && !searchingFiles ? `Nothing is called “${typed}”. Try a person or an app.` : undefined,
     }
   }
 

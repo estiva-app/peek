@@ -6,13 +6,17 @@ import { Button } from './ui/Button'
 import { Field } from './ui/Field'
 import { Select } from './ui/Select'
 import { TextInput } from './ui/TextInput'
+import { SummaryField } from './SummaryField'
+import { summaryText } from '@/lib/summary'
 
 /**
  * Start a topic — a bare file inside this Folder, SPEC §6.7.
  *
- * One field, because a topic *is* one field: a title, and a conversation that
- * every file already has. There is no body to ask for; the day somebody wants
- * a brief at the top they type it into the file, and nothing converts.
+ * A title, and a conversation that every file already has. There is no body
+ * to ask for; the day somebody wants a brief at the top they type it into the
+ * file, and nothing converts. The summary under the title is optional (SPEC
+ * §6.12, the short-summary prototype's `PeekStartTopic`): one or two
+ * sentences, read on the Desk and on cards, changed later in Details.
  *
  * `parent` is the file the topic sits under, when it was started from a row —
  * a project, an issue, another topic, or a kind this app has never met. Said
@@ -43,6 +47,8 @@ export function StartTopicDialog({
   folders,
   defaultFolder,
   parent,
+  initialTitle = '',
+  initialSummary = '',
   onCreate,
   onClose,
 }: {
@@ -57,11 +63,19 @@ export function StartTopicDialog({
   /** Which of `folders` starts chosen — the open Folder, when there is one. */
   defaultFolder?: string
   parent?: ForeignObject
-  /** `folder` is the chosen Folder's id, and is absent unless `folders` was passed. */
-  onCreate: (title: string, folder?: string) => Promise<boolean>
+  /** The title it opens with: a refused topic's, restored (PEE-6). */
+  initialTitle?: string
+  /** The summary it opens with: a refused topic's, restored with its title. */
+  initialSummary?: string
+  /**
+   * `folder` is the chosen Folder's id, and is absent unless `folders` was
+   * passed. `summary` is on one line and trimmed; blank is `''`, no summary.
+   */
+  onCreate: (title: string, folder: string | undefined, summary: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle)
+  const [summary, setSummary] = useState(initialSummary)
   const [folder, setFolder] = useState(
     () => (defaultFolder && folders?.some((f) => f.id === defaultFolder) ? defaultFolder : folders?.[0]?.id) ?? '',
   )
@@ -82,7 +96,7 @@ export function StartTopicDialog({
   async function create() {
     if (!ready || creating) return
     setCreating(true)
-    const ok = await onCreate(trimmed, choosing ? folder : undefined)
+    const ok = await onCreate(trimmed, choosing ? folder : undefined, summaryText(summary))
     setCreating(false)
     if (ok) onClose()
   }
@@ -121,6 +135,7 @@ export function StartTopicDialog({
             autoFocus
           />
         </Field>
+        <SummaryField value={summary} onChange={setSummary} />
         {choosing && (
           <Field label="Folder">
             <Select

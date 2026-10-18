@@ -22,6 +22,8 @@ type CatchUp = (
 type Apply = (...args: [...Parameters<CatchUp>, events: readonly SignedEvent[]]) => ReturnType<CatchUp>
 const relay = vi.hoisted(() => ({
   read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<{ value: FileConversation; events: [] }>>(),
+  /** A long file's newest comments, read before the whole conversation (PEE-7). */
+  firstPage: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<FileConversation>>(),
   catchUp: vi.fn<CatchUp>(),
   apply: vi.fn<Apply>(),
   publish: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
@@ -55,6 +57,9 @@ vi.mock('@/nostr/conversationCatchUp', () => ({
 /** Each composed event's id is `<n>` repeated: the first message is '1'×64. */
 const idOf = (n: number) => String(n).repeat(64)
 vi.mock('@/nostr/fileConversation', () => ({
+  // A file with more than three comments is a long one here.
+  FIRST_PAGE: 3,
+  firstPageWith: (container: unknown, rootIds: readonly string[]) => relay.firstPage(container, rootIds),
   composeCommentAsViewer: async (args: { body: string }) => {
     relay.composed += 1
     return { ok: true, event: { kind: 9, content: args.body, tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) } }
@@ -105,6 +110,7 @@ vi.mock('@/lib/useRefreshTriggers', () => ({
 }))
 
 import { useFileConversation } from './useFileConversation'
+import { conversationKey, conversationsFor } from './conversations'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const container = { kind: 'file' as const, address: '30850:abc:d', h: FOLDER }
@@ -129,6 +135,7 @@ beforeEach(() => {
   relay.read.mockResolvedValue({ value: empty, events: [] })
   relay.catchUp.mockResolvedValue({ changed: false, object: false, mentions: false })
   copy.read.mockReset().mockRejectedValue(new Error('not in the copy on this device'))
+  relay.firstPage.mockReset().mockRejectedValue(new Error('no first page in this case'))
 })
 afterEach(() => {
   relay.read.mockReset()
@@ -249,6 +256,27 @@ describe('useFileConversation — before the file resolves (OPT-9)', () => {
     await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
     expect(relay.read.mock.calls[0][1]).toEqual(['r1', '1'.repeat(64)])
   })
+
+  it('a comment drawn while the first read is out stays when that read lands without it', async () => {
+    /*
+      The first read began before the comment was sent, so its answer does not
+      have it. The conversation was held meanwhile with the comment drawn in it
+      (a topic just started holds its conversation, PEE-6): that is newer than
+      the read, which must not land over it.
+    */
+    const fresh = { ...container, address: '30850:abc:first-read' }
+    let land!: (answer: { value: FileConversation; events: [] }) => void
+    relay.read.mockReturnValueOnce(new Promise((resolve) => (land = resolve)))
+    const { result } = mount({ container: fresh, rootIds: ['r1'] })
+    await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
+
+    const drawn = withRoots('r1', idOf(1))
+    act(() => conversationsFor(viewer().relayUrl, viewer().token.pubkey).replace(conversationKey(fresh), drawn, [], Date.now()))
+    expect(result.current.state).toBe(drawn)
+
+    await act(async () => land({ value: one, events: [] }))
+    expect(result.current.state).toBe(drawn)
+  })
 })
 
 describe('useFileConversation — held (OPT-3)', () => {
@@ -340,6 +368,38 @@ describe('useFileConversation — a new root keeps the conversation (SID-1)', ()
     await act(async () => answer())
     expect(result.current.state).toBe(two)
     expect(relay.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('a long file’s first open draws its newest comments while the whole read is out, and holds only the whole (PEE-7)', async () => {
+    let answer: () => void = () => {}
+    relay.read.mockImplementationOnce(() => new Promise((resolve) => (answer = () => resolve({ value: two, events: [] }))))
+    relay.firstPage.mockResolvedValueOnce(one)
+    const roots = ['r1', 'r2', 'r3', 'r4', 'r5']
+    const { result } = mount({ container, rootIds: roots })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    // Both are given every comment: the first page picks the newest of them.
+    expect(relay.firstPage).toHaveBeenCalledWith(container, roots)
+    expect(relay.read).toHaveBeenCalledWith(container, roots)
+    await act(async () => answer())
+    expect(result.current.state).toBe(two)
+  })
+
+  it('a short file’s first open reads it whole, with no first page (PEE-7)', async () => {
+    relay.read.mockResolvedValueOnce({ value: one, events: [] })
+    const { result } = mount({ container, rootIds: ['r1', 'r2', 'r3'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    expect(relay.firstPage).not.toHaveBeenCalled()
+  })
+
+  it('a long file’s whole read that fails after its newest comments drew says it failed, not that more is coming (PEE-7)', async () => {
+    let refuse: () => void = () => {}
+    relay.read.mockImplementationOnce(() => new Promise((_, reject) => (refuse = () => reject(new Error('fetch failed')))))
+    const page = { ...one, earlier: { messages: 5 } }
+    relay.firstPage.mockResolvedValueOnce(page)
+    const { result } = mount({ container, rootIds: ['r1', 'r2', 'r3', 'r4', 'r5'] })
+    await waitFor(() => expect(result.current.state).toBe(page))
+    await act(async () => refuse())
+    expect(result.current.state).toEqual({ failed: expect.any(String) })
   })
 
   it('a first read that fails keeps the copy’s conversation — unless the Folder is no longer the viewer’s', async () => {

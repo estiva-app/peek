@@ -32,6 +32,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { queryRelay } from '@/nostr/bridge'
 import { readFromCopy } from '@/nostr/deviceCopy'
 import { CHANNEL_STREAM_LIMIT, streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
@@ -136,7 +137,7 @@ function storeFor(relayUrl: string, pubkey: string, live: LiveTopics): ChannelSt
   current?.stop()
   const store = createChannelStore({
     query: queryAsViewer(relayUrl),
-    seed: (filters) => readFromCopy(relayUrl, filters, validToken()?.pubkey),
+    seed: (filters) => readFromCopy(relayUrl, filters, heldToken()?.pubkey),
     watch: (channels, listener, options) =>
       live.watchChannels(
         channels,

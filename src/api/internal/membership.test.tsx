@@ -11,7 +11,7 @@ const sync = vi.hoisted(() => ({
 }))
 vi.mock('@/nostr/useMembershipSync', () => ({ useMembershipSync: () => sync.value }))
 const ME = 'c'.repeat(64)
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: ME }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: ME }), storedToken: () => ({ pubkey: ME }) }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test' }))
 
 import { MembershipProvider, useMembership } from './membership'

@@ -33,7 +33,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { buildMembershipChange, type Membership } from '@estiva-app/conversation'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { fetchMembership } from './membership'
@@ -64,9 +64,11 @@ export interface MembershipSync {
 
 function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
   if (!relayUrl) return null
-  // At call time, never cached: `validToken()` is null during every silent
-  // renewal, and a snapshot taken at mount goes stale (PEEK-108).
-  const token = validToken()
+  // At call time, never cached: a snapshot taken at mount goes stale
+  // (PEEK-108). The held token, so a page opened offline on an expired one
+  // still reads the device copy; its relay read fails at `/sign` and counts as
+  // unreachable (AUT-3).
+  const token = heldToken()
   if (!token) return null
   return { relayUrl, accessToken: token.accessToken, pubkey: token.pubkey }
 }

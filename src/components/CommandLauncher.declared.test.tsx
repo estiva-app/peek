@@ -14,10 +14,9 @@
  *
  * The first half of this file asserts the launcher stops claiming they do.
  *
- * **One of the three works now.** Peek declares `start-a-conversation`, so the
- * row is back and it publishes — interop 0.16.0 resolves a channel record to
- * its own `d`, which is what gives an action on a topic somewhere to write
- * (0 of 40 `kind:39000` events on production carry `h` or `buzz-channel`).
+ * **One of the three works now.** `start-a-conversation` is back and it
+ * publishes. Peek declared it first; since interop 0.58 it is the Folder's
+ * built-in, and Peek offers it in the person's DMs only (REC-1, 2026-10-17).
  *
  * The other two stay absent and are asserted absent. Ship's `add-project` and
  * Peek's `create-topic` each create a container that does not exist yet, which
@@ -25,10 +24,10 @@
  * to stop the launcher making.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
-import type { ResolvedAction } from '@estiva-app/interop'
+import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -51,7 +50,9 @@ const liveAddIssue: ResolvedAction = {
 }
 
 /**
- * Peek's live manifest declares this one, and only this one (INT-9).
+ * A Folder's Start a conversation — Peek's manifest declared it (INT-9) until
+ * interop 0.58 made it the Folder's built-in (SPEC §3.2), with `declaredBy`
+ * naming the specification.
  *
  * `createsUnder: 'self'` with no link tag — a message names its channel with
  * `h`, which every created event carries anyway, so there is no `setTag` and
@@ -61,17 +62,19 @@ const liveAddIssue: ResolvedAction = {
 const liveStartConversation: ResolvedAction = {
   id: 'start-a-conversation',
   label: 'Start a conversation',
-  description:
-    'Start a new conversation in a topic, as a root message that people can then reply to.',
+  description: 'Start a new conversation in this Folder, as a root message that people can then reply to.',
   effect: 'writes',
   control: 'form',
   fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
   createsUnder: 'self',
+  declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
 }
 
 const TOPIC_AUTHOR = '8b75a34d06c8e4ee' + 'f'.repeat(48)
 const TOPIC_ID = '53e358c2-0ad7-482c-a951-6f9d48dc71eb'
 const RETIRED_CHANNEL = 'e83471a7-cd98-4a62-ac5a-f21e0daedd24'
+const DM_ID = '0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
+const DM = `39000:${TOPIC_AUTHOR}:${DM_ID}`
 
 /*
   Typed by its signature rather than by a named parameter, so the assertions
@@ -83,6 +86,10 @@ const applyAction = vi.fn<
     created: string
   }>
 >(async () => ({ ok: true as const, created: `30851:${SHIP_AUTHOR}:x` }))
+/** The DM's own message, as its composer sends it (REC-1). */
+const startConversationInDm = vi.fn<(args: { channel: string; body: string }) => Promise<{ ok: true; id: string }>>(
+  async () => ({ ok: true as const, id: 'e'.repeat(64) }),
+)
 /*
   Answers per kind, which it has to now that two apps are probed.
 
@@ -99,14 +106,22 @@ const creatableUnder = vi.fn(async (parentKind: number) => {
     }
   }
   if (parentKind === 39000) {
+    const where = [
+      { address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' },
+      // A retired topic's channel, restored until FOL-25 deletes it — the
+      // relay still lists it among the newest `39000`s (FOL-26).
+      { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
+      // The person's DM. The read gives Start a conversation DMs only (REC-1,
+      // 2026-10-17); the Folders here stand for an older read or a prefilled
+      // draft, which the launcher must still refuse at the send.
+      { address: DM, title: 'DM' },
+    ]
     return {
       actions: [liveStartConversation],
-      parents: [
-        { address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' },
-        // A retired topic's channel, restored until FOL-25 deletes it — the
-        // relay still lists it among the newest `39000`s (FOL-26).
-        { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
-      ],
+      parents: where,
+      manifest: FOLDER_ACTIONS_ADDRESS,
+      parentsFor: { 'start-a-conversation': where },
+      dms: [DM],
     }
   }
   // An app that declares nothing creatable. Null is what the runtime returns,
@@ -122,6 +137,7 @@ vi.mock('@/api', async () => {
       resolveObject: vi.fn(),
       resolveFolderProject: vi.fn(),
       applyAction,
+      startConversationInDm,
       creatableUnder,
     }),
   }
@@ -156,6 +172,7 @@ function open(initialAppId: string, initialActionId?: string) {
 
 beforeEach(() => {
   applyAction.mockClear()
+  startConversationInDm.mockClear()
   creatableUnder.mockClear()
   onClose.mockClear()
 })
@@ -172,7 +189,7 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(screen.queryByText('Create project')).not.toBeInTheDocument()
   })
 
-  it('offers Peek’s declared Start a conversation, and still not Create a topic', async () => {
+  it('offers a Folder’s Start a conversation in Peek, and still not Create a topic', async () => {
     /*
       Two of the three rows Miky found dead, and they are dead for different
       reasons — which is why one is back and one is not.
@@ -236,32 +253,42 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(screen.queryByRole('option', { name: 'Folders: Universal navigation concept' })).not.toBeInTheDocument()
   })
 
-  it('publishes a conversation into the topic that was picked', async () => {
-    /*
-      The positive assertion, which is the one this file went without for the
-      three dead rows: a suite of "must not publish" passes identically against
-      a form that cannot.
-
-      `value` carries the declared property and nothing else — the parent is not
-      a property, it travels as the address the runtime resolves the manifest
-      and the Folder from.
-    */
+  async function startIn(where: string) {
     await openLiveConversationForm()
-
     await userEvent.type(await screen.findByLabelText(/message/i), 'Shall we split PRO-18?')
     await userEvent.click(screen.getByLabelText(/topic/i))
     // By role: text also finds the option in the list before it has opened
     // (see `createIssue` in CommandLauncher.live.test.tsx).
-    await userEvent.click(await screen.findByRole('option', { name: 'Intelligence in Peek' }))
+    await userEvent.click(await screen.findByRole('option', { name: where }))
     // Exact, not a pattern: the form's chip carries a "Leave Start a
     // conversation" button that a loose match also finds.
     await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
+  }
 
-    expect(applyAction).toHaveBeenCalledTimes(1)
-    const call = applyAction.mock.calls[0]?.[0]
-    expect(call?.actionId).toBe('start-a-conversation')
-    expect(call?.value).toEqual({ message: 'Shall we split PRO-18?' })
-    expect(call?.naddr.startsWith('naddr')).toBe(true)
+  it('publishes a conversation into the DM that was picked, as the DM’s own message', async () => {
+    /*
+      The positive assertion, which is the one this file went without for the
+      three dead rows: a suite of "must not publish" passes identically against
+      a form that cannot.
+    */
+    await startIn('DM')
+
+    await waitFor(() => expect(startConversationInDm).toHaveBeenCalledTimes(1))
+    expect(startConversationInDm).toHaveBeenCalledWith({ channel: DM_ID, body: 'Shall we split PRO-18?' })
+    expect(applyAction).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing into a Folder, even one that reached the picker, and says where to start one (REC-1)', async () => {
+    // Peek has no screen for a Folder's own chat, so a message there could not be read (Miky, 2026-10-17).
+    await startIn('Intelligence in Peek')
+
+    // Settled either way: a send went out, or the launcher said why not.
+    await waitFor(() =>
+      expect(applyAction.mock.calls.length + (screen.queryByText('Start a conversation in one of your DMs.') ? 1 : 0)).toBeGreaterThan(0),
+    )
+    expect(applyAction).not.toHaveBeenCalled()
+    expect(startConversationInDm).not.toHaveBeenCalled()
+    expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
   })
 
   it('offers nothing for an app that declares nothing, and says which app', async () => {

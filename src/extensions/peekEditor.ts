@@ -2,11 +2,11 @@ import { richTextClassName } from '@estiva-app/ui'
 import { peekStarterKit } from './editorKit'
 import { LinkChips } from '@estiva-app/ui/editor'
 import { referenceOfLink } from '@estiva-app/protocol'
-import { askCardValues, knownCardValue } from '@/api'
+import { askLinks, knownLinkTarget } from '@/api'
 import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention, UrlChip } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
-import { CardChoices } from './cardChoices'
+import { LoneLinkRows } from './loneLinkRows'
 import { EditSlashCommands, SlashCommands } from './slashCommands'
 
 /**
@@ -66,9 +66,12 @@ export const peekEditorExtensions = [
   ObjectMention,
   // Every app link reads as its chip — pasted, typed once the caret leaves it, or inside a pasted passage — and is
   // sent as the URL it was (OPT-19, Miky 14 Oct), as a description's is. A URL over selected words is the link mark's.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-is-stored-as-the-url-a-person-wrote.md
   UrlChip,
-  LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
-  CardChoices,
+  // A link to one block is its file's chip, the block shown live under the box (Decided 16 Oct).
+  LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownLinkTarget), ask: askLinks }),
+  // A line that is only a link to a file or a message draws its row as it is written.
+  LoneLinkRows,
   ResolutionBlock,
   HighlightTag,
   SlashCommands,

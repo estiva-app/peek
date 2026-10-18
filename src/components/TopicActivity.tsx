@@ -86,8 +86,11 @@ export function TopicActivity({
   labelFor,
   selectedId,
   onOpenThread,
+  here,
 }: {
   items: TopicActivityItem[]
+  /** The address of the file this list is on: its messages draw no card for it, only its chip (WID-3). */
+  here?: string
   /** Address → the name the owning app gives it. Missing while the Folder resolves. */
   labelFor: Map<string, string>
   selectedId?: string | null
@@ -157,6 +160,7 @@ export function TopicActivity({
             urgentMentions={conv.urgentMentions}
             parts={conv.parts}
             embeds={conv.embeds}
+            here={here}
             nostrBlockId={conv.nostrBlockId}
             subdued={words.muted}
             isSelected={selectedId === conv.id}

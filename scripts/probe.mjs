@@ -82,15 +82,18 @@ import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
+  [--tapped-ago s] [--last-used-ago s] [--relogin -] [--start signed-out]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
   [--init file] [--tab path] [--also path] [--window path] [--switch -]
   [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch', '--relogin'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 /** The page's DevTools session, opened by the first `--cpu` step. */
 let cdp = null
+/** Set once the browser exists: `--relogin`. */
+let relogin = null
 const steps = []
 const argv = process.argv.slice(2)
 for (let i = 0; i < argv.length; i += 2) {
@@ -100,13 +103,16 @@ for (let i = 0; i < argv.length; i += 2) {
   else options[name.slice(2)] = value
 }
 if (!options.as) fail(usage)
+for (const age of ['tapped-ago', 'last-used-ago'])
+  if (options[age] !== undefined && !/^\d+$/.test(options[age])) fail(`--${age} takes whole seconds, not ${options[age]}`)
 const timeout = Number(options.timeout)
 
 const executablePath = join(homedir(), '.cache/ms-playwright/chromium-1228/chrome-linux64/chrome')
 if (!existsSync(executablePath)) fail(`no chromium at ${executablePath} — see render-story.mjs`)
 
 const session = await sessionFor(options.as)
-const report = { as: options.as, pubkey: session.pubkey, base: options.base, steps: [], errors: [] }
+// `tokenCalls`: every POST to Estiva ID's `/token`, from any tab, so "one renewal across two tabs" can be counted.
+const report = { as: options.as, pubkey: session.pubkey, base: options.base, steps: [], errors: [], tokenCalls: [] }
 // --net <file>: every request and socket frame, stamped with wall-clock ms, for
 // a driver to split by its own windows (probe-switch.mjs).
 const net = options.net ? [] : null
@@ -123,17 +129,26 @@ try {
     viewport: { width: 1280, height: 800 },
     ...(process.env.PROBE_SERVE ? { serviceWorkers: 'block' } : {}),
   })
-  await context.addCookies([
-    {
-      name: session.cookie_name,
-      value: session.session_token,
-      domain: idOrigin.hostname,
-      path: '/',
-      httpOnly: true,
-      secure: idOrigin.protocol === 'https:',
-      sameSite: 'Lax',
-    },
-  ])
+  const signInCookie = (signedIn) => ({
+    name: signedIn.cookie_name,
+    value: signedIn.session_token,
+    domain: idOrigin.hostname,
+    path: '/',
+    httpOnly: true,
+    secure: idOrigin.protocol === 'https:',
+    sameSite: 'Lax',
+  })
+  await context.addCookies([signInCookie(session)])
+  // `--relogin -`: a new Estiva ID sign-in for the same identity, as now — what a passkey tap leaves behind, for a
+  // sign-in the run started older and let end (AUT-4). The next `--click "Continue with passkey"` then comes back
+  // signed in, as the tap would.
+  relogin = async () => {
+    if (options.session) throw new Error('--relogin needs a QA sign-in; a --session file holds the old one')
+    delete options['tapped-ago']
+    delete options['last-used-ago']
+    await context.addCookies([signInCookie(await sessionFor(options.as))])
+    return true
+  }
   if (options.slot !== 'fresh') await context.addInitScript(pinReadStateSlot, pinnedSlots(session.pubkey, options.base))
   if (process.env.PROBE_SERVE) {
     const dist = process.env.PROBE_SERVE
@@ -189,7 +204,11 @@ try {
     return loaded.get(p)
   }
   // On the context, not the page: a window the page opens starts loading before its `page` event.
+  const tokenUrl = new URL('/token', options.id).href
   context.on('request', (r) => {
+    // The endpoint and the tab only: the body is a refresh token.
+    if (r.method() === 'POST' && r.url().split(/[?#]/)[0] === tokenUrl)
+      report.tokenCalls.push({ at: Date.now(), tab: (() => { try { return context.pages().indexOf(r.frame().page()) } catch { return null } })() })
     if (!r.isNavigationRequest()) return
     try {
       const frame = r.frame()
@@ -298,10 +317,24 @@ try {
   // PROBE_HOOK=<url>: `window.__probeHook(query)` GETs `<url><query>` from node and returns the text, for a run
   // that needs another process mid-way (probe-switch's QA-2 post). A page fetch of 127.0.0.1 is blocked by Chromium.
   if (process.env.PROBE_HOOK) await page.exposeFunction('__probeHook', (query) => fetch(`${process.env.PROBE_HOOK}${query}`).then((r) => r.text()))
+  // `await __probeIdDown(true)` in an `--eval`: every page's fetches to Estiva ID fail as with no network, until
+  // `__probeIdDown(false)` (AUT-3's offline open). `/sign` goes with it, so the relay cannot be read either.
+  // Navigations still pass, so a page that leaves for Estiva ID shows in `pages`.
+  let idDown = false
+  await context.exposeBinding('__probeIdDown', (_source, on) => {
+    idDown = Boolean(on)
+    return idDown
+  })
+  await context.route(
+    (url) => url.origin === idOrigin.origin,
+    (route) => (idDown && !route.request().isNavigationRequest() ? route.abort('internetdisconnected') : route.fallback()),
+  )
   await page.goto(new URL(options.url, options.base).href)
   report.signedIn = await signedIn(page)
   report.url = page.url()
-  if (!report.signedIn) throw new Error(`not signed in; ended on ${report.url}`)
+  // `--start signed-out`: a sign-in the run started already ended (`--last-used-ago`) lands on the sign-in screen,
+  // and that screen is what the steps check.
+  if (!report.signedIn && options.start !== 'signed-out') throw new Error(`not signed in; ended on ${report.url}`)
 
   for (const [step, value] of steps) {
     const entry = { [step]: value }
@@ -440,6 +473,8 @@ async function run(page, step, value) {
       clearTimeout(timer)
       return true
     }
+    case 'relogin':
+      return relogin()
     case 'screenshot':
       await page.screenshot({ path: value })
       return value
@@ -513,7 +548,14 @@ async function sessionFor(as) {
   const response = await fetch(new URL('/auth/test-login', options.id), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: process.env[`QA${qa[1]}_EMAIL`], secret: process.env[`QA${qa[1]}_SECRET`] }),
+    // `--tapped-ago` / `--last-used-ago` <seconds> start the sign-in that much older (estiva-id#84), for the 7- and
+    // 14-day ends: a sign-in whose end is a minute away, then a wait, is an ended one the app still holds.
+    body: JSON.stringify({
+      email: process.env[`QA${qa[1]}_EMAIL`],
+      secret: process.env[`QA${qa[1]}_SECRET`],
+      ...(options['tapped-ago'] ? { tapped_ago_seconds: Number(options['tapped-ago']) } : {}),
+      ...(options['last-used-ago'] ? { last_used_ago_seconds: Number(options['last-used-ago']) } : {}),
+    }),
   })
   const body = await response.json().catch(() => ({}))
   if (response.status !== 200) fail(`test-login ${response.status}: ${JSON.stringify(body)}`)

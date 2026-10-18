@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { noteCardAvailability, rememberedUnavailable } from '@/lib/unavailableCards'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
+import { useState } from 'react'
+import { rememberedUnavailable } from '@/lib/unavailableCards'
+import { useHeldCard } from './useHeldCard'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, SUMMARY_FIELD, pickWidget } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { referenceTypeWord } from '@/lib/textParsing'
 import type {
@@ -9,7 +10,6 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
@@ -434,6 +434,9 @@ export function ForeignObjectCard({
     (action) =>
       action.field &&
       action.field !== object.slots.title?.field &&
+      // Nor the summary (SPEC §6.12): a card shows it, and Peek writes it only
+      // in the file's Details (Miky, 15 Oct) — never from a card in a message.
+      action.field !== SUMMARY_FIELD &&
       // Nor the move (FOL-4): its value is an address, and a text box asking
       // for `30840:<hex>:<uuid>` is not a control. The tree and the file's
       // menu offer it, picking from the team.
@@ -575,9 +578,11 @@ export function ForeignObjectCard({
         const description = (
           <>
           {/* A card shows the subtitle; a row is a single line by definition —
-              except on the object's own page, where it is the subject (MAN-9). */}
+              except on the object's own page, where it is the subject (MAN-9).
+              Clamped to two lines, as Ship's card is: interop cuts a summary at
+              280 characters, still more than this card has room for (SPEC §6.12). */}
           {whole && slots.subtitle && (
-            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+            <p className="mt-1 line-clamp-2 break-words text-caption text-text-secondary">{slots.subtitle.value}</p>
           )}
           {/* The description, in whichever content model its own app writes —
               PRO-2. Where the subtitle is, for its reason: a row in a message is a
@@ -713,7 +718,6 @@ function NotAvailableRow({ naddr }: { naddr: string }) {
 export function ForeignObjectWidget({
   naddr,
   resolved,
-  quiet = false,
   page = false,
   clampDescription = false,
   layout,
@@ -726,63 +730,11 @@ export function ForeignObjectWidget({
   clampDescription?: boolean
   /** `ForeignObjectCard`'s: the layout the message's author chose (SPEC §13.6.2). */
   layout?: 'card' | 'row'
-  /**
-   * Draw nothing while resolving, for a reference that might not be one.
-   * See the branch below.
-   */
-  quiet?: boolean
   /** The already-resolved object, for surfaces with no relay to ask (stories,
    *  tests). Skips resolution entirely; actions still render but cannot land. */
   resolved?: ForeignObject
 }) {
-  const { applyAction } = useForeignObjects()
-  const directory = useWorkspaceDirectory()
-  /*
-    Already in hand — nothing to resolve (`resolved`), and a newer one from the
-    page is taken, so an edit made elsewhere reaches the editor (MAN-9). Peek
-    runs without a relay in tests, Storybook and checkouts with no
-    `VITE_RELAY_URL` (`hasRelay`): nothing to ask, so it resolves to nothing.
-    Otherwise the tab's held answer (OPT-3): a topic you come back to draws its
-    widgets at once. The token matters here: without it this reads as the
-    backend, a member of no channel, and every widget renders as broken.
-  */
-  const held = useHeldObject(resolved || !hasRelay ? null : naddr)
-  const object: ForeignObject | null | 'loading' = resolved ?? (hasRelay ? held.object : null)
-  // Returned, so an action's `await reload()` waits for the re-read it names.
-  const reload = held.reload
-  /*
-    A chosen card's answer, remembered on this device: not available (nothing, or
-    not readable), so the next open draws its one-line row at once; or available
-    again. A failed read says neither.
-  */
-  const availability = object === 'loading' || (object === null && !held.gone) ? undefined : !!object && !object.unreachable
-  useEffect(() => {
-    if (layout && !resolved && availability !== undefined) noteCardAvailability(naddr, availability)
-  }, [layout, resolved, availability, naddr])
-  const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState<string | undefined>()
-
-  const onAct = useCallback(
-    async (actionId: string, value: string, contentFormat?: string) => {
-      setBusy(true)
-      setActionError(undefined)
-      try {
-        const result = await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
-        // The relay is the authority on whether this happened, so re-read rather
-        // than patching local state optimistically. Slower, and it means the
-        // widget can never claim a change the shared record does not have.
-        if (result.ok) await reload()
-        else setActionError(result.reason)
-        return result.ok
-      } catch (e) {
-        setActionError((e as Error).message)
-        return false
-      } finally {
-        setBusy(false)
-      }
-    },
-    [applyAction, naddr, reload],
-  )
+  const { object, drawn, gone, busy, error: actionError, onAct, directory } = useHeldCard(naddr, resolved, { remember: !!layout })
 
   /**
    * Waiting is not the same as nothing, and they used to render the same.
@@ -794,18 +746,7 @@ export function ForeignObjectWidget({
    *
    * The state already told these apart; only this branch did not.
    */
-  /*
-    `quiet` is for a reference that is only a *candidate*.
-
-    An `naddr` in a message is certainly a reference, so a skeleton is right:
-    the alternative is a message that settles at one height and then grows
-    (FEE-3). A pasted URL is not — most links in most messages are just links,
-    and RFC 0.5 §7.5 says one no manifest claims stays a plain link. Drawing a
-    skeleton under every one of those and then removing it is the same flicker
-    FEE-3 fixed, pointed the other way.
-  */
   if (object === 'loading') {
-    if (quiet) return null
     // Found not available the last time this device asked: its one-line row from the first paint, not a whole card's height.
     if (layout && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
     return <ForeignObjectSkeleton layout={layout} kind={kindOf(naddr)} className="mt-1" />
@@ -821,8 +762,8 @@ export function ForeignObjectWidget({
   if (object === null) {
     // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
     // A failed read keeps what this device remembered, rather than taking away the row it drew at first paint.
-    if (layout && !held.gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
-    if (!layout || !held.gone) return null
+    if (layout && !gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
+    if (!layout || !gone) return null
     return <NotAvailableRow naddr={naddr} />
   }
 
@@ -842,7 +783,7 @@ export function ForeignObjectWidget({
 
   return (
     <ForeignObjectCard
-      object={object}
+      object={drawn as ForeignObject}
       busy={busy}
       error={actionError}
       onAct={onAct}

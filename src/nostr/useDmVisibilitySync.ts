@@ -28,7 +28,7 @@
  * here is more urgent than a star.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validToken } from '@/auth/estivaId'
+import { heldToken, useSessionResumed } from '@/auth/heldSession'
 import type { RelaySeam } from './stars'
 import { fetchHiddenDms } from './dmVisibility'
 
@@ -46,14 +46,18 @@ export interface DmVisibilitySync {
 
 function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
   if (!relayUrl) return null
-  // At call time, never cached: `validToken()` is null during every silent
-  // renewal, and a snapshot taken at mount goes stale (PEEK-108).
-  const token = validToken()
+  // At call time, never cached: a snapshot taken at mount goes stale
+  // (PEEK-108). The held token, so a page opened offline on an expired one
+  // still reads the device copy; its relay read fails at `/sign` and counts as
+  // unreachable (AUT-3).
+  const token = heldToken()
   if (!token) return null
   return { relayUrl, accessToken: token.accessToken, pubkey: token.pubkey }
 }
 
 export function useDmVisibilitySync(relayUrl: string | null | undefined): DmVisibilitySync {
+  // Read again once a renewal ends a stretch on an expired token (AUT-3).
+  const resumed = useSessionResumed()
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
   const [state, setState] = useState<DmVisibilityState>('unknown')
   /** A re-read that lands after a newer local change must not undo it. */
@@ -79,7 +83,7 @@ export function useDmVisibilitySync(relayUrl: string | null | undefined): DmVisi
 
   useEffect(() => {
     void read()
-  }, [read])
+  }, [read, resumed])
 
   const applyHidden = useCallback(
     async (channelUuid: string, isHidden: boolean) => {

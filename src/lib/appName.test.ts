@@ -26,6 +26,12 @@ describe('openInAppUrl', () => {
     expect(openInAppUrl({ openUrl: 'data:text/html,hi' })).toBeUndefined()
     expect(openInAppUrl({})).toBeUndefined()
   })
+
+  it('is nothing when http(s):// appears only later in the string, so a script never hides behind it', () => {
+    expect(openInAppUrl({ openUrl: 'javascript:alert(1)//https://x' })).toBeUndefined()
+    expect(openInAppUrl({ openUrl: 'javascript:alert(1)//\nhttps://x' })).toBeUndefined()
+    expect(openInAppUrl({ openUrl: 'data:text/html,<a href="http://x">' })).toBeUndefined()
+  })
 })
 
 describe('fileHeading', () => {

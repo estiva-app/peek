@@ -47,12 +47,12 @@ export * from './actions'
 export * from './profile'
 export * from './uploads'
 export * from './screener'
-export { cardValueOfUrl, knownCardValue, askCardValues, useLinkResolver, useForeignObjects, useHeldObject, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, type MessageHit } from './foreign'
+export { cardValueOfUrl, knownCardValue, askCardValues, askLinks, blockOfUrl, knownBlockOfUrl, knownLinkTarget, isFromCopy, useLinkResolver, useForeignObjects, useHeldObject, useReloadHeldObject, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, useFileSearch, type MessageHit } from './foreign'
 export { usePart, type PartView } from './part'
 export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople } from './mentions'
-export { referenceSections, subscribeReferences, useReferenceFolder } from './references'
+export { referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'
 export { useFileMembers } from '@/api/internal/fileMembers'
@@ -69,6 +69,8 @@ export {
   useFolders,
   type FolderContentsState,
 } from './useFolderContents'
+export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
+export type { StartTopicArgs } from './startTopic'
 export {
   useForeignConversation,
   useFileAddress,

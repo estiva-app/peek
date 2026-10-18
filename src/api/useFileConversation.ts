@@ -20,6 +20,8 @@ import {
   composeEdit,
   composeReaction,
   eventIdOf,
+  firstPageWith,
+  FIRST_PAGE,
   publishConfirmed,
   resolveAsViewer,
   type ComposeArgs,
@@ -38,6 +40,7 @@ import {
 import { recordReadFailure } from '@/nostr/freshness'
 import { REFRESH_INTERVAL_MS, useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useLiveFile } from '@/nostr/useLiveFile'
+import { TOPIC_NOT_CREATED, waitOnTopic } from './pendingTopics'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
 export { conversationKeyOf, relayAttachmentOf } from '@/nostr/fileConversation'
@@ -290,12 +293,15 @@ export function useFileConversation(
   */
   const [failure, setFailure] = useState<{ key: string; failed: RelayFailureKind }>()
   /*
-    The conversation as the copy on the device answers the same read (PEE-4),
-    drawn while the first read from the relay is out and never held: the store
-    holds only what the relay answered, so the catch-ups after it start from
-    the relay's word.
+    What is drawn while the first read from the relay is out, and never held:
+    the conversation as the copy on the device answers the same read (PEE-4),
+    or else a long file's newest comments (PEE-7). Whichever is drawn first
+    stays until the whole read lands. The store holds only the relay's whole
+    answer, so the catch-ups after it start from the relay's word.
   */
-  const [fromCopy, setFromCopy] = useState<{ key: string; value: FileConversation }>()
+  const [meanwhile, setMeanwhile] = useState<{ key: string; value: FileConversation }>()
+  const drawFirst = (key: string, value: FileConversation) =>
+    setMeanwhile((drawn) => (drawn?.key === key ? drawn : { key, value }))
 
   // Written in an effect rather than during render; read from a socket frame or a timer.
   const latestActivity = useRef(onActivity)
@@ -327,12 +333,30 @@ export function useFileConversation(
           // What the socket delivered before this read began, the read finds.
           const startedAt = Date.now()
           const sent = sentBeforeRead.get(key) ?? []
+          const toRead = [...new Set([...roots, ...sent])]
           conversationFromCopy(container, roots, at.relayUrl, at.token)
             .then((value) => {
-              if (conversations.value(key) === undefined) setFromCopy({ key, value })
+              if (conversations.value(key) === undefined) drawFirst(key, value)
             })
             .catch(() => {})
-          const { value, events } = await readConversation(container, [...new Set([...roots, ...sent])], query)
+          /*
+            A long file's newest comments first (PEE-7): asking replies and decorations over every comment is
+            what kept a 200-message topic on its placeholder for 2–3 s. Its failure is left to the whole read.
+            What the placeholder waits on goes ahead of every other read the page asks (`first`) — only a file's,
+            whose first read is a page at most: a DM's or a channel's is never paged, and its whole history is
+            too many REQs for a lane that waits on no room.
+          */
+          const first = viewerQuery(at.relayUrl, at.token, 'first')
+          const paged = container.kind === 'file' && toRead.length > FIRST_PAGE
+          if (paged) {
+            await firstPageWith(container, toRead, first)
+              .then((value) => {
+                if (conversations.value(key) === undefined) drawFirst(key, value)
+              })
+              .catch(() => {})
+          }
+          const whole = container.kind === 'file' && !paged ? first : query
+          const { value, events } = await readConversation(container, toRead, whole)
           sentBeforeRead.delete(key)
           // A catch-up that settled meanwhile is newer than this.
           if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)
@@ -345,7 +369,7 @@ export function useFileConversation(
           // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
           conversations.drop(key)
           // Nor the copy's: it is older still.
-          setFromCopy(undefined)
+          setMeanwhile(undefined)
           const startedAt = Date.now()
           const { value, events } = await readConversation(container, roots, query)
           conversations.replace(key, value, events, startedAt)
@@ -364,7 +388,7 @@ export function useFileConversation(
         console.warn('[nostr] file conversation read failed:', error)
         if (kind === 'not_a_member') {
           conversations.drop(key)
-          setFromCopy(undefined)
+          setMeanwhile(undefined)
         }
         if (kind === 'not_a_member' || conversations.value(key) === undefined) setFailure({ key, failed: kind })
       }
@@ -495,7 +519,17 @@ export function useFileConversation(
     const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
     const roots = ids ? ids.split(',') : []
     const query = viewerQuery(v.relayUrl, v.token)
-    const flight = publishConfirmed(event, v.relayUrl, v.token, refusal)
+    /*
+      Into a topic just started (PEE-6): drawn now, sent once the topic is
+      written, and not sent at all if it is refused — its text goes back to
+      the topic's draft (Miky, PEE-6 kickoff).
+    */
+    const topic = container.kind === 'file' ? waitOnTopic(container.address) : undefined
+    const flight = topic
+      ? topic.then((outcome): Promise<WriteResult> | WriteResult =>
+          outcome.ok ? publishConfirmed(event, v.relayUrl, v.token, refusal) : { ok: false, reason: TOPIC_NOT_CREATED },
+        )
+      : publishConfirmed(event, v.relayUrl, v.token, refusal)
     sending.set(id, flight)
     const drawn = await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query).catch((error: unknown) => {
       console.warn('[nostr] drawing your own event failed:', error)
@@ -538,13 +572,16 @@ export function useFileConversation(
         : Promise.resolve(SIGNED_OUT),
   }
 
-  // A first read that failed keeps the copy's conversation on screen, unless the Folder is no longer the viewer's.
-  const copied = fromCopy?.key === key ? fromCopy.value : undefined
+  /*
+    A first read that failed keeps the copy's conversation on screen, unless the Folder is no longer the viewer's.
+    Not a long file's newest comments (PEE-7): they say more is coming, and nothing is — the failure is drawn.
+  */
+  const copied = meanwhile?.key === key ? meanwhile.value : undefined
   const state: FileConversationState = !key
     ? 'loading'
     : held
       ? held
-      : failure?.key === key && (failure.failed === 'not_a_member' || !copied)
+      : failure?.key === key && (failure.failed === 'not_a_member' || !copied || copied.earlier)
         ? { failed: failure.failed }
         : (copied ?? 'loading')
 

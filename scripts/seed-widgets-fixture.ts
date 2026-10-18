@@ -21,7 +21,7 @@ import { deflateSync } from 'node:zlib'
 import { encodeNaddr, uploadBlob } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay, signViaEstivaId } from '@/nostr/bridge'
-import { createTopicAsViewer } from '@/nostr/foreign'
+import { createTopicAsViewer } from '@/nostr/startTopic'
 import { commentAsViewer, deleteEventAsViewer, type OutgoingAttachment } from '@/nostr/fileConversation'
 import { qaToken } from './seed-switch-fixture'
 

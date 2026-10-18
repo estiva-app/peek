@@ -7,8 +7,12 @@
  * read per connect rather than captured, and a state seam for PEE-9.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SignRefused } from '@estiva-app/identity'
+import { CREDENTIAL_GRACE_MS, currentObservation, deriveFreshness, resetFreshnessForTests } from './freshness'
 import {
+  credentialMissing,
   getLiveTopics,
+  signFailed,
   installWideFilterDiagnostic,
   relayLog,
   resetLiveTopicsForTests,
@@ -312,5 +316,54 @@ describe('the state seam', () => {
     // Nothing has driven a transition, but the contract is that the returned
     // function removes the listener rather than being decorative.
     expect(listener).not.toHaveBeenCalled()
+  })
+})
+
+describe('no token for the socket (AUT-3)', () => {
+  const storeExpired = (refreshToken?: string) =>
+    localStorage.setItem(
+      'peek.estivaId.token',
+      JSON.stringify({
+        accessToken: 'header.payload.sig',
+        expiresAt: Date.now() - 60_000,
+        pubkey: 'a'.repeat(64),
+        ...(refreshToken ? { refreshToken } : {}),
+      }),
+    )
+  afterEach(() => {
+    localStorage.clear()
+    resetFreshnessForTests()
+  })
+
+  it('a tab opened offline with a refresh token held never says the session ended', () => {
+    storeExpired('r1')
+    credentialMissing()
+    expect(deriveFreshness({ ...currentObservation(), now: Date.now() + CREDENTIAL_GRACE_MS + 1 }).kind).not.toBe(
+      'session_ended',
+    )
+  })
+
+  it('a /sign Estiva ID never answered, with a refresh token held, never says the session ended', () => {
+    storeExpired('r1')
+    signFailed(new TypeError('Failed to fetch'))
+    expect(deriveFreshness({ ...currentObservation(), now: Date.now() + CREDENTIAL_GRACE_MS + 1 }).kind).not.toBe(
+      'session_ended',
+    )
+  })
+
+  it('a /sign Estiva ID refused still ends the session once the grace has passed', () => {
+    storeExpired('r1')
+    signFailed(new SignRefused(401, 'POST /sign failed: 401'))
+    expect(deriveFreshness({ ...currentObservation(), now: Date.now() + CREDENTIAL_GRACE_MS + 1 }).kind).toBe(
+      'session_ended',
+    )
+  })
+
+  it('with nothing to renew the token, the session is over once the grace has passed', () => {
+    storeExpired()
+    credentialMissing()
+    expect(deriveFreshness({ ...currentObservation(), now: Date.now() + CREDENTIAL_GRACE_MS + 1 }).kind).toBe(
+      'session_ended',
+    )
   })
 })

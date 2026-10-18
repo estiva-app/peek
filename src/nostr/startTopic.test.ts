@@ -14,7 +14,7 @@ const { publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 }))
 vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay: vi.fn() }))
 
-import { createTopicAsViewer } from './foreign'
+import { createTopicAsViewer } from './startTopic'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const TEAM = '85db5b59-9e49-4ea1-8e93-3d2a2d78c048'
@@ -53,6 +53,22 @@ describe('starting a topic', () => {
     }
   })
 
+  it('seeds a summary as the root’s last tag, on one line and trimmed (SPEC §6.12)', async () => {
+    await createTopicAsViewer(
+      { folder: TEAM, title: 'Launch naming', summary: '  Where we pick the name.\n  Two weeks.  ', parent: PROJECT, hasState: false },
+      RELAY,
+      token,
+    )
+    const [file] = sent()
+    expect(file.tags.map((t) => t[0])).toEqual(['d', 'title', 'h', 'a', 'summary'])
+    expect(file.tags[4]).toEqual(['summary', 'Where we pick the name. Two weeks.'])
+  })
+
+  it('writes no summary tag when the summary is blank', async () => {
+    await createTopicAsViewer({ folder: TEAM, title: 'General thoughts', summary: '  \n ', hasState: false }, RELAY, token)
+    expect(sent()[0].tags.map((t) => t[0])).toEqual(['d', 'title', 'h'])
+  })
+
   it('omits the a tag for a topic at the top of the folder', async () => {
     await createTopicAsViewer({ folder: TEAM, title: 'General thoughts', hasState: false }, RELAY, token)
     expect(sent()[0].tags.map((t) => t[0])).toEqual(['d', 'title', 'h'])
@@ -83,10 +99,38 @@ describe('starting a topic', () => {
     expect(sent().map((e) => e.kind)).toEqual([30840])
   })
 
-  it('reports a refused add as partial, because the topic does exist', async () => {
-    publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, reason: 'no' })
+  it('takes an HTTP refusal of the file as a refusal, and lists nothing', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: false, reason: 'auth: payload hash mismatch', httpStatus: 401 })
     const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.reason).toMatch(/was created but/)
+    expect(result).toEqual({ ok: false, reason: 'auth: payload hash mismatch' })
+    expect(sent().map((e) => e.kind)).toEqual([30840])
+  })
+
+  it('deletes the saved file by its id when the Folder refuses to list it, and reports the topic as not created', async () => {
+    const idOf = (kind: number) => String(kind).padStart(64, 'a')
+    signViaEstivaId.mockImplementation(async (event: { kind: number }) => ({ ...event, id: idOf(event.kind), sig: 's' }))
+    publishSigned
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
+      .mockResolvedValue({ ok: true })
+    const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
+    // `deleted`: its `d` is spent, so starting it again takes a new one.
+    expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member', deleted: true })
+    const [, , deletion] = sent()
+    expect(deletion.kind).toBe(5)
+    // By the event, not the address: the same `d` started again is a new version nothing deleted.
+    expect(deletion.tags.find((t) => t[0] === 'e')?.[1]).toBe(idOf(30840))
+    expect(deletion.tags.some((t) => t[0] === 'a')).toBe(false)
+  })
+
+  it('keeps the same d to start again when the deletion is refused too, since the file is still there unlisted', async () => {
+    signViaEstivaId.mockImplementation(async (event: { kind: number }) => ({ ...event, id: String(event.kind).padStart(64, 'a'), sig: 's' }))
+    publishSigned
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
+      .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
+    const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
+    expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member' })
+    expect(sent().map((e) => e.kind)).toEqual([30840, 1852, 5])
   })
 })

@@ -53,8 +53,10 @@ import {
   imetaOf,
   imetaTag,
   KIND,
-  blockAnchorOf,
+  blockRunOf,
+  blockRunTag,
   partsOf,
+  QUOTE_TAG,
   type Embed,
   type Imeta,
   type NostrTag,
@@ -139,6 +141,11 @@ export interface FileConversation {
    * edit re-chose is absent, and so is the whole map on a copy saved before it.
    */
   editedEmbeds?: Record<string, Embed[]>
+  /**
+   * Only the newest comments, drawn while the rest are read (PEE-7): older ones are on their way, and the whole
+   * conversation holds at least `messages` comments and replies — every comment, and the newest ones' replies.
+   */
+  earlier?: { messages: number }
 }
 
 /** An attachment the composer uploaded — what `UploadedFile` carries once the blob reached the relay. */
@@ -162,19 +169,28 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
 
 /**
  * The blocks a message shows (`part`, SPEC §13.6.1) and, for a comment anchored
- * to one block of the file it is on (§13.6), that block flagged `anchor` — drawn
- * with the same card (Miky, COM-2 kickoff). Only a `kind:1111` anchors, against
- * its `A`; `blockAnchorOf` refuses any other kind.
+ * to the file it is on (§13.6), its anchor flagged `anchor` — drawn with the
+ * same card (Miky, COM-2 kickoff). Only a `kind:1111` anchors, against its `A`;
+ * `blockRunOf` refuses any other kind.
+ *
+ * The anchor is a run of blocks and the words its selection starts and ends
+ * with (LEAF-7), so it keeps its `block` and `quote` tags as written, for
+ * `resolveCommentAnchor` to read against the file as it is now; `block` is the
+ * run's first, which is all a one-block anchor ever had.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-remembers-where-its-selection-starts-and-ends.md
  */
 export function partsAndAnchorOf(event: Pick<SignedEvent, 'kind' | 'tags'>): ConversationPart[] {
-  const block = blockAnchorOf(event)
+  const run = blockRunOf(event)
   const about = event.tags.find((t) => t[0] === 'A')?.[1]
-  const anchor: ConversationPart[] = block && about ? [{ address: about, block, anchor: true }] : []
+  const quote = event.tags.find((t) => t[0] === QUOTE_TAG)
+  const anchor: ConversationPart[] =
+    run && about ? [{ address: about, block: run[0], anchor: true, anchorTags: [blockRunTag(run), ...(quote ? [quote] : [])] }] : []
   return [...anchor, ...partsOf(event)]
 }
 
-/** A block a message shows, or the one a comment is anchored to. */
-export type ConversationPart = PartPointer & { anchor?: true }
+/** A block a message shows, or the run and words a comment is anchored to. */
+export type ConversationPart = PartPointer & { anchor?: true; anchorTags?: string[][] }
 
 /** The `imeta` attachments of an event, as {@link RelayAttachment}. Mirrors `convex/nostr/sync.ts`'s `attachmentsOf`. */
 export function attachmentsOf(event: { tags: NostrTag[] }): RelayAttachment[] {
@@ -248,7 +264,40 @@ export function fileConversationAsViewer(
 async function fileConversationWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
   const { threads, orphaned } = await threadsWithDeletedRoots(container.address, rootIds, query)
   const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
+  const { roots, replies } = threadsDrawn(container, rootIds, threads)
+  for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
+  // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
+  const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
 
+  return decorate(allRoots, replies, query)
+}
+
+/**
+ * How many of a file's newest comments its first open draws before the rest are read (PEE-7). On production a
+ * 200-comment topic's replies, asked by `#e` over every comment, took the relay ~0.9 s; over the newest 30,
+ * 0.2–0.5 s — and thirty fill the pane with room to scroll.
+ */
+export const FIRST_PAGE = 30
+
+/**
+ * A file's newest {@link FIRST_PAGE} comments, their replies and what was done to them: what its first open draws
+ * while {@link conversationWith} reads the whole conversation (PEE-7), marked `earlier` because more is coming.
+ * `rootIds` are oldest first. A reply whose comment was deleted waits for the whole read, which finds its stand-in.
+ */
+export async function firstPageWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
+  const newest = rootIds.slice(-FIRST_PAGE)
+  const { roots, replies } = threadsDrawn(container, newest, await threadEventsWith(container.address, newest, query))
+  const messages = rootIds.length + Object.values(replies).reduce((n, list) => n + list.length, 0)
+  return { ...(await decorate(roots, replies, query)), earlier: { messages } }
+}
+
+/** The roots `rootIds` names that the thread read reached, and their replies, as the view draws them. */
+function threadsDrawn(
+  container: FileContainer,
+  rootIds: readonly string[],
+  threads: Threads,
+): { roots: ConversationEvent[]; replies: Record<string, ConversationEvent[]> } {
+  const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
   const roots = rootIds
     .map((id) => threads.roots[id])
     .filter((root): root is SignedEvent => !!root)
@@ -264,11 +313,7 @@ async function fileConversationWith(container: FileContainer, rootIds: readonly 
   for (const [rootId, list] of Object.entries(threads.replies)) {
     replies[rootId] = list.map(conversationEvent)
   }
-  for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
-  // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
-  const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
-
-  return decorate(allRoots, replies, query)
+  return { roots, replies }
 }
 
 /**
@@ -696,9 +741,10 @@ export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
     channelUuid: args.container.h,
     targetEventId: args.targetEventId,
     body: args.body,
+    // The whole folded set when it changed: a set replaces (§13.6.2).
+    embeds: args.embeds,
   })
   if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
-  if (args.embeds?.length) unsigned.tags.push(...args.embeds.map((embed) => embedTag(embed.value, embed.layout)))
   return unsigned
 }
 

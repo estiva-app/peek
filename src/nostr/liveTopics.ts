@@ -32,7 +32,7 @@
  * changed. The token is needed only to *sign* a fresh 22242, which happens on
  * the next connect — and `getCredential` below is read then, never captured.
  */
-import { validToken } from '@/auth/estivaId'
+import { storedToken, validToken } from '@/auth/estivaId'
 import { browserOnlineSource, createLiveClientHolder, type LiveClient } from '@estiva-app/platform'
 import { KIND, type RelayState, type SignedEvent } from '@estiva-app/protocol'
 import { signViaEstivaId } from './bridge'
@@ -258,6 +258,32 @@ interface Wiring {
 
 let wiring: Wiring | null = null
 
+/**
+ * The socket found no live token to connect with.
+ *
+ * Not yet "signed out": every silent renewal passes through here, so
+ * `freshness.ts` holds it for a grace period before saying anything. And not
+ * at all while a refresh token is held: the renewal schedule owns that
+ * outcome, retrying while Estiva ID cannot be reached (a tab opened offline
+ * runs on an expired token until the network is back, AUT-3) and handing a
+ * refusal to the auth shell, which asks on the page.
+ */
+export function credentialMissing(): void {
+  if (storedToken()?.refreshToken) return
+  recordCredentialFailure('session_expired')
+}
+
+/**
+ * The socket's `/sign` failed. Estiva ID refusing the token is held for the
+ * grace period as before; no answer at all is not an ended sign-in either
+ * while a refresh token is held (the same reason as {@link credentialMissing}).
+ */
+export function signFailed(error: unknown): void {
+  const reason = reasonForSignFailure(error)
+  if (reason === 'network' && storedToken()?.refreshToken) return
+  recordCredentialFailure(reason)
+}
+
 function build(relayUrl: string): Wiring {
   const client = holder.get({
     relayUrl,
@@ -273,14 +299,12 @@ function build(relayUrl: string): Wiring {
     observe: {
       onState: recordRelayState,
       onOnline: recordOnline,
-      // Not yet "signed out": every silent renewal passes through here, so
-      // `freshness.ts` holds it for a grace period before saying anything.
-      onCredentialMissing: () => recordCredentialFailure('session_expired'),
+      onCredentialMissing: credentialMissing,
       onSignOk: recordCredentialOk,
       // The difference between "expired" and "this app cannot verify the
       // token" decides whether sending somebody to sign in again helps or
       // wastes their time.
-      onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
+      onSignFailure: signFailed,
     },
     log: relayLog,
     // The socket reader counts these frames against buzz's budget (OPT-2).

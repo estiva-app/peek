@@ -103,7 +103,7 @@ vi.mock('./useFileParents', () => ({
     return parents.known
   },
 }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }), storedToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/nostr/useLiveClient', () => {
   const client = {}
   return { useLiveClient: () => ({ live: client, relayState: 'live' }) }

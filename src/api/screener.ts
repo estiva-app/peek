@@ -20,7 +20,7 @@ import { formatReplyTimestamp } from './format'
 import { hasRelay } from './relayUrl'
 import { useMentionNames } from './people'
 import { useForeignObjects } from './foreign'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { useScreener } from '@/api/internal/screener'
 
 export interface ScreenerPreviewRow {
@@ -90,7 +90,7 @@ export function useScreenerPreview(itemId: string | null): ScreenerPreviewRow[] 
       const { comment } = source
       said = [{ by: comment.author, at: comment.createdAt, body: comment.body, kind: 'message' }, ...fileReplies.replies]
     }
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
     return said.map((s) => ({
       authorName: s.by === me ? CURRENT_USER_NAME : (nameOf.get(s.by) ?? 'Someone'),

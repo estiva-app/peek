@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { RELAY_URL, hasRelay } from './relayUrl'
 import {
@@ -32,7 +33,6 @@ import {
   directoryAsViewer,
   conversationsAsViewer,
   createFolderAsViewer,
-  createTopicAsViewer,
   deleteFileAsViewer,
   deleteFolderAsViewer,
   folderDeletableAsViewer,
@@ -43,10 +43,12 @@ import {
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   cardValueOfUrlAsViewer,
+  askReferenceFromUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
   searchMessagesAsViewer,
+  searchFileReferencesAsViewer,
   threadsAsViewer,
   replyToCommentAsViewer,
   type ActResult,
@@ -54,16 +56,21 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
+export { isFromCopy } from '@/nostr/foreign'
 import type { ReadSource } from '@/nostr/readFrom'
-import { fileThreadsAsViewer } from '@/nostr/fileConversation'
+import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
+import { rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
 import { joinFolderWatch } from '@/nostr/useLiveFile'
+import { startTopicAsViewer, type StartTopicArgs } from './startTopic'
+import { linkTargetOf } from '@/lib/boxCard'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,
@@ -88,7 +95,7 @@ import type {
 export function useRelayViewer() {
   return useCallback(() => {
     const relayUrl = RELAY_URL
-    const token = validToken()
+    const token = heldToken()
     return relayUrl && token ? { relayUrl, token } : null
   }, [])
 }
@@ -135,6 +142,57 @@ export function knownCardValue(url: string): string | undefined {
 export async function askCardValues(urls: readonly string[]): Promise<void> {
   const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
   if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
+}
+
+/*
+  The block a link to one block names (SPEC §13.6.1), once per link for the
+  tab, as `cardValues` is: what the message box shows live under it, and the
+  file its chip is. Only a link with a fragment is asked; any other names no
+  block. A read that failed (an outage, a 429) is forgotten, so the next ask
+  tries again; until then the link stays the URL it is.
+*/
+const blockLinks = new Map<string, Promise<{ address: string; block: string } | null>>()
+const knownBlockLinks = new Map<string, { address: string; block: string } | null>()
+
+/** The file and block a link to one block names, or null. Rejects when the relay could not be asked, so the caller asks again later. */
+export function blockOfUrl(url: string): Promise<{ address: string; block: string } | null> {
+  const token = validToken()
+  if (!RELAY_URL || !token || !url.includes('#')) return Promise.resolve(null)
+  let answer = blockLinks.get(url)
+  if (!answer) {
+    answer = askReferenceFromUrlAsViewer(url, RELAY_URL, token).then(
+      (ref) => {
+        const found = ref?.address !== undefined && ref.block !== undefined ? { address: ref.address, block: ref.block } : null
+        knownBlockLinks.set(url, found)
+        return found
+      },
+      (error: unknown) => {
+        blockLinks.delete(url)
+        throw error
+      },
+    )
+    blockLinks.set(url, answer)
+  }
+  return answer
+}
+
+/** What a link to one block names, from what has come back: undefined until it has, and for any other link. */
+export function knownBlockOfUrl(url: string): { address: string; block: string } | undefined {
+  return knownBlockLinks.get(url) ?? undefined
+}
+
+/**
+ * What the message box asks of each link (§7.7): the file it names for a card,
+ * and the block it names for a part. A `LinkChips` `ask`; rejects as
+ * {@link askCardValues} does, so the editor asks again later.
+ */
+export async function askLinks(urls: readonly string[]): Promise<void> {
+  await Promise.all([askCardValues(urls), ...urls.filter((url) => !knownBlockLinks.has(url)).map((url) => blockOfUrl(url))])
+}
+
+/** What an app link in the message box draws as, from what has come back (`linkTargetOf`). A `LinkResolver`. */
+export function knownLinkTarget(url: string): string | undefined {
+  return linkTargetOf(url, { resolveLink: knownCardValue, blockOf: knownBlockOfUrl })
 }
 
 /**
@@ -366,6 +424,26 @@ export function useHeldObject(reference: string | null): {
   return { object, reload, gone: !!key && entry?.value === null }
 }
 
+/**
+ * Ask a file this tab holds again, by any spelling it was held under: after
+ * this tab changed it (a rename, a summary), so a listing drawing held copies
+ * (`useResolvedReferences`'s `held`) shows the change. A file not held is not
+ * asked.
+ */
+export function useReloadHeldObject(): (reference: string) => Promise<void> {
+  const viewer = useRelayViewer()
+  return useCallback(
+    async (reference: string) => {
+      const pubkey = viewer()?.token.pubkey
+      if (!pubkey) return
+      const key = heldKey(pubkey, reference)
+      if (heldObjects.peek(key)?.value === undefined) return
+      await heldObjects.read(key, heldLoad(reference, viewer))
+    },
+    [viewer],
+  )
+}
+
 export function useForeignObjects() {
   const viewer = useRelayViewer()
 
@@ -564,13 +642,14 @@ export function useForeignObjects() {
   /**
    * Start a topic in a Folder — a bare file, SPEC §6.7. `parent` is the
    * address of the file it sits under, of any kind. `hasState` comes from the
-   * Folder read on the page, never from a guess; see `createTopicAsViewer`.
+   * Folder read on the page, never from a guess; see `publishTopicAsViewer`.
+   * Answers as soon as the topic can be opened, before it is written (PEE-6).
    */
   const createTopic = useCallback(
-    async (args: { folder: string; title: string; parent?: string; hasState: boolean }) => {
+    async (args: StartTopicArgs) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to start a topic.' }
-      return createTopicAsViewer(args, v.relayUrl, v.token)
+      return startTopicAsViewer(args, v.relayUrl, v.token)
     },
     [viewer],
   )
@@ -707,6 +786,21 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Start a conversation in one of the person's DMs from the launcher (REC-1):
+   * the message the DM's own composer sends — `buildMessage`, by Peek's chat
+   * code — since a DM is not a Folder and the Folder's Start a conversation is
+   * not offered on one (SPEC §3.2).
+   */
+  const startConversationInDm = useCallback(
+    async (args: { channel: string; body: string }): Promise<ActResult> => {
+      const v = viewer()
+      if (!v) return { ok: false, reason: 'Sign in to write.' }
+      return commentAsViewer({ container: { kind: 'channel', h: args.channel }, body: args.body }, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** See `creatableUnderAsViewer`. Null when signed out, as everything here is. */
   const creatableUnder = useCallback(
     async (parentKind: number) => {
@@ -758,6 +852,7 @@ export function useForeignObjects() {
     deleteFolder,
     moveFile,
     applyAction,
+    startConversationInDm,
     threads,
     fileThreads,
     replyToComment,
@@ -798,9 +893,19 @@ export function useResolvedReferences(
    * an open conversation draws (a message's chips, the Activity's titles), not
    * for a listing, where it would be a watch for every Folder listed.
    */
-  options?: { live?: boolean },
+  options?: {
+    live?: boolean
+    /**
+     * Draw this tab's newer held copy of a file over the listing's own answer,
+     * and draw again when it changes — after a rename or a summary change in
+     * Details ({@link useReloadHeldObject}) — without following the files: a
+     * listing's way to stay in step with this tab's own writes, at no watch.
+     */
+    held?: boolean
+  },
 ): Record<string, ForeignObject | null> {
   const live = options?.live ?? false
+  const drawHeld = live || (options?.held ?? false)
   const { resolveObjects } = useForeignObjects()
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey ?? ''
@@ -864,21 +969,21 @@ export function useResolvedReferences(
   const [heldChanges, setHeldChanges] = useState(0)
   useEffect(() => {
     // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
-    if (!live || !hasRelay || !pubkey || !key) return
+    if (!drawHeld || !hasRelay || !pubkey || !key) return
     const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref), () => setHeldChanges((n) => n + 1)))
     return () => leave.forEach((each) => each())
-  }, [live, key, pubkey])
+  }, [drawHeld, key, pubkey])
 
   const merged = useMemo(() => {
     void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
       // A listing keeps its own answer first, as before; it fills only what it has not answered.
-      if (!live && objects[ref]) return []
+      if (!drawHeld && objects[ref]) return []
       const value = heldObjects.peek(heldKey(pubkey, ref))?.value
       return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [live, key, objects, pubkey, heldChanges])
+  }, [drawHeld, key, objects, pubkey, heldChanges])
 
   // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
   const follow = live
@@ -1114,5 +1219,50 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
       ? { kind: 'signed-out' }
       : (fresh?.state ?? { kind: 'searching' })
 
+  return { state, hits: fresh?.hits ?? [] }
+}
+
+/** How short a typed title is still not asked of the relay — `[`'s own floor. */
+const FILE_SEARCH_MIN = 2
+
+/**
+ * The launcher's Files (SUM-7, Miky at kickoff): the files whose current
+ * title holds what was typed, as `[`'s search tier finds them — each with its
+ * summary, and an issue with its project. Titles only, never a body. Asked
+ * after the same pause as messages, and only from two letters, as `[` asks;
+ * ranked as `[` ranks them, the best match and an open file first.
+ */
+export function useFileSearch(query: string): { state: MessageSearchState; hits: ReferenceCandidate[] } {
+  const viewer = useRelayViewer()
+  const [answer, setAnswer] = useState<{ term: string; state: MessageSearchState; hits: ReferenceCandidate[] } | null>(null)
+  const typed = query.trim()
+  const term = typed.length >= FILE_SEARCH_MIN ? typed : ''
+
+  useEffect(() => {
+    if (!term || !hasRelay) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      const v = viewer()
+      if (!v) {
+        if (!cancelled) setAnswer({ term, state: { kind: 'signed-out' }, hits: [] })
+        return
+      }
+      searchFileReferencesAsViewer(term, v.relayUrl, v.token)
+        .then((found) => rankReferences({ messages: [], files: found, query: term, ownKinds: [KIND_BARE_FILE], caps: { messages: 0, files: found.length } }).files)
+        .then((hits) => {
+          if (!cancelled) setAnswer({ term, state: { kind: 'done', count: hits.length }, hits })
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) setAnswer({ term, state: { kind: 'failed', failure: relayFailureKind(error) }, hits: [] })
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [term, viewer])
+
+  const fresh = answer?.term === term ? answer : null
+  const state: MessageSearchState = !term ? { kind: 'idle' } : !hasRelay ? { kind: 'signed-out' } : (fresh?.state ?? { kind: 'searching' })
   return { state, hits: fresh?.hits ?? [] }
 }

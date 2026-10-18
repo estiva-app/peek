@@ -59,7 +59,9 @@ export const Reply: Story = {
  * Another app's object in the text — an issue the launcher created, a pasted
  * address, a draft coming back (UIG-40). The sent message's chip, its title and
  * its status, and not a link while it is being written; it sends the address.
- * The object is the recorded Ship issue `MessageBody`'s stories draw.
+ * The one file it links gets its card under the box, as it will be sent, and
+ * ✕ takes it off (4136f999). The object is the recorded Ship issue
+ * `MessageBody`'s stories draw.
  */
 export const WithAnIssue: Story = {
   args: {
@@ -67,6 +69,29 @@ export const WithAnIssue: Story = {
     drafts: {
       read: () => `Filed it for Thursday: nostr:${recorded.naddr} `,
       readDraft: () => ({ text: `Filed it for Thursday: nostr:${recorded.naddr} ` }),
+      write: () => {},
+      clear: () => {},
+    },
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Remove card' }))
+    await expect(canvas.queryByRole('button', { name: 'Remove card' })).toBeNull()
+  },
+}
+
+/**
+ * A line that is only the link draws as its row while it is written, as the
+ * sent message will, and its card waits under the box with its ✕ (Peek's
+ * prototype *Widgets 2/In Peek, In the message box*).
+ */
+export const AnIssueAloneOnItsLine: Story = {
+  args: {
+    draftKey: 'story-issue-alone',
+    drafts: {
+      read: () => `Words on the line above the link.\nnostr:${recorded.naddr}`,
+      readDraft: () => ({ text: `Words on the line above the link.\nnostr:${recorded.naddr}` }),
       write: () => {},
       clear: () => {},
     },

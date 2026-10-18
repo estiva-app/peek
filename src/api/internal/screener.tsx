@@ -49,7 +49,7 @@ import { useChannelStreams } from '@/api/useChannelStreams'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { useMembership } from '@/api/internal/membership'
 import { useForeignObjects } from '@/api/foreign'
-import { validToken } from '@/auth/estivaId'
+import { heldToken } from '@/auth/heldSession'
 import { useScreenerSync } from '@/nostr/useScreenerSync'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
@@ -140,7 +140,13 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
             for (const address of asked) {
               const object = objects[address]
               next[address] = object
-                ? { address, kind: object.kind, title: object.slots.title?.value ?? 'File', comments: object.comments }
+                ? {
+                    address,
+                    kind: object.kind,
+                    title: object.slots.title?.value ?? 'File',
+                    summary: object.slots.subtitle?.value,
+                    comments: object.comments,
+                  }
                 : null
             }
             return next
@@ -328,7 +334,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     // is absent, and absent reads as "new" for every member file — and every
     // DM — at once.
     if (!frontier.ready) return { items: [], previews }
-    const me = validToken()?.pubkey
+    const me = heldToken()?.pubkey
     const horizonSeconds = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
     const dmRows = foldDmScreenerRows(
@@ -418,14 +424,16 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   const urgentFiles = useMemo<FoldedUrgentFile[]>(() => {
     if (!hasRelay || !frontier.ready || membership.state === 'unknown') return []
     const open: ScreenerFile[] = openWork.items.flatMap((item) =>
-      item.kind === 'file' ? [{ address: item.address, kind: item.object.kind, title: item.title, comments: item.object.comments }] : [],
+      item.kind === 'file'
+        ? [{ address: item.address, kind: item.object.kind, title: item.title, summary: item.object.slots.subtitle?.value, comments: item.object.comments }]
+        : [],
     )
     return foldUrgentFiles([...open, ...files], {
       merged: frontier.merged,
       termsOf: membership.termsOf,
       isMentioned: membership.isMentioned,
       isUrgent: membership.isUrgent,
-      me: validToken()?.pubkey,
+      me: heldToken()?.pubkey,
       nowSeconds: Math.floor(now / 1000),
       horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
     })

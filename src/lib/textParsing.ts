@@ -507,6 +507,7 @@ export function serializeInline(node: TiptapNode): string {
       text += child.attrs.uri
     } else if (child.type.name === 'reference') {
       // An app URL's chip is the URL it was (OPT-19, SPEC §13.1); a reference with no URL is its URI.
+      // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-is-stored-as-the-url-a-person-wrote.md
       text += child.attrs.href || child.attrs.uri || ''
     } else if (child.type.name === 'objectMention') {
       // Written back as the address it was loaded or inserted as, verbatim.
