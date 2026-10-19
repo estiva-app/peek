@@ -8,14 +8,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Person } from '@/data/peopleData'
-import {
-  hasCompleteWord,
-  snippetAround,
-  matchPeople,
-  messageEmptyState,
-  normalizeQuery,
-  type MessageSearchState,
-} from './launcherSearch'
+import { snippetAround, matchPeople, messageEmptyState, type MessageSearchState } from './launcherSearch'
 
 const PEOPLE: Person[] = [
   { id: 'alice', name: 'Alice Johnson', role: 'Product Designer' },
@@ -23,14 +16,8 @@ const PEOPLE: Person[] = [
   { id: 'juan', name: 'Juan Foley', role: 'Frontend Engineer' },
 ]
 
-describe('normalizeQuery', () => {
-  it('trims and lowercases, so every matcher agrees on the term', () => {
-    expect(normalizeQuery('  Pipeline  ')).toBe('pipeline')
-  })
-})
-
 describe('matchPeople', () => {
-  it('matches a name fragment', () => {
+  it('matches the start of a name word', () => {
     expect(matchPeople(PEOPLE, 'john').map((p) => p.id)).toEqual(['alice'])
   })
 
@@ -38,16 +25,30 @@ describe('matchPeople', () => {
     expect(matchPeople(PEOPLE, 'designer').map((p) => p.id)).toEqual(['alice'])
     expect(matchPeople(PEOPLE, 'engineer').map((p) => p.id)).toEqual(['daniel', 'juan'])
   })
-})
 
-describe('hasCompleteWord', () => {
-  it('is false for a single unfinished token — the common case while typing', () => {
-    expect(hasCompleteWord('exam')).toBe(false)
-    expect(hasCompleteWord('  exam  ')).toBe(false)
+  it('matches words of a name and a role in any order, and leaves out a minus word', () => {
+    expect(matchPeople(PEOPLE, 'eng juan').map((p) => p.id)).toEqual(['juan'])
+    expect(matchPeople(PEOPLE, 'engineer -back').map((p) => p.id)).toEqual(['juan'])
   })
 
-  it('is true once there is a space, so at least one word is finished', () => {
-    expect(hasCompleteWord('for example')).toBe(true)
+  it('never matches the middle of a word', () => {
+    expect(matchPeople(PEOPLE, 'ohnson')).toEqual([])
+    expect(matchPeople(PEOPLE, 'gineer')).toEqual([])
+  })
+})
+
+describe('the panel’s one rule (SPEC §5.2), on the people it holds', () => {
+  const claude: Person[] = [{ id: 'claude', name: 'Claude', role: 'Product agent' }]
+
+  it('a word start in any order, an exact phrase in quotes', () => {
+    expect(matchPeople(claude, 'ag prod')).toEqual(claude)
+    expect(matchPeople(claude, '"product agent"')).toEqual(claude)
+    expect(matchPeople(claude, '"agent product"')).toEqual([])
+  })
+
+  it('not the middle of a word: "aud" does not find Claude', () => {
+    expect(matchPeople(claude, 'aud')).toEqual([])
+    expect(matchPeople(claude, 'cla')).toEqual(claude)
   })
 })
 
@@ -55,39 +56,27 @@ describe('messageEmptyState', () => {
   const done = (count: number): MessageSearchState => ({ kind: 'done', count })
 
   it('says nothing when there are results to show', () => {
-    expect(messageEmptyState(done(3), 'example')).toBeNull()
+    expect(messageEmptyState(done(3))).toBeNull()
   })
 
   it('says nothing before anything is typed', () => {
-    expect(messageEmptyState({ kind: 'idle' }, '')).toBeNull()
+    expect(messageEmptyState({ kind: 'idle' })).toBeNull()
   })
 
-  it('blames the whole-word rule for a partial word, not the corpus', () => {
-    /*
-      Measured on production: "Cla" → 0 rows while "Claude" → 2. Reporting
-      that as a flat "no messages matched" is a wrong statement about the
-      workspace and is what would make this feature read as broken while
-      behaving exactly as measured.
-    */
-    expect(messageEmptyState(done(0), 'Cla')).toBe(
-      'No messages matched — message search needs a whole word.',
-    )
-  })
-
-  it('states it plainly once a whole word genuinely found nothing', () => {
-    expect(messageEmptyState(done(0), 'for zzqxvwmk')).toBe('No messages matched.')
+  it('states it plainly when a fragment found nothing — the relay matches word starts (SPEC §5.2)', () => {
+    expect(messageEmptyState(done(0))).toBe('No messages matched.')
   })
 
   it('distinguishes "nothing you can read" from "nothing matched"', () => {
     // The done-when, in one assertion. `not_a_member` is an answer arrived at
     // successfully, not an outage.
-    expect(messageEmptyState({ kind: 'failed', failure: 'not_a_member' }, 'example')).toBe(
+    expect(messageEmptyState({ kind: 'failed', failure: 'not_a_member' })).toBe(
       'No messages you can read match — some conversations are not yours to see.',
     )
   })
 
   it('does not report a refusal as an empty result', () => {
-    expect(messageEmptyState({ kind: 'failed', failure: 'refused' }, 'example')).toBe(
+    expect(messageEmptyState({ kind: 'failed', failure: 'refused' })).toBe(
       'The relay refused the search, so this list is incomplete.',
     )
   })
@@ -95,7 +84,7 @@ describe('messageEmptyState', () => {
   it('does not report an outage as a refusal', () => {
     // Retrying may work for one of these and not the other, which is why
     // RelayReadError classifies them rather than flattening them.
-    expect(messageEmptyState({ kind: 'failed', failure: 'unreachable' }, 'example')).toBe(
+    expect(messageEmptyState({ kind: 'failed', failure: 'unreachable' })).toBe(
       'Could not reach the relay, so messages are not included.',
     )
   })
@@ -103,11 +92,11 @@ describe('messageEmptyState', () => {
   it('says there was nothing to ask with when signed out', () => {
     // Not "no messages matched": that would be a claim about a corpus nobody
     // searched.
-    expect(messageEmptyState({ kind: 'signed-out' }, 'example')).toBe('Sign in to search messages.')
+    expect(messageEmptyState({ kind: 'signed-out' })).toBe('Sign in to search messages.')
   })
 
   it('says it is working while it is working', () => {
-    expect(messageEmptyState({ kind: 'searching' }, 'example')).toBe('Searching messages…')
+    expect(messageEmptyState({ kind: 'searching' })).toBe('Searching messages…')
   })
 })
 
@@ -123,6 +112,15 @@ describe('snippetAround', () => {
     const snippet = snippetAround(long, 'pipeline')
     expect(snippet).toContain('pipeline')
     expect(snippet.startsWith('…')).toBe(true)
+  })
+
+  it('centres on the first word asked for in a multi-word query, at a word start, never on a left-out word', () => {
+    const draft = 'We redrafted the opening paragraph twice. ' + long
+    for (const query of ['pipeline monday', '"pipeline exactly"', '-draft pipel']) {
+      const snippet = snippetAround(draft, query)
+      expect(snippet, query).toContain('pipeline')
+      expect(snippet, query).not.toContain('redrafted')
+    }
   })
 
   it('collapses whitespace, so a multi-line body stays one row', () => {

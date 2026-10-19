@@ -77,3 +77,21 @@ describe('useMessageSearch over both kinds a conversation is written in', () => 
     expect(relay.resolve).not.toHaveBeenCalled()
   })
 })
+
+describe('useMessageSearch waits for two letters, as file search does', () => {
+  it('asks nothing for one letter, and asks from the second', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result, rerender } = renderHook(({ q }) => useMessageSearch(q), { initialProps: { q: 'r' } })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(relay.search).not.toHaveBeenCalled()
+      expect(result.current.state).toEqual({ kind: 'idle' })
+
+      rerender({ q: 're' })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(relay.search.mock.calls.map(([t]) => t)).toEqual(['re'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

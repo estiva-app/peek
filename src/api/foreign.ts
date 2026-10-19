@@ -1142,7 +1142,13 @@ async function hitsOf(events: SignedEvent[], relayUrl: string, token: StoredToke
 }
 
 /**
- * Search message content over NIP-50 (PEE-4).
+ * How short a query is still not asked of the relay — `[`'s own floor, for
+ * files and messages alike (Miky, 2026-10-19): one letter starts too many words.
+ */
+const SEARCH_MIN = 2
+
+/**
+ * Search message content over NIP-50 (PEE-4), from the second letter typed.
  *
  * Debounced, because the relay is a round trip and a launcher fires on every
  * keystroke. 250 ms is short enough to feel live and long enough that typing a
@@ -1168,7 +1174,8 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
     state: MessageSearchState
     hits: MessageHit[]
   } | null>(null)
-  const term = query.trim()
+  const typed = query.trim()
+  const term = typed.length >= SEARCH_MIN ? typed : ''
 
   useEffect(() => {
     // Nothing to ask, or nowhere to ask it: both are derived states, not
@@ -1222,8 +1229,6 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
   return { state, hits: fresh?.hits ?? [] }
 }
 
-/** How short a typed title is still not asked of the relay — `[`'s own floor. */
-const FILE_SEARCH_MIN = 2
 
 /**
  * The launcher's Files (SUM-7, Miky at kickoff): the files whose current
@@ -1236,7 +1241,7 @@ export function useFileSearch(query: string): { state: MessageSearchState; hits:
   const viewer = useRelayViewer()
   const [answer, setAnswer] = useState<{ term: string; state: MessageSearchState; hits: ReferenceCandidate[] } | null>(null)
   const typed = query.trim()
-  const term = typed.length >= FILE_SEARCH_MIN ? typed : ''
+  const term = typed.length >= SEARCH_MIN ? typed : ''
 
   useEffect(() => {
     if (!term || !hasRelay) return
