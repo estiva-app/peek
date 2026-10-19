@@ -93,8 +93,15 @@ describe('blockLinkOf', () => {
     site. A host that merely ends in the file's host is another site, and http
     is not the file's https origin; the origin is compared exactly.
   */
-  it('a block link on a lookalike host, or over http, leads nowhere', () => {
-    for (const url of ['https://evilship.estiva.app/issue/plan-x#block-p1', 'http://ship.estiva.app/issue/plan-x#block-p1']) {
+  it('a block link on a lookalike host (suffix, prefix, before an @, a port, a subdomain) or over http leads nowhere', () => {
+    for (const url of [
+      'https://evilship.estiva.app/issue/plan-x#block-p1',
+      'http://ship.estiva.app/issue/plan-x#block-p1',
+      'https://ship.estiva.app.evil.com/issue/plan-x#block-p1',
+      'https://ship.estiva.app@evil.com/issue/plan-x#block-p1',
+      'https://ship.estiva.app:8443/issue/plan-x#block-p1',
+      'https://x.ship.estiva.app/issue/plan-x#block-p1',
+    ]) {
       expect(blockLinkOf(url, SHIP_ISSUE, PEEK), url).toBeUndefined()
     }
   })
