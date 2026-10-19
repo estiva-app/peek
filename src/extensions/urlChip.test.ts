@@ -11,7 +11,7 @@ import { Editor } from '@tiptap/core'
 import { LinkChips, ReferenceNode } from '@estiva-app/ui/editor'
 import { peekStarterKit } from './editorKit'
 import { serializeTiptapToText } from '@/lib/textParsing'
-import { linkTargetOf } from '@/lib/boxCard'
+import { linkTargetOf } from '@estiva-app/conversation'
 import { referenceOfLink, type PartPointer } from '@estiva-app/protocol'
 
 const ISSUE_URL = 'https://ship.estiva.app/issue/live-widget-probe-marker-b389d20f-b741-4ba8-a28f-97cac351c4c9'

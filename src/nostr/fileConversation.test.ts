@@ -11,7 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeNaddr, encodeNpub } from '@estiva-app/protocol'
-import { messageReference } from '@estiva-app/conversation'
+import { boxLinksOf, embedsToSend, messageReference } from '@estiva-app/conversation'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
@@ -37,7 +37,6 @@ import {
   type ConversationContainer,
 } from './fileConversation'
 import { forgetUrlShapes } from './foreign'
-import { boxLinksOf, embedsToSend } from '@/lib/boxCard'
 
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const MIKY = 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2'
@@ -375,6 +374,27 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     const links = boxLinksOf(body, { resolveLink: () => undefined, blockOf: () => undefined, here: ADDRESS })
     await commentAsViewer({ container, body, embeds: embedsToSend(links, new Set()) }, 'https://relay.test', token)
     expect(signed().tags.filter((t) => t[0] === 'embed')).toEqual([['embed', OTHER, 'detailed']])
+  })
+
+  it('a pasted link to another block of the page it is on writes no part, and a block of another page does (COMM-8)', async () => {
+    const SECOND_D = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
+    const second = event({ kind: BARE_FILE, tags: [['d', SECOND_D], ['title', 'Second'], ['h', FOLDER]] })
+    const blocks = event({
+      kind: 31990,
+      tags: [['d', 'estiva-peek'], ['urls', 'https://peek.estiva.app/topic/<slug>-<d>#block-<block>', String(BARE_FILE)]],
+      content: JSON.stringify({ name: 'Peek', projections: {} }),
+    })
+    queryRelay.mockImplementation(relayOver([manifest, blocks, file, linked, second]))
+    const page = `${BARE_FILE}:${CATH}:${LINKED_D}`
+    await commentAsViewer(
+      {
+        container: { kind: 'file', address: page, h: FOLDER },
+        body: `Like https://peek.estiva.app/topic/linked-${LINKED_D}#block-own1 and https://peek.estiva.app/topic/second-${SECOND_D}#block-b2`,
+      },
+      'https://relay.test',
+      token,
+    )
+    expect(signed().tags.filter((t) => t[0] === 'part')).toEqual([['part', `${BARE_FILE}:${CATH}:${SECOND_D}`, 'b2']])
   })
 
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
@@ -778,6 +798,15 @@ describe("a comment's anchor keeps its whole run and its words (§13.6, LEAF-7)"
   it("draws no anchor on a reply that copied its comment's place: the comment shows it, once", () => {
     const reply = [['A', DOC], ['e', 'c'.repeat(64)], ['k', '1111'], ['block', 'p1', 'p2'], ['quote', 'ship on Friday.']]
     expect(partsAndAnchorOf({ kind: 1111, tags: reply })).toEqual([])
+  })
+
+  it('draws no part of the page the comment is on, sent before that rule, and still draws its anchor and another page’s part (COMM-8)', () => {
+    const OTHER_DOC = `30842:${'b'.repeat(64)}:other`
+    const tags = [['A', DOC], ['block', 'p1'], ['part', DOC, 'p9'], ['part', OTHER_DOC, 'q1']]
+    expect(partsAndAnchorOf({ kind: 1111, tags })).toEqual([
+      { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1']] },
+      { address: OTHER_DOC, block: 'q1' },
+    ])
   })
 
   it('anchors nothing on a channel message, which names no file', () => {

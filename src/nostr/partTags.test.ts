@@ -65,9 +65,9 @@ describe('a pasted block link', () => {
     expect(tags.filter((t) => t[0] === 'part')).toEqual([['part', ADDRESS, 'aaa']])
   })
 
-  it('still shows a block of the file the comment is on, whose a is its own', async () => {
+  it('earns nothing for a block of the file the comment is on: the link is its chip only', async () => {
     const tags = await urlReferenceTagsAsViewer([link('aaa')], ADDRESS, 'https://relay', TOKEN)
-    expect(tags).toEqual([['part', ADDRESS, 'aaa']])
+    expect(tags).toEqual([])
   })
 })
 

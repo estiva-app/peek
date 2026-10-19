@@ -181,6 +181,10 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
  * A reply copies its comment's place (SPEC §13.6) and draws no anchor of its
  * own: the thread's comment shows where it is, once.
  *
+ * A `part` of the file the comment is on draws nothing: a link to another
+ * block of the same page is its chip only, in every app (COMM-8, Miky
+ * 2026-10-19), and a comment sent before that rule still carries one.
+ *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-remembers-where-its-selection-starts-and-ends.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
  */
@@ -190,7 +194,7 @@ export function partsAndAnchorOf(event: Pick<SignedEvent, 'kind' | 'tags'>): Con
   const quote = event.tags.find((t) => t[0] === QUOTE_TAG)
   const anchor: ConversationPart[] =
     run && about ? [{ address: about, block: run[0], anchor: true, anchorTags: [blockRunTag(run), ...(quote ? [quote] : [])] }] : []
-  return [...anchor, ...partsOf(event)]
+  return [...anchor, ...partsOf(event).filter((part) => part.address !== about)]
 }
 
 /** A block a message shows, or the run and words a comment is anchored to. */

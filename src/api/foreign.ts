@@ -61,7 +61,7 @@ import type { ReadSource } from '@/nostr/readFrom'
 import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
-import { rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
+import { linkTargetOf, rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
@@ -70,7 +70,6 @@ import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
 import { joinFolderWatch } from '@/nostr/useLiveFile'
 import { startTopicAsViewer, type StartTopicArgs } from './startTopic'
-import { linkTargetOf } from '@/lib/boxCard'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,

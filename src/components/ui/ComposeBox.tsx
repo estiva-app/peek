@@ -36,7 +36,7 @@ export interface SendPayload {
   /** Figma frame ids attached via the command launcher's find flow. */
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
-  /** The one file's default card, unless ✕ took it off (SPEC §13.6.2; `lib/boxCard`). */
+  /** The one file's default card, unless ✕ took it off (SPEC §13.6.2; `boxLinksOf`, @estiva-app/conversation). */
   embeds?: Embed[]
 }
 
