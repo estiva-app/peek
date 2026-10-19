@@ -76,8 +76,12 @@ type Token = { accessToken: string; pubkey: string }
 async function token(): Promise<Token> {
   const res = await fetch(`${ID_ORIGIN}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ grantType: 'client_credentials', clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
   })
   if (!res.ok) throw new Error(`POST /token: ${res.status} ${await res.text()}`)
   const body = (await res.json()) as { access_token: string; pubkey: string }
