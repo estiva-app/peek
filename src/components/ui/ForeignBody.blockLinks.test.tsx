@@ -13,11 +13,12 @@ const UUID = 'a0b27d90-d5b9-40e7-8078-865ab36a421c'
 const PAGE = `30851:${SHIP}:${UUID}`
 const FILE_LINK = `https://ship.estiva.app/issue/plan-${UUID}`
 const BLOCK_LINK = `${FILE_LINK}#block-p1`
+const OLD_LINK = `https://ship.estiva.app/#/issue/${UUID}`
 const naddr = addrToNaddr(PAGE, [])
 const object = { ref: PAGE, address: PAGE, kind: 30851, appName: 'Ship', noun: 'issue', openUrl: `https://ship.estiva.app/o/${PAGE}`, slots: { title: { value: 'Plan the launch' } } }
 
 vi.mock('@/api', () => ({
-  useLinkResolver: () => (url: string) => (url.startsWith(FILE_LINK) ? PAGE : undefined),
+  useLinkResolver: () => (url: string) => (url.startsWith(FILE_LINK) || url === OLD_LINK ? PAGE : undefined),
   useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((r) => [r, r.replace(/^nostr:/, '') === naddr ? object : null])),
 }))
 vi.mock('@/api/mentions', () => ({ personByPubkey: () => undefined, subscribeMentions: () => () => {}, mentionsVersion: () => 0 }))
@@ -52,6 +53,11 @@ describe('a link to one block in a description', () => {
 
   it('a link to the whole file opens where the file opens, as before', () => {
     const chip = chipOf(`see ${FILE_LINK} here`)
+    expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
+  it('an old `#/issue/…` link is no block: it opens where the file opens', () => {
+    const chip = chipOf(`see ${OLD_LINK} here`)
     expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
   })
 })

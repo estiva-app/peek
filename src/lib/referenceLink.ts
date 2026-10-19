@@ -91,6 +91,7 @@ export function blockLinkOf(url: string | undefined, origin = window.location.or
   } catch {
     return undefined
   }
-  if (parsed.hash.length < 2) return undefined
+  // `#/…` is an old hash route (Ship's `#/issue/<d>`), not a block: it opens where the file does.
+  if (parsed.hash.length < 2 || parsed.hash.startsWith('#/')) return undefined
   return parsed.origin === origin ? { place: 'file', href: `${parsed.pathname}${parsed.search}${parsed.hash}` } : { place: 'app', href: url }
 }
