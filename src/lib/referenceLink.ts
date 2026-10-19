@@ -75,3 +75,22 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
 
   return object.openUrl ? { place: 'app', href: object.openUrl } : null
 }
+
+/**
+ * Where a chip written as a link to one block opens (§13.6.1, WBM-11): the URL
+ * as written, so a click lands on the block, not the top of its file — or
+ * undefined for a link with no fragment, and for anything but http(s), which
+ * open where {@link referenceLink} says. Peek's own URL is a route, so the
+ * router takes it without a reload.
+ */
+export function blockLinkOf(url: string | undefined, origin = window.location.origin): ReferenceLink | undefined {
+  if (!url || !/^https?:\/\//i.test(url)) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return undefined
+  }
+  if (parsed.hash.length < 2) return undefined
+  return parsed.origin === origin ? { place: 'file', href: `${parsed.pathname}${parsed.search}${parsed.hash}` } : { place: 'app', href: url }
+}

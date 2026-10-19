@@ -399,7 +399,8 @@ export async function askReferenceFromUrlAsViewer(
  * `limit: 1` would hand the card to whichever answered first, so anybody who
  * publishes the same `(kind, d)` could put their object's card under a link to
  * somebody else's — §13.6.2's "one author for the identity". A link to one
- * block names its part (§13.6.1), not a card, so it is null too.
+ * block names its file (§7.7), so it reads as that file's chip; its `part`
+ * draws the block under the message and keeps the file's card off (WBM-11).
  *
  * Throws a `RelayReadError` for an outage, so a caller that remembers answers
  * does not remember "the relay could not be asked" as "nothing".
@@ -407,7 +408,7 @@ export async function askReferenceFromUrlAsViewer(
 export async function cardValueOfUrlAsViewer(url: string, relayUrl: string, token: StoredToken): Promise<string | null> {
   const query = viewerQuery(relayUrl, token)
   const hit = matchObjectUrl(url, await urlShapes(query))
-  if (!hit || hit.block !== undefined) return null
+  if (!hit) return null
   if (hit.by === 'id') return /^[0-9a-f]{64}$/i.test(hit.identifier) ? hit.identifier.toLowerCase() : null
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
   if (hit.kind !== undefined) filter.kinds = [hit.kind]

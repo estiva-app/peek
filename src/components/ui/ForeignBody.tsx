@@ -59,7 +59,8 @@ export function ForeignBody({ slot, className, cards = false }: { slot: Resolved
       <RichText
         blocks={blocks}
         size="small"
-        renderReference={(uri) => <Reference uri={uri} object={resolved[uri]} />}
+        // A link to one block opens at the block (WBM-11): the run keeps the URL as written.
+        renderReference={(uri, run) => <Reference uri={uri} object={resolved[uri]} opensAt={run.text} />}
         // The package's block is the protocol's, handed back.
         renderAfter={cards ? (block) => <BlockLineCards block={block as RenderBlock} /> : undefined}
       />

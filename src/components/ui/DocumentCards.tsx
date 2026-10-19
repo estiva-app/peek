@@ -17,10 +17,10 @@ import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { Reference } from './Reference'
 
 /** A reference in the field, as its chip. A person's key is named by `Reference` itself. */
-export function DocumentReference({ uri }: ReferenceViewProps) {
+export function DocumentReference({ uri, href }: ReferenceViewProps) {
   const person = /^nostr:npub1/i.test(uri)
   const resolved = useResolvedReferences(person ? [] : [uri])
-  return <Reference uri={uri} object={resolved[uri]} />
+  return <Reference uri={uri} object={resolved[uri]} opensAt={href} />
 }
 
 function LineCards({ cards }: { cards: readonly ReferenceCard[] }) {

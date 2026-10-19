@@ -8,7 +8,7 @@
  * rendering as somebody's object.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { askReferenceFromUrlAsViewer, referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
+import { askReferenceFromUrlAsViewer, cardValueOfUrlAsViewer, referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -24,6 +24,7 @@ const manifest = {
   tags: [
     ['d', 'estiva-ship'],
     ['urls', 'https://ship.estiva.app/issue/<slug>-<d>', '30851'],
+    ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851'],
     ['urls', 'https://ship.estiva.app/#/issue/<d>', '30851'],
   ],
 }
@@ -134,6 +135,16 @@ describe('referenceFromUrlAsViewer', () => {
       return kinds?.includes(31990) ?? false
     })
     expect(manifestReads).toHaveLength(1)
+  })
+})
+
+describe('cardValueOfUrlAsViewer', () => {
+  it('names the file a link to one of its blocks is in, so the link reads as that file (WBM-11)', async () => {
+    expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${UUID}#block-p1`, 'https://relay', TOKEN)).toBe(`30851:${AUTHOR}:${UUID}`)
+  })
+
+  it('names nothing for a block of a file the reader cannot read or that is gone', async () => {
+    expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${'0'.repeat(8)}-0000-4000-8000-000000000000#block-p1`, 'https://relay', TOKEN)).toBeNull()
   })
 })
 

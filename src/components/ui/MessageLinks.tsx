@@ -6,6 +6,7 @@ import { linkedKindOf, linkStateOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { filePath } from '@/lib/objectUrl'
+import { blockLinkOf } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { referenceTypeWord } from '@/lib/textParsing'
 import { cardShapeOf, noteCardShape, type CardShape } from '@/lib/cardShapes'
@@ -74,6 +75,12 @@ function LinkClicks({ block = false, children }: { block?: boolean; children: Re
   return block ? <div {...props}>{children}</div> : <span {...props}>{children}</span>
 }
 
+/** A file's link state, opening at the block a link to one block was written for (§13.6.1). */
+function openingAt(link: LinkState, written: string | undefined): LinkState {
+  const block = link.state === 'ready' ? blockLinkOf(written) : undefined
+  return block && link.state === 'ready' ? { ...link, linked: { ...link.linked, href: block.href } } : link
+}
+
 /** A part of another file shown in a message (SPEC §13.6.1): its links are clicked as a chip's are. */
 export function MessagePart({ children }: { children: ReactNode }) {
   return <LinkClicks block>{children}</LinkClicks>
@@ -84,18 +91,18 @@ export function MessagePart({ children }: { children: ReactNode }) {
  * no kind for. `object` is the body's one lookup (`undefined` while asked), so
  * the same file never draws in two states on one screen.
  */
-export function MessageChip({ uri, object, urgent, preview = true }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one. */ preview?: boolean }) {
+export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one. */ preview?: boolean; /** The URL it was written as: a link to one block opens there (WBM-11). */ opensAt?: string }) {
   if (/^nostr:npub1/i.test(uri)) return <Reference uri={uri} urgent={urgent} />
   return (
     <LinkClicks>
-      <LinkChip link={linkStateOf(uri, object)} preview={preview} />
+      <LinkChip link={openingAt(linkStateOf(uri, object), opensAt)} preview={preview} />
     </LinkClicks>
   )
 }
 
 /** A line that is only a link to a file or a message: that file's row, where the line was. */
-export function MessageRow({ uri, object, unreadable = false }: { uri: string; object: ForeignObject | null | undefined; /** A reference that names no address or event id. */ unreadable?: boolean }) {
-  const link: LinkState = unreadable ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' } : linkStateOf(uri, object)
+export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: string; object: ForeignObject | null | undefined; /** A reference that names no address or event id. */ unreadable?: boolean; /** The URL it was written as: a link to one block opens there (WBM-11). */ opensAt?: string }) {
+  const link: LinkState = unreadable ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' } : openingAt(linkStateOf(uri, object), opensAt)
   return (
     <LinkClicks block>
       <div data-link-row>
