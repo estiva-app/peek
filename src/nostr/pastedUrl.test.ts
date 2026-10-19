@@ -152,13 +152,22 @@ describe('cardValueOfUrlAsViewer', () => {
     (kind, d), so a d two authors hold names nothing — else whichever the
     relay answered first would put its card under a link to the other's file.
   */
-  it('names nothing when two authors hold the same file identity', async () => {
-    const copy = { ...issue, id: 'e2', pubkey: 'e'.repeat(64) }
+  // A relay holding `held`: it answers by kind and stops at the filter's limit, as buzz does.
+  const relayHolding = (held: (typeof issue)[]) =>
     queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
       const kinds = filters[0]?.kinds as number[] | undefined
       if (kinds?.includes(31990)) return { ok: true, events: [manifest, peekManifest] }
-      return { ok: true, events: [copy, issue] }
+      const limit = (filters[0]?.limit as number | undefined) ?? Infinity
+      return { ok: true, events: held.filter((event) => !kinds || kinds.includes(event.kind)).slice(0, limit) }
     })
+
+  it('names nothing when two authors hold the same file identity', async () => {
+    relayHolding([{ ...issue, id: 'e2', pubkey: 'e'.repeat(64) }, issue])
+    expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${UUID}`, 'https://relay', TOKEN)).toBeNull()
+  })
+
+  it('names nothing when only another kind holds the d the link names', async () => {
+    relayHolding([{ ...issue, id: 'e3', kind: 30023, pubkey: 'e'.repeat(64) }])
     expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${UUID}`, 'https://relay', TOKEN)).toBeNull()
   })
 })
