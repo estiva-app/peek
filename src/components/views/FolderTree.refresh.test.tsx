@@ -95,7 +95,6 @@ vi.mock('@/api/foreign', () => {
     // The copy on the device holds nothing here (PEE-2): only the relay's reads are counted.
     conversations: (files: ForeignObject[], source?: string) => (source === 'copy' ? Promise.resolve({}) : seam.conversations(files)),
     resolveObject: seam.resolveObject,
-    resolveFileFolder: async () => null,
     // Nor does it for the listing, the Folders or a file (PEE-4).
     listFoldersFromDevice: async () => null,
     resolveFolderContentsFromDevice: async () => undefined,

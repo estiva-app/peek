@@ -32,16 +32,21 @@ export interface PlannedTopic {
  * A summary is seeded as the root's `["summary", <text>]`, last, as SPEC §6.12
  * has the reference writers put it; `buildBareFile` takes none, so it is
  * appended here. Blank, the root carries no tag at all.
+ *
+ * Under a file, it is stored in that file's own Folder (`stored`), which is
+ * its `h`, and still listed in `folder`, the team whose listing holds the
+ * parent, so the tree draws it under its parent (SPEC §6.7 "Same Folder") —
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/what-belongs-to-a-file-is-stored-with-it.md
  */
 export function planTopic(
-  args: { folder: string; title: string; summary?: string; parent?: string; fileId?: string },
+  args: { folder: string; stored?: string; title: string; summary?: string; parent?: string; fileId?: string },
   pubkey: string,
 ): PlannedTopic {
   const fileId = args.fileId ?? crypto.randomUUID()
   const built = buildBareFile(pubkey, Date.now(), {
     fileId,
     title: args.title,
-    channelUuid: args.folder,
+    channelUuid: args.stored ?? args.folder,
     ...(args.parent ? { parent: args.parent } : {}),
   })
   const summary = summaryText(args.summary ?? '')
@@ -99,7 +104,7 @@ export async function publishTopicAsViewer(
 
 /** Plan and write a topic in one go, answering once the relay has — for the fixture seeds, which wait. */
 export async function createTopicAsViewer(
-  args: { folder: string; title: string; summary?: string; parent?: string; hasState: boolean },
+  args: { folder: string; stored?: string; title: string; summary?: string; parent?: string; hasState: boolean },
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {

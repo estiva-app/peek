@@ -22,7 +22,6 @@ import {
   archiveFolderAsViewer,
   archiveImpactAsViewer,
   fileAddressAsViewer,
-  fileFolderAsViewer,
   routeWordsAsViewer,
   commentedFileOf,
   creatableUnderAsViewer,
@@ -492,18 +491,6 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /**
-   * The Folder a file with no `h` writes its conversation in (PEE-33), or
-   * null when the record names none — and null signed out, like the rest.
-   */
-  const resolveFileFolder = useCallback(
-    async (address: string): Promise<string | null> => {
-      const v = viewer()
-      return v ? fileFolderAsViewer(address, v.relayUrl, v.token) : null
-    },
-    [viewer],
-  )
-
   const resolveFolderProject = useCallback(
     async (folder: string): Promise<FolderProject | null> => {
       const v = viewer()
@@ -832,7 +819,6 @@ export function useForeignObjects() {
     resolveObjectFromDevice,
     resolveObjects,
     resolveFileAddress,
-    resolveFileFolder,
     resolveFolderProject,
     resolveFolderContents,
     resolveFolderContentsFromDevice,

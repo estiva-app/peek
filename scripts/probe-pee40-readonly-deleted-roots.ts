@@ -10,7 +10,7 @@
  *   node scripts/run-in-vite.mjs scripts/probe-pee40-readonly-deleted-roots.ts [address-suffix]
  */
 import { queryRelay } from '@/nostr/bridge'
-import { fileFolderAsViewer, resolveObjectAsViewer, threadsAsViewer } from '@/nostr/foreign'
+import { resolveObjectAsViewer, threadsAsViewer } from '@/nostr/foreign'
 import { fileThreadsAsViewer } from '@/nostr/fileConversation'
 import type { StoredToken } from '@/auth/estivaId'
 
@@ -75,7 +75,7 @@ export default async function main() {
       console.log(`…${address.slice(-12)} unresolved`)
       continue
     }
-    const folder = found.folder ?? (await fileFolderAsViewer(address, RELAY_URL, token))
+    const folder = found.folder
     const canComment = !!found.naddr && (found.actions ?? []).some((a) => a.id === 'comment')
     const view = canComment && folder ? 'own' : 'read-only'
     const rootIds = found.comments.map((c) => c.id)
