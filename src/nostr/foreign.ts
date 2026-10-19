@@ -288,39 +288,6 @@ export async function projectOwnFileAsViewer(event: SignedEvent, relayUrl: strin
 }
 
 /**
- * The Folder a file's conversation is written in, for a record that carries
- * no `h` — PEE-33.
- *
- * `ForeignObject.folder` is the root's `h` and nothing else, and a Ship
- * project has none: it is placed under its team by a `kind:1852`, and its
- * conversation lives in the channel its `buzz-channel` tag names. That tag is
- * what interop's own `folderOf` reads for a write (`applyActionAsViewer` puts
- * a root comment there), what Ship reads a project's conversation from
- * (`project.contentFolder`), and the `h` the project's existing comments
- * carry — measured on production 2026-09-21 for the Conversation standard
- * project. So the answer is read off the record with the same rule, one read.
- *
- * Not the `kind:30890` state that lists the file, which the ticket also
- * named: that is the *team* Folder, and a comment written with its `h` is
- * one Ship's project page never shows, since that page filters by the
- * project's own channel. Two of UI Guardrails' three comments are already
- * there, invisible to Ship. And no state lists a file placed by `h` alone,
- * so it would not have covered every record either.
- *
- * `null` when the record says nothing, which is a real answer: a file with no
- * Folder has nowhere for a comment to go, and the page falls back to the
- * read-only view rather than guessing.
- */
-export async function fileFolderAsViewer(address: string, relayUrl: string, token: StoredToken, lane: ReadLane = 'click'): Promise<string | null> {
-  const query = viewerQuery(relayUrl, token, lane)
-  const pointer = referenceToPointer(address)
-  const [root] = await query([
-    { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
-  ])
-  return root ? folderOf(root) : null
-}
-
-/**
  * What a pasted app URL names: an addressable object, by its NIP-33 address,
  * or an event, by its id. The two are resolved differently and tagged
  * differently, so the caller is told which it has rather than left to sniff.

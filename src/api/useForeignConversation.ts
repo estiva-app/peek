@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { useForeignObjects } from '@/api'
 import type { StoredToken } from '@/auth/estivaId'
-import { fileFolderAsViewer, resolveObjectAsViewer, type FileThreads } from '@/nostr/foreign'
+import { resolveObjectAsViewer, type FileThreads } from '@/nostr/foreign'
 import {
   RelayReadError,
   classifyRelayFailure,
@@ -83,7 +83,7 @@ function useResolvedForeign(naddr: string | null | undefined): {
    */
   previous: ForeignObject | null
 } {
-  const { resolveObject, resolveObjectFromDevice, resolveFileFolder } = useForeignObjects()
+  const { resolveObject, resolveObjectFromDevice } = useForeignObjects()
 
   const load = useCallback(
     async (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> => {
@@ -97,21 +97,8 @@ function useResolvedForeign(naddr: string | null | undefined): {
         the tree's expanded project lists no archived issue.
       */
       return resolveObject(target, { archivedWith: true })
-        .then(async (object) => {
-          /*
-            A record with no `h` still has a Folder its conversation is written
-            in (PEE-33): a Ship project names it by `buzz-channel`, which the
-            projection does not report. One more read, paid only for such a
-            file — an issue, a topic and every file placed by `h` resolve with
-            it already — so the page can hand Peek's own view a container
-            rather than leaving it loading for ever.
-          */
-          if (object?.address && !object.folder) {
-            const folder = await resolveFileFolder(object.address)
-            return { ok: true as const, value: folder ? { ...object, folder } : object }
-          }
-          return { ok: true as const, value: object }
-        })
+        // A Ship project placed by `buzz-channel` resolves with its Folder too (interop 0.61, PEE-33).
+        .then((object) => ({ ok: true as const, value: object }))
         .catch((error: unknown) => {
           /*
             Swallowed, like the folder read: nothing throws and the panel keeps
@@ -130,7 +117,7 @@ function useResolvedForeign(naddr: string | null | undefined): {
           return { ok: false as const, failure: kind as RelayFailureKind }
         })
     },
-    [resolveObject, resolveFileFolder],
+    [resolveObject],
   )
 
   /*
@@ -222,12 +209,7 @@ export async function loadForeignObjectAhead(
 ): Promise<ForeignObject | null> {
   const held = resolvedCache.peek(address)
   if (held?.value !== undefined && !held.seeded) return held.value
-  let object = await resolveObjectAsViewer(address, at.relayUrl, at.token, { archivedWith: true }, 'ahead')
-  // As the page does (PEE-33): a record with no `h` names its Folder another way.
-  if (object?.address && !object.folder) {
-    const folder = await fileFolderAsViewer(object.address, at.relayUrl, at.token, 'ahead')
-    if (folder) object = { ...object, folder }
-  }
+  const object = await resolveObjectAsViewer(address, at.relayUrl, at.token, { archivedWith: true }, 'ahead')
   const now = resolvedCache.peek(address)
   if (!now?.inflight && (now?.value === undefined || now.seeded)) {
     const value = object
