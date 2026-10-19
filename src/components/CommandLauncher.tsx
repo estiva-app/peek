@@ -898,7 +898,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const sentence = wordCount(typed) >= 2
     const ask: CommandPaletteGroup = { label: 'Ask', rows: intentRows(typed) }
     const changes = changeRowsFor(
-      changeRows.filter(({ action }) => launcherMatch(action.label, query) || launcherMatch(action.targetLabel ?? '', query)),
+      // One row, one text: "rename launch" finds Rename on *Launch plan*.
+      changeRows.filter(({ action }) => launcherMatch(`${action.label} ${action.targetLabel ?? ''}`, query)),
     )
     const peopleHits = matchPeople(people ?? [], query).map((p) => personRow(p))
     // An app's action by its name: "add" finds "Add issue · Ship", and Enter opens its form (C4).

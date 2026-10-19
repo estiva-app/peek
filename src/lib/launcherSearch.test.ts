@@ -114,6 +114,15 @@ describe('snippetAround', () => {
     expect(snippet.startsWith('…')).toBe(true)
   })
 
+  it('centres on the first word asked for in a multi-word query, at a word start, never on a left-out word', () => {
+    const draft = 'We redrafted the opening paragraph twice. ' + long
+    for (const query of ['pipeline monday', '"pipeline exactly"', '-draft pipel']) {
+      const snippet = snippetAround(draft, query)
+      expect(snippet, query).toContain('pipeline')
+      expect(snippet, query).not.toContain('redrafted')
+    }
+  })
+
   it('collapses whitespace, so a multi-line body stays one row', () => {
     expect(snippetAround('one\n\ntwo   three', 'two')).toBe('one two three')
   })

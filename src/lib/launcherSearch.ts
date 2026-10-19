@@ -41,10 +41,10 @@ import type { RelayFailureKind } from '@/nostr/relayRead'
 export function snippetAround(text: string, query: string, span = 76): string {
   const flat = text.replace(/\s+/g, ' ')
   const lower = flat.toLowerCase()
-  // What was typed as it stands, else its first word: "remov short" is two words, apart in the text.
-  const firstWord = query.match(/[\p{L}\p{N}]+/u)?.[0] ?? ''
-  const found = [query, firstWord].map((q) => q.toLowerCase()).find((q) => q && lower.includes(q)) ?? ''
-  const idx = found ? lower.indexOf(found) : -1
+  // The first word asked for, where it starts a word as the relay matched it: "remov short" is
+  // two words apart in the text, `-draft` is left out, and "mov" is not the middle of "remove".
+  const found = (query.replace(/(^|\s)-\S*/g, ' ').match(/[\p{L}\p{N}]+/u)?.[0] ?? '').toLowerCase()
+  const idx = found ? lower.search(new RegExp(`(?<![\\p{L}\\p{N}])${found}`, 'u')) : -1
   if (idx < 0) return flat.slice(0, span)
   const start = Math.max(0, idx - Math.floor((span - found.length) / 2))
   const end = Math.min(flat.length, start + span)
