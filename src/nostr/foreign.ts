@@ -23,7 +23,7 @@ import type { ReadLane } from '@estiva-app/platform'
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
 import { isStartConversation, type CreatableKindRead } from '@/lib/liveAction'
-import { KIND, parseProfile, type SignedEvent } from '@estiva-app/protocol'
+import { BLOCK_ANCHOR_TAG, KIND, parseProfile, QUOTE_TAG, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
 export const KIND_TOPIC = 39000
@@ -1113,6 +1113,14 @@ export interface FileComment {
   /** Needed to reply: NIP-22's lowercase `k` names the *parent's* kind, and a
    *  root may be a `kind:1111` comment or one of Ship's `kind:9` messages. */
   kind: number
+  /**
+   * Where on the file a comment is: its own `block` and `quote` tags (SPEC
+   * §13.6), absent when it is on the whole file. A reply to it copies them, so
+   * its thread keeps its place once the comment is deleted.
+   *
+   * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
+   */
+  place?: string[][]
 }
 
 /** Every thread of one file's conversation, keyed by the comment it hangs from. */
@@ -1170,13 +1178,18 @@ export function threadEventsWith(reference: string, rootIds: readonly string[], 
 }
 
 /** One event of a thread, as much of it as the pane draws and a reply needs. */
-export const fileCommentOf = (event: SignedEvent): FileComment => ({
-  id: event.id,
-  author: event.pubkey,
-  body: event.content,
-  createdAt: event.created_at,
-  kind: event.kind,
-})
+export const fileCommentOf = (event: SignedEvent): FileComment => {
+  // A comment's place, from its own tags; a reply's is the copy of its thread's, so passing it on keeps the same place.
+  const place = event.kind === KIND.COMMENT ? event.tags.filter((t) => t[0] === BLOCK_ANCHOR_TAG || t[0] === QUOTE_TAG) : []
+  return {
+    id: event.id,
+    author: event.pubkey,
+    body: event.content,
+    createdAt: event.created_at,
+    kind: event.kind,
+    ...(place.length ? { place } : {}),
+  }
+}
 
 /**
  * Reply to a comment on a file — the thread pane's write (FOL-19).
@@ -1193,9 +1206,9 @@ export async function replyToCommentAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<ActResult> {
-  const { id, kind, author } = args.parent
+  const { id, kind, author, place } = args.parent
   return applyActionAsViewer(
-    { naddr: args.reference, actionId: 'comment', value: args.body, replyTo: { id, kind, author } },
+    { naddr: args.reference, actionId: 'comment', value: args.body, replyTo: { id, kind, author, ...(place ? { place } : {}) } },
     relayUrl,
     token,
   )

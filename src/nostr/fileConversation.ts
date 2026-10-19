@@ -178,10 +178,14 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
  * `resolveCommentAnchor` to read against the file as it is now; `block` is the
  * run's first, which is all a one-block anchor ever had.
  *
+ * A reply copies its comment's place (SPEC §13.6) and draws no anchor of its
+ * own: the thread's comment shows where it is, once.
+ *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-remembers-where-its-selection-starts-and-ends.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md
  */
 export function partsAndAnchorOf(event: Pick<SignedEvent, 'kind' | 'tags'>): ConversationPart[] {
-  const run = blockRunOf(event)
+  const run = parentOf(event) === null ? blockRunOf(event) : undefined
   const about = event.tags.find((t) => t[0] === 'A')?.[1]
   const quote = event.tags.find((t) => t[0] === QUOTE_TAG)
   const anchor: ConversationPart[] =
@@ -662,7 +666,8 @@ export async function composeCommentAsViewer(
       naddr: container.address,
       folder: container.h,
       value: args.body,
-      ...(parent ? { replyTo: { id: parent.id, kind: parent.kind, author: parent.author } } : {}),
+      // A reply copies its comment's place (SPEC §13.6; why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reply-on-a-page-keeps-its-threads-place.md).
+      ...(parent ? { replyTo: { id: parent.id, kind: parent.kind, author: parent.author, ...(parent.place ? { place: parent.place } : {}) } } : {}),
     },
     relayUrl,
     token,

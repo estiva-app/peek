@@ -67,10 +67,12 @@ interface Token {
 async function token(): Promise<Token> {
   const res = await fetch(`${ID_ORIGIN}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    // camelCase — see scripts/probe-shr9-open-work.ts. A snake_case body comes
-    // back "401 No session cookie", which reads as a credential problem.
-    body: JSON.stringify({ grantType: 'client_credentials', clientId: CLIENT_ID, clientSecret: CLIENT_SECRET }),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
   })
   if (!res.ok) throw new Error(`POST /token: ${res.status} ${await res.text()}`)
   const body = (await res.json()) as { access_token: string; pubkey: string; allowed_kinds?: number[] }
