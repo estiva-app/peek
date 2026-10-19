@@ -18,6 +18,7 @@
  *
  * Reads QA{1,2}_EMAIL / QA{1,2}_SECRET from the environment or `~/.estiva-qa.env`.
  */
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -29,6 +30,8 @@ import { createTopicAsViewer } from '@/nostr/startTopic'
 import { commentAsViewer, deleteEventAsViewer, editCommentAsViewer, reactAsViewer } from '@/nostr/fileConversation'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
+/** Registered for estiva-peek; only matched, never followed. */
+const REDIRECT_URI = process.env.REDIRECT_URI ?? 'https://peek.estiva.app/auth/callback'
 const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace(/\/+$/, '')
 /** The QA Folder: open, so QA-1 and QA-2 both write in it without a kind:9000. */
 const QA_FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
@@ -62,13 +65,33 @@ export async function qaToken(n: 1 | 2): Promise<StoredToken> {
     pubkey: string
   }
   if (!login.ok) throw new Error(`QA-${n} test-login: ${login.status} ${JSON.stringify(session)}`)
+  // Signed in the way Peek is (record sign-in-is-plain-oauth): `/authorize` with the session,
+  // then the code and its PKCE verifier in the form format. A session alone buys no token.
+  const verifier = randomBytes(32).toString('base64url')
+  const authorize = new URL('/authorize', ID_ORIGIN)
+  authorize.search = new URLSearchParams({
+    client_id: 'estiva-peek',
+    redirect_uri: REDIRECT_URI,
+    response_type: 'code',
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256',
+  }).toString()
+  const authorized = await fetch(authorize, {
+    headers: { cookie: `${session.cookie_name}=${session.session_token}` },
+    redirect: 'manual',
+  })
+  const code = new URL(authorized.headers.get('location') ?? '', ID_ORIGIN).searchParams.get('code')
+  if (!code) throw new Error(`QA-${n} /authorize: ${authorized.status}, no code`)
   const res = await fetch(`${ID_ORIGIN}/token`, {
     method: 'POST',
-    headers: {
-      cookie: `${session.cookie_name}=${session.session_token}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ clientId: 'estiva-peek' }),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      client_id: 'estiva-peek',
+      redirect_uri: REDIRECT_URI,
+      code_verifier: verifier,
+    }),
   })
   const body = (await res.json()) as {
     access_token: string
