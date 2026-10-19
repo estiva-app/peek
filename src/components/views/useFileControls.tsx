@@ -306,12 +306,13 @@ export function useFileControls({
         try {
           /*
             The team is the top-level Folder that lists the file (SPEC §6.7),
-            never assumed from its `h`. A Ship project's Folder is its own
-            record channel, listed under the team that holds the project
-            (`listedIn`, interop 0.28): a topic started there went where
-            neither the team's tree nor Ship's Related lists it (FOL-4, on
-            "Conversation standard"). And a topic moved to another Folder keeps
-            the `h` it was filed with (FOL-45).
+            never assumed from its `h`: it is where a topic started inside is
+            listed. A Ship project's Folder is its own record channel, listed
+            under the team that holds the project (`listedIn`, interop 0.28):
+            a topic listed there went where neither the team's tree nor Ship's
+            Related lists it (FOL-4, on "Conversation standard"). And a topic
+            moved to another Folder keeps the `h` it was filed with (FOL-45).
+            The new topic is stored in the parent's own Folder all the same.
           */
           // The file's own Folder is read beside the listing, not after it: it is
           // the current one unless the file was moved, so one round trip usually does.
@@ -412,9 +413,10 @@ export function useFileControls({
     summary: string,
   ): Promise<boolean> => {
     /*
-      The parent's team, never the page's (SPEC §6.7): a sub-file is readable by
-      exactly its parent's readers. For a bare parent that is its `h`, which is
-      `team` here; any other kind reached this dialog only with an `h` of its own.
+      Listed in the parent's team, never the page's, and stored in the parent's
+      own Folder (SPEC §6.7): a sub-file is readable by exactly its parent's
+      readers. `createTopic` takes that Folder from `parent.folder` — its `h`,
+      or a Ship project's `buzz-channel`.
     */
     const result = await createTopic({ folder: team, title, summary, parent: parent.address, hasState, folderName: teamName, parentFile: parent })
     if (!result.ok) {

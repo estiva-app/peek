@@ -38,7 +38,8 @@ export async function startTopicAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {
-  const planned = planTopic(args, token.pubkey)
+  // Under a file, stored in that file's own Folder and listed in the team (SPEC §6.7).
+  const planned = planTopic({ ...args, stored: args.parentFile?.folder }, token.pubkey)
   let file: ForeignObject | null
   try {
     file = await projectOwnFileAsViewer({ ...planned.event, id: await eventIdOf(planned.event), sig: '' }, relayUrl, token)
@@ -51,8 +52,8 @@ export async function startTopicAsViewer(
     const written = await publishTopicAsViewer(planned, args, relayUrl, token)
     return written.ok ? { ok: true, address: planned.address, naddr: planned.naddr } : { ok: false, reason: written.reason }
   }
-  // Its Folder is its `h`, which is the team it was written in.
-  const drawn = { ...file, address: planned.address, folder: file.folder ?? args.folder }
+  // Its Folder is its `h`: its parent's own, or the team it was written in.
+  const drawn = { ...file, address: planned.address, folder: file.folder ?? args.parentFile?.folder ?? args.folder }
   const container = { kind: 'file' as const, address: planned.address, h: drawn.folder }
   const conversations = conversationsFor(relayUrl, token.pubkey)
   const key = conversationKey(container)

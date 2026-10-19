@@ -16,8 +16,14 @@ const seam = vi.hoisted(() => ({
 }))
 vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
+// Desk's load ahead reads the relay itself (PEE-5): the relay answers an archived parent only when asked for it.
+const ahead = vi.hoisted(() => ({ resolveObjectAsViewer: vi.fn() }))
+vi.mock('@/nostr/foreign', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/nostr/foreign')>()),
+  resolveObjectAsViewer: ahead.resolveObjectAsViewer,
+}))
 
-import { useForeignConversation } from './useForeignConversation'
+import { loadForeignObjectAhead, useForeignConversation } from './useForeignConversation'
 import { RelayReadError } from '@/nostr/relayRead'
 
 const SHIP = 'b'.repeat(64)
@@ -96,5 +102,20 @@ describe('useForeignConversation keeps the last file while the next resolves (SI
     answer(foreign({ ref: PROJECT, address: PROJECT, kind: 30850 }))
     await waitFor(() => expect(result.current.state).toMatchObject({ address: PROJECT }))
     expect(result.current.previous).toBeNull()
+  })
+})
+
+describe('loadForeignObjectAhead draws what the click would (PEE-5)', () => {
+  it('an issue under an archived project, loaded ahead from Desk, opens still archived with its project', async () => {
+    const issue = `30851:${SHIP}:5b0c4b0e-3b55-4d0c-9a51-0a4ead0a5c1e`
+    const live = foreign({ ref: issue, address: issue, kind: 30851, folder: TEAM })
+    const archived = foreign({ ref: issue, address: issue, kind: 30851, folder: TEAM, archive: { with: 'project' } } as never)
+    ahead.resolveObjectAsViewer.mockImplementation(async (_a: string, _r: string, _t: unknown, opts?: { archivedWith?: boolean }) =>
+      opts?.archivedWith ? archived : live,
+    )
+    await loadForeignObjectAhead(issue, { relayUrl: 'https://relay.test', token: {} as never })
+    const { result } = renderHook(() => useForeignConversation(issue))
+    expect(result.current.state).toBe(archived)
+    expect(seam.resolveObject).not.toHaveBeenCalled()
   })
 })
