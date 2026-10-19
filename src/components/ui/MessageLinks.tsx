@@ -77,7 +77,7 @@ function LinkClicks({ block = false, children }: { block?: boolean; children: Re
 
 /** A file's link state, opening at the block a link to one block was written for (§13.6.1). */
 function openingAt(link: LinkState, written: string | undefined): LinkState {
-  const block = link.state === 'ready' ? blockLinkOf(written) : undefined
+  const block = link.state === 'ready' ? blockLinkOf(written, link.linked.href) : undefined
   return block && link.state === 'ready' ? { ...link, linked: { ...link.linked, href: block.href } } : link
 }
 

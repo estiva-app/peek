@@ -91,6 +91,14 @@ describe('a link to one block reads as its file', () => {
     expect(c.querySelector('[data-link-row] a')?.getAttribute('href')).toBe(BLOCK_LINK)
   })
 
+  it('opens where its file opens, never the written URL, when that URL is on another site than the file (security review)', () => {
+    const rogue = `https://evil.example/issue/plan-${UUID}#block-p1`
+    answers[rogue] = PAGE
+    const c = show(`see ${rogue} here`)
+    const chip = [...c.querySelectorAll('p a')].find((a) => a.textContent?.includes('Plan the launch'))
+    expect(chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
   it('stays the URL as written when nothing answered for it (a file the reader cannot read, or gone)', () => {
     const c = show(`see ${UNREAD_LINK} here`)
     expect(c.textContent).toContain(UNREAD_LINK)

@@ -178,7 +178,7 @@ export function Reference({
       // The full title on hover, because the visible one is truncated.
       <Tip label={title}>
         <Chip
-          link={link ? (blockLinkOf(opensAt) ?? referenceLink(uri, object)) : null}
+          link={link ? (blockLinkOf(opensAt, referenceLink(uri, object)?.href) ?? referenceLink(uri, object)) : null}
           data-reference="object"
           data-object={object.address}
           data-resolved="true"
