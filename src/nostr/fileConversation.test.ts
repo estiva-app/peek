@@ -766,6 +766,11 @@ describe("a comment's anchor keeps its whole run and its words (§13.6, LEAF-7)"
     ])
   })
 
+  it("draws no anchor on a reply that copied its comment's place: the comment shows it, once", () => {
+    const reply = [['A', DOC], ['e', 'c'.repeat(64)], ['k', '1111'], ['block', 'p1', 'p2'], ['quote', 'ship on Friday.']]
+    expect(partsAndAnchorOf({ kind: 1111, tags: reply })).toEqual([])
+  })
+
   it('anchors nothing on a channel message, which names no file', () => {
     expect(partsAndAnchorOf({ kind: 9, tags: [['block', 'p1', 'p2'], ['quote', 'x']] })).toEqual([])
   })
