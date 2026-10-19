@@ -13,19 +13,75 @@ vi.mock('@/nostr/relayBudget', () => ({ relayBudget: { pausedForMs: () => paused
 vi.mock('@/nostr/foreign', () => ({
   resolveObjectAsViewer: resolve,
   absenceAsViewer: async () => 'unreadable',
-  blockLinkAsViewer: async () => undefined,
+  blockLinkAsViewer: (...args: unknown[]) => blockLink(...args),
 }))
+const blockLink = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<string | undefined>>(async () => undefined))
 
-import { usePart } from './part'
+import { blockUrlOf, urlPatternsOf } from '@estiva-app/interop'
+import { openLinkOf, usePart } from './part'
 
-const ADDRESS = `30851:${'f'.repeat(64)}:b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5`
+const D = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
+const ADDRESS = `30851:${'f'.repeat(64)}:${D}`
 function Probe() {
   return <span>{usePart({ address: ADDRESS, block: 'p1' }).state}</span>
 }
 
 afterEach(() => {
   resolve.mockReset()
+  blockLink.mockReset()
+  blockLink.mockResolvedValue(undefined)
   paused.ms = 0
+})
+
+/**
+ * Open in on a card follows the block link only when it is `https:` and on
+ * the object's own host (PEE-51): the shapes it is built from are any member's
+ * `kind:31990`, so one can be planted ahead of the owning app's.
+ */
+describe('Open in, when another member planted a manifest shape', () => {
+  const OPEN = 'https://ship.estiva.app/o/naddr1x'
+  const SHIP = ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851']
+  /** The block link interop builds when the planted shape is read before Ship's. */
+  const plantedLink = (pattern: string) =>
+    blockUrlOf(urlPatternsOf({ tags: [['urls', pattern, '30851'], SHIP] }), { kind: 30851, d: D, title: 'Plan', block: 'p1' })
+
+  it('takes the block link the owning app declares, on the object host', () => {
+    const link = blockUrlOf(urlPatternsOf({ tags: [SHIP] }), { kind: 30851, d: D, title: 'Plan', block: 'p1' })
+    expect(link).toBe(`https://ship.estiva.app/issue/plan-${D}#block-p1`)
+    expect(openLinkOf(link, OPEN)).toBe(link)
+  })
+
+  it('opens the object instead of a planted javascript: shape', () => {
+    const link = plantedLink('javascript:alert(document.cookie)//<slug>-<d>#block-<block>')
+    expect(link).toMatch(/^javascript:/)
+    expect(openLinkOf(link, OPEN)).toBe(OPEN)
+  })
+
+  it('opens the object instead of a planted shape on another host', () => {
+    const link = plantedLink('https://evil.example/issue/<slug>-<d>#block-<block>')
+    expect(link).toBe(`https://evil.example/issue/plan-${D}#block-p1`)
+    expect(openLinkOf(link, OPEN)).toBe(OPEN)
+  })
+
+  it('opens the object instead of a plain http: block link on the same host name', () => {
+    expect(openLinkOf(`http://ship.estiva.app/issue/plan-${D}#block-p1`, OPEN)).toBe(OPEN)
+  })
+
+  it('has no link at all when the object link is not https either', () => {
+    expect(openLinkOf('javascript:alert(1)', 'javascript:alert(2)')).toBeUndefined()
+    expect(openLinkOf('https://ship.estiva.app/issue/x#block-p1', undefined)).toBeUndefined()
+  })
+
+  it('gives the card the object link when the block link read back is on another host', async () => {
+    resolve.mockResolvedValue({ openUrl: OPEN, slots: { title: { value: 'Planted host' }, body: { value: 'Hello', format: 'marker' } } })
+    blockLink.mockResolvedValue('https://evil.example/issue/x#block-p1')
+    function Link() {
+      const view = usePart({ address: ADDRESS, block: 'p1' })
+      return <span data-link>{'link' in view ? view.link : view.state}</span>
+    }
+    const { container } = render(<Link />)
+    await waitFor(() => expect(container.querySelector('[data-link]')?.textContent).toBe(OPEN))
+  })
 })
 
 describe('usePart', () => {

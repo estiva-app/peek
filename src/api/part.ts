@@ -59,6 +59,30 @@ export interface PartPointerView {
   anchorTags?: string[][]
 }
 
+/** Only an `https:` link is followed off the page; anything else is no link. */
+function httpsLink(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  try {
+    return new URL(url).protocol === 'https:' ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Where Open in goes: the block's link, only when it is `https:` and on the
+ * object's own host, and otherwise the object's link (PEE-51). The block link
+ * is built from any member's `kind:31990` `urls` shape — the relay takes a
+ * manifest from any key with UsersWrite — so a planted shape must not be able
+ * to send the button to a script or to somebody else's site.
+ */
+export function openLinkOf(blockLink: string | undefined, openUrl: string | undefined): string | undefined {
+  const object = httpsLink(openUrl)
+  const block = httpsLink(blockLink)
+  if (!block || !object) return object
+  return new URL(block).origin === new URL(object).origin ? block : object
+}
+
 /** Read one part once, as the signed-in viewer. Null when nobody is signed in. */
 async function readPart(pointer: PartPointerView): Promise<PartView | null> {
   const token = heldToken()
@@ -76,7 +100,7 @@ async function readPart(pointer: PartPointerView): Promise<PartView | null> {
   if (!links.has(key)) {
     links.set(key, blockLinkAsViewer({ address: pointer.address, title, block: pointer.block }, RELAY_URL, token).catch(() => undefined))
   }
-  const link = (await links.get(key)) ?? object.openUrl
+  const link = openLinkOf(await links.get(key), object.openUrl)
   // An object with no body slot has no parts Peek can see — not "deleted".
   if (!body) return { state: 'unaddressable', object, link }
 
