@@ -451,10 +451,10 @@ export async function urlReferenceTagsAsViewer(
   const parts = new Map<string, string>()
   for (const ref of found) {
     if (!ref) continue
-    if (ref.address !== undefined) {
-      if (ref.address !== own) addresses.add(ref.address)
-      // A block of the file this is said on is still shown: its `a` is the
-      // comment's own (NIP-22), but the part says which block to draw.
+    // A block of the file this is said on is its chip only, with no part
+    // (COMM-8, Miky 2026-10-19), as that file gets no `a`.
+    if (ref.address !== undefined && ref.address !== own) {
+      addresses.add(ref.address)
       if (ref.block !== undefined && !parts.has(ref.address)) parts.set(ref.address, ref.block)
     }
     if (ref.eventId !== undefined) events.add(ref.eventId)

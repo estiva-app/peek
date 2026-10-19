@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { Embed } from '@estiva-app/protocol'
 import { askLinks, knownBlockOfUrl, knownCardValue } from '@/api'
-import { boxLinksOf, embedsToEdit, embedsToSend, namedBefore, type BoxLinkContext, type BoxLinks } from '@/lib/boxCard'
+import { boxLinksOf, embedsToEdit, embedsToSend, namedBefore, type BoxLinkContext, type BoxLinks } from '@estiva-app/conversation'
 import { findUrls, serializeTiptapToText } from '@/lib/textParsing'
 
 /*
   The card under a message box, as it will be sent (why:
   https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md):
   the same rule in the message box, the reply box and a message's edit box
-  (`lib/boxCard`); `BoxCardUnder` draws it.
+  (`boxLinksOf`, @estiva-app/conversation, the rule Leaf's box reads too);
+  `BoxCardUnder` draws it.
 */
 
 /** How many of a box's links are asked what they name: `LinkChips`' own limit. */
@@ -17,7 +18,7 @@ const ASKED = 24
 
 const CONTEXT: Pick<BoxLinkContext, 'resolveLink' | 'blockOf'> = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
 
-const NO_LINKS: BoxLinks = { values: [], parts: [] }
+const NO_LINKS: BoxLinks = { values: [], parts: [], urls: [] }
 
 function linksOf(body: string, here: string | undefined, previousBody: string | undefined): BoxLinks {
   return boxLinksOf(body, { ...CONTEXT, here, previous: previousBody === undefined ? undefined : namedBefore(previousBody, CONTEXT) })

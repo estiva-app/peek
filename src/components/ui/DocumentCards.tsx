@@ -4,7 +4,7 @@
  * panel draws the chosen card and offers the choice, as Ship does).
  *
  * The choice is the chip's own `embed`, so it moves and goes with the chip —
- * unlike a message's, which travels beside the text (`lib/boxCard`). Compact is
+ * unlike a message's, which travels beside the text (`boxLinksOf`, @estiva-app/conversation). Compact is
  * the object's row and detailed its card, as under a message, and the card's
  * own body draws its references as chips, never cards (`ForeignBody`).
  */
