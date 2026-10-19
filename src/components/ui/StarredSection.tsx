@@ -1,16 +1,13 @@
 import { CollapsibleSection, EmptyState } from '@estiva-app/ui'
-import { PersonRow } from './PersonRow'
-import type { TopicStateType, TopicStateStatus } from './TopicState'
+import { PersonItem } from './PersonItem'
 
+/** A starred person. Starred holds people only since the Convex topics went (FOL-23). */
 export interface StarredItem {
   id: string
   name: string
-  type?: TopicStateType
-  topicStatus?: TopicStateStatus
   isUnread?: boolean
   isUrgent?: boolean
   avatarSrc?: string
-  memberCount?: number
 }
 
 interface StarredSectionProps {
@@ -43,24 +40,22 @@ export function StarredSection({
       {isEmpty ? (
         /* One section of the page is empty: the line alone, left, no icon
            (B18, D41) — where a hand-made paragraph stood until 2026-09-10.
-           Level with the rows (Katerina, 2026-09-14): each PersonRow pads
+           Level with the rows (Katerina, 2026-09-14): each row pads
            itself, so the line takes a row's inset here, never on EmptyState. */
         <div className="px-2 py-1">
           <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
         </div>
       ) : (
         items.map((item) => (
-          <PersonRow
+          <PersonItem
             key={item.id}
+            id={item.id}
             name={item.name}
-            type={item.type}
-            topicStatus={item.topicStatus}
-            isUnread={item.isUnread}
-            isUrgent={item.isUrgent}
-            isSelected={selectedId === item.id}
             avatarSrc={item.avatarSrc}
-            memberCount={item.memberCount}
-            onClick={() => onSelect?.(item.id)}
+            unread={item.isUnread}
+            urgent={item.isUrgent}
+            active={selectedId === item.id}
+            onSelect={onSelect}
           />
         ))
       )}

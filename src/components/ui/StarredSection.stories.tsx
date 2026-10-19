@@ -3,9 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { StarredSection, type StarredItem } from './StarredSection'
 
 const ITEMS: StarredItem[] = [
-  { id: 'alice', name: 'Alice Johnson', type: 'DM' },
-  { id: '1', name: 'CI/CD pipeline stuck during build stage', type: 'topic', isUnread: true },
-  { id: '4', name: 'Remote work policy clarifications', type: 'topic', topicStatus: 'resolved' },
+  { id: 'alice', name: 'Alice Johnson' },
+  { id: 'juan', name: 'Juan Foley', isUnread: true },
+  { id: 'hallie', name: 'Hallie Pratt', isUnread: true, isUrgent: true },
 ]
 
 const meta = {

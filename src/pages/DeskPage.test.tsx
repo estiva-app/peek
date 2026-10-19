@@ -76,7 +76,7 @@ vi.mock('@/components/views/useDmConversationView', () => ({
     threadPanel: undefined,
   }),
 }))
-const openWork = vi.hoisted(() => ({ remove: vi.fn() }))
+const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn() }))
 /** A second Open work file, for the order test. */
 const SECOND = '30851:aa:issue-2'
 const desk = vi.hoisted(() => ({
@@ -101,7 +101,7 @@ vi.mock('@/api', async () => ({
   useScreenerItems: () => [],
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
-  usePeekActions: () => ({ removeDmFromOpenWork: vi.fn() }),
+  usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm }),
 }))
 vi.mock('@/layouts/PeekFrame', () => ({
   PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
@@ -154,6 +154,7 @@ const openWorkFile = (address: string, title: string) => ({
 beforeEach(() => {
   pane.asked = []
   openWork.remove.mockClear()
+  openWork.removeDm.mockClear()
   desk.openWork = [openWorkFile(ISSUE, 'Issue one')]
   desk.urgent = []
   desk.unread = {}
@@ -269,10 +270,70 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
 
   it('removing the open file from Open work closes it', () => {
     mount(deskWith(ISSUE))
-    // The ✕ is drawn under the pointer only.
-    fireEvent.mouseEnter(within(screen.getByTestId('left')).getByText('Issue one'))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove from list' }))
+    // The ✕ is NavItem's: always there, shown under the pointer by CSS, and named for its row.
+    fireEvent.click(within(screen.getByTestId('left')).getByRole('button', { name: 'Remove from list: Issue one' }))
     expect(openWork.remove).toHaveBeenCalledWith(ISSUE)
     expect(url()).toBe('/app/desk')
+  })
+})
+
+/*
+  The Desk's rows are the package's NavItem (Katerina, 14 October): each is a
+  link, a plain click still opens it beside the lists, Open work keeps its ✕,
+  and an archived file stays on the list and says so under the pointer.
+*/
+describe('Desk rows on NavItem', () => {
+  const left = () => within(screen.getByTestId('left'))
+  const linkFor = (name: string) => left().getByText(name).closest('a')!
+
+  it('each row is a link: a file to its Desk address, a DM to the person', () => {
+    mount()
+    expect(linkFor('Issue one').getAttribute('href')).toBe(deskWith(ISSUE))
+    expect(linkFor('Ana').getAttribute('href')).toBe('/app/people/dm-1')
+  })
+
+  it('a plain click on a starred DM opens it here, and the Desk stays the page', () => {
+    mount()
+    fireEvent.click(linkFor('Ana'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
+    expect(url()).toBe('/app/desk')
+  })
+
+  it('a click with Ctrl or Cmd is the link’s: nothing opens here', () => {
+    mount()
+    fireEvent.click(linkFor('Issue one'), { ctrlKey: true })
+    fireEvent.click(linkFor('Ana'), { metaKey: true })
+    expect(screen.queryByTestId('file-pane')).toBeNull()
+    expect(screen.queryByTestId('dm-pane')).toBeNull()
+    expect(url()).toBe('/app/desk')
+  })
+
+  it('an archived file stays in Open work and carries the Archived chip; one that is not, none', () => {
+    desk.openWork = [
+      { ...openWorkFile(ISSUE, 'Issue one'), object: { ref: ISSUE, kind: 30851, archived: { by: 'aa', at: 1 } } },
+      openWorkFile(SECOND, 'Issue two'),
+    ]
+    mount()
+    expect(within(linkFor('Issue one')).getByText('Archived')).toBeTruthy()
+    expect(within(linkFor('Issue two')).queryByText('Archived')).toBeNull()
+  })
+
+  it('a DM in Open work has the ✕ too, and it takes the DM off by its person', () => {
+    desk.openWork = [{ id: 'ow_dm_dm-2', kind: 'dm', dmId: 'dm-2', name: 'Bo' }]
+    mount()
+    fireEvent.click(left().getByRole('button', { name: 'Remove from list: Bo' }))
+    expect(openWork.removeDm).toHaveBeenCalledWith('dm-2')
+  })
+
+  it('only Open work has the ✕: a starred row has none', () => {
+    mount()
+    expect(left().queryByRole('button', { name: 'Remove from list: Ana' })).toBeNull()
+    expect(left().getByRole('button', { name: 'Remove from list: Issue one' })).toBeTruthy()
+  })
+
+  it('the open file is the current row', () => {
+    mount(deskWith(ISSUE))
+    expect(linkFor('Issue one').getAttribute('aria-current')).toBe('page')
+    expect(linkFor('Ana').getAttribute('aria-current')).toBeNull()
   })
 })
