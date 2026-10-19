@@ -146,6 +146,21 @@ describe('cardValueOfUrlAsViewer', () => {
   it('names nothing for a block of a file the reader cannot read or that is gone', async () => {
     expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${'0'.repeat(8)}-0000-4000-8000-000000000000#block-p1`, 'https://relay', TOKEN)).toBeNull()
   })
+
+  /*
+    §13.6.2, one author for the identity: anybody can publish the same
+    (kind, d), so a d two authors hold names nothing — else whichever the
+    relay answered first would put its card under a link to the other's file.
+  */
+  it('names nothing when two authors hold the same file identity', async () => {
+    const copy = { ...issue, id: 'e2', pubkey: 'e'.repeat(64) }
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+      const kinds = filters[0]?.kinds as number[] | undefined
+      if (kinds?.includes(31990)) return { ok: true, events: [manifest, peekManifest] }
+      return { ok: true, events: [copy, issue] }
+    })
+    expect(await cardValueOfUrlAsViewer(`https://ship.estiva.app/issue/plan-${UUID}`, 'https://relay', TOKEN)).toBeNull()
+  })
 })
 
 describe('urlReferenceTagsAsViewer', () => {

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
 import { shareableMessageUrl, topicPath } from './objectUrl'
-import { referenceLink } from './referenceLink'
+import { blockLinkOf, referenceLink } from './referenceLink'
 
 const RELAY_KEY = 'ab'.repeat(32)
 const UUID = '0212db6d-bcbf-40d0-890e-f4f056db2f5d'
@@ -77,5 +77,25 @@ describe('referenceLink', () => {
     expect(referenceLink(TOPIC_URI, object({ kind: 39000, address: TOPIC_ADDRESS, unreachable: true }))).toBeNull()
     // Resolved, but its app published no `web` template: a label is honest.
     expect(referenceLink('nostr:naddr1x', object({ kind: 30852 }))).toBeNull()
+  })
+})
+
+describe('blockLinkOf', () => {
+  const PEEK = 'https://peek.estiva.app'
+  const SHIP_ISSUE = 'https://ship.estiva.app/o/30851:ab:x'
+
+  it('a block link on the origin its file opens on leads to that block', () => {
+    expect(blockLinkOf('https://ship.estiva.app/issue/plan-x#block-p1', SHIP_ISSUE, PEEK)).toEqual({ place: 'app', href: 'https://ship.estiva.app/issue/plan-x#block-p1' })
+  })
+
+  /*
+    WBM-11's security review: a chip draws one file and must never open another
+    site. A host that merely ends in the file's host is another site, and http
+    is not the file's https origin; the origin is compared exactly.
+  */
+  it('a block link on a lookalike host, or over http, leads nowhere', () => {
+    for (const url of ['https://evilship.estiva.app/issue/plan-x#block-p1', 'http://ship.estiva.app/issue/plan-x#block-p1']) {
+      expect(blockLinkOf(url, SHIP_ISSUE, PEEK), url).toBeUndefined()
+    }
   })
 })
