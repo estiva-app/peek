@@ -19,11 +19,11 @@ const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace
 async function agentToken(): Promise<StoredToken> {
   const res = await fetch(`${ID_ORIGIN}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      grantType: 'client_credentials',
-      clientId: process.env.ESTIVA_ID_CLIENT_ID,
-      clientSecret: process.env.ESTIVA_ID_CLIENT_SECRET,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: process.env.ESTIVA_ID_CLIENT_ID ?? '',
+      client_secret: process.env.ESTIVA_ID_CLIENT_SECRET ?? '',
     }),
   })
   if (!res.ok) throw new Error(`POST /token: ${res.status} ${await res.text()}`)
