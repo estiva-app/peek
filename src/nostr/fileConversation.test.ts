@@ -454,6 +454,15 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(published.tags).toContainEqual(['h', FOLDER])
   })
 
+  it('a reply to a comment on blocks copies its block and quote, so the thread keeps its place once the comment is deleted (§13.6)', async () => {
+    const place = [['block', 'p1', 'p2'], ['quote', 'the words', '0', '9']]
+    const parent = { id: root.id, author: CATH, body: 'First', createdAt: root.created_at, kind: COMMENT, place }
+    await commentAsViewer({ container, body: 'Agreed.', parent }, 'https://relay.test', token)
+    const tags = signed().tags
+    expect(tags).toContainEqual(['block', 'p1', 'p2'])
+    expect(tags).toContainEqual(['quote', 'the words', '0', '9'])
+  })
+
   it('reports the relay’s refusal in its words', async () => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'blocked: not a member' } as never)
     const result = await commentAsViewer({ container, body: 'x' }, 'https://relay.test', token)
@@ -764,6 +773,11 @@ describe("a comment's anchor keeps its whole run and its words (§13.6, LEAF-7)"
     expect(partsAndAnchorOf({ kind: 1111, tags: [['A', DOC], ['block', 'p1']] })).toEqual([
       { address: DOC, block: 'p1', anchor: true, anchorTags: [['block', 'p1']] },
     ])
+  })
+
+  it("draws no anchor on a reply that copied its comment's place: the comment shows it, once", () => {
+    const reply = [['A', DOC], ['e', 'c'.repeat(64)], ['k', '1111'], ['block', 'p1', 'p2'], ['quote', 'ship on Friday.']]
+    expect(partsAndAnchorOf({ kind: 1111, tags: reply })).toEqual([])
   })
 
   it('anchors nothing on a channel message, which names no file', () => {

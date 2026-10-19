@@ -18,7 +18,7 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 
-import { replyToCommentAsViewer, threadsAsViewer } from './foreign'
+import { fileCommentOf, replyToCommentAsViewer, threadsAsViewer } from './foreign'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -177,6 +177,16 @@ describe('replyToCommentAsViewer writes NIP-22’s reply, not a second top-level
     expect(published.tags.some((t) => t[0] === 'a')).toBe(false)
     // The Folder still gates it.
     expect(published.tags).toContainEqual(['h', FOLDER])
+  })
+
+  it('copies the block and quote of a comment on part of the file, read off its event, before the h (SPEC §13.6)', async () => {
+    const onWords = { ...root, tags: [...root.tags, ['block', 'p1', 'p2'], ['quote', 'ship on Friday.', 'Then we']] }
+    await replyToCommentAsViewer({ reference: ADDRESS, parent: fileCommentOf(onWords), body: 'Agreed.' }, 'https://relay.test', token)
+    const published = signViaEstivaId.mock.calls[0][0] as { tags: string[][] }
+    const at = (name: string) => published.tags.findIndex((t) => t[0] === name)
+    expect(published.tags[at('block')]).toEqual(['block', 'p1', 'p2'])
+    expect(published.tags[at('quote')]).toEqual(['quote', 'ship on Friday.', 'Then we'])
+    expect(at('block')).toBeLessThan(at('h'))
   })
 
   it('names the parent’s kind, which for a Ship reply is 9 and not the comment kind', async () => {
