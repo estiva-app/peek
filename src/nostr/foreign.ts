@@ -1179,7 +1179,7 @@ export function threadEventsWith(reference: string, rootIds: readonly string[], 
 
 /** One event of a thread, as much of it as the pane draws and a reply needs. */
 export const fileCommentOf = (event: SignedEvent): FileComment => {
-  // Only a top-level comment's place is copied: a reply's is its thread's already.
+  // A comment's place, from its own tags; a reply's is the copy of its thread's, so passing it on keeps the same place.
   const place = event.kind === KIND.COMMENT ? event.tags.filter((t) => t[0] === BLOCK_ANCHOR_TAG || t[0] === QUOTE_TAG) : []
   return {
     id: event.id,

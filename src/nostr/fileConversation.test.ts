@@ -454,6 +454,15 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(published.tags).toContainEqual(['h', FOLDER])
   })
 
+  it('a reply to a comment on blocks copies its block and quote, so the thread keeps its place once the comment is deleted (§13.6)', async () => {
+    const place = [['block', 'p1', 'p2'], ['quote', 'the words', '0', '9']]
+    const parent = { id: root.id, author: CATH, body: 'First', createdAt: root.created_at, kind: COMMENT, place }
+    await commentAsViewer({ container, body: 'Agreed.', parent }, 'https://relay.test', token)
+    const tags = signed().tags
+    expect(tags).toContainEqual(['block', 'p1', 'p2'])
+    expect(tags).toContainEqual(['quote', 'the words', '0', '9'])
+  })
+
   it('reports the relay’s refusal in its words', async () => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'blocked: not a member' } as never)
     const result = await commentAsViewer({ container, body: 'x' }, 'https://relay.test', token)
