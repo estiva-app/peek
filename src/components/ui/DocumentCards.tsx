@@ -17,10 +17,13 @@ import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { Reference } from './Reference'
 
 /** A reference in the field, as its chip. A person's key is named by `Reference` itself. */
-export function DocumentReference({ uri }: ReferenceViewProps) {
+export function DocumentReference({ uri, href }: ReferenceViewProps) {
   const person = /^nostr:npub1/i.test(uri)
   const resolved = useResolvedReferences(person ? [] : [uri])
-  return <Reference uri={uri} object={resolved[uri]} />
+  const object = resolved[uri]
+  // A URL chip whose file has not come back, or cannot be read, reads as the URL it was written as (WBM-11), as the node draws it before it names anything.
+  if (href && (!object || object.unreachable)) return <span>{href}</span>
+  return <Reference uri={uri} object={object} opensAt={href} />
 }
 
 function LineCards({ cards }: { cards: readonly ReferenceCard[] }) {

@@ -19,6 +19,8 @@ export interface RowLine {
   reference: string
   value?: string
   unreadable?: true
+  /** The URL the line was written as, when it was one: a link to one block opens there. */
+  url?: string
 }
 
 /** A paragraph's line that is a row, lifted out as a block of its own, so the row is not drawn inside a `<p>`. */
@@ -44,7 +46,9 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
   if (drawn.draw !== 'row') return undefined
   // A lone URL is already its reference here: `linksAsReferences` turned every one this reader can read.
   const run = line.find((r) => r.reference)
-  return run?.reference ? { reference: run.reference, value: drawn.value } : undefined
+  if (!run?.reference) return undefined
+  // Its text is the URL as written, for a link (`linksAsReferences` keeps it): a link to one block opens there.
+  return { reference: run.reference, value: drawn.value, ...(/^https?:\/\//i.test(run.text) ? { url: run.text } : {}) }
 }
 
 /**

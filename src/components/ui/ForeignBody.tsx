@@ -1,7 +1,8 @@
 import type { ResolvedSlot } from '@estiva-app/interop'
-import { linksAsReferences, referencesIn, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
+import { linksAsReferences, referenceOfLink, referencesIn, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
 import { RichText } from '@estiva-app/ui'
 import { useLinkResolver, useResolvedReferences } from '@/api'
+import { referenceOfValue } from '@/lib/embedValue'
 import { BlockLineCards, linksInBlocks } from './DocumentCards'
 import { Reference } from './Reference'
 
@@ -49,17 +50,33 @@ import { Reference } from './Reference'
  */
 export function ForeignBody({ slot, className, cards = false }: { slot: ResolvedSlot; className?: string; cards?: boolean }) {
   const tree = toRenderTree(slot.value, slot.format ?? 'marker')
-  const resolveLink = useLinkResolver(linksInBlocks(tree))
+  const links = linksInBlocks(tree)
+  const lookup = useLinkResolver(links)
+  const linked = links.flatMap((url) => {
+    const value = lookup(url)
+    const reference = value ? referenceOfValue(value) : undefined
+    return reference ? [reference] : []
+  })
+  // Every chip's object in one read, the links' with the rest; a person's key is named by `Reference` itself.
+  const resolved = useResolvedReferences([...new Set([...referencesIn(tree), ...linked])].filter((uri) => !/^nostr:npub1/i.test(uri)))
+  // A link is its file's chip only once that file has come back and can be read: until then, and for good when it
+  // cannot, the URL as written (OPT-18, as a message reads; WBM-11), never a chip with nothing in it.
+  const resolveLink = (url: string) => {
+    const value = lookup(url)
+    const reference = value ? referenceOfValue(value) : undefined
+    const object = reference ? resolved[reference] : undefined
+    return object && !object.unreachable ? value : undefined
+  }
   const blocks = linksAsReferences(tree, resolveLink)
-  // Every chip's object in one read; a person's key is named by `Reference` itself.
-  const resolved = useResolvedReferences(referencesIn(blocks).filter((uri) => !/^nostr:npub1/i.test(uri)))
   // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
     <div data-foreign-body className={className}>
       <RichText
         blocks={blocks}
         size="small"
-        renderReference={(uri) => <Reference uri={uri} object={resolved[uri]} />}
+        // A link to one block opens at the block (WBM-11): the run keeps the URL as written. Only a run whose words are
+        // that URL, resolved to this same file: a stored reference's words are its author's (security review).
+        renderReference={(uri, run) => <Reference uri={uri} object={resolved[uri]} opensAt={referenceOfLink(run.text, resolveLink) === uri ? run.text : undefined} />}
         // The package's block is the protocol's, handed back.
         renderAfter={cards ? (block) => <BlockLineCards block={block as RenderBlock} /> : undefined}
       />

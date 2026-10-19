@@ -5,7 +5,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
-import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
+import { blockLinkOf, referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
 import { InlineChip, KindIcon, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
@@ -95,8 +95,11 @@ export function Reference({
   link = true,
   urgent,
   className,
+  opensAt,
 }: {
   uri: string
+  /** The URL it was written as: a link to one block opens there, not at the top of its file (§13.6.1, WBM-11). */
+  opensAt?: string
   /**
    * The keys the message names urgently — its `["urgent", <pubkey>]` tags
    * (SPEC §13.1). A person chip for one of them wears the urgent tone, for
@@ -175,7 +178,7 @@ export function Reference({
       // The full title on hover, because the visible one is truncated.
       <Tip label={title}>
         <Chip
-          link={link ? referenceLink(uri, object) : null}
+          link={link ? (blockLinkOf(opensAt, referenceLink(uri, object)?.href) ?? referenceLink(uri, object)) : null}
           data-reference="object"
           data-object={object.address}
           data-resolved="true"

@@ -164,15 +164,14 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     again with each. Only a link's target or a bare URL is asked about
     (`findUrls`); the package's tree has no link mark, so a URL written in a
     link's *label* would otherwise name an object the link does not open
-    (OPT-17's security review). A link to a block shown live keeps its words:
-    the block's card already stands for it (COM-2). At most
+    (OPT-17's security review). A link to one block names its file, so it is
+    that file's chip, the block live under the message (WBM-11). At most
     `MAX_LINKS_PER_MESSAGE`, the first ones, as Ship asks: each claimed link is
     a relay query (OPT-18's security review). The rest stay links.
   */
   const asked = urls.slice(0, MAX_LINKS_PER_MESSAGE)
   const lookup = useLinkResolver(asked)
-  const claimed = (url: string) =>
-    asked.includes(url) && !shown.some((part) => urlNames(url, part.address)) ? lookup(url) : undefined
+  const claimed = (url: string) => (asked.includes(url) ? lookup(url) : undefined)
   const tree = body ? toRenderTree(body, 'marker') : []
   /*
     What the caller already has, if anything. `resolvedObjects` is the seam for
@@ -257,8 +256,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const isHere = (value: string) => !!here && value.toLowerCase() === here.toLowerCase()
   const drawnCards = preview ? [] : cards.filter((card) => !isHere(card.value))
   const placed = preview ? undefined : placeLines(blocks, { cards: drawnCards, parts: shown, resolveLink, stayChip: isHere })
-  const chip = (reference: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} />
-  const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} />
+  // A link to one block opens at the block (`opensAt`, the URL as written); any other where its file opens.
+  const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} opensAt={written} />
+  const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
     <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
@@ -277,7 +277,7 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
         renderText={renderTokens}
         renderReference={(reference, run) => {
           const line = placed?.rowRuns.get(run)
-          return line ? row(line) : chip(reference)
+          return line ? row(line) : chip(reference, run.text)
         }}
         renderBlock={(block) => {
           const line = block.type === ROW_BLOCK ? placed?.rowOf(block) : undefined
