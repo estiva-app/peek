@@ -4,37 +4,26 @@
  * > **Miky, 2026-08-19** — *"We could also add basic Topic search and People /
  * > Team search to make it little bit more useful."*
  *
- * Three corpora, and they are **not searched the same way**, because measuring
- * the relay first said they could not be. `scripts/probe-nip50-search.ts`
- * against production, 2026-09-02:
+ * One rule for the whole panel (SPEC §5.2): every typed word matches the start
+ * of a word, in any order; `"…"` is those whole words next to each other, and
+ * `-word` leaves out anything with a word starting that way. What Peek holds
+ * on the device — people, apps, actions — is matched by `referenceMatch`, the
+ * rule's reader half; files and messages are the relay's, asked from the
+ * second letter typed. So "remov short" finds *Remove Short summary…* the same
+ * way in every section, and nothing is found by the middle of a word: "aud"
+ * no longer finds Claude.
  *
- * | | where | matches |
- * | --- | --- | --- |
- * | topics | already in the app (`useTopics`) — until FOL-23 removed them | any substring, live per keystroke |
- * | people | already in the app (`usePeople`) | any substring, live per keystroke |
- * | messages | the relay, over NIP-50 | **whole tokens only** |
+ * Until 2026-10-19 the relay matched whole words over Peek's socket, so a
+ * message section had to say "needs a whole word" while the device's lists
+ * matched any fragment. The relay now answers by word starts on every
+ * connection, and the hint went with it.
  *
  * The message corpus is both kinds a conversation is written in — `kind:9`
  * in a topic and `kind:1111` on a file — since FOL-36; a hit's own tags say
  * which page it opens on (`MessageHit.file`).
- *
- * `"Cla"` returns nothing from the relay while `"Claude"` returns two. That is
- * not a bug to work around, it is what a tokenised index does — so the split
- * above is the honest one: the two corpora Peek already holds are small (69
- * topics, 7 profiles readable on production) and can be matched locally on any
- * fragment, and the one that is unbounded stays on the relay and answers to
- * whole words.
- *
- * The consequence has to reach the person, or the feature reads as broken:
- * typing `exam` finds a topic and no messages, and the message section has to
- * say *why* rather than showing the same "nothing matched" it would show for a
- * word that genuinely appears nowhere. See `messageEmptyState`.
- *
- * Substring rather than prefix, because that is what the rest of this app
- * already means by matching — the launcher's own action filter, the slash-menu
- * and the mention autocomplete all use `label.toLowerCase().includes(q)`, and
- * a launcher that alone required a prefix would be the odd one out.
  */
+// why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-matches-every-word-as-a-word-start.md
+import { referenceMatch } from '@estiva-app/conversation'
 import type { Person } from '@/data/peopleData'
 import type { RelayFailureKind } from '@/nostr/relayRead'
 
@@ -51,27 +40,20 @@ import type { RelayFailureKind } from '@/nostr/relayRead'
  */
 export function snippetAround(text: string, query: string, span = 76): string {
   const flat = text.replace(/\s+/g, ' ')
-  const idx = flat.toLowerCase().indexOf(query.toLowerCase())
+  const lower = flat.toLowerCase()
+  // What was typed as it stands, else its first word: "remov short" is two words, apart in the text.
+  const firstWord = query.match(/[\p{L}\p{N}]+/u)?.[0] ?? ''
+  const found = [query, firstWord].map((q) => q.toLowerCase()).find((q) => q && lower.includes(q)) ?? ''
+  const idx = found ? lower.indexOf(found) : -1
   if (idx < 0) return flat.slice(0, span)
-  const start = Math.max(0, idx - Math.floor((span - query.length) / 2))
+  const start = Math.max(0, idx - Math.floor((span - found.length) / 2))
   const end = Math.min(flat.length, start + span)
   return `${start > 0 ? '…' : ''}${flat.slice(start, end).trim()}${end < flat.length ? '…' : ''}`
 }
 
-/** Trimmed and lowercased once, so every matcher agrees on the term. */
-export function normalizeQuery(query: string): string {
-  return query.trim().toLowerCase()
-}
-
-/**
- * Whether the query has a whole word in it that the relay could match.
- *
- * A single unfinished token is the common case while typing, and it is the one
- * the relay cannot answer. Anything with a space in it has at least one
- * complete word, so it is worth sending.
- */
-export function hasCompleteWord(query: string): boolean {
-  return /\s/.test(query.trim())
+/** Whether `text` matches what was typed, by the panel's one rule. */
+export function launcherMatch(text: string, query: string): boolean {
+  return referenceMatch(text, query) > 0
 }
 
 /**
@@ -79,11 +61,7 @@ export function hasCompleteWord(query: string): boolean {
  * and a role is the only place it is written down.
  */
 export function matchPeople(people: readonly Person[], query: string, limit = 5): Person[] {
-  const q = normalizeQuery(query)
-  if (!q) return []
-  return people
-    .filter((p) => p.name.toLowerCase().includes(q) || p.role.toLowerCase().includes(q))
-    .slice(0, limit)
+  return people.filter((p) => launcherMatch(`${p.name} ${p.role}`, query)).slice(0, limit)
 }
 
 /** How the message search ended, which decides what the section says. */
@@ -108,7 +86,7 @@ export type MessageSearchState =
  * to be one. `RelayReadError` already classifies the difference (PEE-10), so
  * this only has to not throw it away.
  */
-export function messageEmptyState(state: MessageSearchState, query: string): string | null {
+export function messageEmptyState(state: MessageSearchState): string | null {
   switch (state.kind) {
     case 'idle':
       return null
@@ -134,16 +112,7 @@ export function messageEmptyState(state: MessageSearchState, query: string): str
               'The relay is busy, so messages are not included. Try again in a moment.'
             : 'Could not reach the relay, so messages are not included.'
     case 'done':
-      if (state.count > 0) return null
-      /*
-        The distinction the probe bought. A partial word finding nothing is not
-        the same statement as a whole word finding nothing, and showing the
-        latter's wording for the former is the thing that would make this read
-        as broken while working exactly as measured.
-      */
-      return hasCompleteWord(query)
-        ? 'No messages matched.'
-        : 'No messages matched — message search needs a whole word.'
+      return state.count > 0 ? null : 'No messages matched.'
   }
 }
 

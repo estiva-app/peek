@@ -12,7 +12,9 @@
  * at EOSE. Same NIP-01 filters, same answer: buzz resolves channel access per
  * REQ with the same membership check as `/query`, and plain filters take the
  * same query (the bridge's window and feed clamps need extension flags Peek
- * never sends). What changes is the meter — a REQ is one frame of 50 per 5 s
+ * never sends). A `search` was the exception until 2026-10-19 — whole words on
+ * a REQ, `search_mode` honoured only over HTTP — and SPEC §5.2 now makes it
+ * one rule on both. What changes is the meter — a REQ is one frame of 50 per 5 s
  * per pubkey (`connection.rs` `enforce_ws_admission`); CLOSE is free.
  *
  * HTTP stays the path for anything the socket cannot answer properly: no

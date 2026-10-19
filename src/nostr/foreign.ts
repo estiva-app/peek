@@ -2004,15 +2004,15 @@ export async function archiveImpactAsViewer(
 /**
  * Messages matching a term, over NIP-50 (PEE-4).
  *
- * **Whole tokens only**, measured against production rather than assumed —
- * `scripts/probe-nip50-search.ts`, 2026-09-02: `"Cla"` returns nothing where
- * `"Claude"` returns two, and a nonsense token returns nothing at all, which is
- * what proves the relay is honouring `search` instead of dropping an unknown
- * field and answering with everything of that kind.
+ * **Every typed word matches the start of a word** (SPEC §5.2): `"Cla"` finds
+ * "Claude", on the socket and over HTTP alike. On 2026-09-02
+ * (`scripts/probe-nip50-search.ts`) the relay matched whole words only, and
+ * until 2026-10-19 it still did over the socket. A nonsense token returns
+ * nothing at all, which is what proves the relay is honouring `search` instead
+ * of dropping an unknown field and answering with everything of that kind.
  *
- * Ordering comes back newest-first with no relevance score, so the order here
- * is the relay's and there is nothing to rank by. A count is "of what I
- * fetched", never a total.
+ * The relay ranks whole-word hits first, then by relevance; the order here is
+ * the relay's. A count is "of what I fetched", never a total.
  *
  * Throws `RelayReadError` on a failed read, like every other read in this file
  * — the whole point for PEE-4 is that a refused search and an empty one must

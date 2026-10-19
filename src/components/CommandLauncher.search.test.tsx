@@ -94,6 +94,15 @@ describe('Cmd+K finds a person by typing part of them (PEE-4)', () => {
     expect(screen.getByText('Alice Johnson')).toBeInTheDocument()
   })
 
+  it('finds a person by the start of a word, never by its middle (SPEC §5.2)', async () => {
+    open()
+    await type('desi john')
+    expect(await screen.findByText('Alice Johnson')).toBeInTheDocument()
+
+    await type('ohnson')
+    await waitFor(() => expect(screen.queryByText('Alice Johnson')).not.toBeInTheDocument())
+  })
+
   it('shows no sections at all before anything is typed', async () => {
     open()
     expect(screen.queryByText('People')).not.toBeInTheDocument()
@@ -104,18 +113,18 @@ describe('Cmd+K finds a person by typing part of them (PEE-4)', () => {
 })
 
 describe('the message section says which silence it is in (PEE-4)', () => {
-  it('blames the whole-word rule while a word is unfinished', async () => {
+  it('says plainly that a fragment matched nothing, with nothing about whole words', async () => {
     /*
-      Measured on production: a 3-letter prefix returns nothing from NIP-50
-      where the whole word returns rows. The topic still matches locally, so
-      this is the state a person is actually in mid-word — and a flat "no
-      messages matched" here would be a wrong claim about the workspace.
+      The relay matches every word as a word start now (SPEC §5.2), so "pipe"
+      finding nothing is a true statement about the workspace, and the old
+      "needs a whole word" hint would be a wrong one.
     */
     messageSearch.mockReturnValue({ state: { kind: 'done', count: 0 }, hits: [] })
     open()
     await type('pipe')
 
-    expect(await screen.findByText(/needs a whole word/i)).toBeInTheDocument()
+    expect(await screen.findByText('No messages matched.')).toBeInTheDocument()
+    expect(screen.queryByText(/whole word/i)).not.toBeInTheDocument()
   })
 
   it('says "nothing you can read" for a membership refusal', async () => {

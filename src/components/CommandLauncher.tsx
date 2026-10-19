@@ -9,7 +9,7 @@ import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } f
 import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
-import { fileEmptyState, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { fileEmptyState, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -196,9 +196,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const recents = useRecents()
 
   /*
-    PEE-4's three corpora. Messages live on the relay and match whole tokens
-    only; `lib/launcherSearch` carries the reasoning and the wording that
-    difference forces. Searched on the first level only (F9): inside an app the
+    Files and messages live on the relay, matched by word starts as everything
+    else in the panel is (`lib/launcherSearch`). Searched on the first level only (F9): inside an app the
     results were never shown, and the relay was asked anyway on every pause.
   */
   const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
@@ -894,18 +893,18 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     }
 
     // An app whose name starts with what was typed goes first (R6); not the host, whose actions are its own group (INT-13).
-    const apps = OTHER_APPS.filter((a) => a.label.toLowerCase().startsWith(q)).map(appRow)
+    const apps = OTHER_APPS.filter((a) => launcherMatch(a.label, query)).map(appRow)
     // A word is a search, a sentence is a question (R5 C, C2).
     const sentence = wordCount(typed) >= 2
     const ask: CommandPaletteGroup = { label: 'Ask', rows: intentRows(typed) }
     const changes = changeRowsFor(
-      changeRows.filter(({ action }) => action.label.toLowerCase().includes(q) || (action.targetLabel ?? '').toLowerCase().includes(q)),
+      changeRows.filter(({ action }) => launcherMatch(action.label, query) || launcherMatch(action.targetLabel ?? '', query)),
     )
     const peopleHits = matchPeople(people ?? [], query).map((p) => personRow(p))
     // An app's action by its name: "add" finds "Add issue · Ship", and Enter opens its form (C4).
     const actionHits = probeable(LAUNCHER_APPS).flatMap((app) =>
       liveActions(app)
-        .filter((a) => a.label.toLowerCase().includes(q))
+        .filter((a) => launcherMatch(a.label, query))
         .map((action) => ({
           id: `action-${app.id}-${action.id}`,
           label: action.label,
@@ -964,7 +963,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
 
     const searching = messageState.kind === 'searching'
-    const messageNote = searching ? null : messageEmptyState(messageState, query)
+    const messageNote = searching ? null : messageEmptyState(messageState)
     // One relay that failed both searches is said once, by the messages' line.
     const fileNote = messageState.kind === 'failed' ? null : fileEmptyState(fileState)
     const groups: CommandPaletteGroup[] = [
@@ -984,8 +983,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       pending: searching ? 'Searching messages…' : searchingFiles ? 'Searching files…' : undefined,
       notes: [
         ...(fileNote ? [fileNote] : []),
-        // A plain "No messages matched" says nothing new beside rows that did match;
-        // the whole-word hint does, mid-word, where a flat "none" would be wrong.
+        // A plain "No messages matched" says nothing new beside rows that did match.
         ...(messageNote && !(anyRows && messageNote === 'No messages matched.') ? [messageNote] : []),
         ...(unroutable > 0 ? [`${unroutable} more in conversations not in your sidebar.`] : []),
       ],
@@ -997,7 +995,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const read = live[app.id]
     const actions = liveActions(app)
     const rows = actions
-      .filter((a) => !q || a.label.toLowerCase().includes(q))
+      .filter((a) => !q || launcherMatch(a.label, query))
       .map((action) => ({ id: action.id, label: action.label, icon: icon(IconPencil), onSelect: () => push({ kind: 'form', action, app }) }))
     const loading = typeof app.parentKind === 'number' && (!read || read.state === 'loading')
     return {
