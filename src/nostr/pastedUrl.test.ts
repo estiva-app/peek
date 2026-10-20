@@ -8,7 +8,7 @@
  * rendering as somebody's object.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { askReferenceFromUrlAsViewer, cardValueOfUrlAsViewer, referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
+import { askReferenceFromUrlAsViewer, cardValueOfUrlAsViewer, fileAddressAsViewer, referenceFromUrlAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -241,5 +241,28 @@ describe('urlReferenceTagsAsViewer', () => {
       TOKEN,
     )
     expect(tags).toEqual([])
+  })
+})
+
+/*
+  The page `/<word>/<slug>-<d>` opens (LTX-6 security review): with a file's
+  path on every app's host, more links land here, so a member who publishes the
+  same `(kind, d)` after the author must not take the page — two holders open
+  nothing, as the pasted-link readers above answer.
+*/
+describe('fileAddressAsViewer', () => {
+  it('opens the one author who holds the `d`', async () => {
+    expect(await fileAddressAsViewer('issue', UUID, 'https://relay', TOKEN)).toBe(`30851:${AUTHOR}:${UUID}`)
+  })
+
+  it('opens nothing when a second author holds the same `d`', async () => {
+    const copy = { ...issue, id: 'e2', pubkey: 'b'.repeat(64), created_at: 3 }
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+      const kinds = filters[0]?.kinds as number[] | undefined
+      if (kinds?.includes(31990)) return { ok: true, events: [manifest, peekManifest, leafManifest] }
+      // Newest first, as the relay answers: the copy would win a `limit: 1`.
+      return { ok: true, events: [copy, issue].slice(0, Number(filters[0]?.limit ?? 2)) }
+    })
+    expect(await fileAddressAsViewer('issue', UUID, 'https://relay', TOKEN)).toBeNull()
   })
 })

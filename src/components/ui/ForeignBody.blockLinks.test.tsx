@@ -82,13 +82,14 @@ describe('a link to one block in a description', () => {
     expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
   })
 
-  it('a link to the whole file opens where the file opens, as before', () => {
+  // A click opens the address as written, in the app it names (LTX-6), block or not.
+  it('a link to the whole file opens as written', () => {
     const chip = chipOf(`see ${FILE_LINK} here`)
-    expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+    expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(FILE_LINK)
   })
 
-  it('an old `#/issue/…` link is no block: it opens where the file opens', () => {
+  it('an old `#/issue/…` link opens as written, where Ship still serves it', () => {
     const chip = chipOf(`see ${OLD_LINK} here`)
-    expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+    expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(OLD_LINK)
   })
 })

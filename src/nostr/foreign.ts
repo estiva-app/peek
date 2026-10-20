@@ -248,9 +248,8 @@ export async function routeWordsAsViewer(relayUrl: string, token: StoredToken): 
  *
  * The short route carries only the `d`, and a NIP-33 address also needs the
  * author. This is the one `#d` query that recovers it, on the same footing as
- * `referenceFromUrlAsViewer` below: RFC 0.5 §7.4 measured that no `(kind, d)`
- * is shared by two authors, so `limit: 1` over the word's kinds is the whole
- * answer. A word no manifest declares is resolved over every kind any of them
+ * `referenceFromUrlAsViewer` below: one `(kind, pubkey)` must hold the `d`
+ * over the word's kinds, and two holders answer nothing. A word no manifest declares is resolved over every kind any of them
  * does (§7.7 rule 4) — and never as a bare `#d`, because a Folder's 39000 and
  * its 30890 share one uuid (§7.4's correction) and a bare `#d` could answer
  * with either. The `d` is returned as given rather than read back off the
@@ -269,8 +268,12 @@ export async function fileAddressAsViewer(
   const query = viewerQuery(relayUrl, token)
   const words = routeWordsOf(await urlShapes(query))
   const kinds = words.byWord[word.toLowerCase()] ?? declaredKinds(words)
-  const [found] = await query([{ kinds: [...kinds], '#d': [identifier], limit: 1 }])
-  return found ? `${found.kind}:${found.pubkey}:${identifier}` : null
+  // Asks for two: a `d` two authors (or two kinds) hold names nothing (§13.1, OPT-19), as the pasted-link readers
+  // below — `limit: 1` would open whichever answered first, so a member who published the same `(kind, d)` later
+  // could take the page a link opens (LTX-6 security review).
+  const found = await query([{ kinds: [...kinds], '#d': [identifier], limit: 2 }])
+  const holders = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  return holders.size === 1 ? `${[...holders][0]}:${identifier}` : null
 }
 
 /**

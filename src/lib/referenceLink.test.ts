@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
 import { shareableMessageUrl, topicPath } from './objectUrl'
-import { blockLinkOf, referenceLink } from './referenceLink'
+import { writtenLinkOf, referenceLink } from './referenceLink'
 
 const RELAY_KEY = 'ab'.repeat(32)
 const UUID = '0212db6d-bcbf-40d0-890e-f4f056db2f5d'
@@ -80,12 +80,12 @@ describe('referenceLink', () => {
   })
 })
 
-describe('blockLinkOf', () => {
+describe('writtenLinkOf', () => {
   const PEEK = 'https://peek.estiva.app'
   const SHIP_ISSUE = 'https://ship.estiva.app/o/30851:ab:x'
 
   it('a block link on the origin its file opens on leads to that block', () => {
-    expect(blockLinkOf('https://ship.estiva.app/issue/plan-x#block-p1', SHIP_ISSUE, PEEK)).toEqual({ place: 'app', href: 'https://ship.estiva.app/issue/plan-x#block-p1' })
+    expect(writtenLinkOf('https://ship.estiva.app/issue/plan-x#block-p1', SHIP_ISSUE, PEEK)).toEqual({ place: 'app', href: 'https://ship.estiva.app/issue/plan-x#block-p1' })
   })
 
   /*
@@ -102,7 +102,28 @@ describe('blockLinkOf', () => {
       'https://ship.estiva.app:8443/issue/plan-x#block-p1',
       'https://x.ship.estiva.app/issue/plan-x#block-p1',
     ]) {
-      expect(blockLinkOf(url, SHIP_ISSUE, PEEK), url).toBeUndefined()
+      expect(writtenLinkOf(url, SHIP_ISSUE, PEEK), url).toBeUndefined()
     }
+  })
+
+  const DECLARED = ['https://ship.estiva.app', 'https://leaf.estiva.app', PEEK]
+
+  it('an address on another declared host opens there as written, block or not (LTX-6)', () => {
+    expect(writtenLinkOf('https://leaf.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toEqual({ place: 'app', href: 'https://leaf.estiva.app/issue/plan-x' })
+    expect(writtenLinkOf('https://leaf.estiva.app/issue/plan-x#block-p1', SHIP_ISSUE, PEEK, DECLARED)).toEqual({ place: 'app', href: 'https://leaf.estiva.app/issue/plan-x#block-p1' })
+  })
+
+  it('another app’s file written on Peek’s host opens in Peek, through the router', () => {
+    expect(writtenLinkOf('https://peek.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toEqual({ place: 'file', href: '/issue/plan-x' })
+  })
+
+  it('Peek’s own file written on Peek’s host keeps its own route unless it names a block', () => {
+    expect(writtenLinkOf('https://peek.estiva.app/topic/plan-x?thread=1', '/topic/plan-x', PEEK, DECLARED)).toBeUndefined()
+    expect(writtenLinkOf('https://peek.estiva.app/topic/plan-x#block-p1', '/topic/plan-x', PEEK, DECLARED)).toEqual({ place: 'file', href: '/topic/plan-x#block-p1' })
+  })
+
+  it('a lookalike of a declared host is still another site', () => {
+    expect(writtenLinkOf('https://leaf.estiva.app.evil.com/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()
+    expect(writtenLinkOf('http://leaf.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()
   })
 })

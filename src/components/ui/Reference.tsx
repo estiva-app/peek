@@ -5,7 +5,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
-import { blockLinkOf, referenceLink, type ReferenceLink } from '@/lib/referenceLink'
+import { writtenLinkOf, referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
 import { InlineChip, KindIcon, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
@@ -178,7 +178,7 @@ export function Reference({
       // The full title on hover, because the visible one is truncated.
       <Tip label={title}>
         <Chip
-          link={link ? (blockLinkOf(opensAt, referenceLink(uri, object)?.href) ?? referenceLink(uri, object)) : null}
+          link={link ? (writtenLinkOf(opensAt, referenceLink(uri, object)?.href) ?? referenceLink(uri, object)) : null}
           data-reference="object"
           data-object={object.address}
           data-resolved="true"
