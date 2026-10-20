@@ -120,7 +120,7 @@ export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: 
  * (`useHeldCard`). Its comment count shows the dot only for a member with
  * something unread (record membership-replaces-following).
  */
-export function MessageCard({ uri, resolved, compact = false, onRemove, revealOnHover = false }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The ✕ waits for hover or focus: a sent message's. */ revealOnHover?: boolean }) {
+export function MessageCard({ uri, resolved, compact = false, onRemove, revealOnHover = false, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The ✕ waits for hover or focus: a sent message's. */ revealOnHover?: boolean; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
@@ -151,13 +151,13 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, revealOn
   } else {
     const count = counted ? counts[counted.ref] : undefined
     const title = ready?.slots.title && !ready.slots.title.isPubkey ? ready.slots.title.value : undefined
-    link = linkStateOf(uri, drawn as ForeignObject, {
+    link = openingAt(linkStateOf(uri, drawn as ForeignObject, {
       directory,
       onAct: act,
       ...(ready?.address && count !== undefined
         ? { conversation: { count, href: filePath(ready.address, title), unread: unread[ready.ref] === true } }
         : {}),
-    })
+    }), opensAt)
   }
   /*
     The drawn card's shape and height, kept for its placeholder next time. The

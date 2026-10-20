@@ -126,4 +126,11 @@ describe('writtenLinkOf', () => {
     expect(writtenLinkOf('https://leaf.estiva.app.evil.com/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()
     expect(writtenLinkOf('http://leaf.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()
   })
+
+  // LTX-6 security re-review: a route starting `//` is another host to the router and the browser.
+  it('a path on Peek’s host that starts with two slashes (or a slash and a backslash) never becomes a route to another host', () => {
+    for (const url of ['https://peek.estiva.app//issue/plan-x', 'https://peek.estiva.app/\\issue/plan-x', 'https://peek.estiva.app//evil.example/issue/plan-x#block-p1']) {
+      expect(writtenLinkOf(url, SHIP_ISSUE, PEEK, DECLARED), url).toBeUndefined()
+    }
+  })
 })
