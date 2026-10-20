@@ -18,7 +18,7 @@ const manifest = (urls: string) => ({
   created_at: 1,
   content: '{}',
   sig: '',
-  tags: [['d', 'estiva-ship'], ['urls', urls, '30851']],
+  tags: [['d', 'estiva-ship'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', urls, '30851']],
 })
 const issue = { id: 'e1', kind: 30851, pubkey: AUTHOR, created_at: 2, content: '', sig: '', tags: [['d', UUID]] }
 const deletion = (pubkey: string, tags: string[][]) => ({ id: 'x', kind: 5, pubkey, created_at: 3, content: '', sig: '', tags })

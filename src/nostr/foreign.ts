@@ -348,8 +348,10 @@ export async function askReferenceFromUrlAsViewer(
   // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
   // `(kind, d)` could take a link's mention.
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
-  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  // Narrow by kind when the apps named one or more (a host-swapped path can read as several, LTX-6): the query is
+  // cheaper and the intent is clearer.
+  const kinds = kindsOf(hit)
+  if (kinds) filter.kinds = kinds
   const found = await query([filter])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   if (authors.size !== 1) return null
@@ -378,11 +380,22 @@ export async function cardValueOfUrlAsViewer(url: string, relayUrl: string, toke
   if (!hit) return null
   if (hit.by === 'id') return /^[0-9a-f]{64}$/i.test(hit.identifier) ? hit.identifier.toLowerCase() : null
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const kinds = kindsOf(hit)
+  if (kinds) filter.kinds = kinds
   const found = await query([filter])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   if (authors.size !== 1) return null
   return `${[...authors][0]}:${hit.identifier}`
+}
+
+/**
+ * The kinds a matched link is looked up under: every kind the shapes reading
+ * that path name — `kinds` when there are several, as a path on another app's
+ * host can be (SPEC §7.7) — or none, to ask by `d` alone.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
+ */
+function kindsOf(hit: { kind?: number; kinds?: number[] }): number[] | undefined {
+  return hit.kinds ?? (hit.kind === undefined ? undefined : [hit.kind])
 }
 
 /**

@@ -101,6 +101,7 @@ const peekManifest = event({
   kind: 31990,
   tags: [
     ['d', 'estiva-peek'],
+    ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'],
     ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', String(BARE_FILE)],
     ['urls', 'https://peek.estiva.app/topic/<slug>-<d>?thread=<id>', String(COMMENT)],
     ['urls', 'https://peek.estiva.app/message/<id>', '9'],
@@ -381,7 +382,7 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     const second = event({ kind: BARE_FILE, tags: [['d', SECOND_D], ['title', 'Second'], ['h', FOLDER]] })
     const blocks = event({
       kind: 31990,
-      tags: [['d', 'estiva-peek'], ['urls', 'https://peek.estiva.app/topic/<slug>-<d>#block-<block>', String(BARE_FILE)]],
+      tags: [['d', 'estiva-peek'], ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://peek.estiva.app/topic/<slug>-<d>#block-<block>', String(BARE_FILE)]],
       content: JSON.stringify({ name: 'Peek', projections: {} }),
     })
     queryRelay.mockImplementation(relayOver([manifest, blocks, file, linked, second]))
