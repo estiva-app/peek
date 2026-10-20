@@ -30,7 +30,7 @@
  */
 import { addressToPointer } from '@estiva-app/protocol'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { filePath, objectRef } from '@/lib/objectUrl'
+import { currentRouteWords, filePath, objectRef } from '@/lib/objectUrl'
 import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
 
 export type ReferenceLink =
@@ -77,24 +77,38 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
 }
 
 /**
- * Where a chip written as a link to one block opens (§13.6.1, WBM-11): the URL
- * as written, so a click lands on the block, not the top of its file — or
- * undefined for a link with no fragment, and for anything but http(s), which
- * open where {@link referenceLink} says. `opens` is where the file itself
- * opens: the written URL is taken only on that same origin, so a chip that
- * draws one file never opens another site (WBM-11 security review). Peek's own
+ * Where a chip written as a URL opens: the address as written, in the app it
+ * names (SPEC §7.7, LTX-6) — so `leaf.estiva.app/issue/…` opens Leaf, not Ship,
+ * and a link to one block lands on the block, not the top of its file
+ * (§13.6.1, WBM-11). Undefined for anything but http(s), and for a host no app
+ * declares, which open where {@link referenceLink} says: a chip that draws one
+ * file never opens a site no app serves from (WBM-11 security review). `opens`
+ * is where the file itself opens, and its origin counts as declared. Peek's own
  * URL is a route, so the router takes it without a reload.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
-export function blockLinkOf(url: string | undefined, opens: string | undefined, origin = window.location.origin): ReferenceLink | undefined {
+export function writtenLinkOf(
+  url: string | undefined,
+  opens: string | undefined,
+  origin = window.location.origin,
+  declared: readonly string[] = currentRouteWords().origins ?? [],
+): ReferenceLink | undefined {
   if (!url || !opens || !/^https?:\/\//i.test(url)) return undefined
   let parsed: URL
+  let opensHere: boolean
   try {
     parsed = new URL(url)
-    if (new URL(opens, origin).origin !== parsed.origin) return undefined
+    const opensAt = new URL(opens, origin).origin
+    opensHere = opensAt === origin
+    if (parsed.origin !== origin && parsed.origin !== opensAt && !declared.includes(parsed.origin)) return undefined
   } catch {
     return undefined
   }
-  // `#/…` is an old hash route (Ship's `#/issue/<d>`), not a block: it opens where the file does.
-  if (parsed.hash.length < 2 || parsed.hash.startsWith('#/')) return undefined
-  return parsed.origin === origin ? { place: 'file', href: `${parsed.pathname}${parsed.search}${parsed.hash}` } : { place: 'app', href: url }
+  // Peek's own object written on Peek's host already opens here, at the route that can land on a message on screen;
+  // only a block (not `#/…`, an old hash route) changes where.
+  if (opensHere && parsed.origin === origin && (parsed.hash.length < 2 || parsed.hash.startsWith('#/'))) return undefined
+  if (parsed.origin !== origin) return { place: 'app', href: url }
+  // A path that starts `//` (`/\` parses the same) would read as another host once it is a route: it opens where its file opens.
+  const route = `${parsed.pathname}${parsed.search}${parsed.hash}`
+  return new URL(route, origin).origin === origin ? { place: 'file', href: route } : undefined
 }

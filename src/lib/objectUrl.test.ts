@@ -177,7 +177,7 @@ describe('routeWordsOf', () => {
   })
 
   it('always holds Peek’s own shape, so a bare file is short before the manifests answer', () => {
-    expect(routeWordsOf([])).toEqual({ byWord: { topic: [30840] }, byKind: { 30840: 'topic' } })
+    expect(routeWordsOf([])).toEqual({ byWord: { topic: [30840] }, byKind: { 30840: 'topic' }, origins: [] })
   })
 
   it('answers every declared kind for the unknown-word fallback — never a bare #d', () => {

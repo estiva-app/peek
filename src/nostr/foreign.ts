@@ -248,9 +248,8 @@ export async function routeWordsAsViewer(relayUrl: string, token: StoredToken): 
  *
  * The short route carries only the `d`, and a NIP-33 address also needs the
  * author. This is the one `#d` query that recovers it, on the same footing as
- * `referenceFromUrlAsViewer` below: RFC 0.5 §7.4 measured that no `(kind, d)`
- * is shared by two authors, so `limit: 1` over the word's kinds is the whole
- * answer. A word no manifest declares is resolved over every kind any of them
+ * `referenceFromUrlAsViewer` below: one `(kind, pubkey)` must hold the `d`
+ * over the word's kinds, and two holders answer nothing. A word no manifest declares is resolved over every kind any of them
  * does (§7.7 rule 4) — and never as a bare `#d`, because a Folder's 39000 and
  * its 30890 share one uuid (§7.4's correction) and a bare `#d` could answer
  * with either. The `d` is returned as given rather than read back off the
@@ -269,8 +268,12 @@ export async function fileAddressAsViewer(
   const query = viewerQuery(relayUrl, token)
   const words = routeWordsOf(await urlShapes(query))
   const kinds = words.byWord[word.toLowerCase()] ?? declaredKinds(words)
-  const [found] = await query([{ kinds: [...kinds], '#d': [identifier], limit: 1 }])
-  return found ? `${found.kind}:${found.pubkey}:${identifier}` : null
+  // Asks for two: a `d` two authors (or two kinds) hold names nothing (§13.1, OPT-19), as the pasted-link readers
+  // below — `limit: 1` would open whichever answered first, so a member who published the same `(kind, d)` later
+  // could take the page a link opens (LTX-6 security review).
+  const found = await query([{ kinds: [...kinds], '#d': [identifier], limit: 2 }])
+  const holders = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  return holders.size === 1 ? `${[...holders][0]}:${identifier}` : null
 }
 
 /**
@@ -348,8 +351,10 @@ export async function askReferenceFromUrlAsViewer(
   // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
   // `(kind, d)` could take a link's mention.
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
-  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  // Narrow by kind when the apps named one or more (a host-swapped path can read as several, LTX-6): the query is
+  // cheaper and the intent is clearer.
+  const kinds = kindsOf(hit)
+  if (kinds) filter.kinds = kinds
   const found = await query([filter])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   if (authors.size !== 1) return null
@@ -378,11 +383,22 @@ export async function cardValueOfUrlAsViewer(url: string, relayUrl: string, toke
   if (!hit) return null
   if (hit.by === 'id') return /^[0-9a-f]{64}$/i.test(hit.identifier) ? hit.identifier.toLowerCase() : null
   const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const kinds = kindsOf(hit)
+  if (kinds) filter.kinds = kinds
   const found = await query([filter])
   const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
   if (authors.size !== 1) return null
   return `${[...authors][0]}:${hit.identifier}`
+}
+
+/**
+ * The kinds a matched link is looked up under: every kind the shapes reading
+ * that path name — `kinds` when there are several, as a path on another app's
+ * host can be (SPEC §7.7) — or none, to ask by `d` alone.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
+ */
+function kindsOf(hit: { kind?: number; kinds?: number[] }): number[] | undefined {
+  return hit.kinds ?? (hit.kind === undefined ? undefined : [hit.kind])
 }
 
 /**

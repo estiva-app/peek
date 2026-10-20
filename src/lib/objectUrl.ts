@@ -146,6 +146,11 @@ export interface RouteWords {
   byWord: Readonly<Record<string, readonly number[]>>
   /** The word `filePath` writes for a kind; a kind with none keeps the long form. */
   byKind: Readonly<Record<number, string>>
+  /**
+   * The origins the shapes are written on — every host some app declares (SPEC
+   * §7.7). A chip opens the address as written only on one of these (LTX-6).
+   */
+  origins?: readonly string[]
 }
 
 /**
@@ -188,6 +193,14 @@ const WORD_RE = /^[a-z][a-z0-9-]*$/i
 export function routeWordsOf(patterns: readonly UrlPattern[]): RouteWords {
   const byWord: Record<string, number[]> = {}
   const byKind: Record<number, string> = {}
+  const origins = new Set<string>()
+  for (const { pattern } of patterns) {
+    try {
+      origins.add(new URL(pattern).origin)
+    } catch {
+      // Not a URL: it declares no host.
+    }
+  }
   const declare = (word: string, kind: number) => {
     const kinds = (byWord[word] ??= [])
     if (!kinds.includes(kind)) kinds.push(kind)
@@ -207,7 +220,7 @@ export function routeWordsOf(patterns: readonly UrlPattern[]): RouteWords {
     if (!WORD_RE.test(word) || PEEK_ROOT_PATHS.includes(word.toLowerCase())) continue
     declare(word.toLowerCase(), kind)
   }
-  return { byWord, byKind }
+  return { byWord, byKind, origins: [...origins] }
 }
 
 /** Every kind any word resolves against — what an unknown word falls back to (§7.7 rule 4). */

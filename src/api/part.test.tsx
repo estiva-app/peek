@@ -40,25 +40,24 @@ afterEach(() => {
  */
 describe('Open in, when another member planted a manifest shape', () => {
   const OPEN = 'https://ship.estiva.app/o/naddr1x'
-  const SHIP = ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851']
-  /** The block link interop builds when the planted shape is read before Ship's. */
-  const plantedLink = (pattern: string) =>
-    blockUrlOf(urlPatternsOf({ tags: [['urls', pattern, '30851'], SHIP] }), { kind: 30851, d: D, title: 'Plan', block: 'p1' })
+  const SHIP = { tags: [['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://ship.estiva.app/issue/<slug>-<d>#block-<block>', '30851']] }
+  /** The block link interop builds when a member's manifest, read before Ship's, declares the shape on its own `web`. */
+  const plantedLink = (web: string, pattern: string) =>
+    blockUrlOf([...urlPatternsOf({ tags: [['web', web, 'naddr'], ['urls', pattern, '30851']] }), ...urlPatternsOf(SHIP)], { kind: 30851, d: D, title: 'Plan', block: 'p1' })
 
   it('takes the block link the owning app declares, on the object host', () => {
-    const link = blockUrlOf(urlPatternsOf({ tags: [SHIP] }), { kind: 30851, d: D, title: 'Plan', block: 'p1' })
+    const link = blockUrlOf(urlPatternsOf(SHIP), { kind: 30851, d: D, title: 'Plan', block: 'p1' })
     expect(link).toBe(`https://ship.estiva.app/issue/plan-${D}#block-p1`)
     expect(openLinkOf(link, OPEN)).toBe(link)
   })
 
-  it('opens the object instead of a planted javascript: shape', () => {
-    const link = plantedLink('javascript:alert(document.cookie)//<slug>-<d>#block-<block>')
-    expect(link).toMatch(/^javascript:/)
-    expect(openLinkOf(link, OPEN)).toBe(OPEN)
+  it('opens the object instead of a planted javascript: link', () => {
+    // Whatever shape built it, Open in follows only an `https:` link.
+    expect(openLinkOf(`javascript:alert(document.cookie)//plan-${D}#block-p1`, OPEN)).toBe(OPEN)
   })
 
   it('opens the object instead of a planted shape on another host', () => {
-    const link = plantedLink('https://evil.example/issue/<slug>-<d>#block-<block>')
+    const link = plantedLink('https://evil.example/o/<bech32>', 'https://evil.example/issue/<slug>-<d>#block-<block>')
     expect(link).toBe(`https://evil.example/issue/plan-${D}#block-p1`)
     expect(openLinkOf(link, OPEN)).toBe(OPEN)
   })
