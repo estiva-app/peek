@@ -21,6 +21,7 @@ import {
   findNaddrs,
   linksAsReferences,
   pointerToAddress,
+  referenceOfLink,
   referenceToPointer,
   referencesIn,
   toRenderTree,
@@ -235,11 +236,12 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     if (value && !written.has(value)) written.set(value, reference)
   }
   // The first URL the body wrote for each card's file: the card opens it, as that file's chip would (LTX-6).
+  // Only a URL that itself names that file, as a chip checks (LTX-6 security review).
   const writtenUrl = new Map<string, string>()
   const urlsIn = (bs: readonly (typeof blocks)[number][]) => {
     for (const block of bs) {
       for (const run of block.inline ?? []) {
-        const value = run.reference && /^https?:\/\//i.test(run.text) ? valueOfReference(run.reference) : undefined
+        const value = run.reference && /^https?:\/\//i.test(run.text) && referenceOfLink(run.text, resolveLink) === run.reference ? valueOfReference(run.reference) : undefined
         if (value && !writtenUrl.has(value)) writtenUrl.set(value, run.text)
       }
       if (block.children) urlsIn(block.children)
