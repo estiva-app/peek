@@ -105,3 +105,25 @@ describe('MessageBody renders a labelled link (PEE-19)', () => {
     expect(c.textContent).toBe('[x](javascript:alert(1))')
   })
 })
+
+describe('MessageBody nests a second-level list item (PEE-57)', () => {
+  it('draws an item indented two spaces inside the item above it, and the next top-level item back out', () => {
+    const c = show('- Agenda\n  - budget\n- Next')
+    // Each item's own words, and how many items it sits inside.
+    const depth = (li: Element) => {
+      let n = 0
+      for (let up = li.parentElement?.closest('li'); up; up = up.parentElement?.closest('li')) n += 1
+      return n
+    }
+    const words = (li: Element) => {
+      const own = li.cloneNode(true) as Element
+      own.querySelectorAll('ul, ol').forEach((list) => list.remove())
+      return own.textContent
+    }
+    expect([...c.querySelectorAll('li')].map((li) => [words(li), depth(li)])).toEqual([
+      ['Agenda', 0],
+      ['budget', 1],
+      ['Next', 0],
+    ])
+  })
+})
