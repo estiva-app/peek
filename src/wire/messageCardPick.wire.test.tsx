@@ -137,11 +137,14 @@ describe("a pick on an issue's card under a message", () => {
   })
 
   it('sends nothing for an issue whose project was archived after the copy was kept, and says why', async () => {
-    relay.seed(projectArchived)
-    kept.events = [manifest, project, issue]
+    // Its own issue: the tab holds what it read about the first one's project (OPT-5).
+    const d = '3c0f5d2b-8e4a-4f6b-8c7d-1e2f3a4b5c6d'
+    const another = signed({ kind: ISSUE, created_at: 1_700_000_100, tags: [['d', d], ['title', 'Its project is archived'], ['a', PROJECT_ADDRESS], ['h', FOLDER]] }, SHIP)
+    relay.seed(another, projectArchived)
+    kept.events = [manifest, project, another]
     answerWrites()
-    render(<MessageCard uri={`nostr:${NADDR}`} />)
-    await screen.findByText('A card holds its pick')
+    render(<MessageCard uri={`nostr:${encodeNaddr({ kind: ISSUE, pubkey: SHIP, identifier: d, relays: [] })}`} />)
+    await screen.findByText('Its project is archived')
 
     await pickStatus('In progress')
     answerReads()

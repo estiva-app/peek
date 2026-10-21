@@ -6,6 +6,10 @@ import { noteCardAvailability } from '@/lib/unavailableCards'
 /** How long a pick made on a card from the copy waits for the relay's answer before it is undone. */
 const HELD_PICK_MS = 10_000
 
+/** How long the tab holds whether a file is archived with its parent, as it holds a card's file (OPT-5). */
+const PARENT_ARCHIVE_MS = 5 * 60_000
+const parentArchives = new Map<string, { at: number; archive: ForeignObject['archived'] | undefined }>()
+
 /** A picker's value in words, as its control draws it: the option's label, or the person's name. */
 export function valueLabel(action: ResolvedAction, value: string, directory?: People, people?: People): string {
   if (action.control === 'pubkey') return value ? (directory?.[value]?.displayName ?? people?.[value]?.displayName ?? 'someone else') : 'Unassigned'
@@ -87,8 +91,12 @@ export function useHeldCard(
   const askParent = card && !!object && object !== 'loading' && !object.unreachable && !object.archived && !!object.parentRef
   useEffect(() => {
     if (!askParent) return
+    // Held for the tab, so a topic of issue cards does not pay a read per card on every open.
+    const held = parentArchives.get(naddr)
+    if (held && Date.now() - held.at < PARENT_ARCHIVE_MS) return setWithParent({ naddr, archive: held.archive })
     let cancelled = false
     void parentArchiveOf(naddr).then((archive) => {
+      parentArchives.set(naddr, { at: Date.now(), archive })
       if (!cancelled) setWithParent({ naddr, archive })
     })
     return () => {

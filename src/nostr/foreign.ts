@@ -47,6 +47,7 @@ import {
 } from '@estiva-app/protocol'
 import {
   ARCHIVED_FIELD,
+  SUMMARY_FIELD,
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
@@ -1556,7 +1557,7 @@ export async function buildCommentAsViewer(
 }
 
 /** The fields a card never writes: a file's words, and its archive. */
-const NOT_ON_A_CARD = new Set(['title', 'summary', 'description', ARCHIVED_FIELD])
+const NOT_ON_A_CARD = new Set(['title', SUMMARY_FIELD, 'description', ARCHIVED_FIELD])
 
 /**
  * A change made from a file's card (SPEC §13.6.2): a status or an owner, as in
