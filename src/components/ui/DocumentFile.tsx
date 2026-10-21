@@ -27,5 +27,7 @@ export function DocumentFile({
   const file = postedAttachment({ name: attr('filename') ?? 'Attachment', size, contentType, mediaUrl: attr('url'), thumbUrl: attr('thumb') })
   // Not opened, a file that is not a picture has nothing to fetch: its row is its name and size.
   const shown = download || contentType.startsWith('image/') ? file : { ...file, remoteSrc: undefined, remoteFullSrc: undefined }
-  return <AttachmentCard {...shown} fetchImage={fetchImage} download={download} />
+  // The writer's words for a picture where they wrote some, its name otherwise, as Ship and Leaf read it: never empty.
+  const alt = contentType.startsWith('image/') ? (attr('alt') ?? file.name) : undefined
+  return <AttachmentCard {...shown} alt={alt} fetchImage={fetchImage} download={download} />
 }

@@ -7,7 +7,7 @@
  * the format and varies the body, rather than the other way round.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import type { ResolvedSlot } from '@estiva-app/interop'
 import { blobObjectUrl } from '@/nostr/media'
 import { ForeignBody } from './ForeignBody'
@@ -33,7 +33,7 @@ const PICTURE_DOC = JSON.stringify({
 describe('a picture in another app’s text (affd152a)', () => {
   it('draws as its card with the relay’s thumbnail, not as its file name', async () => {
     render(<ForeignBody slot={slot(PICTURE_DOC, 'blocks')} />)
-    expect(await screen.findByRole('button', { name: 'Preview shot.png' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Preview shot.png' })).not.toBeNull())
     expect(blobObjectUrl).toHaveBeenCalledWith('https://relay.example/thumb/a279.png')
   })
 })

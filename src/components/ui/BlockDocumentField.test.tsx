@@ -45,7 +45,7 @@ describe('a picture in the text (affd152a)', () => {
     const onCommit = vi.fn<(value: string, format?: string) => boolean>(() => true)
     render(<BlockDocumentField value={doc} format="blocks" label="Description" onCommit={onCommit} />)
     const box = await ready()
-    expect(await screen.findByRole('button', { name: 'Preview shot.png' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Preview shot.png' })).not.toBeNull())
     expect(screen.queryByRole('link', { name: 'Download shot.png' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Download shot.png' })).toBeNull()
     act(() => void box.editor.commands.focus('start'))
