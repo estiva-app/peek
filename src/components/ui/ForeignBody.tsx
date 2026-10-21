@@ -4,6 +4,7 @@ import { RichText } from '@estiva-app/ui'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue } from '@/lib/embedValue'
 import { BlockLineCards, linksInBlocks } from './DocumentCards'
+import { DocumentFile } from './DocumentFile'
 import { Reference } from './Reference'
 
 /**
@@ -77,6 +78,8 @@ export function ForeignBody({ slot, className, cards = false }: { slot: Resolved
         // A link to one block opens at the block (WBM-11): the run keeps the URL as written. Only a run whose words are
         // that URL, resolved to this same file: a stored reference's words are its author's (security review).
         renderReference={(uri, run) => <Reference uri={uri} object={resolved[uri]} opensAt={referenceOfLink(run.text, resolveLink) === uri ? run.text : undefined} />}
+        // A file in the text — a picture is one — as a part's and a message's are drawn (affd152a).
+        renderBlock={(block) => (block.type === 'attachment' ? <DocumentFile attrs={block.attrs} /> : undefined)}
         // The package's block is the protocol's, handed back.
         renderAfter={cards ? (block) => <BlockLineCards block={block as RenderBlock} /> : undefined}
       />

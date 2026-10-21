@@ -1,0 +1,41 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ForeignObject/DocumentFile" />
+
+# DocumentFile
+
+A file placed in another app's text (an `attachment` block, SPEC §13.3), drawn
+as the package's `AttachmentCard` with the bytes fetched as the reader. A
+picture is its thumbnail and opens full size on a click.
+
+**Seen in**: *Messages/ForeignObject/PartCard*, the Picture story.
+
+## When
+
+- An attachment block anywhere Peek draws a file's text: a part
+  (**PartCard**), a body read in a card or the Overview (**ForeignBody**), and
+  the panel's editor of it (**BlockDocumentField**).
+- `download={false}` inside an editor that saves on blur, as Ship's
+  description editor does: the Download button would take focus and save.
+
+## When not
+
+- A file sent with a message (`imeta` on the event): the message draws the
+  package's `AttachmentCard` itself, in **ConversationCard** and **ReplyCard**.
+- A file being attached in the composer, before it is sent: **AttachmentChips**.
+
+## How
+
+```tsx
+import { DocumentFile } from '@/components/ui/DocumentFile'
+
+<RichText blocks={blocks} renderBlock={(b) => (b.type === 'attachment' ? <DocumentFile attrs={b.attrs} /> : undefined)} />
+```
+
+## What it owns
+
+- **One drawing of a file in a document.** A part, a card's body and the
+  editor draw the same card, so they cannot drift apart.
+- **The authorized fetch.** Media GET on the relay is authenticated: the card
+  is handed `blobObjectUrl`, and draws the relay's thumbnail, the original
+  only when opened.

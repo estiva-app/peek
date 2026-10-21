@@ -3,6 +3,9 @@ import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import type { Editor } from '@tiptap/react'
 import { BlockDocumentField } from './BlockDocumentField'
 
+// The relay's signed media GET, answered: what is drawn is the card, not the fetch.
+vi.mock('@/nostr/media', () => ({ blobObjectUrl: vi.fn(async () => 'blob:shot') }))
+
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on text
    nodes, and ProseMirror calls them on every document change. */
 beforeAll(() => {
@@ -29,6 +32,31 @@ const ready = async () => {
   marks the item's depth. The whole of what a person does in Edit description:
   Tab, leave, open it again.
 */
+describe('a picture in the text (affd152a)', () => {
+  const doc = JSON.stringify({
+    type: 'doc',
+    content: [
+      { type: 'paragraph', id: 'b1', content: [{ type: 'text', text: 'Before' }] },
+      { type: 'attachment', id: 'b2', attrs: { url: 'https://relay.example/a279.png', m: 'image/png', x: 'a279', size: 2048, filename: 'shot.png' } },
+    ],
+  })
+
+  it('draws as its card that opens it, with no Download in the editor, and an edit beside it keeps it', async () => {
+    const onCommit = vi.fn<(value: string, format?: string) => boolean>(() => true)
+    render(<BlockDocumentField value={doc} format="blocks" label="Description" onCommit={onCommit} />)
+    const box = await ready()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Preview shot.png' })).not.toBeNull())
+    expect(screen.queryByRole('link', { name: 'Download shot.png' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Download shot.png' })).toBeNull()
+    act(() => void box.editor.commands.focus('start'))
+    act(() => void box.editor.chain().insertContent('Now ').run())
+    fireEvent.blur(box)
+    await waitFor(() => expect(onCommit).toHaveBeenCalled())
+    const saved = JSON.parse(onCommit.mock.calls.at(-1)![0]) as { content: { type: string; id: string; attrs?: { x?: string } }[] }
+    expect(saved.content.find((block) => block.type === 'attachment')).toMatchObject({ id: 'b2', attrs: { x: 'a279' } })
+  })
+})
+
 describe('a list item indented with Tab', () => {
   type Saved = { content: { content: { id: string; attrs?: { indent?: number }; content: { text: string }[] }[] }[] }
 

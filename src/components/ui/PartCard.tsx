@@ -1,11 +1,11 @@
 import { serializeBlockDocument, toRenderTree, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { AttachmentCard, Button, PartCard as KitPartCard, RichText, ShowMore, thingKindOf, type RichTextBlock } from '@estiva-app/ui'
+import { Button, PartCard as KitPartCard, RichText, ShowMore, thingKindOf } from '@estiva-app/ui'
 import { IconExternalLink } from '@tabler/icons-react'
 import { usePart, type PartView } from '@/api'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
-import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
+import { DocumentFile } from './DocumentFile'
 
 /**
  * Past this height a block is cut behind ShowMore's fade, and opens in place.
@@ -92,7 +92,7 @@ export function PartCardView({
 
   const run = view.run ?? [view.block]
   const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: run }), 'blocks')
-  const content = <RichText blocks={blocks} size="small" renderBlock={(b) => renderAttachment(b, fetchImage)} />
+  const content = <RichText blocks={blocks} size="small" renderBlock={(b) => (b.type === 'attachment' ? <DocumentFile attrs={b.attrs} fetchImage={fetchImage} /> : undefined)} />
   const link = frame.href
   // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
   // reads as an action, level with Show more at the right of its row.
@@ -121,24 +121,6 @@ export function PartCardView({
         )}
       </KitPartCard>
     </div>
-  )
-}
-
-/**
- * An attachment block — an image is one (SPEC §13.3) — drawn as a message's
- * attachment is, through the same card and the same authenticated fetch.
- * `RichText` has no design of its own for it.
- */
-function renderAttachment(block: RichTextBlock, fetchImage: (mediaUrl: string) => Promise<string>) {
-  if (block.type !== 'attachment') return undefined
-  const attr = (key: string) => (typeof block.attrs?.[key] === 'string' ? (block.attrs[key] as string) : undefined)
-  const size = typeof block.attrs?.size === 'number' ? block.attrs.size : 0
-  return (
-    <AttachmentCard
-      {...postedAttachment({ name: attr('filename') ?? 'Attachment', size, contentType: attr('m') ?? '', mediaUrl: attr('url'), thumbUrl: attr('thumb') })}
-      fetchImage={fetchImage}
-      download
-    />
   )
 }
 
