@@ -28,9 +28,16 @@ import {
   UnknownBlock,
   isChecklistTick,
   isReferenceMenuOpen,
+  type AttachmentViewProps,
 } from '@estiva-app/ui/editor'
 import { askCardValues, knownCardValue } from '@/api'
 import { DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from './DocumentCards'
+import { DocumentFile } from './DocumentFile'
+
+/** A file in the text being edited: its card, never downloaded from here (it saves on blur), a picture still opened full size. */
+function EditedFile({ attrs }: AttachmentViewProps) {
+  return <DocumentFile attrs={attrs} download={false} />
+}
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -57,7 +64,7 @@ import { DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from 
  * (SPEC §13.3; Miky, 14 Oct: the panel draws the chosen card, as Ship does,
  * and offers the choice). That card is one level deep: its own body draws its
  * references as chips (`ForeignBody`), so two objects that card each other do
- * not nest. A file draws as text; the atom keeps every attribute.
+ * not nest. A file draws as its card (affd152a); the atom keeps every attribute.
  */
 export function BlockDocumentField({
   value,
@@ -144,7 +151,8 @@ export function BlockDocumentField({
         // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
         LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues, limit: MAX_LINKS_PER_DESCRIPTION }),
         UnknownBlock,
-        AttachmentNode,
+        // Its card, as the same file reads in a part and in Ship's description (affd152a).
+        AttachmentNode.configure({ view: EditedFile }),
       ],
       content: initial,
       editorProps: {

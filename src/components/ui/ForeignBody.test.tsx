@@ -6,12 +6,37 @@
  * begin with `{` is marker text if it carries no tag. So each case here fixes
  * the format and varies the body, rather than the other way round.
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { ResolvedSlot } from '@estiva-app/interop'
+import { blobObjectUrl } from '@/nostr/media'
 import { ForeignBody } from './ForeignBody'
 
+// The relay's signed media GET, answered: what is drawn is the card, not the fetch.
+vi.mock('@/nostr/media', () => ({ blobObjectUrl: vi.fn(async () => 'blob:shot') }))
+
 const slot = (value: string, format?: ResolvedSlot['format']): ResolvedSlot => ({ value, format })
+
+/** A block document holding one picture, as Ship and the agent write it. */
+const PICTURE_DOC = JSON.stringify({
+  type: 'doc',
+  content: [
+    { type: 'paragraph', id: 'b1', content: [{ type: 'text', text: 'Before' }] },
+    {
+      type: 'attachment',
+      id: 'b2',
+      attrs: { url: 'https://relay.example/a279.png', thumb: 'https://relay.example/thumb/a279.png', m: 'image/png', x: 'a279', size: 2048, filename: 'shot.png' },
+    },
+  ],
+})
+
+describe('a picture in another app’s text (affd152a)', () => {
+  it('draws as its card with the relay’s thumbnail, not as its file name', async () => {
+    render(<ForeignBody slot={slot(PICTURE_DOC, 'blocks')} />)
+    expect(await screen.findByRole('button', { name: 'Preview shot.png' })).toBeInTheDocument()
+    expect(blobObjectUrl).toHaveBeenCalledWith('https://relay.example/thumb/a279.png')
+  })
+})
 
 describe('ForeignBody', () => {
   it('renders §13.2 structure for marker text', () => {
