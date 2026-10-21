@@ -1,8 +1,8 @@
 /**
  * A chip's card in another app's description (SPEC §13.3, Widgets; Miky 14 Oct:
  * Peek's panel draws the chosen card and offers the choice, as Ship does). The
- * chip selected, the toolbar offers None, Compact and Detailed, and the choice
- * is saved on the chip itself.
+ * chip alone on its line, its menu offers Row and Card, and the choice is saved
+ * on the chip itself.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -45,8 +45,9 @@ describe('a chip\'s card in the panel', () => {
     expect(box.querySelector('[data-reference-cards]')).toBeNull()
     act(() => box.editor.commands.focus())
     fireEvent.click(box.querySelector('[data-node-view-wrapper]')!)
-    expect((await screen.findByRole('menuitemradio', { name: 'None' })).getAttribute('aria-checked')).toBe('true')
-    fireEvent.mouseDown(screen.getByRole('menuitemradio', { name: 'Detailed' }))
+    // Alone on its line it shows as its row until Card is chosen (ui 0.83; record a-lone-links-chip-menu-offers-row-or-card).
+    expect((await screen.findByRole('menuitemradio', { name: 'Row' })).getAttribute('aria-checked')).toBe('true')
+    fireEvent.mouseDown(screen.getByRole('menuitemradio', { name: 'Card' }))
     await waitFor(() => expect(box.querySelector('[data-reference-cards] [data-card="detailed"]')).not.toBeNull())
     fireEvent.blur(box)
     await waitFor(() => expect(onCommit).toHaveBeenCalled())
