@@ -1,4 +1,4 @@
-import type { LinkState, LinkedConversation, LinkedFromOptions, LinkedKind, LinkedSource } from '@estiva-app/ui'
+import type { LinkState, LinkedConversation, LinkedFromOptions, LinkedKind } from '@estiva-app/ui'
 import { linkStateFrom } from '@estiva-app/ui'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import { openInAppUrl } from '@/lib/appName'
@@ -45,12 +45,11 @@ function hrefOf(uri: string, object: ForeignObject): string {
  * not read, draw alike: "not available." (Miky, 15 Oct).
  */
 export function linkStateOf(uri: string, object: ForeignObject | null | undefined | 'loading', context: LinkedContext = {}): LinkState {
-  const options: LinkedFromOptions = {
+  const options: LinkedFromOptions<ForeignObject> = {
     // A row on its card opens as its own reference would: by its address when it has one.
-    hrefOf: (file: LinkedSource, top) => {
-      const one = file as ForeignObject
-      if (top) return hrefOf(uri, one)
-      return one.naddr ? hrefOf(`nostr:${one.naddr}`, one) : (openInAppUrl(one) ?? '')
+    hrefOf: (file, top) => {
+      if (top) return hrefOf(uri, file)
+      return file.naddr ? hrefOf(`nostr:${file.naddr}`, file) : (openInAppUrl(file) ?? '')
     },
     previewText: (body) => previewText(body),
     ...context,
