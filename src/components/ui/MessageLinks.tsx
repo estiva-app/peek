@@ -122,7 +122,7 @@ export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: 
  */
 export function MessageCard({ uri, resolved, compact = false, onRemove, revealOnHover = false, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The ✕ waits for hover or focus: a sent message's. */ revealOnHover?: boolean; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
   const naddr = uri.replace(/^nostr:/i, '')
-  const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true })
+  const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
   /*
     The hook keys on the addresses, not the array: one file, asked once, and

@@ -18,6 +18,7 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { RELAY_URL, hasRelay } from './relayUrl'
 import {
   applyActionAsViewer,
+  cardActionAsViewer,
   archiveFileAsViewer,
   archiveFolderAsViewer,
   archiveImpactAsViewer,
@@ -734,6 +735,27 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /** A status or an owner changed from a file's card — see `cardActionAsViewer`. */
+  const applyCardAction = useCallback(
+    async (args: { naddr: string; actionId: string; value: string }): Promise<ActResult> => {
+      const v = viewer()
+      if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }
+      return cardActionAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /** Whether a file is archived with its parent (an issue in an archived project), else `undefined`. One more read than a card's resolve. */
+  const parentArchiveOf = useCallback(
+    async (naddr: string): Promise<ForeignObject['archived'] | undefined> => {
+      const v = viewer()
+      if (!v) return undefined
+      const file = await resolveObjectAsViewer(naddr, v.relayUrl, v.token, { archivedWith: true }).catch(() => null)
+      return file?.archived?.with ? file.archived : undefined
+    },
+    [viewer],
+  )
+
   /**
    * What is under each of a file's comments — the thread panel's read (FOL-19).
    *
@@ -837,6 +859,8 @@ export function useForeignObjects() {
     deleteFolder,
     moveFile,
     applyAction,
+    applyCardAction,
+    parentArchiveOf,
     startConversationInDm,
     threads,
     fileThreads,

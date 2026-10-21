@@ -6,6 +6,10 @@ import { noteCardAvailability } from '@/lib/unavailableCards'
 /** How long a pick made on a card from the copy waits for the relay's answer before it is undone. */
 const HELD_PICK_MS = 10_000
 
+/** How long the tab holds whether a file is archived with its parent, as it holds a card's file (OPT-5). */
+const PARENT_ARCHIVE_MS = 5 * 60_000
+const parentArchives = new Map<string, { at: number; archive: ForeignObject['archived'] | undefined }>()
+
 /** A picker's value in words, as its control draws it: the option's label, or the person's name. */
 export function valueLabel(action: ResolvedAction, value: string, directory?: People, people?: People): string {
   if (action.control === 'pubkey') return value ? (directory?.[value]?.displayName ?? people?.[value]?.displayName ?? 'someone else') : 'Unassigned'
@@ -32,8 +36,24 @@ export interface HeldCard {
  * happened. `remember` keeps this device's answer of "not available", so the
  * next open draws that row from the first paint (OPT-10).
  */
-export function useHeldCard(naddr: string, resolved?: ForeignObject, { remember = false }: { remember?: boolean } = {}): HeldCard {
-  const { applyAction } = useForeignObjects()
+export function useHeldCard(
+  naddr: string,
+  resolved?: ForeignObject,
+  {
+    remember = false,
+    card = false,
+  }: {
+    remember?: boolean
+    /**
+     * A card under a message, as in Leaf and Ship (5ebf2756): it writes only a
+     * status or an owner (`applyCardAction`), holds a pick on screen until the
+     * re-read lands, and reads once whether the file is archived with its
+     * parent, its values then words.
+     */
+    card?: boolean
+  } = {},
+): HeldCard {
+  const { applyAction, applyCardAction, parentArchiveOf } = useForeignObjects()
   const directory = useWorkspaceDirectory()
   /*
     Already in hand — nothing to resolve (`resolved`), and a newer one from the
@@ -59,6 +79,31 @@ export function useHeldCard(naddr: string, resolved?: ForeignObject, { remember 
   }, [remember, resolved, availability, naddr])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  // A card's pick while it is written and read back: shown, not the old value, until the relay's answer replaces it.
+  const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
+  /*
+    Whether the file is archived with its parent (an issue in an archived
+    project), read once per card, never on a refresh (SHI-13): the card's
+    resolve leaves `archivedWith` off, so it would draw pickers whose every
+    pick is refused.
+  */
+  const [withParent, setWithParent] = useState<{ naddr: string; archive: ForeignObject['archived'] | undefined }>()
+  const askParent = card && !!object && object !== 'loading' && !object.unreachable && !object.archived && !!object.parentRef
+  useEffect(() => {
+    if (!askParent) return
+    // Held for the tab, so a topic of issue cards does not pay a read per card on every open.
+    const held = parentArchives.get(naddr)
+    if (held && Date.now() - held.at < PARENT_ARCHIVE_MS) return setWithParent({ naddr, archive: held.archive })
+    let cancelled = false
+    void parentArchiveOf(naddr).then((archive) => {
+      parentArchives.set(naddr, { at: Date.now(), archive })
+      if (!cancelled) setWithParent({ naddr, archive })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [askParent, naddr, parentArchiveOf])
+  const parentArchive = withParent?.naddr === naddr ? withParent.archive : undefined
   /*
     A pick made on a card drawn from the copy on the device: shown at once, sent
     only once the relay has answered and the field still holds what the card
@@ -80,8 +125,11 @@ export function useHeldCard(naddr: string, resolved?: ForeignObject, { remember 
       }
       setBusy(true)
       setError(undefined)
+      if (card) choose({ actionId, value })
       try {
-        const result = await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
+        const result = card
+          ? await applyCardAction({ naddr, actionId, value })
+          : await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // widget can never claim a change the shared record does not have.
@@ -92,10 +140,11 @@ export function useHeldCard(naddr: string, resolved?: ForeignObject, { remember 
         setError((e as Error).message)
         return false
       } finally {
+        choose(null)
         setBusy(false)
       }
     },
-    [applyAction, naddr, reload, fromCopy, object],
+    [applyAction, applyCardAction, card, naddr, reload, fromCopy, object],
   )
 
   // The relay's answer to a held pick: send it, drop it, or undo it with a note.
@@ -130,10 +179,12 @@ export function useHeldCard(naddr: string, resolved?: ForeignObject, { remember 
     return () => clearTimeout(timer)
   }, [waiting])
 
+  const pick = waiting ?? chosen
+  const read = parentArchive && object && object !== 'loading' && !object.archived ? { ...object, archived: parentArchive } : object
   const drawn =
-    waiting && object && object !== 'loading' && !object.unreachable
-      ? { ...object, actions: object.actions.map((action) => (action.id === waiting.actionId ? { ...action, current: waiting.value } : action)) }
-      : object
+    pick && read && read !== 'loading' && !read.unreachable
+      ? { ...read, actions: read.actions.map((action) => (action.id === pick.actionId ? { ...action, current: pick.value } : action)) }
+      : read
 
   return { object, drawn, gone: held.gone, busy: busy || !!waiting, error, onAct, directory }
 }

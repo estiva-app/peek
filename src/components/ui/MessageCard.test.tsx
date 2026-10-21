@@ -104,3 +104,44 @@ describe('an issue card under a message keeps its height while it loads', () => 
     expect(again.container.textContent).toContain('not available.')
   })
 })
+
+/** A project of nine issues, three Done and one Cancelled; issue 9 changed last, issue 1 first. */
+function project(identifier: string): ForeignObject {
+  const statuses = [['Done', 'green'], ['Todo', 'neutral'], ['Done', 'green'], ['Cancelled', 'muted'], ['Todo', 'neutral'], ['In Progress', 'blue'], ['Done', 'green'], ['Todo', 'neutral'], ['Todo', 'neutral']]
+  return {
+    ...object(identifier, 'What the project is for.'),
+    ref: `30850:${'a'.repeat(64)}:${identifier}`,
+    address: `30850:${'a'.repeat(64)}:${identifier}`,
+    naddr: encodeNaddr({ kind: 30850, pubkey: 'a'.repeat(64), identifier, relays: [] }),
+    kind: 30850,
+    widget: 'card',
+    slots: { title: { value: 'Project one', field: 'title' }, subtitle: { value: 'What the project is for.', field: 'summary' } },
+    meta: [{ value: 'ABC', field: 'key' }],
+    children: statuses.map(([status, colour], i) => ({
+      ...object(`${identifier}-issue-${i + 1}`),
+      slots: { title: { value: `Issue ${i + 1}`, field: 'title' }, status: { value: status, colour, field: 'status' } },
+      meta: [{ value: `ABC-${i + 1}`, field: 'ref' }],
+      changedAt: 1_000 + i,
+    })),
+  } as unknown as ForeignObject
+}
+
+describe('a project linked in a message', () => {
+  it('draws its key, its 7 most recently changed issues and how many of all nine are done', async () => {
+    const naddr = encodeNaddr({ kind: 30850, pubkey: 'a'.repeat(64), identifier: 'project-1', relays: [] })
+    resolveObject.mockResolvedValue(project('project-1'))
+    const { container, getByText } = render(<MessageCard uri={`nostr:${naddr}`} />)
+    await waitFor(() => expect(container.textContent).toContain('Project one'))
+    expect(getByText('ABC')).toBeTruthy()
+    const issues = [...container.textContent!.matchAll(/Issue (\d)/g)].map((m) => Number(m[1]))
+    expect(issues).toEqual([9, 8, 7, 6, 5, 4, 3])
+    expect(getByText('3/9')).toBeTruthy()
+  })
+
+  it('shows its key in a sentence', async () => {
+    const { MessageChip } = await import('./MessageLinks')
+    const naddr = encodeNaddr({ kind: 30850, pubkey: 'a'.repeat(64), identifier: 'project-2', relays: [] })
+    const { getByText } = render(<MessageChip uri={`nostr:${naddr}`} object={project('project-2')} />)
+    expect(getByText('ABC')).toBeTruthy()
+  })
+})

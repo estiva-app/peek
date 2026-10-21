@@ -47,6 +47,7 @@ import {
 } from '@estiva-app/protocol'
 import {
   ARCHIVED_FIELD,
+  SUMMARY_FIELD,
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
@@ -1553,6 +1554,30 @@ export async function buildCommentAsViewer(
   })
   if (typeof built === 'string') return { ok: false, reason: built }
   return { ok: true, event: transform(built[0]) }
+}
+
+/** The fields a card never writes: a file's words, and its archive. */
+const NOT_ON_A_CARD = new Set(['title', SUMMARY_FIELD, 'description', ARCHIVED_FIELD])
+
+/**
+ * A change made from a file's card (SPEC §13.6.2): a status or an owner, as in
+ * Leaf and Ship (5ebf2756). Refused for the file's words, its archive and a
+ * move, and for an archived file or one archived with its parent (an issue in
+ * an archived project, FOL-46), whose card reads as words; why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+ */
+export async function cardActionAsViewer(
+  args: { naddr: string; actionId: string; value: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<ActResult> {
+  const file = await resolveObjectAsViewer(args.naddr, relayUrl, token, { archivedWith: true }).catch(() => null)
+  if (!file || file.unreachable) return fail('That file can’t be read from here.')
+  const action = file.actions.find((one) => one.id === args.actionId)
+  if (!action?.field || NOT_ON_A_CARD.has(action.field) || action.field === file.parentField || file.archived) {
+    return fail('This can’t be changed from here.')
+  }
+  return applyActionAsViewer(args, relayUrl, token)
 }
 
 /**

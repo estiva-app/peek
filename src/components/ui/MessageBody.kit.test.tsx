@@ -49,7 +49,7 @@ const cardIssue = () => ({
 let objects: Record<string, unknown> = {}
 const byReference = (reference: string) => objects[reference.replace(/^nostr:/, '')]
 let unread: boolean | undefined = false
-const applyAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
+const applyCardAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
 
 vi.mock('@/api', () => ({
   TOPICS: [],
@@ -61,7 +61,7 @@ vi.mock('@/api', () => ({
   useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((r) => [r, byReference(r) ?? null])),
   // Never answered: the card waits, as on a slow relay.
   useHeldObject: (naddr: string) => ({ object: objects[naddr] ?? 'loading', reload: async () => {}, gone: false }),
-  useForeignObjects: () => ({ applyAction }),
+  useForeignObjects: () => ({ applyCardAction, parentArchiveOf: async () => undefined }),
   useWorkspaceDirectory: () => ({ [ADA]: { displayName: 'Ada Lovelace' }, [BRUNO]: { displayName: 'Bruno Ferreira' } }),
   // `useConversationBadges` gates unread on membership itself; this is its answer.
   useConversationBadges: (files?: { ref: string }[]) => ({
@@ -83,7 +83,7 @@ const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: 
 const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.textContent)
 
 beforeEach(() => {
-  applyAction.mockClear()
+  applyCardAction.mockClear()
   unread = false
   objects = {
     [naddr(SENTENCE_ISSUE)]: base(SENTENCE_ISSUE, 30851, 'Fix the sign-in'),
@@ -129,10 +129,10 @@ describe('the card under the message', () => {
     show(THE_MESSAGE, { embeds: ITS_CARD })
     await userEvent.click(screen.getByRole('combobox', { name: 'Status' }))
     await userEvent.click(await screen.findByRole('option', { name: /Done/ }))
-    await waitFor(() => expect(applyAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'change-status', value: 'done' }))
+    await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'change-status', value: 'done' }))
     await userEvent.click(screen.getByRole('combobox', { name: 'Assignee' }))
     await userEvent.click(await screen.findByRole('option', { name: /Bruno Ferreira/ }))
-    await waitFor(() => expect(applyAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'assign-issue', value: BRUNO }))
+    await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'assign-issue', value: BRUNO }))
   })
 
   it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {
