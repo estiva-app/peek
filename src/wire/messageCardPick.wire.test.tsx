@@ -78,6 +78,10 @@ const manifest = signed(
       actions: [
         { id: 'set-issue-status', label: 'Change status', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'status' }, input: { type: 'string', enum: 'issueStatuses' } },
         { id: 'assign-issue', label: 'Assign', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'assignee' }, input: { type: 'pubkey' } },
+        // What a card never offers: the words, the parent and the archive.
+        { id: 'rename-issue', label: 'Rename', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'title' }, input: { type: 'string' } },
+        { id: 'move-issue', label: 'Move to project', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'project' }, input: { type: 'string' } },
+        { id: 'archive-issue', label: 'Archive', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'archived' }, input: { type: 'string', enum: 'issueStatuses' } },
       ],
     }),
   },
@@ -177,7 +181,11 @@ describe("a pick on an issue's card in a description in the side panel", () => {
     answerWrites()
     render(<ForeignBody slot={{ value: description('detailed'), format: 'blocks' }} cards />)
     await waitFor(() => expect(screen.getByLabelText('Status')).toBeInTheDocument())
-    expect(screen.queryByText(/^Move/)).not.toBeInTheDocument()
+    // Ship also declares a rename, a move and an archive: none is offered on the card.
+    for (const label of [/Rename/i, /Move to project/i, /Archive/i]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    }
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 
     await pickStatus('Done')
@@ -190,14 +198,14 @@ describe("a pick on an issue's card in a description in the side panel", () => {
     expect(tagOf(change, 'value')).toBe('done')
   })
 
-  it('draws a link chosen as a row as the very row under a message', async () => {
+  it('draws a link chosen as a row with what the row under a message reads, and no pickers', async () => {
     answerReads()
     const message = render(<MessageCard uri={uri} compact />)
     const panel = render(<ForeignBody slot={{ value: description('compact'), format: 'blocks' }} cards />)
     await waitFor(() => expect(message.container.textContent).toContain('A card holds its pick'))
-    await waitFor(() => expect(panel.container.querySelector('[data-line-cards]')?.textContent).toContain('A card holds its pick'))
-    // Each render numbers its own element ids.
-    const drawn = (element: Element) => element.outerHTML.replace(/base-ui-_r_\w+_/g, 'id')
-    expect(drawn(panel.container.querySelector('[data-line-cards]')!.firstElementChild!)).toBe(drawn(message.container.firstElementChild!))
+    const row = () => panel.container.querySelector('[data-line-cards]')
+    await waitFor(() => expect(row()?.textContent).toContain('A card holds its pick'))
+    expect(row()!.textContent).toBe(message.container.textContent)
+    expect(row()!.querySelector('[role="combobox"]')).toBeNull()
   })
 })
