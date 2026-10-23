@@ -180,7 +180,8 @@ describe("a pick on an issue's card in a description in the side panel", () => {
     answerReads()
     answerWrites()
     render(<ForeignBody slot={{ value: description('detailed'), format: 'blocks' }} cards />)
-    await waitFor(() => expect(screen.getByLabelText('Status')).toBeInTheDocument())
+    await screen.findByText('A card holds its pick')
+    expect(screen.getByLabelText('Status')).toBeInTheDocument()
     // Ship also declares a rename, a move and an archive: none is offered on the card.
     for (const label of [/Rename/i, /Move to project/i, /Archive/i]) {
       expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
