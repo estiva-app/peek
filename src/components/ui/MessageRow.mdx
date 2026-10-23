@@ -1,0 +1,45 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/MessageRow" />
+
+# MessageRow
+
+One file's row in place of a line that is only a link to it (SPEC §13.2,
+§13.3): the kit's `LinkRow`, drawn from the object the text already read.
+
+**Seen in** — no story: no sent message or description in Peek's stories has
+a line that is only a link to a file it can read. The composer's row while
+writing is the editor's own (*Writing & text/Composer/ComposeBox* → **An Issue
+Alone On Its Line**), and the row itself is the package's `LinkRow`.
+
+## When
+
+- A message's line that is only a link to a file or a message, with no card
+  under the message standing for it (**MessageBody**).
+- A description's line that is only a link, in Peek's side panel, when its
+  writer chose "Show as Row" or nothing (**ForeignBody**, through
+  `DocumentLine`).
+
+## When not
+
+- The writer chose a card: **MessageCard**, under the message or in the
+  description line's place.
+- A link inside a sentence, a person or a Folder: the chip (**Reference**,
+  `MessageChip`).
+
+## How
+
+```tsx
+import { MessageRow } from '@/components/ui/MessageLinks'
+
+<MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
+```
+
+## What it owns
+
+- **One row for a lone link in every Peek text.** A message and a description
+  draw the same row, so they cannot drift apart.
+- **The unreadable row.** A reference that names no file draws "not
+  available", never an empty row.
+- **Where it opens.** `opensAt` is the URL as written; the caller passes it only
+  when it names this same file.
