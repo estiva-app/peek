@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
 import { installWireRelay, ME, signed, tagOf, type WireRelay } from '@/test/wireRelay'
 import { MessageCard } from '@/components/ui/MessageLinks'
+import { ForeignBody } from '@/components/ui/ForeignBody'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/estivaId', async (importOriginal) => ({
@@ -154,5 +155,49 @@ describe("a pick on an issue's card under a message", () => {
     // Read once for the card, its project's archive turns the pickers into words.
     await waitFor(() => expect(screen.queryByLabelText('Status')).not.toBeInTheDocument())
     expect(screen.getByText('Todo')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The same card in a file's description in Peek's side panel (16acb5bd; Miky,
+ * 23 Oct: one link, one card in every app): the card its writer chose after
+ * the chip's line is the card under a message, and changes only a status or an
+ * owner — the move Ship's manifest also declares is not on it.
+ */
+describe("a pick on an issue's card in a description in the side panel", () => {
+  const uri = `nostr:${NADDR}`
+  const description = (embed: 'detailed' | 'compact') =>
+    JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, embed } }] }] }],
+    })
+
+  it('writes the pick as the card under a message does, and offers no move', async () => {
+    answerReads()
+    answerWrites()
+    render(<ForeignBody slot={{ value: description('detailed'), format: 'blocks' }} cards />)
+    await waitFor(() => expect(screen.getByLabelText('Status')).toBeInTheDocument())
+    expect(screen.queryByText(/^Move/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+
+    await pickStatus('Done')
+
+    await waitFor(() => expect(relay.sentOf(1851)).toHaveLength(1))
+    const [change] = relay.sentOf(1851)
+    expect(change.pubkey).toBe(ME)
+    expect(tagOf(change, 'a')).toBe(ADDRESS)
+    expect(tagOf(change, 'field')).toBe('status')
+    expect(tagOf(change, 'value')).toBe('done')
+  })
+
+  it('draws a link chosen as a row as the very row under a message', async () => {
+    answerReads()
+    const message = render(<MessageCard uri={uri} compact />)
+    const panel = render(<ForeignBody slot={{ value: description('compact'), format: 'blocks' }} cards />)
+    await waitFor(() => expect(message.container.textContent).toContain('A card holds its pick'))
+    await waitFor(() => expect(panel.container.querySelector('[data-line-cards]')?.textContent).toContain('A card holds its pick'))
+    // Each render numbers its own element ids.
+    const drawn = (element: Element) => element.outerHTML.replace(/base-ui-_r_\w+_/g, 'id')
+    expect(drawn(panel.container.querySelector('[data-line-cards]')!.firstElementChild!)).toBe(drawn(message.container.firstElementChild!))
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
 import { clearUnavailableCards, noteCardAvailability } from '@/lib/unavailableCards'
@@ -54,6 +54,8 @@ vi.mock('@/api', async () => {
   useAvatarSrc: () => () => undefined,
   // A description's URL becomes its chip once answered (Widgets); here none names anything.
   knownCardValue: () => undefined,
+  // A card after a description's line is the card under a message, and counts its conversation (16acb5bd).
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
   askCardValues: async () => undefined,
   useLinkResolver: () => () => undefined,
   // A chip in the body resolves through the seam; here nothing answers, so it draws as it loads.
@@ -563,10 +565,10 @@ describe('the body slot', () => {
 })
 
 /**
- * The body as its own editor, for an app that declares a block-document action
- * on it (MAN-9). What matters is what a save publishes: the document with the
- * ids it opened with, so a comment anchored to one of its blocks stays there
- * (SPEC §13.6), and the format it is written in.
+ * A block-document body is read, never edited, in Peek: a Ship issue's or
+ * project's text is written in Ship or Leaf, a page's and a document's in Leaf
+ * (Miky, 2026-10-23; record a-card-changes-what-a-files-app-shares). Its
+ * cards are the ones under a message.
  */
 describe('a block-document body', () => {
   const stored = serializeBlockDocument(markerTextToBlockDocument('# Goal\n\nStripe **Checkout**.'))
@@ -588,23 +590,6 @@ describe('a block-document body', () => {
       actions: [describeIssue],
       ...overrides,
     })
-  type Pm = { commands: { focus: (at?: string, options?: { scrollIntoView?: boolean }) => void; insertContent: (text: string) => void; blur: () => void } }
-  // The textbox is the ProseMirror node, and Tiptap hangs the editor on it.
-  const editorOf = (box: HTMLElement) => (box as unknown as { editor: Pm }).editor
-  /*
-    The textbox once its editor is live. The card arrives after the resolve,
-    outside `act`, and Tiptap's first instance is replaced as it mounts — so
-    the first node found can be the discarded one (an editor's view mounts
-    after its first render, and until then Tiptap counts it destroyed).
-  */
-  const settled = async () => {
-    await screen.findByRole('textbox', { name: 'Edit description' })
-    await act(() => new Promise((r) => setTimeout(r, 10)))
-    const box = screen.getByRole('textbox', { name: 'Edit description' })
-    expect(editorOf(box)).toBeDefined()
-    return box
-  }
-
   it('keeps a bare file’s text read-only although interop declares describe on it (Leaf 1)', async () => {
     // Decided by Miky, 2026-10-13: a page is edited in Leaf, never from a card in Peek.
     const describe = { ...describeIssue, id: 'describe', label: 'Edit text' } as ForeignObject['actions'][number]
@@ -642,109 +627,30 @@ describe('a block-document body', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('opens the stored document, its ids on its blocks', async () => {
-    resolveObject.mockResolvedValue(described())
-    render(<ForeignObjectWidget naddr={NADDR} />)
-    const box = await settled()
-    expect(box.querySelector('h1')?.textContent).toBe('Goal')
-    expect([...box.querySelectorAll('[data-block-id]')].map((el) => el.getAttribute('data-block-id'))).toEqual(ids)
-  })
-
-  it('saves on leaving with the same ids and the declared format', async () => {
-    resolveObject.mockResolvedValue(described())
-    applyAction.mockResolvedValue({ ok: true })
-    render(<ForeignObjectWidget naddr={NADDR} />)
-    const box = await settled()
-    const editor = editorOf(box)
-    await act(async () => {
-      editor.commands.focus('end', { scrollIntoView: false })
-      editor.commands.insertContent(' Today.')
-      editor.commands.blur()
-    })
-
-    await waitFor(() => expect(applyAction).toHaveBeenCalledTimes(1))
-    const [args] = applyAction.mock.calls[0]
-    expect(args).toMatchObject({ actionId: 'describe-issue', contentFormat: 'estiva-blocks-1' })
-    const saved = parseBlockDocument(args.value)
-    expect(saved.content.map((b) => b.id)).toEqual(ids)
-    expect(JSON.stringify(saved)).toContain('Today.')
-  })
-
-  it('publishes nothing when leaving without a change', async () => {
-    resolveObject.mockResolvedValue(described())
-    render(<ForeignObjectWidget naddr={NADDR} />)
-    const box = await settled()
-    const editor = editorOf(box)
-    await act(async () => {
-      editor.commands.focus('end', { scrollIntoView: false })
-      editor.commands.blur()
-    })
-    expect(applyAction).not.toHaveBeenCalled()
-  })
-
-  it('says why a refused save was refused, and keeps the text', async () => {
-    resolveObject.mockResolvedValue(described())
-    applyAction.mockResolvedValue({ ok: false, reason: 'Only members of this Folder can edit it.' })
-    render(<ForeignObjectWidget naddr={NADDR} />)
-    const box = await settled()
-    const editor = editorOf(box)
-    await act(async () => {
-      editor.commands.focus('end', { scrollIntoView: false })
-      editor.commands.insertContent(' Today.')
-      editor.commands.blur()
-    })
-    expect(await screen.findByText('Only members of this Folder can edit it.')).toBeInTheDocument()
-    expect(box.textContent).toContain('Today.')
-  })
-
-  it('publishes nothing while typing when the card re-renders', async () => {
+  it('keeps a Ship issue’s description read-only on its own page, where Ship declares describe-issue (Miky, 2026-10-23)', async () => {
+    // Ship declares an issue a `row`: one line in a message, the subject on its page — the side panel.
     const { ForeignObjectCard } = await import('./ForeignObjectWidget')
     const onAct = vi.fn(async () => true)
-    const { rerender } = render(<ForeignObjectCard object={described()} onAct={onAct} />)
-    const editor = editorOf(await settled())
-    await act(async () => {
-      editor.commands.focus('end', { scrollIntoView: false })
-      editor.commands.insertContent(' Today.')
-    })
-    // A conversation re-renders its cards all the time; each one is a new `onAct`.
-    rerender(<ForeignObjectCard object={described()} onAct={async () => true} />)
-    rerender(<ForeignObjectCard object={described()} onAct={onAct} />)
-    expect(onAct).not.toHaveBeenCalled()
+    const { container } = render(<ForeignObjectCard object={described({ widget: 'row' })} onAct={onAct} page />)
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+    expect([...container.querySelectorAll('[data-foreign-body] [data-block-id]')].map((el) => el.getAttribute('data-block-id'))).toEqual(ids)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    // Nor a one-line Edit box in its place.
+    expect(screen.queryByRole('button', { name: 'Edit description' })).toBeNull()
+    expect(screen.queryByText('Edit description')).toBeNull()
   })
 
-  it('offers no editor over a value it cannot show', async () => {
-    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
-    // No body slot, and the field holds something: an empty editor would replace it on the first save.
-    const held = { ...describeIssue, current: stored }
-    const { container, rerender } = render(
-      <ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } }, actions: [held] })} onAct={() => {}} />,
-    )
+  it('keeps a Ship project’s description read-only on a card, and an empty one draws no editor where it would be', async () => {
+    resolveObject.mockResolvedValue(described())
+    const { container, unmount } = render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
     expect(container.querySelector('.ProseMirror')).toBeNull()
-    // Really empty: the editor stands where the body would.
-    rerender(<ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } } })} onAct={() => {}} />)
-    expect(await screen.findByRole('textbox', { name: 'Edit description' })).toBeInTheDocument()
-  })
-
-  it('edits a row on its own page, where Ship itself edits it', async () => {
-    // Ship declares an issue a `row`: one line in a message, the subject on its page (MAN-9, on production).
+    unmount()
     const { ForeignObjectCard } = await import('./ForeignObjectWidget')
-    const onAct = vi.fn(async () => true)
-    const { container, rerender } = render(<ForeignObjectCard object={described({ widget: 'row' })} onAct={onAct} />)
-    expect(container.querySelector('.ProseMirror')).toBeNull()
-    expect(container.querySelector('[data-foreign-body]')).toBeNull()
-    rerender(<ForeignObjectCard object={described({ widget: 'row' })} onAct={onAct} page />)
-    const box = await settled()
-    expect([...box.querySelectorAll('[data-block-id]')].map((el) => el.getAttribute('data-block-id'))).toEqual(ids)
-    const editor = editorOf(box)
-    await act(async () => {
-      editor.commands.focus('end', { scrollIntoView: false })
-      editor.commands.insertContent(' Today.')
-      editor.commands.blur()
-    })
-    await waitFor(() => expect(onAct).toHaveBeenCalledTimes(1))
-    const [actionId, value, contentFormat] = onAct.mock.calls[0] as unknown as [string, string, string]
-    expect([actionId, contentFormat]).toEqual(['describe-issue', 'estiva-blocks-1'])
-    expect(parseBlockDocument(value).content.map((b) => b.id)).toEqual(ids)
+    const second = render(<ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } } })} onAct={() => {}} page />)
+    expect(second.container.querySelector('.ProseMirror')).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
   it('on its page, takes the page’s newer object', async () => {

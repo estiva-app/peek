@@ -1,38 +1,26 @@
 /**
- * A chip in another app's description, and the card its writer chose after
- * its line (SPEC §13.3, "A reference's card"; Widgets, Miky 14 Oct: Peek's
- * panel draws the chosen card and offers the choice, as Ship does).
+ * The card its writer chose after a chip's line in another app's description
+ * (SPEC §13.3, "A reference's card"; Widgets, Miky 14 Oct: Peek's panel draws
+ * the chosen card, as Ship does).
  *
  * The choice is the chip's own `embed`, so it moves and goes with the chip —
- * unlike a message's, which travels beside the text (`boxLinksOf`, @estiva-app/conversation). Compact is
- * the object's row and detailed its card, as under a message, and the card's
- * own body draws its references as chips, never cards (`ForeignBody`).
+ * unlike a message's, which travels beside the text (`boxLinksOf`,
+ * @estiva-app/conversation). Compact is the file's row and detailed its card,
+ * the same row and card as under a message (`MessageCard`; Miky, 23 Oct: one
+ * link, one card in every app): it changes only what the file's app shares, a
+ * status or an owner, never its words, parent or archive. The card's own body
+ * draws its references as chips, never cards (`ForeignBody`).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
  */
-import { createPortal } from 'react-dom'
-import type { Editor } from '@tiptap/react'
 import { blockCards, urlRunsIn, type RenderBlock } from '@estiva-app/protocol'
-import { useReferenceCards, type ReferenceCard, type ReferenceViewProps } from '@estiva-app/ui/editor'
-import { useResolvedReferences } from '@/api'
-import { ForeignObjectWidget } from './ForeignObjectWidget'
-import { Reference } from './Reference'
+import { MessageCard } from './MessageLinks'
 
-/** A reference in the field, as its chip. A person's key is named by `Reference` itself. */
-export function DocumentReference({ uri, href }: ReferenceViewProps) {
-  const person = /^nostr:npub1/i.test(uri)
-  const resolved = useResolvedReferences(person ? [] : [uri])
-  const object = resolved[uri]
-  // A URL chip whose file has not come back, or cannot be read, reads as the URL it was written as (WBM-11), as the node draws it before it names anything.
-  if (href && (!object || object.unreachable)) return <span>{href}</span>
-  return <Reference uri={uri} object={object} opensAt={href} />
-}
-
-function LineCards({ cards }: { cards: readonly ReferenceCard[] }) {
+function LineCards({ cards }: { cards: readonly { uri: string; layout: 'compact' | 'detailed' }[] }) {
   return (
     <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
       {cards.map((card, i) => (
-        <div key={`${card.uri}-${i}`} data-card={card.layout}>
-          <ForeignObjectWidget naddr={card.uri.replace(/^nostr:/i, '')} layout={card.layout === 'detailed' ? 'card' : 'row'} />
-        </div>
+        <MessageCard key={`${card.uri}-${i}`} uri={card.uri} compact={card.layout === 'compact'} />
       ))}
     </div>
   )
@@ -44,7 +32,7 @@ export function BlockLineCards({ block }: { block: RenderBlock }) {
   return cards.length ? <LineCards cards={cards} /> : null
 }
 
-/** How many of a description's URLs are asked what they name — the editor's `LinkChips` limit, and Ship's. */
+/** How many of a description's URLs are asked what they name — the shared editor's `LinkChips` limit, and Ship's. */
 export const MAX_LINKS_PER_DESCRIPTION = 24
 
 /**
@@ -70,11 +58,4 @@ export function linksInBlocks(blocks: readonly RenderBlock[]): string[] {
   }
   walk(blocks)
   return [...out].slice(0, MAX_LINKS_PER_DESCRIPTION)
-}
-
-/** The field's cards, each drawn into the slot after its line. */
-export function DocumentLineCards({ editor }: { editor: Editor | null }) {
-  const slots = useReferenceCards(editor)
-  // @estiva-escape(no-rebuilt-behaviour): each card goes into the slot ReferenceCards placed after its line, inside the editor's text; no part owns a place there, and a portal keeps Peek's providers around the card
-  return <>{slots.map((slot) => createPortal(<LineCards cards={slot.cards} />, slot.element, slot.key))}</>
 }
