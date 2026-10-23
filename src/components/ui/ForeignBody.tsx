@@ -1,5 +1,5 @@
 import type { ResolvedSlot } from '@estiva-app/interop'
-import { linksAsReferences, referenceOfLink, referencesIn, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
+import { linksAsReferences, referenceOfLink, referencesIn, toRenderTree } from '@estiva-app/protocol'
 import { RichText } from '@estiva-app/ui'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue } from '@/lib/embedValue'
@@ -72,26 +72,27 @@ export function ForeignBody({ slot, className, cards = false }: { slot: Resolved
   }
   const blocks = linksAsReferences(tree, resolveLink)
   const placed = cards ? placeLines(blocks, { resolveLink, document: true }) : undefined
+  // A link to one block opens at the block (WBM-11): the run keeps the URL as written. Only a run whose words are
+  // that URL, resolved to this same file: a stored reference's words are its author's (security review).
+  const opensAt = (uri: string, written: string | undefined) => (written && referenceOfLink(written, resolveLink) === uri ? written : undefined)
   // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
     <div data-foreign-body className={className}>
       <RichText
         blocks={placed?.blocks ?? blocks}
         size="small"
-        // A link to one block opens at the block (WBM-11): the run keeps the URL as written. Only a run whose words are
-        // that URL, resolved to this same file: a stored reference's words are its author's (security review).
         renderReference={(uri, run) => {
           // A bullet that is only a link keeps its bullet, with the row in it.
           const line = placed?.rowRuns.get(run)
           return line
-            ? <DocumentLine line={line} object={resolved[uri]} />
-            : <Reference uri={uri} object={resolved[uri]} opensAt={referenceOfLink(run.text, resolveLink) === uri ? run.text : undefined} />
+            ? <DocumentLine line={{ ...line, url: opensAt(uri, line.url) }} object={resolved[uri]} />
+            : <Reference uri={uri} object={resolved[uri]} opensAt={opensAt(uri, run.text)} />
         }}
         // A file in the text — a picture is one — as a part's and a message's are drawn (affd152a).
         renderBlock={(block) => {
           if (block.type === 'attachment') return <DocumentFile attrs={block.attrs} />
           const line = block.type === ROW_BLOCK ? placed?.rowOf(block) : undefined
-          return line ? <DocumentLine line={line} object={resolved[line.reference]} /> : undefined
+          return line ? <DocumentLine line={{ ...line, url: opensAt(line.reference, line.url) }} object={resolved[line.reference]} /> : undefined
         }}
       />
     </div>
