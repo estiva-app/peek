@@ -3,7 +3,8 @@ import { linksAsReferences, referenceOfLink, referencesIn, toRenderTree, type Re
 import { RichText } from '@estiva-app/ui'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue } from '@/lib/embedValue'
-import { BlockLineCards, linksInBlocks } from './DocumentCards'
+import { placeLines, ROW_BLOCK } from '@/lib/messageLines'
+import { DocumentLine, linksInBlocks } from './DocumentCards'
 import { DocumentFile } from './DocumentFile'
 import { Reference } from './Reference'
 
@@ -43,10 +44,11 @@ import { Reference } from './Reference'
  *
  * **A reference is its chip, and an app URL the chip of what it names**
  * (Widgets, Miky 14 Oct), as in the field a writer edits: this is the same
- * description for a reader who cannot write. The card its writer chose is
- * drawn after its line (SPEC §13.3) only with `cards`, which the object's own
- * page passes. A card draws this body too, and there every reference is its
- * chip and never a card: two objects that card each other would nest forever
+ * description for a reader who cannot write. Only with `cards`, which the
+ * object's own page passes, a link alone on its line is its file's row, or the
+ * card its writer chose in the row's place (SPEC §13.3, `DocumentLine`). A
+ * card draws this body too, and there every reference is its chip and never a
+ * row or a card: two objects that card each other would nest forever
  * (security review).
  */
 export function ForeignBody({ slot, className, cards = false }: { slot: ResolvedSlot; className?: string; cards?: boolean }) {
@@ -69,19 +71,28 @@ export function ForeignBody({ slot, className, cards = false }: { slot: Resolved
     return object && !object.unreachable ? value : undefined
   }
   const blocks = linksAsReferences(tree, resolveLink)
+  const placed = cards ? placeLines(blocks, { resolveLink, document: true }) : undefined
   // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
     <div data-foreign-body className={className}>
       <RichText
-        blocks={blocks}
+        blocks={placed?.blocks ?? blocks}
         size="small"
         // A link to one block opens at the block (WBM-11): the run keeps the URL as written. Only a run whose words are
         // that URL, resolved to this same file: a stored reference's words are its author's (security review).
-        renderReference={(uri, run) => <Reference uri={uri} object={resolved[uri]} opensAt={referenceOfLink(run.text, resolveLink) === uri ? run.text : undefined} />}
+        renderReference={(uri, run) => {
+          // A bullet that is only a link keeps its bullet, with the row in it.
+          const line = placed?.rowRuns.get(run)
+          return line
+            ? <DocumentLine line={line} object={resolved[uri]} />
+            : <Reference uri={uri} object={resolved[uri]} opensAt={referenceOfLink(run.text, resolveLink) === uri ? run.text : undefined} />
+        }}
         // A file in the text — a picture is one — as a part's and a message's are drawn (affd152a).
-        renderBlock={(block) => (block.type === 'attachment' ? <DocumentFile attrs={block.attrs} /> : undefined)}
-        // The package's block is the protocol's, handed back.
-        renderAfter={cards ? (block) => <BlockLineCards block={block as RenderBlock} /> : undefined}
+        renderBlock={(block) => {
+          if (block.type === 'attachment') return <DocumentFile attrs={block.attrs} />
+          const line = block.type === ROW_BLOCK ? placed?.rowOf(block) : undefined
+          return line ? <DocumentLine line={line} object={resolved[line.reference]} /> : undefined
+        }}
       />
     </div>
   )
