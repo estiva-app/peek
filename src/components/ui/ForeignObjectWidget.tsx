@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { rememberedUnavailable } from '@/lib/unavailableCards'
 import { useHeldCard } from './useHeldCard'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, SUMMARY_FIELD, pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, SUMMARY_FIELD, pickWidget } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { referenceTypeWord } from '@/lib/textParsing'
 import type {
@@ -12,8 +12,7 @@ import type {
 } from '@estiva-app/interop'
 import { cn } from '@/lib/utils'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
-import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
-import { BlockDocumentField } from './BlockDocumentField'
+import { TEXT_FIELD } from '@/lib/readOnlyText'
 import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { Select } from './Select'
@@ -445,13 +444,13 @@ export function ForeignObjectCard({
         Nor a prose value (MAN-4): Ship's `describe-issue` and
         `describe-project` declare `format: 'estiva-blocks-1'`, and this row's
         one-line box would replace a whole block-document description with a
-        sentence. The body is its control instead — `prose`, below (MAN-9).
+        sentence.
       */
       !action.format &&
-      // Nor, on a file whose text Peek never edits, whatever sets that text —
+      // Nor whatever sets the text: Peek never edits another app's text —
       // even declared without a format this version knows, and even when
-      // interop dropped an empty body slot (Miky, 2026-10-14).
-      (peekEditsTextOf(object) || (action.field !== TEXT_FIELD && action.field !== slots.body?.field)) &&
+      // interop dropped an empty body slot (Miky, 2026-10-14 and 2026-10-23).
+      action.field !== TEXT_FIELD && action.field !== slots.body?.field &&
       // Nor the archive (FOL-46): as a select it would archive the file and
       // everything under it in one click, with no count of what it hides and
       // no resolution. The file's own menu offers it, through its dialog.
@@ -476,34 +475,6 @@ export function ForeignObjectCard({
 
   const status = shown(slots.status)
   const visibleMeta = meta.filter(shown)
-
-  /**
-   * The action that sets the body as a block document, drawn as the body
-   * itself (MAN-9) — Ship's `describe-issue` / `describe-project`.
-   *
-   * Chosen by the declaration, as every control here is: a `format` Peek
-   * writes, on the field the body slot reads. A body on some other field is
-   * not what that action sets, so it keeps its reading view. With no body slot
-   * the editor stands where the body would only while the field is really
-   * empty: interop drops an empty slot, and also one that reads elsewhere, and
-   * an empty editor over a value it never showed would replace that value —
-   * and every id in it — on the first save. Wherever the body is drawn: a
-   * card, or the object's own page.
-   *
-   * Not a bare file's nor a Leaf document's (Leaf 1; Miky, 2026-10-13 and
-   * 2026-10-14): both declare `describe`, and here it would make their text
-   * editable from a message card by anyone in the Folder, last save wins. Peek
-   * shows it read-only; people edit in Leaf — `peekEditsTextOf` says which.
-   */
-  const prose =
-    onAct && whole && peekEditsTextOf(object)
-      ? object.actions.find(
-          (action) =>
-            action.format === BLOCK_DOCUMENT_FORMAT &&
-            !!action.field &&
-            (slots.body ? slots.body.field === action.field : !action.current?.trim()),
-        )
-      : undefined
 
   return (
     <Card
@@ -586,23 +557,13 @@ export function ForeignObjectCard({
           )}
           {/* The description, in whichever content model its own app writes —
               PRO-2. Where the subtitle is, for its reason: a row in a message is a
-              single line by definition and a body is not one. */}
-          {prose && onAct ? (
-            <div className="mt-1">
-              <BlockDocumentField
-                value={slots.body?.value ?? ''}
-                format={slots.body?.format ?? 'marker'}
-                label={prose.label}
-                onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
-                // The chosen cards on the object's own page only: a card inside a card never draws its own (SPEC §13.3).
-                cards={page}
-              />
-              {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
-              {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
-            </div>
-          ) : (
-            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" cards={page} />
-          )}
+              single line by definition and a body is not one. Read only: Peek
+              never edits another app's text, which is written in that app or
+              in Leaf (Miky, 2026-10-23).
+              why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+              The chosen cards on the object's own page only: a card inside a
+              card never draws its own (SPEC §13.3). */}
+          {whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" cards={page} />}
           </>
         )
         // The card's own fill is `inset`, so the fade ends in it.
