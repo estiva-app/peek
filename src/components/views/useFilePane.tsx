@@ -170,9 +170,12 @@ export function useFilePane(
   /*
     Archived (FOL-46): the file is out of every list, and a link still opens
     it — so the pane says so first, with the resolution, and offers the way
-    back. Its own archive is restored here; one hidden with its parent (an
-    issue of an archived project) is restored on the parent, which the notice
-    opens instead. The menu's item states the direction that works.
+    back. Its own archive is restored here; one hidden with a file above it
+    (an issue of an archived project, a page under an archived page) is
+    restored there: `with` is the closest archived one at any depth (interop's
+    walk, SPEC §6.5), which the notice names by its kind and opens instead.
+    The menu's item states the direction that works.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
   */
   const archive = file?.archived
   const archivedWith = archive?.with
