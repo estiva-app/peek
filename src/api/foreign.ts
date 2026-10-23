@@ -745,7 +745,7 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /** Whether a file is archived with its parent (an issue in an archived project), else `undefined`. One more read than a card's resolve. */
+  /** Whether a file is archived with a file above it, the closest at any depth (an issue in an archived project), else `undefined`. One more read than a card's resolve. */
   const parentArchiveOf = useCallback(
     async (naddr: string): Promise<ForeignObject['archived'] | undefined> => {
       const v = viewer()
