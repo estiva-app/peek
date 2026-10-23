@@ -16,7 +16,7 @@ const BLOCK_LINK = `${FILE_LINK}#block-p1`
 const OLD_LINK = `https://ship.estiva.app/#/issue/${UUID}`
 const naddr = addrToNaddr(PAGE, [])
 const held = vi.hoisted(() => ({ object: undefined as unknown }))
-const object = { ref: PAGE, address: PAGE, kind: 30851, appName: 'Ship', noun: 'issue', openUrl: `https://ship.estiva.app/o/${PAGE}`, slots: { title: { value: 'Plan the launch' } } }
+const object = { ref: PAGE, address: PAGE, kind: 30851, appName: 'Ship', noun: 'issue', openUrl: `https://ship.estiva.app/o/${PAGE}`, slots: { title: { value: 'Plan the launch' } }, meta: [], actions: [] }
 
 vi.mock('@/api', () => ({
   useLinkResolver: () => (url: string) => (url.startsWith(FILE_LINK) || url === OLD_LINK ? PAGE : undefined),
@@ -80,6 +80,22 @@ describe('a link to one block in a description', () => {
     const chip = chipOf(doc, 'blocks')
     expect(chip?.textContent).toContain('Plan the launch')
     expect(chip?.closest('a')?.getAttribute('href') ?? chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
+  it('a stored reference alone on its line, whose words are another URL, is its file’s row opening where its file opens (security review)', () => {
+    const other = `https://ship.estiva.app/issue/other-b1b27d90-d5b9-40e7-8078-865ab36a421c#block-9`
+    const doc = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', id: 'b1', content: [{ type: 'text', text: other, marks: [{ type: 'reference', attrs: { uri: `nostr:${naddr}` } }] }] }],
+    })
+    const { container } = render(
+      <MemoryRouter>
+        <ForeignBody slot={{ value: doc, format: 'blocks' }} cards />
+      </MemoryRouter>,
+    )
+    const row = container.querySelector('[data-link-row]')
+    expect(row?.textContent).toContain('Plan the launch')
+    expect(row?.querySelector('a')?.getAttribute('href') ?? row?.closest('a')?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
   })
 
   // A click opens the address as written, in the app it names (LTX-6), block or not.

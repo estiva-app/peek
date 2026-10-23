@@ -692,25 +692,26 @@ describe('a block-document body', () => {
     expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
   })
 
-  it('draws a chip and the card its writer chose after its line, for a reader who cannot write (Widgets)', async () => {
+  it("draws a lone link as its row, and the card its writer chose in the row's place, for a reader who cannot write (§13.3)", async () => {
     const { ForeignObjectCard } = await import('./ForeignObjectWidget')
     // The card's own object is read by the card; what it draws is the card's business, not this test's.
     resolveObject.mockResolvedValue(null)
-    const uri = `nostr:${NADDR}`
-    const body = JSON.stringify({
-      type: 'doc',
-      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, embed: 'detailed' } }] }] }],
-    })
+    // An address that decodes: one that names nothing is the unreadable row whatever its writer chose.
+    const uri = `nostr:${encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier: 'payments-1', relays: [] })}`
+    const lone = (id: string, embed?: string) => ({ type: 'paragraph', id, content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, ...(embed ? { embed } : {}) } }] }] })
+    // "Show as Card" saves `detailed`; "Show as Row" saves no `embed` at all.
+    const body = JSON.stringify({ type: 'doc', content: [lone('p1', 'detailed'), lone('p2')] })
     const object = described({ slots: { title: { value: 'Payments' }, body: { value: body, format: 'blocks' } } })
     const { container, rerender } = render(<ForeignObjectCard object={object} page />)
     expect(container.querySelector('.ProseMirror')).toBeNull()
-    // The chip (still resolving here), and one detailed card after the paragraph.
-    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
-    expect(container.querySelectorAll('[data-foreign-body] [data-line-cards] [data-card="detailed"]')).toHaveLength(1)
-    // As a card (in a message, or under another description's line) the chip stays a chip: cards never nest.
+    // The card in the first line's place, the row in the second's, and no chip left beside either.
+    expect(container.querySelectorAll('[data-foreign-body] [data-card="detailed"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-foreign-body] [data-link-row]')).toHaveLength(1)
+    expect(container.querySelector('[data-foreign-body] [data-reference]')).toBeNull()
+    // As a card (in a message, or in another description) each stays a chip: cards never nest.
     rerender(<ForeignObjectCard object={object} />)
-    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
-    expect(container.querySelector('[data-foreign-body] [data-line-cards]')).toBeNull()
+    expect(container.querySelectorAll('[data-foreign-body] [data-reference="pending"]')).toHaveLength(2)
+    expect(container.querySelector('[data-foreign-body] [data-card], [data-foreign-body] [data-link-row]')).toBeNull()
   })
 })
 

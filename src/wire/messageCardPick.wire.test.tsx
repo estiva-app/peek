@@ -170,10 +170,11 @@ describe("a pick on an issue's card under a message", () => {
  */
 describe("a pick on an issue's card in a description in the side panel", () => {
   const uri = `nostr:${NADDR}`
-  const description = (embed: 'detailed' | 'compact') =>
+  // "Show as Card" in the shared editor saves `detailed`; "Show as Row" saves no `embed`, a lone link's default (§13.3).
+  const description = (embed?: 'detailed') =>
     JSON.stringify({
       type: 'doc',
-      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, embed } }] }] }],
+      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, ...(embed ? { embed } : {}) } }] }] }],
     })
 
   it('writes the pick as the card under a message does, and offers no move', async () => {
@@ -202,9 +203,9 @@ describe("a pick on an issue's card in a description in the side panel", () => {
   it('draws a link chosen as a row with what the row under a message reads, and no pickers', async () => {
     answerReads()
     const message = render(<MessageCard uri={uri} compact />)
-    const panel = render(<ForeignBody slot={{ value: description('compact'), format: 'blocks' }} cards />)
+    const panel = render(<ForeignBody slot={{ value: description(), format: 'blocks' }} cards />)
     await waitFor(() => expect(message.container.textContent).toContain('A card holds its pick'))
-    const row = () => panel.container.querySelector('[data-line-cards]')
+    const row = () => panel.container.querySelector('[data-foreign-body]')
     await waitFor(() => expect(row()?.textContent).toContain('A card holds its pick'))
     expect(row()!.textContent).toBe(message.container.textContent)
     expect(row()!.querySelector('[role="combobox"]')).toBeNull()

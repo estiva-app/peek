@@ -1,35 +1,31 @@
 /**
- * The card its writer chose after a chip's line in another app's description
- * (SPEC §13.3, "A reference's card"; Widgets, Miky 14 Oct: Peek's panel draws
- * the chosen card, as Ship does).
+ * A lone link's line in another app's description, as Peek's side panel draws
+ * it (SPEC §13.3, "A reference's card"; Widgets, Miky 14 Oct: Peek's panel
+ * draws what its writer chose, as Ship does).
  *
  * The choice is the chip's own `embed`, so it moves and goes with the chip —
  * unlike a message's, which travels beside the text (`boxLinksOf`,
- * @estiva-app/conversation). Compact is the file's row and detailed its card,
- * the same row and card as under a message (`MessageCard`; Miky, 23 Oct: one
- * link, one card in every app): it changes only what the file's app shares, a
- * status or an owner, never its words, parent or archive. The card's own body
- * draws its references as chips, never cards (`ForeignBody`).
+ * @estiva-app/conversation). A link alone on its line is the file's row, and
+ * `detailed` its card in the row's place (`placeLines`' `document`, protocol
+ * `documentLineDrawOf`): the same row and card as under a message
+ * (`MessageRow`, `MessageCard`; Miky, 23 Oct: one link, one card in every
+ * app). The card changes only what the file's app shares, a status or an
+ * owner, never its words, parent or archive. The card's own body draws its
+ * references as chips, never cards (`ForeignBody`).
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-card-changes-what-a-files-app-shares.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-lone-links-chip-menu-offers-row-or-card.md
  */
-import { blockCards, urlRunsIn, type RenderBlock } from '@estiva-app/protocol'
-import { MessageCard } from './MessageLinks'
+import type { ForeignObject } from '@estiva-app/interop'
+import { urlRunsIn, type RenderBlock } from '@estiva-app/protocol'
+import type { RowLine } from '@/lib/messageLines'
+import { MessageCard, MessageRow } from './MessageLinks'
 
-function LineCards({ cards }: { cards: readonly { uri: string; layout: 'compact' | 'detailed' }[] }) {
-  return (
-    <div className="mt-2 flex flex-col gap-2" data-line-cards={cards.length}>
-      {cards.map((card, i) => (
-        <MessageCard key={`${card.uri}-${i}`} uri={card.uri} compact={card.layout === 'compact'} />
-      ))}
-    </div>
-  )
-}
-
-/** A read description's cards for one block, for `RichText`'s `renderAfter` (`ForeignBody`). */
-export function BlockLineCards({ block }: { block: RenderBlock }) {
-  const cards = blockCards(block).map((card) => ({ uri: card.reference, layout: card.layout }))
-  return cards.length ? <LineCards cards={cards} /> : null
+/** A description's line that is only a link: its row, or the card its writer chose in the row's place. */
+export function DocumentLine({ line, object }: { line: RowLine; object: ForeignObject | null | undefined }) {
+  return line.card
+    ? <MessageCard uri={line.reference} resolved={object ?? undefined} opensAt={line.url} />
+    : <MessageRow uri={line.reference} object={object} unreadable={line.unreadable} opensAt={line.url} />
 }
 
 /** How many of a description's URLs are asked what they name — the shared editor's `LinkChips` limit, and Ship's. */
