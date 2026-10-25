@@ -37,7 +37,7 @@ vi.mock('@/api', async () => ({
   useReadActions: () => ({ markThreadRead: marks.thread, markContainerRead: marks.container, markFileRead: marks.file }),
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
-vi.mock('@/components/ui/ComposeBox', () => ({ ComposeBox: () => null }))
+vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null, ClosedBox: () => null }))
 vi.mock('@/components/ConversationCard', () => ({
   ConversationCard: ({ body, hasNewReply }: { body: string; hasNewReply?: boolean }) => <article data-new-reply={String(!!hasNewReply)}>{body}</article>,
 }))

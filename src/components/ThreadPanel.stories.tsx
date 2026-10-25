@@ -36,7 +36,7 @@ const meta = {
     replies,
     sentReplies: [],
     onClose: () => {},
-    onSendReply: () => {},
+    onSendReply: async () => ({ accepted: true }),
   },
   argTypes: {
     conversation: { control: false },

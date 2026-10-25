@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archiveImpactWords, countOf, kindNoun, listOf } from './archiveWords'
+import { archiveImpactWords, archivedLineOf, countOf, kindNoun, listOf } from './archiveWords'
 
 /**
  * The archive warning's words (FOL-46). Kinds are named from the words their
@@ -16,6 +16,13 @@ describe('archive words', () => {
     expect(kindNoun(30851, words)).toBe('issue')
     expect(kindNoun(39000, words)).toBe('folder')
     expect(kindNoun(31999, words)).toBe('file')
+  })
+
+  it('says the line in the box’s place: the file itself, or the closest archived file above it by its kind', () => {
+    expect(archivedLineOf({}, words)).toBe('Archived. Unarchive it to comment.')
+    expect(archivedLineOf({ with: `30850:${'a'.repeat(64)}:p` }, words)).toBe('Unarchive the project to comment.')
+    expect(archivedLineOf({ with: `39000:${'a'.repeat(64)}:f` }, words)).toBe('Unarchive the Folder to comment.')
+    expect(archivedLineOf(undefined, words)).toBeUndefined()
   })
 
   it('counts in the singular and the plural', () => {

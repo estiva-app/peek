@@ -1,4 +1,5 @@
 import { KIND_CHANNEL_METADATA, type ArchiveImpact } from '@estiva-app/interop'
+import { archivedLine } from '@estiva-app/ui'
 import { currentRouteWords, type RouteWords } from '@/lib/objectUrl'
 
 /**
@@ -11,6 +12,17 @@ import { currentRouteWords, type RouteWords } from '@/lib/objectUrl'
 export function kindNoun(kind: number, words: RouteWords = currentRouteWords()): string {
   if (kind === KIND_CHANNEL_METADATA) return 'folder'
   return words.byKind[kind] ?? 'file'
+}
+
+/**
+ * The line in the comment box's place on an archived file, the same in every
+ * app: "Archived. Unarchive it to comment.", or the closest archived file
+ * above it named by its kind — "Unarchive the project to comment."
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ */
+export function archivedLineOf(archive: { with?: string } | undefined, words?: RouteWords): string | undefined {
+  return archivedLine(archive, archive?.with ? kindNoun(Number(archive.with.split(':')[0]), words) : undefined)
 }
 
 /** "14 issues", "1 topic". */

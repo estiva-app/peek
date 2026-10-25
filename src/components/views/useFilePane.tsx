@@ -9,7 +9,8 @@ import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
-import { kindNoun } from '@/lib/archiveWords'
+import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
+import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
@@ -201,7 +202,17 @@ export function useFilePane(
         and its notice in the composer's place, in the composer's own
         padding — under the messages, where the newest one is.
       */
-      footer={notice ? <div className="p-3">{notice}</div> : view.panel.footer}
+      footer={
+        notice ? (
+          <div className="flex flex-col gap-2 p-3">
+            {notice}
+            {/* And the comment box's own line in its place, as every app says it (PEEKM-3). */}
+            <ClosedBox reason={archivedLineOf(archive) ?? ''} />
+          </div>
+        ) : (
+          view.panel.footer
+        )
+      }
       title={
         /*
           One row: the file's name, and whose file it is (Katerina, 5

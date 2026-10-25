@@ -48,7 +48,7 @@ vi.mock('@/api', async () => ({
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 // The composer is not what is under test, and its upload hooks need a Convex client.
-vi.mock('@/components/ui/ComposeBox', () => ({ ComposeBox: () => null }))
+vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null, ClosedBox: () => null }))
 /*
   The card is drawn by a stand-in that counts its mounts: what is under test is
   whether the view keeps a card mounted, not what the card draws, and the real

@@ -11,7 +11,8 @@
  * the renderer, which is the shape of failure this suite keeps finding.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addrToNaddr, findNaddrs, stripNaddrs } from '@estiva-app/protocol'
+import { addrToNaddr, findNaddrs, stripNaddrs, type EditorNode } from '@estiva-app/protocol'
+import { composerText } from '@estiva-app/conversation'
 import type { Editor } from '@tiptap/react'
 import {
   insertReferenceIntoActiveComposer,
@@ -47,11 +48,10 @@ function fakeComposer() {
   return { handle, editor, inserted, steps }
 }
 
-/** The text a sent message would carry, given what was inserted: a chip sends its address, as `serializeInline` writes it. */
+/** The text a sent message would carry, given what was inserted: the comment box's writer, `composerText`, on the paragraph it went into. */
 function insertedText(inserted: unknown[]): string {
-  return (inserted.flat() as Array<{ type: string; text?: string; attrs?: { uri?: string } }>)
-    .map((node) => (node.type === 'objectMention' ? (node.attrs?.uri ?? '') : (node.text ?? '')))
-    .join('')
+  const content = inserted.flat() as EditorNode[]
+  return composerText({ type: 'doc', content: [{ type: 'paragraph', content }] }).text
 }
 
 describe('insertReferenceIntoActiveComposer (PEE-2)', () => {
@@ -69,8 +69,8 @@ describe('insertReferenceIntoActiveComposer (PEE-2)', () => {
 
     expect(insertReferenceIntoActiveComposer(addrToNaddr(NEW_ISSUE, []))).toBe(true)
 
-    // A chip, not text (UIG-40): the sent message's chip, in the composer.
-    expect((inserted.flat() as Array<{ type: string }>)[0].type).toBe('objectMention')
+    // A chip, not text (UIG-40): the comment box's reference chip, the sent message's chip.
+    expect((inserted.flat() as Array<{ type: string }>)[0].type).toBe('reference')
 
     // The round trip that matters: what the person sends is what MessageBody
     // resolves. Compared as an *address*, because the body carries `naddr1…`
