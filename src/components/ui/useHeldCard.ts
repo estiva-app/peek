@@ -82,8 +82,9 @@ export function useHeldCard(
   // A card's pick while it is written and read back: shown, not the old value, until the relay's answer replaces it.
   const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
   /*
-    Whether the file is archived with its parent (an issue in an archived
-    project), read once per card, never on a refresh (SHI-13): the card's
+    Whether the file is archived with a file above it (an issue in an archived
+    project, a page under an archived page, at any depth — SPEC §6.5), read
+    once per card, never on a refresh (SHI-13): the card's
     resolve leaves `archivedWith` off, so it would draw pickers whose every
     pick is refused.
   */

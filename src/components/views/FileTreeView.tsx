@@ -350,8 +350,13 @@ function TreeRow({
   // The row's menu, from the manifest and not from the kind (FOL-33): a bare
   // file's declares rename, move and delete, a Ship issue's declares none, and
   // the glyph below is the one place this file asks what kind a row is.
+  // An archived row (the Archive view) keeps what the file's own page keeps — Details, Copy link, Unarchive, Delete —
+  // and nothing that changes it or adds under it (SPEC §6.5, PEEKM-2).
+  const readOnly = !!file.archived
   const controls = onControl ? fileControlsOf(file) : {}
-  const inside = !!onControl && canStartInside(file)
+  const renames = !readOnly && !!controls.rename
+  const inside = !!onControl && !readOnly && canStartInside(file)
+  const moves = !!onControl && !readOnly && canMove(file)
   // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
   const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
@@ -363,10 +368,10 @@ function TreeRow({
   const membership = useMembership()
   const followKey = file.address
   const isMember = followKey ? membership.isMember(followKey) : false
-  const memberAction = followKey && file.folder ? (isMember ? 'leave' : 'join') : undefined
+  const memberAction = followKey && file.folder && !readOnly ? (isMember ? 'leave' : 'join') : undefined
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
-  const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
+  const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   const selected = file.ref === selectedRef
   // The open file's row is brought into view when it is drawn: a long Folder can hold it below the fold (5 October).
@@ -382,7 +387,7 @@ function TreeRow({
   */
   const archivedNow = file.archived
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
-  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
+  const hasMenu = offers || renames || inside || moves || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -403,9 +408,9 @@ function TreeRow({
         hasMenu ? (
           <TopicMenuItems
             onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
-            onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+            onRename={renames ? () => onControl?.('rename', file) : undefined}
             onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
-            onMove={onControl && canMove(file) ? () => onControl('move', file) : undefined}
+            onMove={moves ? () => onControl?.('move', file) : undefined}
             openWorkAction={openWorkAction}
             onToggleOpenWork={
               followKey && openWorkAction

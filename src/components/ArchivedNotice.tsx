@@ -13,8 +13,9 @@ import { formatDateLabel } from '@/api'
  * project and read what happened to it before anything else. Ship's
  * `ArchivedNotice` says the same things in the same order.
  *
- * A file hidden **with** its parent (an issue of an archived project) is
- * restored there, not here, so it offers the way to that parent instead.
+ * A file hidden **with** a file above it (an issue of an archived project, a
+ * page under an archived page) is restored there, not here, so it offers the
+ * way to the closest archived one instead (PEEKM-2).
  *
  * The package's Banner in its `warning` tone (Katerina, 5 October), at the
  * top of the messages column: the line, the archive icon and the one action.

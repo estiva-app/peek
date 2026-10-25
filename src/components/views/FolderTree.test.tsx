@@ -91,6 +91,8 @@ const reads = vi.hoisted(() => ({
   pending: new Set<string>(),
   contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
   children: vi.fn<(naddr: string | null | undefined) => unknown>(),
+  /** More rows in the team's listing, for one test. */
+  extra: [] as ForeignObject[],
 }))
 const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean>, member: {} as Record<string, boolean> }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
@@ -102,7 +104,7 @@ vi.mock('@/api', async () => ({
     reads.contents(folder, options)
     return {
       state: folder && !reads.pending.has(folder)
-        ? { id: folder, name: 'Peek', hasState: true, source: 'state', files: folder === TEAM ? [project, file] : [] }
+        ? { id: folder, name: 'Peek', hasState: true, source: 'state', files: folder === TEAM ? [project, file, ...reads.extra] : [] }
         : 'loading',
       reload: async () => {},
     }
@@ -149,6 +151,7 @@ beforeEach(() => {
   reads.pending.clear()
   reads.contents.mockClear()
   reads.children.mockClear()
+  reads.extra = []
   dots.unread = {}
   dots.member = {}
   viewer.id = undefined
@@ -550,6 +553,53 @@ describe('the Archive view (Katerina, 5 October)', () => {
     await userEvent.click(title('Folders'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
     expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  /*
+    A file archived itself, or with a page above it, is read-only (SPEC §6.5,
+    PEEKM-2): its row keeps what its page keeps, and nothing that changes it
+    or adds a topic under it.
+  */
+  const archivedTopic = (archived: ForeignObject['archived']) =>
+    foreign({
+      ref: `30840:${CATH}:old-topic`,
+      address: `30840:${CATH}:old-topic`,
+      naddr: 'naddr1old',
+      kind: 30840,
+      slots: { title: { value: 'Old topic', field: 'title' } },
+      parentField: 'parent',
+      actions: [
+        { id: 'rename', control: 'text', field: 'title' },
+        { id: 'move', control: 'picker', field: 'parent' },
+        { id: 'archive', control: 'toggle', field: 'archived' },
+        { id: 'delete', control: 'confirm' },
+      ],
+      archived,
+    } as unknown as Partial<ForeignObject>)
+  const menuOf = async (name: string) => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount({ onControl: vi.fn() })
+    fireEvent.click(within(section(TEAM)).getByRole('button', { name: /Peek/ }))
+    await within(section(TEAM)).findByText(name)
+    // The row's menu button sits beside its link, which carries `data-file`.
+    const row = document.querySelector(`[data-file="30840:${CATH}:old-topic"]`)!.parentElement as HTMLElement
+    await userEvent.click(within(row).getByRole('button', { name: 'More options' }))
+    return screen.findAllByRole('menuitem').then((items) => items.map((item) => item.textContent))
+  }
+
+  it('an archived topic offers Unarchive and Delete, and no Rename, New topic inside, Move, Open work or Join', async () => {
+    reads.extra = [archivedTopic({ by: CATH, at: 1 })]
+    const items = await menuOf('Old topic')
+    expect(items).toContain('Unarchive')
+    expect(items).toContain('Delete')
+    for (const gone of ['Rename', 'New topic inside', 'Move…', 'Add to Open work', 'Join']) expect(items).not.toContain(gone)
+  })
+
+  it('a topic archived with a page above it offers neither Unarchive nor anything that changes it', async () => {
+    reads.extra = [archivedTopic({ by: CATH, at: 1, with: `30840:${CATH}:page-a` })]
+    const items = await menuOf('Old topic')
+    expect(items).toContain('Delete')
+    for (const gone of ['Unarchive', 'Rename', 'New topic inside', 'Move…']) expect(items).not.toContain(gone)
   })
 
   it('a Folder opened there reads what is archived in it', async () => {
