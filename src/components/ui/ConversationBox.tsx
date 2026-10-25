@@ -208,8 +208,12 @@ export function BoxReference({ uri, href, place }: ReferenceViewProps) {
 
 export interface ConversationBoxProps {
   kind?: BoxKind
-  /** Send it; answers whether the relay took it. */
-  onSend: (payload: SendPayload) => Promise<SendAnswer>
+  /**
+   * Send it; answers whether the relay took it. `away` says, when the answer
+   * comes, whether this box is gone — the person moved on, so a line under it
+   * would go unseen.
+   */
+  onSend: (payload: SendPayload, away: () => boolean) => Promise<SendAnswer>
   /** Where an unsent message belongs — CON-10, built with `draftKeys`. Omitted, nothing is kept. */
   draftKey?: string
   /** The store. Injected so a test needs no browser; defaults to `localStorage`. */
@@ -259,6 +263,9 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
     // A highlight alone is no message.
     if (!text && !resolution.hasResolution && uploaded.length === 0) return { accepted: false, reason: 'there is nothing to send' }
     const embeds = embedsToSend({ card: shown.card }, new Set())
+    // Gone once the box hands its editor back (`onEditor(null)`): the editor itself may live on, kept warm for the next box.
+    const handle = registered.current
+    const away = () => !handle || registered.current !== handle
     return onSend({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
@@ -266,7 +273,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
       urgent,
       files: uploaded.length > 0 ? uploaded : undefined,
       embeds: embeds.length > 0 ? embeds : undefined,
-    })
+    }, away)
   }
 
   /* The command launcher inserts into the box last used: focus wins, and the
@@ -282,7 +289,14 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
       registered.current = null
     }
     if (!editor) return
-    const handle = { editor, label: latestLabel.current, onFocus: () => registerActiveComposer(handle) }
+    // The label read when the launcher opens, so a topic renamed while its box is open is named as it is now.
+    const handle = {
+      editor,
+      get label() {
+        return latestLabel.current
+      },
+      onFocus: () => registerActiveComposer(handle),
+    }
     editor.on('focus', handle.onFocus)
     registerActiveComposer(handle)
     registered.current = handle

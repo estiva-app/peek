@@ -170,7 +170,7 @@ interface ThreadPanelProps {
   openInDmHref?: string
   onClose: () => void
   /** Send the reply; answers whether the relay took it, and a refusal is said under the box (OPT-7). */
-  onSendReply: (payload: SendPayload) => Promise<SendAnswer>
+  onSendReply: (payload: SendPayload, away: () => boolean) => Promise<SendAnswer>
   /**
    * Makes the thread read-only and is drawn where the composer would be — a
    * Convex topic's thread since CON-8. The replies keep no hover menu either.

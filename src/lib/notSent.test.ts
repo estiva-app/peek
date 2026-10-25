@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { notSavedNote, notSentNote } from './notSent'
+import { notSavedNote, notSentNote, notSentReason } from './notSent'
+
+describe('notSentReason — the line under the box after a refused send (PEEKM-3)', () => {
+  it('says lost access as what it means, and never the relay’s own words', () => {
+    expect(notSentReason('Design review', 'restricted: not a channel member')).toBe('you can no longer post in Design review')
+    expect(notSentReason('Design review', 'invalid: event too large')).toBe('the relay did not take it')
+  })
+})
 
 describe('notSavedNote — what a refused reaction, edit or delete says (OPT-8, Miky 9 Oct)', () => {
   it('says which change did not go through, and where what came back is', () => {

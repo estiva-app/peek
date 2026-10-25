@@ -41,5 +41,14 @@ export function notSavedNote(change: 'reaction' | 'edit' | 'delete', where: stri
   return `Not deleted — the message is back in ${where}`
 }
 
+/**
+ * Why a send was refused, as the line under the comment box says it ("Not
+ * sent: …"): as the notes above, the relay's own words never, and lost access
+ * named for what it means.
+ */
+export function notSentReason(conversation: string, reason: string): string {
+  return lostAccess(reason) ? `you can no longer post in ${conversation}` : 'the relay did not take it'
+}
+
 /** The relay's answer to a write from someone no longer in the channel, or no longer on the relay (buzz `ingest.rs`). */
 const lostAccess = (reason: string) => /restricted: not a (channel|relay) member/.test(reason)

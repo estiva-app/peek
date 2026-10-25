@@ -48,11 +48,11 @@ const ISSUE = `30851:${'b3'.repeat(32)}:launcher-issue`
 
 /** A box opening with `text` as its draft (jsdom cannot type into the editor), and its editor and Send button. */
 async function boxWith(text: string, answer: SendAnswer = { accepted: true }) {
-  const onSend = vi.fn<(payload: SendPayload) => Promise<SendAnswer>>(async () => answer)
+  const onSend = vi.fn<(payload: SendPayload, away: () => boolean) => Promise<SendAnswer>>(async () => answer)
   const drafts = createDraftStore(memoryStorage())
   const key = draftKeys.container('topic-1')
   drafts.write(key, text)
-  render(
+  const { unmount } = render(
     <MemoryRouter>
       <DebugProvider>
         <PeekDataProvider>
@@ -68,7 +68,7 @@ async function boxWith(text: string, answer: SendAnswer = { accepted: true }) {
   })) as HTMLElement & { editor?: Editor }
   const send = screen.getByRole('button', { name: 'Send' })
   await waitFor(() => expect(send).toBeEnabled())
-  return { onSend, send, editor: dom.editor! }
+  return { onSend, send, editor: dom.editor!, unmount }
 }
 
 describe('ConversationBox — what a send carries', () => {
@@ -101,7 +101,9 @@ describe('ConversationBox — what a send carries', () => {
 
   it('sends what the command launcher wrote into the box as the address it names', async () => {
     const user = userEvent.setup()
-    const { onSend, send } = await boxWith('Filed it —')
+    const { onSend, send, editor } = await boxWith('Filed it —')
+    // The caret after the words, as a person's is once they have typed them; the draft's arrival otherwise races autofocus.
+    editor.commands.focus('end')
     expect(insertReferenceIntoActiveComposer(addrToNaddr(ISSUE, []))).toBe(true)
     await user.click(send)
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
@@ -114,5 +116,17 @@ describe('ConversationBox — what a send carries', () => {
     await user.click(send)
     expect(await screen.findByText(/blocked: not a member/)).toBeInTheDocument()
     expect(screen.getByText('Can we move it to Friday?')).toBeInTheDocument()
+  })
+
+  it('tells the send when the person has left the box, so a refusal arriving then is said in a note, not under a box nobody sees', async () => {
+    const user = userEvent.setup()
+    const { onSend, send, unmount } = await boxWith('Can we move it to Friday?')
+    await user.click(send)
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    const away = onSend.mock.calls[0][1]
+    expect(away?.()).toBe(false)
+    // Moving to another topic takes the box away before the relay has answered.
+    unmount()
+    expect(away?.()).toBe(true)
   })
 })
