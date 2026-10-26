@@ -18,11 +18,10 @@ describe('the menu, unfiltered', () => {
     expect(SLASH_SECTIONS.map((s) => s.label)).toEqual(['Format', 'Insert'])
   })
 
-  it('has the rows it always had, in order', () => {
+  it('has the rows it always had, in order, and no Highlights while a send would drop them', () => {
     expect(filter('')).toEqual([
       'Text', 'Heading', 'Subheading', 'Quote', 'Code', 'Bulleted list', 'Numbered list',
       'Mention', 'Urgent', 'Reference', 'Resolve',
-      'Insight', 'Concern', 'Conclusion', 'Question', 'Summary',
     ])
   })
 
@@ -35,16 +34,13 @@ describe('the menu, unfiltered', () => {
 
 describe('filterSlashSections', () => {
   it('narrows on a label prefix, across sections', () => {
-    // Both are genuine matches: Quote is a format, Question a highlight.
-    expect(filter('qu')).toEqual(['Quote', 'Question'])
+    // Both are genuine matches: Quote is a format, Resolve an insert row found by its description.
+    expect(filter('res')).toEqual(['Resolve'])
+    expect(filter('qu')).toEqual(['Quote'])
   })
 
   it('reaches both lists through the id', () => {
     expect(filter('list')).toEqual(['Bulleted list', 'Numbered list'])
-  })
-
-  it('matches a highlight by type as well as label', () => {
-    expect(filter('concern')).toEqual(['Concern'])
   })
 
   it('matches a shortcut by its description', () => {

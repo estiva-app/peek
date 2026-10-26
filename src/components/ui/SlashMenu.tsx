@@ -1,8 +1,4 @@
-import { EnterHint } from '@estiva-app/ui'
 import { formatSection, typeTrigger, type SlashCommand, type SlashSection } from '@estiva-app/ui/editor'
-import { HighlightSwatch } from './HighlightPill'
-import { insertHighlightTag } from '@/extensions/highlight'
-import type { HighlightType } from '@/api'
 
 /**
  * The `/` menu — PEE-18: which rows Peek adds beside the shared Format section.
@@ -14,8 +10,12 @@ import type { HighlightType } from '@/api'
  *
  * Format, then Peek's rows under **Insert** — the one heading every app's own
  * section takes, as Ship's does (Miky, CON-25 kickoff, 2026-10-02; CON-29).
- * Inside it the order is Katerina's of 2026-09-04: the triggers, then the
- * Highlights.
+ * Inside it the order is Katerina's of 2026-09-04: the triggers, then Resolve.
+ *
+ * The Highlights are not offered (Miky, 2026-10-26, PEEKM-3): a highlight has
+ * no place on the relay yet, so a send dropped it and the message arrived
+ * plain. They come back when stage 2 ("One conversation in every app") gives
+ * a highlight its shape.
  */
 
 function shortcut(label: string, trigger: string, input: string, description: string): SlashCommand {
@@ -23,27 +23,20 @@ function shortcut(label: string, trigger: string, input: string, description: st
   return { key: `shortcut-${trigger}`, row: { label, shortcut: trigger }, keywords: [trigger, input, description], run: typeTrigger(input) }
 }
 
-function highlight(type: HighlightType, label: string): SlashCommand {
-  return {
-    key: `highlight-${type}`,
-    row: { label, leading: <HighlightSwatch type={type} />, hint: <EnterHint /> },
-    keywords: [type],
-    run: (editor) => insertHighlightTag(editor, type),
-  }
-}
-
-/** Peek's own Insert rows, after the triggers: Resolve and the Highlights. The comment box puts them after the kit's. */
+/** Peek's own Insert row, after the triggers: Resolve. The comment box puts it after the kit's. */
 export const PEEK_INSERT_ROWS: readonly SlashCommand[] = [
   // `->`, not `→`: the row shows what you would type, and the resolution
   // block's own input rule is /^->\s$/ — there is no `→` key to press. It
   // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
   // against 6px for everything else.
-  shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
-  highlight('insight', 'Insight'),
-  highlight('concern', 'Concern'),
-  highlight('conclusion', 'Conclusion'),
-  highlight('question', 'Question'),
-  highlight('summary', 'Summary'),
+  {
+    ...shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
+    // Typed with the input rules on, as a person's `-> ` is: `typeTrigger` inserts without them, so the row left
+    // plain `-> ` text and sent an ordinary message (PEEKM-3, on production).
+    run: (editor) => {
+      requestAnimationFrame(() => editor.commands.insertContent('-> ', { applyInputRules: true }))
+    },
+  },
 ]
 
 export const SLASH_SECTIONS: readonly SlashSection[] = [
