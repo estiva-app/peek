@@ -85,10 +85,10 @@ const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url
   [--tapped-ago s] [--last-used-ago s] [--relogin -] [--start signed-out]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
-  [--init file] [--tab path] [--also path] [--window path] [--switch -]
+  [--init file] [--tab path] [--also path] [--window path] [--switch -] [--follow expr]
   [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch', '--relogin'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch', '--relogin', '--follow'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 /** The page's DevTools session, opened by the first `--cpu` step. */
 let cdp = null
@@ -365,6 +365,15 @@ try {
         // Copied when the tab is signed in: what it loaded on the way in, not what a later step makes it load.
         entry.documents = [...documents]
         if (!entry.result) throw new Error(`not signed in; ended on ${page.url()}`)
+      } else if (step === 'follow') {
+        // --follow <expr>: run <expr> in the page — a click on a link that opens a new tab, like Peek's "Open ↗" —
+        // and act in the tab it opens from then on, whatever its origin. Not checked for a sign-in: the other app's
+        // own sign-in is part of what app-speed.mjs measures.
+        entry.clickedAt = Date.now()
+        ;[page] = await Promise.all([context.waitForEvent('page', { timeout: 10000 }), page.evaluate(value)])
+        watchErrors(page)
+        await page.waitForLoadState('domcontentloaded')
+        entry.result = page.url()
       } else if (step === 'switch') {
         if (!other) throw new Error('--switch needs a tab opened with --also')
         ;[page, other] = [other, page]
