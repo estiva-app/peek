@@ -186,15 +186,15 @@ async function startEditing(canvasElement: HTMLElement) {
 }
 
 /**
- * The box itself. Paperclip, snooze and highlighter on the left, Cancel and
- * Save on the right — the composer's toolbar, minus the send button it does
- * not need.
+ * The box itself: the shared box's edit form (PEEKM-4). Only its keys on the
+ * left — no paperclip, no highlighter (Decided 2026-10-17) — and Cancel and
+ * Save on the right.
  */
 export const Editing: Story = {
   args: { authorName: 'You' },
   play: async ({ canvasElement }) => {
     const { canvas } = await startEditing(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'Highlight' })).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Highlight' })).not.toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Save' })).toBeInTheDocument()
   },
 }

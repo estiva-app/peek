@@ -101,9 +101,10 @@ describe('attaching a file while editing a sent message', () => {
     expect(editor.textContent).toBe(before)
   })
 
-  it('attaches a file picked with the paperclip', async () => {
+  /* No paperclip: the edit box shows only its keys (Decided 2026-10-17). `/` → Upload opens this picker. */
+  it('attaches a file picked from / → Upload, with no paperclip on the box', async () => {
     const { container } = await openEditor()
-    expect(screen.getByRole('button', { name: 'Attach file' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /attach/i })).toBeNull()
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     await userEvent.upload(input, new File([new Uint8Array([1])], 'notes.txt', { type: 'text/plain' }))

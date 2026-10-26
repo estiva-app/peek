@@ -51,10 +51,11 @@ import { ConversationCard } from '@/components/ConversationCard'
   `ConversationQuickMenu`.
 - **The body's rendering**, through `MessageBody`, so a message in a card and
   the same message in a thread read identically.
-- **The edit box**, which shares the editor's extensions with the composer but
-  not the composer's shell — and which is where `AttachFileButton` and
-  `HighlightButton` are reached from, so a message can gain a file or a
-  highlight after it was written.
+- **The edit box**: the shared box's edit form (`EditBox`, beside
+  `ConversationBox`, PEEKM-4), the same box Peek writes in, with only its keys
+  and no paperclip. A file can be added while editing (`/` → Upload, a paste or
+  a drop), and a highlight or a resolution the message has opens in it and is
+  kept. Save shows at once; a refusal reopens it with "Not saved: …" under it.
 - **Its own unread and new-reply marks**, which are about this card rather than
   about the list it sits in.
 

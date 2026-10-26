@@ -1,7 +1,17 @@
-import { createContext, useContext, useMemo, useRef, useSyncExternalStore } from 'react'
+import { createContext, useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { boxReadOf, composerDraft, composerText, embedsToSend, type ComposerLabels } from '@estiva-app/conversation'
+import {
+  boxReadOf,
+  composerDocument,
+  composerDraft,
+  composerText,
+  embedsToEdit,
+  embedsToSend,
+  namedBefore,
+  withoutNewUrgency,
+  type ComposerLabels,
+} from '@estiva-app/conversation'
 import { referenceOfLink, type EditorDocument, type Embed } from '@estiva-app/protocol'
 import { Kbd } from '@estiva-app/ui'
 import {
@@ -22,20 +32,23 @@ import {
   knownCardValue,
   knownLinkTarget,
   mentionsVersion,
+  personByPubkey,
   referenceSections,
   subscribeMentions,
   subscribeReferences,
   useCanUpload,
   useResolvedReferences,
   useUploadActions,
+  type FileAttachment,
   type HighlightType,
   type UploadedFile,
 } from '@/api'
 import { registerActiveComposer, unregisterComposer, type ComposerHandle } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
+import type { RefusedEdit } from '@/lib/refusedEdits'
 import { HighlightTag } from '@/extensions/highlight'
-import { ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
+import { extractResolutionFromText, ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
 import { RowInTheBox, referenceRowIcon } from '@/extensions/mention'
 import { mentionDirectory } from './MentionMenu'
 import { MessageCard, MessagePart } from './MessageLinks'
@@ -167,11 +180,17 @@ function BoxCard({ uri }: { uri: string }) {
   return <MessageCard uri={uri} resolved={resolved} />
 }
 
+const LINK_CONTEXT = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
+
+/** What a box's document names, read as it will be sent; `previous` makes it an edit's, where only a file named first gets a card. */
+const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[]) =>
+  boxReadOf(withoutOwnNodes(body as DocumentNode) as EditorDocument, { ...LINK_CONTEXT, here, previous })
+
 /** What shows under the box while a message is written, read as it will be sent (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md). */
-function boxUnder(here: string | undefined): BoxUnder {
+function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUnder {
   return {
     read: (body) => {
-      const links = boxReadOf(withoutOwnNodes(body as DocumentNode) as EditorDocument, { resolveLink: knownCardValue, blockOf: knownBlockOfUrl, here })
+      const links = linksOfBox(body, here, previous)
       askAbout(links.urls)
       const uri = links.card ? referenceOfValue(links.card) : undefined
       return {
@@ -236,25 +255,40 @@ export interface ConversationBoxProps {
  *
  * @registry namesake: Peek's wrapper of the package's CommentBox (PEEKM-3), as Ship's ConversationBox is.
  */
-export function ConversationBox({ kind = 'conversation', onSend, draftKey, drafts = DEFAULT_DRAFTS, contextLabel, here, closed, resolvedObjects, className }: ConversationBoxProps) {
+/** Who `@` and `!@` offer, and how a `nostr:npub…` in marker text is named again as a chip. */
+function usePeople() {
   const version = useSyncExternalStore(subscribeMentions, mentionsVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the directory is replaced wholesale and counted by `version`
   const people = useMemo(() => mentionDirectory(), [version])
   const latestPeople = useRef(people)
   latestPeople.current = people
-  const labels = useMemo<ComposerLabels>(() => ({ personLabel: (pubkey) => latestPeople.current.find((p) => p.pubkey === pubkey)?.name }), [])
-  const draft = useMemo(() => (draftKey ? composerDraft(drafts, draftKey, labels) : undefined), [draftKey, drafts, labels])
-  const under = useMemo(() => boxUnder(here), [here])
+  // Anyone Peek can name, not only those `@` offers: a message may name somebody seen only on the relay.
+  const labels = useMemo<ComposerLabels>(
+    () => ({ personLabel: (pubkey) => latestPeople.current.find((p) => p.pubkey === pubkey)?.name ?? personByPubkey(pubkey)?.name }),
+    [],
+  )
+  return { people, labels }
+}
 
+/** Peek's upload, as the box asks for one; absent where nothing can be uploaded. */
+function useUpload(): ((file: File) => Promise<UploadAnswer>) | undefined {
   const canUpload = useCanUpload()
   const { uploadFile } = useUploadActions()
-  const upload = async (file: File): Promise<UploadAnswer> => {
+  if (!canUpload) return undefined
+  return async (file) => {
     try {
       return { accepted: true, value: await uploadFile(file) }
     } catch (error) {
       return { accepted: false, reason: error instanceof Error ? error.message : String(error) }
     }
   }
+}
+
+export function ConversationBox({ kind = 'conversation', onSend, draftKey, drafts = DEFAULT_DRAFTS, contextLabel, here, closed, resolvedObjects, className }: ConversationBoxProps) {
+  const { people, labels } = usePeople()
+  const draft = useMemo(() => (draftKey ? composerDraft(drafts, draftKey, labels) : undefined), [draftKey, drafts, labels])
+  const under = useMemo(() => boxUnder(here), [here])
+  const upload = useUpload()
 
   const send = async (body: JSONContent, files: BoxFile[], shown: BoxSentUnder): Promise<SendAnswer> => {
     const doc = body as DocumentNode
@@ -318,7 +352,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
         code="inline"
         draft={draft}
         extensions={BOX_EXTENSIONS}
-        upload={canUpload ? upload : undefined}
+        upload={upload}
         send={send}
         showsAtOnce
         under={under}
@@ -326,6 +360,141 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
         marked={hasHighlight}
         onEditor={onEditor}
         autoFocus
+        className={className}
+      />
+    </Supplied.Provider>
+  )
+}
+
+/** What an edit saved, for the card to show at once; the card's handlers write it as one edit. */
+export interface EditSaved {
+  /** The new text, only when it changed. */
+  text?: string
+  /** The resolution the box was saved with. */
+  resolution: { hasResolution: boolean; resolutionMessage: string }
+  highlightType?: HighlightType
+  /** The whole file list, only when this edit changed it (PEE-16). */
+  files?: FileAttachment[]
+  /** The card set, only when this edit names a file first (§13.6.2). */
+  embeds?: Embed[]
+}
+
+export interface EditBoxProps {
+  kind?: BoxKind
+  /** The message as it stands. `resolution` when it is resolved (or, for a reply, when it resolved its conversation). */
+  message: {
+    body: string
+    urgent?: readonly string[]
+    highlightType?: HighlightType
+    resolution?: { message: string }
+    files?: readonly FileAttachment[]
+    embeds?: readonly Embed[]
+  }
+  /** A save the relay refused, to open with instead (OPT-8): its text, its files, and why, said under the box. */
+  refused?: RefusedEdit
+  /** The file whose conversation it is in: linking it adds no card (§13.6.2). */
+  here?: string
+  /** Called with what was saved, at once: the card shows it before the relay answers. */
+  onSave: (saved: EditSaved) => void
+  onCancel: () => void
+  /** Objects already resolved, by address — a story's or a test's seam. */
+  resolvedObjects?: Record<string, ForeignObject>
+  className?: string
+}
+
+const sameFiles = (a: readonly FileAttachment[], b: readonly FileAttachment[]) =>
+  a.length === b.length && a.every((f, i) => (f.sha256 ?? f.name) === (b[i].sha256 ?? b[i].name))
+
+/** The box's record of a file: a message's own `FileAttachment`, or what `uploadFile` answered. */
+function attachmentOf(value: unknown): FileAttachment {
+  const f = value as UploadedFile
+  return { name: f.name, contentType: f.contentType, size: f.size, previewUrl: f.previewUrl, sha256: f.sha256, mediaUrl: f.mediaUrl, thumbUrl: f.thumbUrl }
+}
+
+/**
+ * Editing a comment or a reply you wrote: the shared box's edit mode (PEEKM-4),
+ * with Peek's people, `[`, chips and upload. It shows at once, as a send does
+ * (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md):
+ * Save hands the card what changed and the box closes; a refusal reopens it,
+ * as a new box, with what was saved and "Not saved: …" under it. A file can be
+ * added while editing (Miky, 26 Oct), and the highlight and the resolution the
+ * message has open in the box and are kept.
+ */
+export function EditBox({ kind = 'conversation', message, refused, here, onSave, onCancel, resolvedObjects, className }: EditBoxProps) {
+  const { people, labels } = usePeople()
+  const upload = useUpload()
+  // What the message named before, so only a file this edit names first gets a card.
+  const [previous] = useState(() => namedBefore(message.body, LINK_CONTEXT))
+  const under = useMemo(() => boxUnder(here, previous), [here, previous])
+
+  // Read once, as the box opens: a re-read of the message while editing does not reset what is typed.
+  const [edit] = useState(() => {
+    const doc = composerDocument(refused?.text ?? message.body, labels, message.urgent) as DocumentNode
+    const content = [...(doc.content ?? [])]
+    const first = content[0]
+    if (message.highlightType && first?.type === 'paragraph') {
+      content[0] = { ...first, content: [{ type: 'highlightTag', attrs: { highlightType: message.highlightType } }, { type: 'text', text: ' ' } as DocumentNode, ...(first.content ?? [])] }
+    }
+    // Taking the block out reopens it; emptying its words keeps it resolved with none.
+    if (message.resolution) {
+      content.push({ type: 'resolutionBlock', content: [{ type: 'text', text: `→ ${message.resolution.message}` } as DocumentNode] })
+    }
+    const files: BoxFile[] = (refused?.files ?? message.files ?? []).map((f, i) => ({
+      id: `kept-${i}`,
+      name: f.name,
+      size: f.size,
+      contentType: f.contentType,
+      state: 'ready',
+      value: f,
+    }))
+    return { body: { ...doc, content } as JSONContent, files }
+  })
+
+  const save = async (body: JSONContent, files: BoxFile[], shown: BoxSentUnder): Promise<SendAnswer> => {
+    const doc = body as DocumentNode
+    let resolution = resolutionOfDocument(doc)
+    let { text } = composerText(withoutOwnNodes(doc) as EditorDocument)
+    // A start-of-line "-> words" the input rule did not turn into the block (pasted) still resolves; mid-line arrows are prose.
+    if (!resolution.hasResolution) {
+      const fromText = extractResolutionFromText(text)
+      if (fromText) {
+        text = fromText.body
+        resolution = { hasResolution: true, resolutionMessage: fromText.resolutionMessage }
+      }
+    }
+    const kept = files.flatMap((f) => (f.value ? [attachmentOf(f.value)] : []))
+    if (!text && kept.length === 0 && !resolution.hasResolution) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
+    // An edit makes nobody urgent (CON-24).
+    text = withoutNewUrgency(text, message.body)
+    const links = linksOfBox(body, here, previous)
+    onSave({
+      text: text !== message.body.trim() ? text : undefined,
+      resolution,
+      highlightType: highlightOf(doc),
+      files: sameFiles(kept, message.files ?? []) ? undefined : kept,
+      embeds: embedsToEdit(links, new Set(links.card && links.card !== shown.card ? [links.card] : []), message.embeds),
+    })
+    return { accepted: true }
+  }
+
+  return (
+    <Supplied.Provider value={resolvedObjects}>
+      <CommentBox
+        label={kind === 'reply' ? 'Edit reply' : 'Edit message'}
+        placeholder="Edit message"
+        people={people}
+        references={referenceSections}
+        referencesChanged={subscribeReferences}
+        referenceIcon={(uri) => (uri ? referenceRowIcon(uri) : undefined)}
+        referenceView={BoxReference}
+        insert={INSERT}
+        code="inline"
+        extensions={BOX_EXTENSIONS}
+        upload={upload}
+        send={save}
+        under={under}
+        edit={{ body: edit.body, files: edit.files, writesFiles: true, refused: refused?.reason, onCancel, onSave: save }}
+        marked={hasHighlight}
         className={className}
       />
     </Supplied.Provider>
