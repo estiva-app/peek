@@ -56,6 +56,11 @@ vi.mock('@/components/ConversationCard', () => ({
     <button onClick={() => onBodyChange?.(`${body}, reworded`)}>{body}</button>
   ),
 }))
+vi.mock('@/components/ReplyCard', () => ({
+  ReplyCard: ({ body, onBodyChange }: { body: string; onBodyChange?: (b: string) => void }) => (
+    <button onClick={() => onBodyChange?.(`${body}, reworded`)}>{body}</button>
+  ),
+}))
 
 import { useFileConversationView } from './useFileConversationView'
 
@@ -70,20 +75,25 @@ const conversationOf = (r: ReturnType<typeof root>, byId: FileConversation['deco
   decorations: { byId, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
 })
 
-function View() {
-  const { conversation } = useFileConversationView({
+function View({ openThreadId }: { openThreadId?: string }) {
+  const { conversation, threadPanel } = useFileConversationView({
     container: { kind: 'file', address: `30840:${ME}:d`, h: 'team' },
     rootIds: ['1'.repeat(64)],
-    openThreadId: undefined,
+    openThreadId,
     onOpenThread: () => {},
     title: 'A file',
     onCommented: async () => {},
   })
-  return <>{conversation}</>
+  return (
+    <>
+      {conversation}
+      {threadPanel}
+    </>
+  )
 }
 
-const sentEdit = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: 'First' }))
+const sentEdit = async (name = 'First') => {
+  await userEvent.click(await screen.findByRole('button', { name }))
   await waitFor(() => expect(signed.events.some((e) => e.kind === 40003)).toBe(true))
   const edit = signed.events.find((e) => e.kind === 40003)!
   return { edit, imeta: edit.tags.filter((t) => t[0] === 'imeta') }
@@ -111,6 +121,15 @@ describe('an edit that changes only the words still lists the message’s files 
     render(<View />)
     const { imeta } = await sentEdit()
     expect(imeta).toEqual([imetaTag(later)])
+  })
+
+  it('carries the files of a reply, edited in its open thread', async () => {
+    const reply = { ...root([file('notes.pdf', 'ef')]), id: '2'.repeat(64), body: 'Answer', createdAt: T + 60, parentId: '1'.repeat(64) }
+    relay.read.mockResolvedValue({ ...conversationOf(root([])), replies: { ['1'.repeat(64)]: [reply] } })
+    render(<View openThreadId={'1'.repeat(64)} />)
+    const { edit, imeta } = await sentEdit('Answer')
+    expect(edit.tags).toContainEqual(['e', '2'.repeat(64)])
+    expect(imeta).toEqual([imetaTag({ url: `https://relay.test/${'ef'.repeat(64)}`, m: 'application/pdf', x: 'ef'.repeat(64), size: 10, filename: 'notes.pdf' })])
   })
 
   it('control: a message with no files gets an edit with no files', async () => {

@@ -307,10 +307,16 @@ export function useFileConversationView({
           files = outgoing(edit.files) ?? undefined
           if (!files) return
         }
-      } else if (conversation) {
+      } else {
         // Files untouched still ride the edit: an edit is the whole new message, and one with none takes them off.
+        // Unknown when the message is not in hand, so that edit is not sent.
         // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
-        files = currentFiles(conversation, targetEventId)
+        files = conversation ? currentFiles(conversation, targetEventId) : undefined
+        if (!files) {
+          const reason = 'The message could not be read, so the edit was not sent. Try again.'
+          if (!putBackEdit(targetEventId, { text: body, reason })) notSaved('edit', { ok: false, reason })
+          return
+        }
       }
       // The card set rides the same edit, so it cannot race the body either (OPT-17).
       void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
@@ -835,9 +841,9 @@ function currentBody(conversation: FileConversation, id: string): string | undef
 }
 
 /** A root's or a reply's files as they stand, drawn as {@link currentBody}'s: the latest edit's set, else its own. */
-function currentFiles(conversation: FileConversation, id: string): ConversationEvent['files'] {
+function currentFiles(conversation: FileConversation, id: string): ConversationEvent['files'] | undefined {
   const event = messageOf(conversation, id)
-  return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.attachments?.map(relayAttachmentOf) ?? event.files) : []
+  return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.attachments?.map(relayAttachmentOf) ?? event.files) : undefined
 }
 
 const asAttachment = (f: ConversationEvent['files'][number]): FileAttachment => ({
