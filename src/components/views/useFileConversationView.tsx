@@ -298,16 +298,13 @@ export function useFileConversationView({
       const body = edit?.body ?? (conversation ? currentBody(conversation, targetEventId) : undefined)
       if (body === undefined) return
       let files: OutgoingAttachment[] | undefined
-      if (edit?.files) {
-        // An edit carrying no `imeta` means "unchanged", so there is no event
-        // that takes the last file off; the body still travels.
-        if (edit.files.length === 0) {
-          showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
-        } else {
-          files = outgoing(edit.files) ?? undefined
-          if (!files) return
-        }
+      if (edit?.files?.length) {
+        files = outgoing(edit.files) ?? undefined
+        if (!files) return
       } else {
+        // Until every reader takes an edit with no `imeta` as "no files" (stage 3), taking the last file off is not
+        // offered: the words still travel, with the files the message has, so the edit means the same to every reader.
+        if (edit?.files) showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
         // Files untouched still ride the edit: an edit is the whole new message, and one with none takes them off.
         // Unknown when the message is not in hand, so that edit is not sent.
         // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
