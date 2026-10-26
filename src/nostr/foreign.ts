@@ -91,6 +91,7 @@ import {
   planUnlistFile,
   planArchiveFolder,
   archiveImpact,
+  createLoadQuery,
   type ArchiveImpact,
   type ArchiveReadOptions,
   type FolderRef,
@@ -128,6 +129,18 @@ export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLan
 
 /** The pacer lane a read from `source` waits in: `ahead` for Desk's loader (PEE-5), every other relay read a click's. */
 const laneOf = (source: ReadSource): ReadLane => (source === 'ahead' ? 'ahead' : 'click')
+
+/**
+ * One load of Folder reads (APP-2): a Folder listing and the Folders' contents
+ * read through the same one ask the relay for each file's changes once between
+ * them, and join a read already in flight. Make one per load — the Desk's
+ * listing and the Folders it reads ahead, a write's read-back of the Folders on
+ * screen, a dialog's listings — and drop it, so the next load reads afresh.
+ * Never held past the load: it never sees a change made after its read.
+ */
+export function folderLoadAsViewer(relayUrl: string, token: StoredToken, source: ReadSource = 'relay'): QueryFn {
+  return createLoadQuery(viewerQuery(relayUrl, token, laneOf(source)))
+}
 
 /**
  * {@link viewerQuery} against the copy on the device (PEE-2). A read the copy
@@ -1048,6 +1061,8 @@ export async function resolveFolderContentsAsViewer(
   /** `includeArchived` for the listings a move plans from: what is archived beneath a file moves with it. */
   options?: { includeArchived?: boolean },
   source: ReadSource = 'relay',
+  /** The load this read is part of ({@link folderLoadAsViewer}); a load of its own when left out. Not for the copy. */
+  read?: QueryFn,
 ): Promise<FolderContents> {
   if (source === 'copy') {
     // Throws when the copy has not seen every read the listing makes (PEE-4).
@@ -1055,7 +1070,7 @@ export async function resolveFolderContentsAsViewer(
     const contents = await resolveFolderContents(folder, copy.query, copy.people, copy.cache, options)
     return { ...contents, files: contents.files.map((file) => drawOnly(file)!) }
   }
-  const query = viewerQuery(relayUrl, token, laneOf(source))
+  const query = read ?? folderLoadAsViewer(relayUrl, token, source)
   return resolveFolderContents(folder, query, cachedPeople(query), manifests, options)
 }
 
@@ -1210,9 +1225,11 @@ export async function listFoldersAsViewer(
   relayUrl: string,
   token: StoredToken,
   source: ReadSource = 'relay',
+  /** The load this read is part of ({@link folderLoadAsViewer}); a load of its own when left out. Not for the copy. */
+  read?: QueryFn,
 ): Promise<FolderSummary[]> {
   // From the copy, it throws when the copy has not seen the listing's reads (PEE-4).
-  return listFolders(source === 'copy' ? copyQuery(relayUrl, token) : viewerQuery(relayUrl, token, laneOf(source)))
+  return listFolders(source === 'copy' ? copyQuery(relayUrl, token) : (read ?? folderLoadAsViewer(relayUrl, token, source)))
 }
 
 /**
@@ -2006,7 +2023,7 @@ export async function archiveImpactAsViewer(
   token: StoredToken,
   folders?: FolderSummary[],
 ): Promise<ArchiveImpact> {
-  return archiveImpact(address, viewerQuery(relayUrl, token), { ...(folders ? { folders } : {}), cache: manifests })
+  return archiveImpact(address, folderLoadAsViewer(relayUrl, token), { ...(folders ? { folders } : {}), cache: manifests })
 }
 
 /**
