@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { isArchived, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { isArchived, type FolderContents, type FolderSummary, type ForeignObject, type QueryFn } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
 import type { StoredToken } from '@/auth/estivaId'
-import { listFoldersAsViewer, resolveFolderContentsAsViewer } from '@/nostr/foreign'
+import { folderLoadAsViewer, listFoldersAsViewer, resolveFolderContentsAsViewer } from '@/nostr/foreign'
+import { folderLoad } from './foreign'
 import {
   isOutage,
   relayFailureKind,
@@ -51,7 +52,7 @@ const folderContentsCache = createListingCache<FolderContents, RelayFailureKind>
 /** And what is archived in each, for the Archive view — a read of its own, kept apart from the lists. */
 const archivedContentsCache = createListingCache<FolderContents, RelayFailureKind>()
 
-type ResolveFolderContents = (folder: string, options?: { includeArchived?: boolean }) => Promise<FolderContents>
+type ResolveFolderContents = (folder: string, options?: { includeArchived?: boolean }, read?: QueryFn) => Promise<FolderContents>
 
 /**
  * What is archived in a Folder (Katerina, 5 October: the Archive view): its
@@ -62,8 +63,9 @@ function loadArchivedContents(
   resolveFolderContents: ResolveFolderContents,
   folder: string,
   folderArchived: boolean,
+  read?: QueryFn,
 ): Promise<ListingLoad<FolderContents, RelayFailureKind>> {
-  return withRateLimitRetry(() => resolveFolderContents(folder, { includeArchived: true }))
+  return withRateLimitRetry(() => resolveFolderContents(folder, { includeArchived: true }, read))
     .then((contents) => ({
       ok: true as const,
       value: folderArchived ? contents : { ...contents, files: contents.files.filter((file) => isArchived(file)) },
@@ -79,6 +81,8 @@ function loadArchivedContents(
 function loadFolderContents(
   resolveFolderContents: ResolveFolderContents,
   folder: string,
+  /** The load this read is part of (APP-2); a load of its own when left out. */
+  read?: QueryFn,
 ): Promise<ListingLoad<FolderContents, RelayFailureKind>> {
   /*
     A quota refusal is waited out at the second the relay named rather than
@@ -89,7 +93,7 @@ function loadFolderContents(
     is the wrong sentence twice over.
   */
   const askedAt = Date.now()
-  return withRateLimitRetry(() => resolveFolderContents(folder))
+  return withRateLimitRetry(() => resolveFolderContents(folder, undefined, read))
     .then((contents) => {
       listedIn.set(folder, contents.files)
       listedNow(folder, contents.files, askedAt)
@@ -166,9 +170,11 @@ export async function loadFoldersAhead(
   at: { relayUrl: string; token: StoredToken },
   opens: (folders: readonly FolderSummary[]) => Promise<readonly FolderSummary[]>,
 ): Promise<FolderSummary[]> {
+  // One load (APP-2): the listing and the Folders read after it ask for each file's changes once between them.
+  const load = folderLoadAsViewer(at.relayUrl, at.token, 'ahead')
   let folders = folderListing.snapshot().value ?? undefined
   if (folders === undefined) {
-    const read = await listFoldersAsViewer(at.relayUrl, at.token, 'ahead')
+    const read = await listFoldersAsViewer(at.relayUrl, at.token, 'ahead', load)
     folders = read
     if (folderListing.snapshot().value === undefined) await folderListing.ensure(async () => read)
   }
@@ -178,7 +184,7 @@ export async function loadFoldersAhead(
       const held = folderContentsCache.peek(folder.id)
       if ((held?.value !== undefined && !held.seeded) || held?.inflight) return
       const askedAt = Date.now()
-      const contents = await resolveFolderContentsAsViewer(folder.id, at.relayUrl, at.token, undefined, 'ahead')
+      const contents = await resolveFolderContentsAsViewer(folder.id, at.relayUrl, at.token, undefined, 'ahead', load)
       if (folderContentsCache.peek(folder.id)?.inflight) return
       await folderContentsCache.read(folder.id, async () => {
         listedIn.set(folder.id, contents.files)
@@ -195,17 +201,21 @@ export async function loadFoldersAhead(
  * it — what a write re-reads (`reloadFoldersOnScreen`). Counted, since the
  * page and a section can read the same Folder.
  */
-const onScreen = new Map<string, { count: number; load: () => Promise<ListingLoad<FolderContents, RelayFailureKind>> }>()
+const onScreen = new Map<string, { count: number; load: (read?: QueryFn) => Promise<ListingLoad<FolderContents, RelayFailureKind>> }>()
 
 /**
  * Read again every Folder on screen — after a row's rename, move, delete or
  * archive, when the page cannot know which open section drew the file (a
- * moved file leaves one and arrives in another). Bounded by what is open.
+ * moved file leaves one and arrives in another). Bounded by what is open, and
+ * one load (APP-2), so a file two of them list has its changes asked once.
  */
 export function reloadFoldersOnScreen(): Promise<void> {
+  const read = folderLoad()
   return Promise.all(
     [...onScreen].map(([key, { load }]) =>
-      key.startsWith(ARCHIVED_KEY) ? archivedContentsCache.read(key.slice(ARCHIVED_KEY.length), load) : folderContentsCache.read(key, load),
+      key.startsWith(ARCHIVED_KEY)
+        ? archivedContentsCache.read(key.slice(ARCHIVED_KEY.length), () => load(read))
+        : folderContentsCache.read(key, () => load(read)),
     ),
   ).then(() => undefined)
 }
@@ -225,8 +235,10 @@ export function useFolderContents(
 } {
   const { resolveFolderContents, resolveFolderContentsFromDevice } = useForeignObjects()
   const load = useCallback(
-    (target: string) =>
-      archived ? loadArchivedContents(resolveFolderContents, target, folderArchived) : loadFolderContents(resolveFolderContents, target),
+    (target: string, read?: QueryFn) =>
+      archived
+        ? loadArchivedContents(resolveFolderContents, target, folderArchived, read)
+        : loadFolderContents(resolveFolderContents, target, read),
     [resolveFolderContents, archived, folderArchived],
   )
   const cache = archived ? archivedContentsCache : folderContentsCache
@@ -259,7 +271,7 @@ export function useFolderContents(
 
   useEffect(() => {
     if (!folder || !screenKey) return
-    onScreen.set(screenKey, { count: (onScreen.get(screenKey)?.count ?? 0) + 1, load: () => load(folder) })
+    onScreen.set(screenKey, { count: (onScreen.get(screenKey)?.count ?? 0) + 1, load: (read) => load(folder, read) })
     return () => {
       const held = onScreen.get(screenKey)
       if (!held || held.count <= 1) onScreen.delete(screenKey)

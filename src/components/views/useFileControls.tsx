@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
+import { folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -316,12 +316,14 @@ export function useFileControls({
           */
           // The file's own Folder is read beside the listing, not after it: it is
           // the current one unless the file was moved, so one round trip usually does.
-          const own = resolveFolderContents(ownFolder)
+          // One load (APP-2): the three ask for each file's changes once between them.
+          const read = folderLoad()
+          const own = resolveFolderContents(ownFolder, undefined, read)
           own.catch(() => {})
-          folders = (await listFolders()) ?? []
+          folders = (await listFolders(read)) ?? []
           team = currentFolderOf(file, folders, topLevelFolders(folders))
           if (!team) throw new Error('no team')
-          contents = await (team === ownFolder ? own : resolveFolderContents(team))
+          contents = await (team === ownFolder ? own : resolveFolderContents(team, undefined, read))
         } catch {
           refuse('The Folder could not be read. Try again.')
           return

@@ -1945,7 +1945,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Sub A' } })
     fireEvent.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
-    expect(writes.resolveFolderContents).toHaveBeenCalledWith(FOLDER)
+    expect(writes.resolveFolderContents.mock.calls.map(([folder]) => folder)).toContain(FOLDER)
     expect(writes.createTopic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Sub A', parent: PROJECT_ADDRESS, hasState: true }))
   })
 })

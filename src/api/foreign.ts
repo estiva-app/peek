@@ -41,6 +41,7 @@ import {
   renameFolderAsViewer,
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
+  folderLoadAsViewer,
   resolveFolderProjectAsViewer,
   cardValueOfUrlAsViewer,
   askReferenceFromUrlAsViewer,
@@ -81,6 +82,7 @@ import type {
   FolderSummary,
   ForeignObject,
   People,
+  QueryFn,
 } from '@estiva-app/interop'
 
 /**
@@ -97,6 +99,16 @@ export function useRelayViewer() {
     const token = heldToken()
     return relayUrl && token ? { relayUrl, token } : null
   }, [])
+}
+
+/**
+ * One load of Folder reads, as the viewer (APP-2; `folderLoadAsViewer`): pass
+ * it to `listFolders` and each `resolveFolderContents` read together, and drop
+ * it after. `undefined` when signed out, which those reads answer for themselves.
+ */
+export function folderLoad(): QueryFn | undefined {
+  const token = heldToken()
+  return RELAY_URL && token ? folderLoadAsViewer(RELAY_URL, token) : undefined
 }
 
 /*
@@ -526,10 +538,11 @@ export function useForeignObjects() {
 
   const resolveFolderContents = useCallback(
     /** `includeArchived`: the archived files too, each with its `archived` — the Archive view's read (5 October). */
-    async (folder: string, options?: { includeArchived?: boolean }): Promise<FolderContents> => {
+    /** `read`: the load this read is part of ({@link folderLoad}); a load of its own when left out. */
+    async (folder: string, options?: { includeArchived?: boolean }, read?: QueryFn): Promise<FolderContents> => {
       const v = viewer()
       return v
-        ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token, options)
+        ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token, options, 'relay', read)
         : { id: folder, hasState: false, source: 'channel', files: [] }
     },
     [viewer],
@@ -543,10 +556,14 @@ export function useForeignObjects() {
    * collapsing them is what made the folder list say "No folders yet" to a
    * signed-out viewer looking at a workspace with eighty-one of them.
    */
-  const listFolders = useCallback(async (): Promise<FolderSummary[] | null> => {
-    const v = viewer()
-    return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
-  }, [viewer])
+  const listFolders = useCallback(
+    /** `read`: the load this read is part of ({@link folderLoad}); a load of its own when left out. */
+    async (read?: QueryFn): Promise<FolderSummary[] | null> => {
+      const v = viewer()
+      return v ? listFoldersAsViewer(v.relayUrl, v.token, 'relay', read) : null
+    },
+    [viewer],
+  )
 
   /**
    * {@link listFolders} and {@link resolveFolderContents} as the copy on the
