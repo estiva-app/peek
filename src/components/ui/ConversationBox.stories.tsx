@@ -49,7 +49,7 @@ const draftOf = (text: string): DraftStore => ({
 
 const RESOLVED = { [recorded.naddr]: recorded.object as unknown as ForeignObject }
 
-/** A topic's box: `/` opens Format, then Insert with Peek's Resolve and Highlights after the triggers. */
+/** A topic's box: `/` opens Format, then Insert with Peek's Resolve after the triggers. */
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const editor = canvasElement.querySelector('.ProseMirror') as HTMLElement

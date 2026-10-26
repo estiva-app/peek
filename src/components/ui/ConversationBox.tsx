@@ -47,7 +47,7 @@ import { PEEK_INSERT_ROWS } from './SlashMenu'
  * Peek's comment box: estiva-ui's `CommentBox`, the one box every app writes a
  * comment, a reply, a DM and a Folder's chat line in (PEEKM-3). What Peek adds
  * is only what Peek knows: its people for `@` and `!@`, its `[` sections, its
- * `/` rows (Resolve and the Highlights), its upload, its drafts, its chips,
+ * `/` row (Resolve; the Highlights wait for stage 2, `SlashMenu.tsx`), its upload, its drafts, its chips,
  * the launcher writing into the box last used, and a send through its own
  * actions that answers whether the relay took it.
  *
@@ -95,7 +95,8 @@ export const BOX_EXTENSIONS = [
   HighlightTag,
 ]
 
-// The kit's triggers, then Peek's own (Katerina's order of 2026-09-04): Resolve, then the Highlights.
+// The kit's triggers, then Peek's own (Katerina's order of 2026-09-04): Resolve. A highlight tag can still be
+// read from a draft, but `/` no longer offers one until stage 2 gives it a place on the relay (PEEKM-3).
 const INSERT = [commentBoxRows.file, commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference, ...PEEK_INSERT_ROWS]
 
 /** How many of a box's links are asked about at once — `LinkChips`' default `limit`. */

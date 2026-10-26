@@ -18,6 +18,7 @@ import { createDraftStore, draftKeys } from '@/lib/drafts'
 import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
 import { insertHighlightTag } from '@/extensions/highlight'
 import { ConversationBox, type SendAnswer, type SendPayload } from './ConversationBox'
+import { PEEK_INSERT_ROWS } from './SlashMenu'
 
 // jsdom has no rects on text nodes, and ProseMirror asks for them when a draft fills the document.
 beforeAll(() => {
@@ -88,7 +89,7 @@ describe('ConversationBox — what a send carries', () => {
   it('sends a resolution and a highlight beside the text, not in it', async () => {
     const user = userEvent.setup()
     const { onSend, send, editor } = await boxWith('Shipping Thursday')
-    // As `/` → Conclusion and `-> ` write them.
+    // As `-> ` writes the resolution; the tag as a draft from before PEEKM-3 holds it (`/` offers no Highlights now).
     insertHighlightTag(editor, 'conclusion')
     editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'resolutionBlock', content: [{ type: 'text', text: 'agreed in the call' }] })
     await user.click(send)
@@ -97,6 +98,21 @@ describe('ConversationBox — what a send carries', () => {
     expect(payload.text).toBe('Shipping Thursday')
     expect(payload.resolution).toEqual({ message: 'agreed in the call' })
     expect(payload.highlightType).toBe('conclusion')
+  })
+
+  it('sends `/` Resolve as a resolution, not as the characters `->` in the text', async () => {
+    const user = userEvent.setup()
+    const { onSend, send, editor } = await boxWith('Shipping Thursday')
+    // A fresh line, then the row a person picks from `/`.
+    editor.chain().focus('end').splitBlock().run()
+    PEEK_INSERT_ROWS.find((row) => row.row.label === 'Resolve')!.run(editor)
+    await waitFor(() => expect(editor.getText()).toMatch(/->|→/))
+    editor.commands.insertContent('agreed in the call')
+    await user.click(send)
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    const payload = onSend.mock.calls[0][0]
+    expect(payload.text).toBe('Shipping Thursday')
+    expect(payload.resolution).toEqual({ message: 'agreed in the call' })
   })
 
   it('sends what the command launcher wrote into the box as the address it names', async () => {
