@@ -3,9 +3,11 @@
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
  *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent] [--runs 3]
- *     [--json out.json] [--agent <estiva-agent dir>]
- *   node scripts/app-speed.mjs --table out.json
- *   node scripts/app-speed.mjs --compare before.json after.json
+ *     [--json /tmp/before.json] [--agent <estiva-agent dir>]
+ *   node scripts/app-speed.mjs --table /tmp/before.json
+ *   node scripts/app-speed.mjs --compare /tmp/before.json /tmp/after.json
+ *
+ * Keep the JSON out of this repository: it holds lines of Weekly Plans, a private Estiva HQ page.
  *
  * Each browser leg is one headless browser with nothing stored, signed in as QA-1 (scripts/probe.mjs), with
  * scripts/app-speed-recorder.js running in every page from its first byte:
@@ -85,8 +87,8 @@ const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)})`]
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
   'weekly-from-peek': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${WEEKLY.address}`,
-    '--until', `!!document.querySelector('a[href*="leaf.estiva.app"]')`,
-    '--follow', `document.querySelector('a[href*="leaf.estiva.app"]').click()`,
+    '--until', `!!document.querySelector('a[href^="https://leaf.estiva.app/"]')`,
+    '--follow', `document.querySelector('a[href^="https://leaf.estiva.app/"]').click()`,
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
@@ -108,7 +110,10 @@ async function browserLeg(leg, awaitFile) {
 
 /** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */
 async function agentCall(name, callArgs) {
-  const server = spawn('npx', ['tsx', 'scripts/mcp-server.ts'], { cwd: AGENT, env: { ...agentEnv(), NODE_OPTIONS: `--import ${FETCHLOG}` }, stdio: ['pipe', 'pipe', 'pipe'] })
+  // Its own process group, so the kill below reaches the node process npx starts, not only npx.
+  const server = spawn('npx', ['tsx', 'scripts/mcp-server.ts'], { cwd: AGENT, env: { ...agentEnv(), NODE_OPTIONS: `--import ${FETCHLOG}` }, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
+  let exited = null
+  const gone = new Promise((resolve) => server.on('exit', (code, signal) => resolve((exited = { error: { message: `the MCP server exited (${signal ?? code})` } }))))
   const fetches = []
   let err = ''
   server.stderr.on('data', (d) => {
@@ -135,14 +140,21 @@ async function agentCall(name, callArgs) {
     }
   })
   let id = 0
-  const rpc = (method, params) => new Promise((resolve) => {
+  // An answer, the server's exit, or 5 minutes — whichever comes first, so one hung call cannot hold the run.
+  const rpc = (method, params) => {
+    if (exited) return Promise.resolve(exited)
     const n = ++id
-    waiting.set(n, resolve)
+    const answer = new Promise((resolve) => waiting.set(n, resolve))
     server.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n')
-  })
+    let timer
+    const late = new Promise((resolve) => (timer = setTimeout(() => resolve({ error: { message: `no answer to ${method} in 300 s` } }), 300000)))
+    return Promise.race([answer, gone, late]).finally(() => clearTimeout(timer))
+  }
   try {
     await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'app-speed', version: '0' } })
     server.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n')
+    // Start-up's own reads log a moment after they answer: let them land before counting the call's.
+    await new Promise((r) => setTimeout(r, 1500))
     fetches.length = 0
     const started = Date.now()
     const answer = await rpc('tools/call', { name, arguments: callArgs })
@@ -156,7 +168,7 @@ async function agentCall(name, callArgs) {
       failure: answer.error?.message ?? (answer.result?.isError ? text.slice(0, 200) : undefined),
     }
   } finally {
-    server.kill()
+    try { process.kill(-server.pid) } catch {}
   }
 }
 

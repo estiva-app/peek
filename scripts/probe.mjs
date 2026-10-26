@@ -369,10 +369,8 @@ try {
         // --follow <expr>: run <expr> in the page — a click on a link that opens a new tab, like Peek's "Open ↗" —
         // and act in the tab it opens from then on, whatever its origin. Not checked for a sign-in: the other app's
         // own sign-in is part of what app-speed.mjs measures.
-        const opened = context.waitForEvent('page', { timeout: 10000 })
         entry.clickedAt = Date.now()
-        await page.evaluate(value)
-        page = await opened
+        ;[page] = await Promise.all([context.waitForEvent('page', { timeout: 10000 }), page.evaluate(value)])
         watchErrors(page)
         await page.waitForLoadState('domcontentloaded')
         entry.result = page.url()

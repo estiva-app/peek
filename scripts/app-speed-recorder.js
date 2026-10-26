@@ -5,7 +5,7 @@
 // Times are performance.now() of this document. app-speed.mjs puts `window.__spAwait` ([hostRe, pathRe, texts][]) in
 // front of this file; a text is a string, or `{ re }` for a regular expression.
 ;(() => {
-  if (!/^(leaf|ship|peek)\./.test(location.hostname)) return
+  if (!/^(leaf|ship|peek)\.estiva\.app$/.test(location.hostname)) return
   const now = () => Math.round(performance.now())
   const sp = (window.__sp = { href: location.href, origin: performance.timeOrigin, ws: [], http: [], refusals: [], marks: {}, placeholders: [] })
   // The first document of this tab's sign-in: Estiva ID bounces the app to its origin twice, and the wait a person
@@ -83,7 +83,8 @@
   setInterval(() => {
     const body = document.body
     if (!body) return
-    const text = body.innerText ?? ''
+    // The page's own text, not the sidebar's: a tree row can carry the same words before the page has drawn.
+    const text = (document.querySelector('main') ?? body).innerText ?? ''
     const texts = awaited()
     for (const t of texts) if (!(key(t) in sp.marks) && shows(text, t)) sp.marks[key(t)] = now()
     // The page's own placeholders: Leaf's sidebar tree keeps some that never resolve, counted in `left`.
