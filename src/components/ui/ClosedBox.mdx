@@ -1,0 +1,43 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ConversationBoxStories from './ConversationBox.stories'
+
+<Meta title="Writing & text/Composer/ClosedBox" />
+
+# ClosedBox
+
+The box's place where nothing can be written: the line saying why, drawn by
+the package's `CommentBox` as every app draws it (Decided 2026-10-17).
+
+<Canvas of={ConversationBoxStories.Archived} />
+
+**Seen in** — *Writing & text/Composer/ConversationBox* → **Archived**; and
+*Pages in the shell* → **File Archived**, under the messages, with the
+archived card above them.
+
+## When
+
+- An archived file, or a file archived with the file above it: the line from
+  `archivedLineOf` ("Archived. Unarchive it to comment.", "Unarchive the
+  project to comment.") in the composer's place, and in an open thread's.
+
+## When not
+
+- Who archived it, the resolution and the way back → **ArchivedNotice**, the
+  card above the messages. This is only the line.
+- A box that can be written in → **ConversationBox**.
+
+## How
+
+```tsx
+import { ClosedBox } from '@/components/ui/ConversationBox'
+
+<div className="p-3">
+  <ClosedBox reason={archivedLineOf(file.archived) ?? ''} />
+</div>
+```
+
+## What it owns
+
+- **The same line in every app.** It is the package's closed box, so Peek,
+  Ship and Leaf say it in one look and one set of words.
+- **No way to write.** No editor, no Send, no draft.

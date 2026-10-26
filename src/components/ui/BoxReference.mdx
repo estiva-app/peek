@@ -1,0 +1,42 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ConversationBoxStories from './ConversationBox.stories'
+
+<Meta title="Writing & text/Composer/BoxReference" />
+
+# BoxReference
+
+A `nostr:` reference or an app link inside the box, drawn as the sent message
+will draw it: a chip in a line of text, its row when it is alone on its line.
+
+<Canvas of={ConversationBoxStories.WithAnIssue} />
+
+**Seen in** — *Writing & text/Composer/ConversationBox* → **With An Issue**
+(the chip) and **An Issue Alone On Its Line** (the row).
+
+## When
+
+- As the `referenceView` the package's `CommentBox` draws a reference with —
+  handed to `keepCommentBoxWarm` once as Peek starts, and used by every
+  **ConversationBox**.
+
+## When not
+
+- In a sent message → `Reference`, which is a link there; here a click is not
+  a way out of the draft.
+- A line that is only a link, in Peek's own mention nodes → **RowInTheBox**,
+  which this draws for the row.
+
+## How
+
+```tsx
+import { keepCommentBoxWarm } from '@estiva-app/ui/editor'
+import { BOX_EXTENSIONS, BoxReference } from '@/components/ui/ConversationBox'
+
+keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
+```
+
+## What it owns
+
+- **Reading the object**: from what a story or a test supplied, else from the
+  relay; an app link not answered yet reads as the URL it was written as.
+- **No navigation while writing**: the chip is drawn with `link={false}`.
