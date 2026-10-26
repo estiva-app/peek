@@ -89,7 +89,7 @@ describe('ConversationBox — what a send carries', () => {
   it('sends a resolution and a highlight beside the text, not in it', async () => {
     const user = userEvent.setup()
     const { onSend, send, editor } = await boxWith('Shipping Thursday')
-    // As `/` → Conclusion and `-> ` write them.
+    // As `-> ` writes the resolution; the tag as a draft from before PEEKM-3 holds it (`/` offers no Highlights now).
     insertHighlightTag(editor, 'conclusion')
     editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'resolutionBlock', content: [{ type: 'text', text: 'agreed in the call' }] })
     await user.click(send)

@@ -33,8 +33,8 @@ describe('the menu, unfiltered', () => {
 })
 
 describe('filterSlashSections', () => {
-  it('narrows on a label prefix, across sections', () => {
-    // Both are genuine matches: Quote is a format, Resolve an insert row found by its description.
+  it('narrows on a label prefix, in either section', () => {
+    // Quote is a format, Resolve an insert row; neither query reaches a row of the other section.
     expect(filter('res')).toEqual(['Resolve'])
     expect(filter('qu')).toEqual(['Quote'])
   })
