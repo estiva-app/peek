@@ -32,6 +32,20 @@ function highlight(type: HighlightType, label: string): SlashCommand {
   }
 }
 
+/** Peek's own Insert rows, after the triggers: Resolve and the Highlights. The comment box puts them after the kit's. */
+export const PEEK_INSERT_ROWS: readonly SlashCommand[] = [
+  // `->`, not `→`: the row shows what you would type, and the resolution
+  // block's own input rule is /^->\s$/ — there is no `→` key to press. It
+  // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
+  // against 6px for everything else.
+  shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
+  highlight('insight', 'Insight'),
+  highlight('concern', 'Concern'),
+  highlight('conclusion', 'Conclusion'),
+  highlight('question', 'Question'),
+  highlight('summary', 'Summary'),
+]
+
 export const SLASH_SECTIONS: readonly SlashSection[] = [
   formatSection('inline'),
   {
@@ -41,16 +55,7 @@ export const SLASH_SECTIONS: readonly SlashSection[] = [
       shortcut('Urgent', '!@', '!@', 'Urgent mention'),
       // What `[` lists since PEE-21: the messages on screen first, then files and topics.
       shortcut('Reference', '[', '[', 'Reference a message, file or topic'),
-      // `->`, not `→`: the row shows what you would type, and the resolution
-      // block's own input rule is /^->\s$/ — there is no `→` key to press. It
-      // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
-      // against 6px for everything else.
-      shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
-      highlight('insight', 'Insight'),
-      highlight('concern', 'Concern'),
-      highlight('conclusion', 'Conclusion'),
-      highlight('question', 'Question'),
-      highlight('summary', 'Summary'),
+      ...PEEK_INSERT_ROWS,
     ],
   },
 ]

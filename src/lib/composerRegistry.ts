@@ -38,28 +38,6 @@ export function unregisterComposer(editor: Editor) {
   if (activeComposer?.editor === editor) activeComposer = null
 }
 
-export interface FileMentionAttrs {
-  id: string
-  label: string
-  app: string
-  subtitle: string
-}
-
-/** Insert a file-reference chip (plus a trailing space) at the active
- *  composer's cursor. Returns false when no composer is available. */
-export function insertFileMentionIntoActiveComposer(attrs: FileMentionAttrs): boolean {
-  if (!activeComposer || activeComposer.editor.isDestroyed) return false
-  activeComposer.editor
-    .chain()
-    .focus()
-    .insertContent([
-      { type: 'fileMention', attrs },
-      { type: 'text', text: ' ' },
-    ])
-    .run()
-  return true
-}
-
 /**
  * Insert a `nostr:` object reference (plus a trailing space) at the active
  * composer's cursor. Returns false when no composer is available.
@@ -73,9 +51,9 @@ export function insertFileMentionIntoActiveComposer(attrs: FileMentionAttrs): bo
  * Sent, `MessageBody` finds the `nostr:naddr1…` back out of the body
  * (`findNaddrs`) and renders the object through its own projection. So the
  * *spelling* is the contract here: what is sent must be the address matching
- * `NADDR_RE`. It goes in as an `objectMention` chip since UIG-40 — the sent
- * message's chip, title and status (Katerina, 28 September) — which serialises
- * back to exactly that address.
+ * `NADDR_RE`. It goes in as the comment box's `reference` chip (UIG-40, PEEKM-3) —
+ * the sent message's chip, title and status (Katerina, 28 September) — which
+ * `composerText` writes back as exactly that address.
  *
  * **It is drawn in place wherever the cursor was, since OPT-18**: the title and
  * its status, as the whole message or after "Filed it —" alike. A card under the
@@ -95,7 +73,7 @@ export function insertReferenceIntoActiveComposer(naddr: string): boolean {
     .focus()
     .unsetAllMarks()
     .insertContent([
-      { type: 'objectMention', attrs: { uri: `nostr:${naddr}` } },
+      { type: 'reference', attrs: { uri: `nostr:${naddr}` } },
       { type: 'text', text: ' ' },
     ])
     .run()

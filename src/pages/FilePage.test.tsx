@@ -1416,6 +1416,18 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(openHeaderMenu()).toEqual(['Details', 'Copy link', 'Unarchive', 'Delete'])
   })
 
+  // Above the messages, as Ship's issue page has it; the box's line alone under them (Miky, 25 October, PEEKM-3).
+  it('an archived file shows its card above the messages and the box line under them', () => {
+    objects.byAddress[TOPIC_ADDRESS] = { ...bareFile, archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' } }
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    const card = within(middle).getByText(/^Archived by/)
+    const messages = within(middle).getByTestId('peek-view')
+    const line = within(middle).getByText('Archived. Unarchive it to comment.')
+    expect(card.compareDocumentPosition(messages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(messages.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('Copy link hands out the short form — the ticket’s done-when (FOL-37)', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     const writeText = vi.fn(async () => {})

@@ -51,7 +51,7 @@ export { cardValueOfUrl, knownCardValue, askCardValues, askLinks, blockOfUrl, kn
 export { usePart, type PartView } from './part'
 export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
-export { mentionPeople } from './mentions'
+export { mentionPeople, mentionsVersion, subscribeMentions } from './mentions'
 export { referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'

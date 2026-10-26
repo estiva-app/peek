@@ -7,7 +7,7 @@ import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
 import { MetaText } from '@/components/ui/MetaText'
-import { ComposeBox, type SendPayload, type SendRefused } from '@/components/ui/ComposeBox'
+import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
@@ -43,7 +43,7 @@ import {
 import { groupReactions, offersEditAndDelete, REACTION_HORIZON, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
-import { notSavedNote, notSentNote } from '@/lib/notSent'
+import { notSavedNote, notSentNote, notSentReason } from '@/lib/notSent'
 import { putBackEdit } from '@/lib/refusedEdits'
 
 interface UseFileConversationViewArgs {
@@ -81,6 +81,8 @@ interface UseFileConversationViewArgs {
    * toggle, nothing on hover — and only a message with replies opens anything.
    */
   readOnly?: boolean
+  /** Why nothing can be written, said in the thread's box's place ("Archived. Unarchive it to comment."). */
+  closed?: string
 }
 
 /** The stream and its composer as a `Panel` takes them: spread them onto one. */
@@ -206,6 +208,7 @@ export function useFileConversationView({
   draftKey,
   empty,
   readOnly = false,
+  closed,
 }: UseFileConversationViewArgs): ViewSlots {
   const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
     onActivity: () => void onCommented?.(),
@@ -324,18 +327,14 @@ export function useFileConversationView({
     The composer's files are the relay's copies (CON-12): `UploadedFile` carries
     `sha256` and `mediaUrl`. A conversation has nowhere but the relay to keep
     the bytes, so a file the relay does not hold cannot be attached here — said
-    before the text is lost, by returning false so the composer keeps it.
+    under the box, with the words kept in it.
   */
-  const outgoing = (files: readonly FileAttachment[] | undefined): OutgoingAttachment[] | null => {
+  const notOnTheRelay = (files: readonly FileAttachment[] | undefined): SendAnswer | undefined => {
     const missing = (files ?? []).find((f) => !f.sha256 || !f.mediaUrl)
-    if (missing) {
-      showToast({
-        label: `${missing.name} is not on the relay, so it cannot be attached here.`,
-        type: 'error',
-      })
-      return null
-    }
-    return (files ?? []).map(({ name, contentType, size, sha256, mediaUrl, thumbUrl }) => ({
+    return missing ? { accepted: false, reason: `${missing.name} is not on the relay, so it cannot be attached here` } : undefined
+  }
+  const outgoing = (files: readonly FileAttachment[] | undefined): OutgoingAttachment[] =>
+    (files ?? []).map(({ name, contentType, size, sha256, mediaUrl, thumbUrl }) => ({
       name,
       contentType,
       size,
@@ -343,52 +342,56 @@ export function useFileConversationView({
       mediaUrl,
       thumbUrl,
     }))
-  }
 
   /*
-    A refused send is the composer's to put back, and this says so once it has
-    (OPT-7) — instead of `refuse`'s toast of the relay's own words. Built as
-    the send goes out, so the note names this conversation even when the
-    person has moved to another by the time the relay answers.
+    A refused send is the box's to put back, with the line under it saying why
+    (OPT-7; Decided 2026-10-17: no toast). A message refused with its topic
+    (PEE-6) tells the topic's own note instead, which waits for what came back.
+    When the person has moved on before the relay answered, the box is gone and
+    its line cannot be seen: the note says it, naming where the text went back
+    to — its draft there (the record's "Not sent — text restored in <topic>").
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
   */
-  const notSent = (where: string, reason: string): SendRefused => {
-    // Not posted because its topic was refused (PEE-6): the topic's own note says what came back, once.
-    const topic = reason === TOPIC_NOT_CREATED && container?.kind === 'file' ? container.address : null
-    return {
-      say: (back) =>
-        topic ? topicTextBack(topic, back.text) : showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
-    }
+  const notSent = (where: string, payload: SendPayload, reason: string, away: () => boolean): SendAnswer => {
+    const text = !!payload.text.trim()
+    if (reason === TOPIC_NOT_CREATED && container?.kind === 'file') topicTextBack(container.address, text)
+    else if (away()) showToast({ label: notSentNote(where, noteName, reason, { text, files: false, filesLost: !!payload.files?.length }), type: 'error' })
+    return { accepted: false, reason: notSentReason(noteName, reason) }
   }
 
-  const handleSend = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
+  const handleSend = async (payload: SendPayload, away: () => boolean): Promise<SendAnswer> => {
+    const { text, resolution, files, urgent, embeds } = payload
+    const missing = notOnTheRelay(files)
+    if (missing) return missing
     const attachments = outgoing(files)
-    if (!attachments) return false
     // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
     nearBottom.current = true
     const result = await actions.comment(text, attachments, urgent, embeds)
     if (!result.ok) {
       // Nothing was drawn, or it was taken out again: where the reader actually is decides what follows next.
       if (scrollRef.current) nearBottom.current = isNearBottom(scrollRef.current)
-      return notSent(noteName, result.reason)
+      return notSent(noteName, payload, result.reason, away)
     }
     membershipAfterWrite()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
-    return true
+    return { accepted: true }
   }
 
   const openRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
   const openView = openThreadId && view ? view.byId[openThreadId] : undefined
 
-  const handleSendReply = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
-    if (!openRoot) return false
-    const attachments = outgoing(files)
-    if (!attachments) return false
-    const result = await actions.reply(openRoot, text, attachments, urgent, embeds)
-    if (!result.ok) return notSent(openView ? `your reply to ${openView.data.authorName}` : noteName, result.reason)
+  const handleSendReply = async (payload: SendPayload, away: () => boolean): Promise<SendAnswer> => {
+    const { text, resolution, files, urgent, embeds } = payload
+    if (!openRoot) return { accepted: false, reason: 'its thread is closed' }
+    const missing = notOnTheRelay(files)
+    if (missing) return missing
+    const where = openView ? `your reply to ${openView.data.authorName}` : noteName
+    const result = await actions.reply(openRoot, text, outgoing(files), urgent, embeds)
+    if (!result.ok) return notSent(where, payload, result.reason, away)
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)
-    return true
+    return { accepted: true }
   }
 
   /*
@@ -613,9 +616,15 @@ export function useFileConversationView({
         </div>
     </>
   )
-  const composer = readOnly ? undefined : (
+  const composer = readOnly ? (
+    closed ? (
       <div className="p-3">
-        <ComposeBox
+        <ClosedBox reason={closed} />
+      </div>
+    ) : undefined
+  ) : (
+      <div className="p-3">
+        <ConversationBox
           onSend={handleSend}
           contextLabel={title}
           draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
@@ -653,6 +662,7 @@ export function useFileConversationView({
         onSendReply={handleSendReply}
         writtenOn={container?.kind === 'file' ? container.address : undefined}
         readOnly={readOnly}
+        readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.
         composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
         onDeleteReply={(id) => remove(id)}

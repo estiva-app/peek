@@ -56,7 +56,7 @@ function open(onReplyReactionsChange: (...args: unknown[]) => void) {
             replies={[reply]}
             sentReplies={[]}
             onClose={() => {}}
-            onSendReply={() => {}}
+            onSendReply={async () => ({ accepted: true })}
             onReplyReactionsChange={onReplyReactionsChange as never}
           />
         </PeekDataProvider>

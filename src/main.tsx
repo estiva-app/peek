@@ -7,8 +7,8 @@ import { EstivaIdCallback } from './auth/EstivaIdCallback'
 import { CALLBACK_PATH, storedToken } from './auth/estivaId'
 import { RELAY_URL } from './api/relayUrl'
 import { warmDeviceCopy } from './nostr/deviceCopy'
-import { keepWarmEditor } from './extensions/warmEditor'
-import { peekEditorExtensions } from './extensions/peekEditor'
+import { keepCommentBoxWarm } from '@estiva-app/ui/editor'
+import { BOX_EXTENSIONS, BoxReference } from './components/ui/ConversationBox'
 import { watchPagePicture } from './lib/pagePicture'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
@@ -30,8 +30,8 @@ setSocketReader(createAppSocketReader(relayLog))
 installSocketReadsDiagnostic()
 // The copy on the device Desk draws from (PEE-2), read while React renders.
 warmDeviceCopy(RELAY_URL, storedToken()?.pubkey)
-// The next composer's editor, built while the page is idle (4ef41d41).
-keepWarmEditor(peekEditorExtensions)
+// The next comment box's editor, built while the page is idle (4ef41d41), with the box's own extensions and chip.
+keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
 // The saved Desk index.html may have shown: it goes when anything but Desk draws (Desk replaces it itself).
 watchPagePicture()
 

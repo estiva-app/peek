@@ -20,7 +20,7 @@ import { isRowOfDecorations } from './loneLinkRows'
  * sent message will draw it (`loneLinkRows`). A click on it while writing is
  * not a way out of the draft, as a chip's is not.
  */
-function RowInTheBox({ uri, object }: { uri: string; object: ForeignObject | null | undefined }) {
+export function RowInTheBox({ uri, object }: { uri: string; object: ForeignObject | null | undefined }) {
   return (
     <span
       data-box-row
@@ -194,7 +194,7 @@ export const MessageMention = CaptionedReference.extend({
 })
 
 /** Each `[` row with the icon of what it is — the chip it inserts wears the same, from its URI (7 October). */
-function rowIcon(uri: string) {
+export function referenceRowIcon(uri: string) {
   const glyph = referenceGlyphOfUri(uri)
   return glyph ? <KindIcon kind={glyph} /> : undefined
 }
@@ -211,7 +211,7 @@ function rowIcon(uri: string) {
 export const PeekReferenceTrigger = ReferenceTrigger.configure({
   items: () => mentionMessages().map(toReferenceItem),
   sections: referenceSections,
-  iconFor: rowIcon,
+  iconFor: referenceRowIcon,
   subscribe: subscribeReferences,
   nodeName: 'messageMention',
   ...FILES_MENU_COPY,

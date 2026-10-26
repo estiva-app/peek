@@ -1,0 +1,56 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ConversationBoxStories from './ConversationBox.stories'
+
+<Meta of={ConversationBoxStories} />
+
+# ConversationBox
+
+Peek's comment box: the package's `CommentBox`, the one box every app writes a
+comment, a reply, a DM and a Folder's chat line in (PEEKM-3), with what only
+Peek knows — its people, its `/` rows, its upload, its drafts and its send.
+
+<Canvas of={ConversationBoxStories.Default} />
+
+**Seen in** — its stories: **Default**, **Reply**, **With An Issue**, **An
+Issue Alone On Its Line**, **Refused** and **Archived**; under a topic's or a
+file's messages, in an open thread, in a DM and in a Folder's chat.
+
+## When
+
+- Wherever a person writes a new message or a reply in Peek: a topic, a file's
+  conversation, a thread, a DM, a Folder's chat.
+
+## When not
+
+- Editing a sent message → the edit boxes in `ConversationCard` and
+  `ReplyCard`, until the project's edit issue moves them onto the box.
+- Nothing can be written (an archived file) → **ClosedBox**, the line in the
+  box's place.
+- In another app → its own wrapper of `CommentBox` (Ship's `ConversationBox`,
+  Leaf's), never this one.
+
+## How
+
+```tsx
+import { ConversationBox } from '@/components/ui/ConversationBox'
+
+<ConversationBox
+  kind="reply"
+  onSend={(payload, away) => send(payload, away)}
+  draftKey={draftKeys.object(file.address)}
+  contextLabel={title}
+  here={file.address}
+/>
+```
+
+## What it owns
+
+- **Shown at once** (Decided 2026-10-17): the box empties as soon as Send is
+  pressed; a refusal puts the words back with a line under the box saying why,
+  in plain words (`notSentReason`) — no toast. A refusal that arrives after the
+  person has left the box is said in a note instead.
+- **Peek's `/` rows**: Resolve and the five Highlights, after the package's
+  Upload, Mention, Urgent and Reference.
+- **The draft**, kept under `draftKey` until it is sent.
+- **The launcher's target**: the box last used is the one the command launcher
+  writes into.

@@ -85,6 +85,17 @@ export function extractResolution(editor: { state: { doc: { forEach: (cb: (node:
   return { hasResolution, resolutionMessage }
 }
 
+type DocumentNode = { type?: string; text?: string; content?: DocumentNode[] }
+
+const textOf = (node: DocumentNode): string => node.text ?? (node.content ?? []).map(textOf).join('')
+
+/** The same, from the document the comment box hands its send. */
+export function resolutionOfDocument(doc: DocumentNode): { hasResolution: boolean; resolutionMessage: string } {
+  return extractResolution({
+    state: { doc: { forEach: (cb) => (doc.content ?? []).forEach((node) => cb({ type: { name: node.type ?? '' }, textContent: textOf(node) })) } },
+  })
+}
+
 /**
  * Fallback for the edit-message flow: if the user typed "-> something" but the
  * Tiptap InputRule never converted it to a resolutionBlock (e.g. they pasted,

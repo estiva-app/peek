@@ -21,12 +21,12 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@estiva-app/conversation": "^0.16.0",
+    "@estiva-app/conversation": "^0.18.0",
     "@estiva-app/identity": "^0.3.0",
     "@estiva-app/interop": "^0.65.1",
     "@estiva-app/platform": "^0.7.0",
     "@estiva-app/protocol": "^0.42.0",
-    "@estiva-app/ui": "^0.87.0",
+    "@estiva-app/ui": "^0.87.1",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-code-block-lowlight": "^3.22.1",
     "@tiptap/extension-link": "^3.22.1",

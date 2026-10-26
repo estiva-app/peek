@@ -40,7 +40,7 @@ function open() {
           replies={REPLIES['t1_c1']}
           sentReplies={[]}
           onClose={() => {}}
-          onSendReply={() => {}}
+          onSendReply={async () => ({ accepted: true })}
         />
         </PeekDataProvider>
       </DebugProvider>

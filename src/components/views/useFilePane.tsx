@@ -9,7 +9,8 @@ import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
-import { kindNoun } from '@/lib/archiveWords'
+import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
+import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
@@ -197,11 +198,30 @@ export function useFilePane(
     <Panel
       {...view.panel}
       /*
-        An archived file is read-only (Katerina, 7 October): no composer,
-        and its notice in the composer's place, in the composer's own
-        padding — under the messages, where the newest one is.
+        An archived file is read-only (Katerina, 7 October). Its card goes
+        above the messages, where Ship's issue page puts it, and the comment
+        box's own line takes the composer's place, as every app says it
+        (Miky, 25 October, PEEKM-3).
       */
-      footer={notice ? <div className="p-3">{notice}</div> : view.panel.footer}
+      footer={
+        notice ? (
+          <div className="p-3">
+            <ClosedBox reason={archivedLineOf(archive) ?? ''} />
+          </div>
+        ) : (
+          view.panel.footer
+        )
+      }
+      children={
+        notice ? (
+          <>
+            <div className="shrink-0 px-4 pt-4">{notice}</div>
+            {view.panel.children}
+          </>
+        ) : (
+          view.panel.children
+        )
+      }
       title={
         /*
           One row: the file's name, and whose file it is (Katerina, 5
