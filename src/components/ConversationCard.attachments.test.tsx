@@ -101,9 +101,10 @@ describe('attaching a file while editing a sent message', () => {
     expect(editor.textContent).toBe(before)
   })
 
-  it('attaches a file picked with the paperclip', async () => {
+  /* No paperclip: the edit box shows only its keys (Decided 2026-10-17). `/` → Upload opens this picker. */
+  it('attaches a file picked from / → Upload, with no paperclip on the box', async () => {
     const { container } = await openEditor()
-    expect(screen.getByRole('button', { name: 'Attach file' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /attach/i })).toBeNull()
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     await userEvent.upload(input, new File([new Uint8Array([1])], 'notes.txt', { type: 'text/plain' }))
@@ -121,14 +122,26 @@ describe('attaching a file while editing a sent message', () => {
   })
 
   it('shows the files the message already has, and can remove one', async () => {
-    const { onFilesChange } = await openEditor({ files: [EXISTING] })
+    const SECOND: FileAttachment = { ...EXISTING, name: 'budget.xlsx', sha256: 'ef'.repeat(32) }
+    const { onFilesChange } = await openEditor({ files: [EXISTING, SECOND] })
     expect(await screen.findByText('brief.pdf')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove brief.pdf' }))
     await waitFor(() => expect(screen.queryByText('brief.pdf')).toBeNull())
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onFilesChange).toHaveBeenCalledWith([])
+    expect(onFilesChange).toHaveBeenCalledWith([expect.objectContaining({ name: 'budget.xlsx', sha256: 'ef'.repeat(32) })])
+  })
+
+  /* An edit carrying no `imeta` keeps the files it had, so the box says so instead of closing on a file that stays. */
+  it('refuses taking off the last file, under the box, and saves nothing', async () => {
+    const { container, onFilesChange } = await openEditor({ files: [EXISTING] })
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove brief.pdf' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/the last file cannot be taken off a message yet/)).toBeTruthy()
+    expect(container.querySelector('.ProseMirror')).not.toBeNull()
+    expect(onFilesChange).not.toHaveBeenCalled()
   })
 
   it('saves the message its files, old and new together', async () => {

@@ -310,9 +310,10 @@ export function useFileConversationView({
       }
       // The card set rides the same edit, so it cannot race the body either (OPT-17).
       void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
-        // The old text is back on the message; what was saved goes back in its edit box (Miky, 9 Oct).
-        if (!result.ok) putBackEdit(targetEventId, body)
-        notSaved('edit', result)
+        if (result.ok) return
+        // The old text is back on the message; what was saved goes back in its edit box with why under it (Miky, 9 Oct;
+        // PEEKM-4). A note only when no card of it is on screen to reopen.
+        if (!putBackEdit(targetEventId, { text: body, reason: notSentReason(noteName, result.reason), files: files && edit?.files })) notSaved('edit', result)
       })
     })
   }

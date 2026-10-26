@@ -1,45 +1,31 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import { useState, useEffect } from 'react'
 import type { Embed } from '@estiva-app/protocol'
-import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
-import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
-import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
-import { extractHighlightType } from '@/extensions/highlight'
 import {
   IconAlertSquareRounded,
   IconChecks,
   IconArrowNarrowRight,
   IconDotsVertical,
 } from '@tabler/icons-react'
-import { Button } from './ui/Button'
-import { AttachmentCard, Avatar, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, Avatar, Card, ToolbarButton } from '@estiva-app/ui'
 import { RepliesRow } from './ui/RepliesRow'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ResolveDialog } from './ResolveDialog'
 import { ConfirmDelete } from './ConfirmDelete'
-import { PEOPLE } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useCanUpload, isCurrentUser } from '@/api'
-import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
-import { HighlightButton } from './ui/HighlightButton'
-import { BoxCardUnder } from './ui/BoxCard'
-import { useBoxCard } from './ui/useBoxCard'
+import { isCurrentUser } from '@/api'
+import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard } from '@estiva-app/conversation'
 import { HighlightPill } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
-import { useEditAttachments } from '@/lib/useEditAttachments'
-import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
-import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
+import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
+import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
-
-import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import { MetaText } from '@/components/ui/MetaText'
-import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 interface ConversationCardProps {
   authorName: string
@@ -184,179 +170,15 @@ export function ConversationCard({
     setBodyState(body)
   }, [body])
 
-  // Edit mode
-  const [isEditing, setIsEditing] = useState(false)
-  const [editEmpty, setEditEmpty] = useState(false)
-  const [editHasUrgent, setEditHasUrgent] = useState(false)
-  const [editHasHighlight, setEditHasHighlight] = useState(false)
-
-  // The files of the message being edited — PEE-16. Held here because the
-  // paperclip, the paste and Save all need the same list.
-  const editAttachments = useEditAttachments(files)
-  const canUpload = useCanUpload()
-  // The paste handler is a closure from the editor's first render, so it
-  // reads the current one through a ref. Assigned in an effect rather than
-  // during render: a paste can only happen after the box is on screen.
-  const editAttachmentsRef = useRef(editAttachments)
-  useEffect(() => {
-    editAttachmentsRef.current = editAttachments
-  })
-
-  const editSaveFnRef = useRef<() => void>(() => {})
-  const editCancelFnRef = useRef<() => void>(() => {})
-  const editEmptyRef = useRef(true)
-  const editEditorRef = useRef<Editor | null>(null)
-  /** The text a refused edit saved, for the edit box to open with instead of the body (OPT-8). */
-  const restoredEdit = useRef<string | undefined>(undefined)
-  /** The edit box itself — what the highlight picker hangs from. */
-  const editBoxRef = useRef<HTMLDivElement>(null)
-
   /*
-    The edit box's editor, while the message is being edited, and null
-    otherwise (OPT-6). Made by `EditorHost` when editing starts rather than with
-    every card: a long topic built one per message, and after the page sat
-    idle the first new card paid ~140 ms rebuilding one nobody would use —
-    most of a sent message's 100 ms.
+    Edit mode: the shared box's edit form (PEEKM-4), drawn only while editing.
+    `editing` is what it opens with — the message, or a save the relay refused
+    (OPT-8) — and `editKey` makes each opening a new box, since the box reads
+    what it opens with only as it mounts. A read-only card (an archived file,
+    a deleted message) draws no box, even one opened before it became so.
   */
-  const [editEditor, setEditEditor] = useState<Editor | null>(null)
-  // The edit's own default card: only for a file it links first (§13.6.2).
-  const editBox = useBoxCard(isEditing ? editEditor : null, { here: writtenOn, previousBody: bodyState })
-  const editOptions: EditorHostOptions = {
-    extensions: peekEditExtensions,
-    editorProps: {
-      attributes: {
-        class: PEEK_EDITOR_CLASSES,
-        style: 'caret-color: var(--text-primary)',
-      },
-      /* A screenshot pasted while editing becomes an attachment, exactly as it
-         does in the composer — PEE-16. `pastedImages` is what decides an image
-         from a copy that merely carries one (text wins), so a pasted table
-         stays a table. Returning true keeps the picture out of the document:
-         it belongs in a chip. See ComposeBox for the longer note. */
-      handlePaste: (_view, event) => {
-        if (!canUpload) return false
-        const images = pastedImages(event.clipboardData)
-        if (images.length === 0) return false
-        editAttachmentsRef.current.add(images)
-        return true
-      },
-      handleKeyDown: (view, event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          if (isSuggestionActive()) return false
-          if (!editEmptyRef.current) editSaveFnRef.current()
-          return true
-        }
-        // Shift+Enter: in list → split item (or exit if empty), else new paragraph
-        if (event.key === 'Enter' && event.shiftKey) {
-          const ed = editEditorRef.current
-          if (!ed) return false
-          const { $from } = view.state.selection
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'listItem') {
-              const listItem = $from.node(d)
-              if (listItem.textContent.length === 0) {
-                ed.commands.liftListItem('listItem')
-              } else {
-                ed.commands.splitListItem('listItem')
-              }
-              return true
-            }
-          }
-          // Empty quote line exits the quote (mirrors empty-list-item lift).
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'blockquote') {
-              if ($from.parent.textContent.length === 0) {
-                ed.commands.lift('paragraph')
-                return true
-              }
-              break
-            }
-          }
-          ed.commands.splitBlock()
-          return true
-        }
-        /* An open `@`, `[` or `/` menu owns Escape: the first press closes
-           the menu, a second cancels the edit. Without this the plugin never
-           saw the key — ProseMirror asks `editorProps` before any plugin — so
-           reaching for the menu's Escape threw the whole edit away. */
-        if (event.key === 'Escape') {
-          if (isSuggestionOpen()) return false
-          editCancelFnRef.current()
-          return true
-        }
-        return false
-      },
-    },
-    content: '',
-    autofocus: false,
-    onUpdate({ editor }) {
-      const doc = editor.state.doc
-      let hasNonParagraph = false
-      let hasAtomNode = false
-      doc.forEach((node) => {
-        if (node.type.name !== 'paragraph') hasNonParagraph = true
-      })
-      doc.descendants((node) => {
-        if (node.isAtom && node.type.name !== 'paragraph') hasAtomNode = true
-      })
-      const empty = doc.textContent.length === 0 && !hasNonParagraph && !hasAtomNode
-      setEditEmpty(empty)
-      editEmptyRef.current = empty
-      if (empty && doc.childCount > 1) {
-        requestAnimationFrame(() => {
-          editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph' }] })
-        })
-      }
-      let urgent = false
-      let highlight = false
-      editor.state.doc.descendants((node) => {
-        if (node.type.name === 'urgentMention') urgent = true
-        if (node.type.name === 'highlightTag') highlight = true
-      })
-      setEditHasUrgent(urgent)
-      setEditHasHighlight(highlight)
-    },
-  }
-
-  editEditorRef.current = editEditor
-
-  // When entering edit mode, populate with current body text. Leaving it unmounts the editor.
-  useEffect(() => {
-    if (!editEditor) return
-    if (isEditing) {
-      // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
-      const content = withUrgentMentions(textToTiptapContent(restoredEdit.current ?? bodyState), urgentMentions)
-      restoredEdit.current = undefined
-      // If message has a highlight, prepend the tag to the first paragraph
-      if (highlightState && content.content && content.content.length > 0) {
-        const first = content.content[0]
-        if (first.type === 'paragraph') {
-          const existing = (first.content ?? []) as Record<string, unknown>[]
-          first.content = [
-            { type: 'highlightTag', attrs: { highlightType: highlightState } },
-            { type: 'text', text: ' ' },
-            ...existing,
-          ]
-        }
-      }
-      // If the message is currently resolved, append a resolutionBlock so the
-      // resolution text is visible and editable inline. Removing the block on
-      // save reopens the conversation; clearing the text leaves it resolved
-      // with no message (matches the empty-sentinel send path).
-      if (resolved) {
-        const resolutionText = resolutionMsg ? `→ ${resolutionMsg}` : '→ '
-        content.content.push({
-          type: 'resolutionBlock',
-          content: [{ type: 'text', text: resolutionText }],
-        })
-      }
-      editEditor.commands.setContent(content)
-      // Focus and move cursor to end
-      setTimeout(() => {
-        editEditor.commands.focus('end')
-      }, 0)
-    }
-  }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [editing, setEditing] = useState<{ key: number; refused?: RefusedEdit } | null>(null)
+  const isEditing = editing !== null && !readOnly
 
   // Resolved state - sync from parent when prop changes
   const [resolved, setResolved] = useState(initialResolved)
@@ -409,88 +231,54 @@ export function ConversationCard({
     setIsHovered(false)
   }
 
-  const handleEditStart = () => {
-    editAttachments.begin()
-    setIsEditing(true)
-  }
+  const handleEditStart = (refused?: RefusedEdit) => setEditing((was) => ({ key: (was?.key ?? 0) + 1, refused }))
 
   /*
     An edit the relay refused (OPT-8): the message shows its old text again,
-    and its edit box reopens holding what was saved (Miky, 9 Oct) — now, or
-    when this card is next drawn if the person had moved on. A box already
-    open again is left as the person has it.
+    and its edit box reopens holding what was saved, with why under it (Miky,
+    9 Oct) — now, or when this card is next drawn if the person had moved on.
+    A box already open again is left as the person has it.
   */
-  const refusedEdit = useRefusedEdit(messageId)
+  // A read-only card cannot reopen it, so it does not count as drawing the message: the note says so instead.
+  const refusedEdit = useRefusedEdit(readOnly ? undefined : messageId)
   useEffect(() => {
     if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)
     if (isEditing) return
-    restoredEdit.current = refusedEdit
-    handleEditStart()
+    handleEditStart(refusedEdit)
   }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleEditSave = () => {
-    if (!editEditor) return
-    const wasResolved = resolved
-    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
-    let resolution = extractResolution(editEditor)
-    let finalBody = trimmed
-
-    // Fallback: if the InputRule didn't fire (e.g. pasted "-> X" at a line
-    // start), parse the serialized text. Start-of-line arrows only — mid-line
-    // arrows are prose (ruling 2026-07-23).
-    if (!resolution.hasResolution) {
-      const fromText = extractResolutionFromText(trimmed)
-      if (fromText) {
-        finalBody = fromText.body
-        resolution = { hasResolution: true, resolutionMessage: fromText.resolutionMessage }
-      }
+  /*
+    Saved: shown at once, and handed on in one handler, so the conversation
+    folds the text, the files and the cards into one edit (`queueEdit`). The
+    resolution is its own write, sent only when the edit changed it.
+  */
+  const handleEditSave = (saved: EditSaved) => {
+    if (saved.text !== undefined) {
+      setBodyState(saved.text)
+      onBodyChange?.(saved.text)
     }
-
-    if (finalBody) {
-      setBodyState(finalBody)
-      onBodyChange?.(finalBody)
-    }
-    if (resolution.hasResolution) {
-      // Editor still has a resolution block → message stays / becomes resolved
-      // with the (possibly edited) message text.
+    const { hasResolution, resolutionMessage } = saved.resolution
+    if (hasResolution && (!resolved || resolutionMessage !== resolutionMsg)) {
       setResolved(true)
       setResolvedBy('You')
-      setResolutionMsg(resolution.resolutionMessage)
-      onResolvedChange?.(true, 'You', resolution.resolutionMessage)
-    } else if (wasResolved) {
-      // Was resolved before edit, no resolution block in editor anymore →
-      // the user deleted it intentionally to reopen the conversation.
+      setResolutionMsg(resolutionMessage)
+      onResolvedChange?.(true, 'You', resolutionMessage)
+    } else if (!hasResolution && resolved) {
+      // The block taken out of the box reopens the conversation.
       setResolved(false)
       setResolvedBy('')
       setResolutionMsg('')
       onResolvedChange?.(false, undefined, undefined)
     }
-    // Preserve highlight type from edit
-    const hl = extractHighlightType(editEditor)
-    setHighlightState(hl)
-    onHighlightChange?.(hl)
-    // Files last, and only when this edit changed them — PEE-16. `commit`
-    // leaves storage alone: the message owns these blobs now.
-    const nextFiles = editAttachments.result()
-    if (nextFiles) onFilesChange?.(nextFiles)
-    editAttachments.commit()
-    // A file this edit links first gets its card, in the same edit (§13.6.2).
-    const nextCards = editBox.toEdit(embeds)
-    if (nextCards) onEmbedsChange?.(nextCards)
-    setIsEditing(false)
+    if (saved.highlightType !== highlightState) {
+      setHighlightState(saved.highlightType)
+      onHighlightChange?.(saved.highlightType)
+    }
+    if (saved.files) onFilesChange?.(saved.files)
+    if (saved.embeds) onEmbedsChange?.(saved.embeds)
+    setEditing(null)
   }
-
-  /* Cancel undoes the whole edit, files included: the removed come back and
-     anything attached during it is deleted from storage, because nothing will
-     ever own it. */
-  const handleEditCancel = () => {
-    editAttachments.cancel()
-    setIsEditing(false)
-  }
-
-  editSaveFnRef.current = handleEditSave
-  editCancelFnRef.current = handleEditCancel
 
   const handleReact = (emoji: string) => {
     // Computed from the state in hand, not inside a state updater: React runs
@@ -560,62 +348,26 @@ export function ConversationCard({
 
         {/* ── Message box ── */}
         {isEditing ? (
-          /* Edit layout: avatar + textarea box side by side */
-          <div className="p-2 border border-accent-primary rounded-lg">
+          /* Edit layout: avatar + the shared box's edit form side by side. */
+          <div className="p-2">
             <div className="flex items-start gap-2">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} className="shrink-0 mt-1" />
-              {/* `relative` so the highlight picker hangs off this box, the
-                  way it hangs off the composer's — the edit box is a compose
-                  box, and everything the composer can do belongs here. */}
-              <div ref={editBoxRef} className={cn(WRITING_BOX_CLASSES, 'flex-1 min-w-0')}>
-                <div className={cn(
-                  'relative min-h-[20px] transition-all',
-                  (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2'
-                )}>
-                  <EditorHost options={editOptions} onEditor={setEditEditor} />
-                  <EditorContent editor={editEditor} />
-                  {/* Bold / italic / underline / link over a selection. */}
-                  <SelectionToolbar editor={editEditor} link />
-                  {editEmpty && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
-                      Edit message
-                    </div>
-                  )}
-                </div>
-                {/* The message's files and the ones just attached, one row,
-                    each removable — PEE-16. */}
-                <AttachmentChips chips={editAttachments.chips} />
-                <div className="flex items-center justify-between">
-                  {/* The composer's strip, and for the same reason (§4.2, D29).
-                      Cancel and Save are answers, not tools, so they stay two
-                      stops of their own on the right. */}
-                  <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
-                    <AttachFileButton onPick={editAttachments.add} />
-                    <HighlightButton editor={editEditor} container={editBoxRef} />
-                  </Toolbar>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
-                      Cancel
-                    </Button>
-                    {/* A message with a file and no text is a message, so an
-                        empty editor alone no longer blocks Save. Uploads in
-                        flight do, so a file is never dropped by a fast Save. */}
-                    <Button
-                      variant="primary"
-                      size="small"
-                      className="w-14"
-                      disabled={(editEmpty && editAttachments.count === 0) || editAttachments.isUploading}
-                      onClick={handleEditSave}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* A file this edit links first: its card, as Save will add it, with its ✕. */}
-            <div className="mt-2 pl-8 empty:hidden">
-              <BoxCardUnder box={editBox} parts={false} />
+              <EditBox
+                key={editing.key}
+                message={{
+                  body: bodyState,
+                  urgent: urgentMentions,
+                  highlightType: highlightState,
+                  resolution: resolved ? { message: resolutionMsg } : undefined,
+                  files,
+                  embeds,
+                }}
+                refused={editing.refused}
+                here={writtenOn}
+                onSave={handleEditSave}
+                onCancel={() => setEditing(null)}
+                className="flex-1 min-w-0"
+              />
             </div>
           </div>
         ) : (
@@ -736,7 +488,7 @@ export function ConversationCard({
                   onResolve={() => setShowResolveDialog(true)}
                   onReopen={handleReopen}
                   isOwnMessage={isOwnMessage}
-                  onEditMessage={isOwnMessage ? handleEditStart : undefined}
+                  onEditMessage={isOwnMessage ? () => handleEditStart() : undefined}
                   onDelete={isOwnMessage ? handleDelete : undefined}
                 />
               }
@@ -764,20 +516,4 @@ export function ConversationCard({
 
     </>
   )
-}
-
-type EditorHostOptions = Parameters<typeof useEditor>[0]
-
-/**
- * Holds the edit box's editor while it is on screen, and hands it to the card
- * — before the paint, so the box never draws without it. Unmounting it
- * destroys the editor.
- */
-function EditorHost({ options, onEditor }: { options: EditorHostOptions; onEditor: (editor: Editor | null) => void }) {
-  const editor = useEditor(options)
-  useLayoutEffect(() => {
-    onEditor(editor)
-    return () => onEditor(null)
-  }, [editor, onEditor])
-  return null
 }

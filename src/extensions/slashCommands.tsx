@@ -1,5 +1,5 @@
 import { SlashCommands as SharedSlashCommands } from '@estiva-app/ui/editor'
-import { EDIT_SLASH_SECTIONS, SLASH_SECTIONS } from '@/components/ui/SlashMenu'
+import { SLASH_SECTIONS } from '@/components/ui/SlashMenu'
 
 /**
  * `/` as a suggestion — PEE-18, the package's since CON-27 (estiva-ui 0.52.0).
@@ -18,6 +18,3 @@ import { EDIT_SLASH_SECTIONS, SLASH_SECTIONS } from '@/components/ui/SlashMenu'
  * extensions it always belonged beside.
  */
 export const SlashCommands = SharedSlashCommands.configure({ sections: SLASH_SECTIONS })
-
-/** `/` in a box that edits a sent message, which offers no urgent mention (CON-24). */
-export const EditSlashCommands = SharedSlashCommands.configure({ sections: EDIT_SLASH_SECTIONS })

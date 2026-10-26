@@ -52,9 +52,3 @@ export const SLASH_SECTIONS: readonly SlashSection[] = [
     ],
   },
 ]
-
-/** The same menu in a box that edits a sent message: no Urgent row, since an edit cannot carry urgency (CON-24). */
-export const EDIT_SLASH_SECTIONS: readonly SlashSection[] = SLASH_SECTIONS.map((section) => ({
-  ...section,
-  commands: section.commands.filter((command) => command.key !== 'shortcut-!@'),
-}))

@@ -67,7 +67,7 @@ async function openEditor(props: Partial<React.ComponentProps<typeof Conversatio
   return { dom, editor: dom.editor as Editor, onBodyChange }
 }
 
-const type = (editor: Editor, text: string) => act(() => void editor.chain().focus().insertContent(text).run())
+const type = (editor: Editor, text: string) => act(() => void editor.chain().focus('end').insertContent(text).run())
 const nodeTypes = (editor: Editor) => {
   const out: string[] = []
   editor.state.doc.descendants((node) => void out.push(node.type.name))
@@ -89,12 +89,20 @@ describe('an urgent mention in a sent message', () => {
 })
 
 describe('an urgent mention in the edit box', () => {
-  it('comes back urgent, and Save keeps the text it was sent with', async () => {
+  it('comes back urgent, and Save keeps the mention as the key it was sent with', async () => {
     const { dom, editor, onBodyChange } = await openEditor({ urgentMentions: [ADA] })
     expect(nodeTypes(editor)).toContain('urgentMention')
     expect(dom.querySelector('[data-urgent-mention]')).not.toBeNull()
+    await type(editor, ' today')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onBodyChange).toHaveBeenCalledWith(BODY)
+    expect(onBodyChange).toHaveBeenCalledWith(`${BODY} today`)
+  })
+
+  it('saves nothing when nothing was changed', async () => {
+    const { onBodyChange } = await openEditor({ urgentMentions: [ADA] })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onBodyChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
   })
 
   it('stays an ordinary mention when the message named nobody urgently', async () => {

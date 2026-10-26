@@ -1,43 +1,31 @@
-import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { AttachmentCard, Avatar, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useState, useEffect, type ReactElement } from 'react'
+import { AttachmentCard, Avatar, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, ToolbarButton } from '@estiva-app/ui'
 import type { Embed } from '@estiva-app/protocol'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
-import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
-import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
-import { extractHighlightType } from '@/extensions/highlight'
 import {
   IconDotsVertical,
   IconX,
   IconAlertSquareRounded,
 } from '@tabler/icons-react'
-import { Button } from './ui/Button'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
-import { useCanUpload, isCurrentUser } from '@/api'
-import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
-import { HighlightButton } from './ui/HighlightButton'
-import { BoxCardUnder } from './ui/BoxCard'
-import { useBoxCard } from './ui/useBoxCard'
+import { isCurrentUser } from '@/api'
+import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard } from '@estiva-app/conversation'
 import { cn } from '@/lib/utils'
-import { useEditAttachments } from '@/lib/useEditAttachments'
-import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
-import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
+import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
+import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
-import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { MetaText } from '@/components/ui/MetaText'
-import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 // ── Reply More Menu ──
 
@@ -215,217 +203,43 @@ export function ReplyCard({
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const [bodyState, setBodyState] = useState(body)
-  /** The text a refused edit saved, for the edit box to open with instead of the body (OPT-8). */
-  const restoredEdit = useRef<string | undefined>(undefined)
   // Sync body from prop when it changes externally
   useEffect(() => { setBodyState(body) }, [body])
   useEffect(() => { setHighlightState(highlightType) }, [highlightType])
-  const [isEditing, setIsEditing] = useState(false)
-  const [editEmpty, setEditEmpty] = useState(false)
-  const [editHasUrgent, setEditHasUrgent] = useState(false)
-  const [editHasHighlight, setEditHasHighlight] = useState(false)
+  // Edit mode: the shared box's edit form, a new box per opening, none on a read-only card (PEEKM-4, as ConversationCard).
+  const [editing, setEditing] = useState<{ key: number; refused?: RefusedEdit } | null>(null)
+  const isEditing = editing !== null && !readOnly
 
-  // The files of the reply being edited — PEE-16, the same hook the message
-  // card uses. The paste handler is a closure from the editor's first render,
-  // so it reads the current one through a ref, assigned in an effect.
-  const editAttachments = useEditAttachments(files)
-  const canUpload = useCanUpload()
-  const editAttachmentsRef = useRef(editAttachments)
-  useEffect(() => {
-    editAttachmentsRef.current = editAttachments
-  })
+  const handleEditStart = (refused?: RefusedEdit) => setEditing((was) => ({ key: (was?.key ?? 0) + 1, refused }))
 
-  const editSaveFnRef = useRef<() => void>(() => {})
-  const editCancelFnRef = useRef<() => void>(() => {})
-  const editEmptyRef = useRef(true)
-  const editEditorRef = useRef<ReturnType<typeof useEditor>>(null)
-  /** The edit box itself — what the highlight picker hangs from. */
-  const editBoxRef = useRef<HTMLDivElement>(null)
-
-  const editEditor = useEditor({
-    extensions: peekEditExtensions,
-    editorProps: {
-      attributes: {
-        class: PEEK_EDITOR_CLASSES,
-        style: 'caret-color: var(--text-primary)',
-      },
-      /* A pasted screenshot becomes an attachment here too — PEE-16. See
-         ComposeBox for why text on the clipboard wins over a picture. */
-      handlePaste: (_view, event) => {
-        if (!canUpload) return false
-        const images = pastedImages(event.clipboardData)
-        if (images.length === 0) return false
-        editAttachmentsRef.current.add(images)
-        return true
-      },
-      handleKeyDown: (view, event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          if (isSuggestionActive()) return false
-          if (!editEmptyRef.current) editSaveFnRef.current()
-          return true
-        }
-        if (event.key === 'Enter' && event.shiftKey) {
-          const ed = editEditorRef.current
-          if (!ed) return false
-          const { $from } = view.state.selection
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'listItem') {
-              if ($from.node(d).textContent.length === 0) ed.commands.liftListItem('listItem')
-              else ed.commands.splitListItem('listItem')
-              return true
-            }
-          }
-          // Empty quote line exits the quote (mirrors empty-list-item lift).
-          for (let d = $from.depth; d > 0; d--) {
-            if ($from.node(d).type.name === 'blockquote') {
-              if ($from.parent.textContent.length === 0) {
-                ed.commands.lift('paragraph')
-                return true
-              }
-              break
-            }
-          }
-          ed.commands.splitBlock()
-          return true
-        }
-        /* An open `@`, `[` or `/` menu owns Escape — see ConversationCard. */
-        if (event.key === 'Escape') {
-          if (isSuggestionOpen()) return false
-          editCancelFnRef.current()
-          return true
-        }
-        return false
-      },
-    },
-    content: '',
-    autofocus: false,
-    onUpdate({ editor }) {
-      const doc = editor.state.doc
-      let hasNonParagraph = false
-      let hasAtomNode = false
-      doc.forEach((node) => { if (node.type.name !== 'paragraph') hasNonParagraph = true })
-      doc.descendants((node) => { if (node.isAtom && node.type.name !== 'paragraph') hasAtomNode = true })
-      const empty = doc.textContent.length === 0 && !hasNonParagraph && !hasAtomNode
-      setEditEmpty(empty)
-      editEmptyRef.current = empty
-      if (empty && doc.childCount > 1) {
-        requestAnimationFrame(() => { editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph' }] }) })
-      }
-      let urgent = false
-      let highlight = false
-      editor.state.doc.descendants((node) => {
-        if (node.type.name === 'urgentMention') urgent = true
-        if (node.type.name === 'highlightTag') highlight = true
-      })
-      setEditHasUrgent(urgent)
-      setEditHasHighlight(highlight)
-    },
-  })
-
-  editEditorRef.current = editEditor
-  // The edit's own default card: only for a file it links first (§13.6.2).
-  const editBox = useBoxCard(isEditing ? editEditor : null, { here: writtenOn, previousBody: bodyState })
-
-  useEffect(() => {
-    if (!editEditor) return
-    if (isEditing) {
-      // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
-      const content = withUrgentMentions(textToTiptapContent(restoredEdit.current ?? bodyState), urgentMentions)
-      restoredEdit.current = undefined
-      // If message has a highlight, prepend the tag to the first paragraph
-      if (highlightState && content.content && content.content.length > 0) {
-        const first = content.content[0]
-        if (first.type === 'paragraph') {
-          const existing = (first.content ?? []) as Record<string, unknown>[]
-          first.content = [
-            { type: 'highlightTag', attrs: { highlightType: highlightState } },
-            { type: 'text', text: ' ' },
-            ...existing,
-          ]
-        }
-      }
-      // If this reply triggered the parent's resolution, append the resolution as a
-      // resolutionBlock so the user can edit or remove it inline. Removing the block
-      // on save reopens the parent (handled in handleEditSave below).
-      if (ownsResolution) {
-        const resolutionText = resolutionMsg ? `→ ${resolutionMsg}` : '→ '
-        content.content.push({
-          type: 'resolutionBlock',
-          content: [{ type: 'text', text: resolutionText }],
-        })
-      }
-      editEditor.commands.setContent(content)
-      setTimeout(() => editEditor.commands.focus('end'), 0)
-    } else {
-      editEditor.commands.clearContent()
-    }
-  }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleEditStart = () => { editAttachments.begin(); setIsEditing(true) }
-
-  // A refused edit: the old text is back, and the edit box reopens with what was saved (OPT-8, as ConversationCard).
-  const refusedEdit = useRefusedEdit(messageId)
+  // A refused edit: the old text is back, and the edit box reopens with what was saved and why (OPT-8, as ConversationCard).
+  // A read-only card cannot reopen it, so it does not count as drawing the message: the note says so instead.
+  const refusedEdit = useRefusedEdit(readOnly ? undefined : messageId)
   useEffect(() => {
     if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)
     if (isEditing) return
-    restoredEdit.current = refusedEdit
-    handleEditStart()
+    handleEditStart(refusedEdit)
   }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleEditSave = () => {
-    if (!editEditor) return
-    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
-    let resolution = extractResolution(editEditor)
-    let finalBody = trimmed
-
-    // Fallback for a start-of-line "-> msg" the InputRule didn't catch
-    // (mid-line arrows are prose — ruling 2026-07-23).
-    if (!resolution.hasResolution) {
-      const fromText = extractResolutionFromText(trimmed)
-      if (fromText) {
-        finalBody = fromText.body
-        resolution = { hasResolution: true, resolutionMessage: fromText.resolutionMessage }
-      }
+  // Saved: shown at once and handed on in one handler, so the text, files and cards go as one edit (`queueEdit`).
+  const handleEditSave = (saved: EditSaved) => {
+    if (saved.text !== undefined) {
+      setBodyState(saved.text)
+      onBodyChange?.(saved.text)
     }
-
-    if (finalBody) {
-      setBodyState(finalBody)
-      onBodyChange?.(finalBody)
+    // Resolution changes flow up when this reply owns the parent's resolution, or now gives it one.
+    const { hasResolution, resolutionMessage } = saved.resolution
+    if (hasResolution && (!ownsResolution || resolutionMessage !== (resolutionMsg ?? ''))) onResolutionChange?.(true, resolutionMessage)
+    else if (!hasResolution && ownsResolution) onResolutionChange?.(false, undefined)
+    if (saved.highlightType !== highlightState) {
+      setHighlightState(saved.highlightType)
+      onHighlightChange?.(saved.highlightType)
     }
-    // Resolution changes only flow up when this reply owns the parent's resolution.
-    if (ownsResolution || resolution.hasResolution) {
-      if (resolution.hasResolution) {
-        onResolutionChange?.(true, resolution.resolutionMessage)
-      } else if (ownsResolution) {
-        // Was the resolution-owner, no resolution block left → user removed it, reopen.
-        onResolutionChange?.(false, undefined)
-      }
-    }
-    // Preserve highlight type from edit
-    const hl = extractHighlightType(editEditor)
-    setHighlightState(hl)
-    onHighlightChange?.(hl)
-    // Files last, and only when this edit changed them (PEE-16). `commit`
-    // leaves storage alone: the reply owns these blobs now.
-    const nextFiles = editAttachments.result()
-    if (nextFiles) onFilesChange?.(nextFiles)
-    editAttachments.commit()
-    // A file this edit links first gets its card, in the same edit (§13.6.2).
-    const nextCards = editBox.toEdit(embeds)
-    if (nextCards) onEmbedsChange?.(nextCards)
-    setIsEditing(false)
+    if (saved.files) onFilesChange?.(saved.files)
+    if (saved.embeds) onEmbedsChange?.(saved.embeds)
+    setEditing(null)
   }
-
-  /* Cancel undoes the whole edit, files included: the removed come back and
-     anything attached during it is deleted from storage. */
-  const handleEditCancel = () => {
-    editAttachments.cancel()
-    setIsEditing(false)
-  }
-
-  editSaveFnRef.current = handleEditSave
-  editCancelFnRef.current = handleEditCancel
 
   // Edit and Delete only on the viewer's own message (SPEC §6.5, SHI-29)
   // when the seam says so; else the author label (PEE-32), as `ConversationCard` reads it.
@@ -490,51 +304,24 @@ export function ReplyCard({
           <div className="p-2">
             <div className="flex items-start gap-2">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} className="shrink-0 mt-1" />
-              {/* `relative` so the highlight picker hangs off this box, the
-                  way it hangs off the composer's. The focus ring is
-                  ConversationCard's edit box's, which this one lacked: typing
-                  here drew no ring where typing there and in the composer
-                  does (Katerina, 2026-09-13, D66). */}
-              <div ref={editBoxRef} className={cn(WRITING_BOX_CLASSES, 'flex-1 min-w-0')}>
-                <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2')}>
-                  <EditorContent editor={editEditor} />
-                  {/* Bold / italic / underline / link over a selection. */}
-                  <SelectionToolbar editor={editEditor} link />
-                  {editEmpty && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
-                      Edit message
-                    </div>
-                  )}
-                </div>
-                <AttachmentChips chips={editAttachments.chips} />
-                <div className="flex items-center justify-between">
-                  {/* The same strip as the message's edit box (§4.2, D29). */}
-                  <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
-                    <AttachFileButton onPick={editAttachments.add} />
-                    <HighlightButton editor={editEditor} container={editBoxRef} />
-                  </Toolbar>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
-                      Cancel
-                    </Button>
-                    {/* A file with no text is still a reply; an upload in
-                        flight holds Save so nothing is dropped. */}
-                    <Button
-                      variant="primary"
-                      size="small"
-                      className="w-14"
-                      disabled={(editEmpty && editAttachments.count === 0) || editAttachments.isUploading}
-                      onClick={handleEditSave}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* A file this edit links first: its card, as Save will add it, with its ✕. */}
-            <div className="mt-2 pl-8 empty:hidden">
-              <BoxCardUnder box={editBox} parts={false} />
+              <EditBox
+                key={editing.key}
+                kind="reply"
+                message={{
+                  body: bodyState,
+                  urgent: urgentMentions,
+                  highlightType: highlightState,
+                  resolution: ownsResolution ? { message: resolutionMsg ?? '' } : undefined,
+                  files,
+                  embeds,
+                }}
+                refused={editing.refused}
+                here={writtenOn}
+                onSave={handleEditSave}
+                onCancel={() => setEditing(null)}
+                resolvedObjects={resolvedObjects}
+                className="flex-1 min-w-0"
+              />
             </div>
           </div>
         ) : (
@@ -634,7 +421,7 @@ export function ReplyCard({
                   if (!next) setIsHovered(false)
                 }}
                 isOwnMessage={isOwnMessage}
-                onEdit={isOwnMessage ? handleEditStart : undefined}
+                onEdit={isOwnMessage ? () => handleEditStart() : undefined}
                 onDelete={isOwnMessage ? handleDelete : undefined}
                 currentHighlight={highlightState}
                 onHighlight={handleHighlightChange}

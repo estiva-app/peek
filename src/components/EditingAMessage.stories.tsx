@@ -6,8 +6,8 @@ import { ConversationCard } from './ConversationCard'
 
 /**
  * **The edit box is a compose box**, and for a long time it was not: `/` opened
- * nothing, there was no selection toolbar over a chosen word, and no
- * highlighter. All three were written into `ComposeBox` and only there.
+ * nothing and there was no selection toolbar over a chosen word. Since PEEKM-4
+ * it is the very box Peek writes in — the shared box's edit form.
  *
  * These stories are here rather than on `Messages/ConversationCard` because
  * what they are about is the *writing*, not the card (Katerina's review, 22

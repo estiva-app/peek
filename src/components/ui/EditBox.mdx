@@ -1,0 +1,63 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as EditBoxStories from './EditBox.stories'
+
+<Meta of={EditBoxStories} />
+
+# EditBox
+
+Editing a comment or a reply you wrote: the package's `CommentBox` in its edit
+mode, with what only Peek knows — its people, its `[` sections, its chips and
+its upload (PEEKM-4). It sits beside `ConversationBox`, in the same file.
+
+<Canvas of={EditBoxStories.Default} />
+
+**Seen in** — its stories: **Default**, **Resolved With A File** and
+**Refused**; in `ConversationCard` and `ReplyCard`, wherever your own message
+is open for editing.
+
+## When
+
+- A person edits a comment or a reply they wrote, anywhere Peek draws one.
+
+## When not
+
+- Writing a new message or a reply → **ConversationBox**.
+- Somebody else's message, or a message on an archived file → no box: Edit is
+  not offered.
+- In another app → its own wrapper of `CommentBox` (Ship's `ConversationBox`,
+  Leaf's comments column).
+
+## How
+
+```tsx
+import { EditBox } from '@/components/ui/ConversationBox'
+
+<EditBox
+  key={editing.key}
+  message={{ body, urgent: urgentMentions, highlightType, resolution, files, embeds }}
+  refused={editing.refused}
+  here={writtenOn}
+  onSave={(saved) => apply(saved)}
+  onCancel={() => setEditing(null)}
+/>
+```
+
+Give it a new `key` each time it opens: the box reads what it opens with only as
+it mounts, and a refused edit reopens it as a new box.
+
+## What it owns
+
+- **Shown at once** (why:
+  https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md):
+  Save hands the card what changed — the text, the files, the card, the
+  resolution, the highlight, each only when it changed — and the box closes. A
+  refusal reopens it with what was saved and "Not saved: …" under it; no toast
+  while the message is on screen.
+- **A file added while editing** (Miky, 26 October): `/` → Upload, a paste or a
+  drop. No paperclip: the edit box shows only its keys (Decided 2026-10-17).
+- **What the message has**: its highlight and its resolution open in the box and
+  are kept; taking the resolution out reopens the conversation.
+- **No new urgency** (CON-24): an edit carries no tags, so `!@` and `/` offer no
+  urgent mention, and a hand-typed `!@Name` is saved as `@Name`.
+- **A card only for a file named first** (§13.6.2): a link to a file the
+  message already named adds no card again.
