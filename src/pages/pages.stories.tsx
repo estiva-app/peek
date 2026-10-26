@@ -17,6 +17,7 @@ import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
 import { EmptyState, Panel } from '@estiva-app/ui'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { ClosedBox } from '@/components/ui/ConversationBox'
 import { DateDivider } from '@/components/ui/DateDivider'
 
 const noop = () => {}
@@ -359,9 +360,10 @@ export const File: Story = {
 
 /**
  * **An archived file.** Read-only until it is unarchived (Katerina, 7
- * October): no composer, and the notice in its place, as a card — who
- * archived it and when, the resolution, and Unarchive. The messages here are
- * stand-ins.
+ * October). Its card — who archived it and when, the resolution, and
+ * Unarchive — is above the messages, as on Ship's issue page, and the comment
+ * box's line is in the composer's place (Miky, 25 October, PEEKM-3). The
+ * messages here are stand-ins.
  */
 export const FileArchived: Story = {
   render: () => (
@@ -373,15 +375,18 @@ export const FileArchived: Story = {
           bodyClassName="flex min-h-full flex-col"
           footer={
             <div className="p-3">
-              <ArchivedNotice
-                archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
-                by="Miky"
-                onUnarchive={noop}
-                look="card"
-              />
+              <ClosedBox reason="Archived. Unarchive it to comment." />
             </div>
           }
         >
+          <div className="shrink-0 px-4 pt-4">
+            <ArchivedNotice
+              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
+              by="Miky"
+              onUnarchive={noop}
+              look="card"
+            />
+          </div>
           {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
             <div key={day} className="flex flex-col">
               <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />

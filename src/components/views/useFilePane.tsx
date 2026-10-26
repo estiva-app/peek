@@ -198,19 +198,28 @@ export function useFilePane(
     <Panel
       {...view.panel}
       /*
-        An archived file is read-only (Katerina, 7 October): no composer,
-        and its notice in the composer's place, in the composer's own
-        padding — under the messages, where the newest one is.
+        An archived file is read-only (Katerina, 7 October). Its card goes
+        above the messages, where Ship's issue page puts it, and the comment
+        box's own line takes the composer's place, as every app says it
+        (Miky, 25 October, PEEKM-3).
       */
       footer={
         notice ? (
-          <div className="flex flex-col gap-2 p-3">
-            {notice}
-            {/* And the comment box's own line in its place, as every app says it (PEEKM-3). */}
+          <div className="p-3">
             <ClosedBox reason={archivedLineOf(archive) ?? ''} />
           </div>
         ) : (
           view.panel.footer
+        )
+      }
+      children={
+        notice ? (
+          <>
+            <div className="shrink-0 px-4 pt-4">{notice}</div>
+            {view.panel.children}
+          </>
+        ) : (
+          view.panel.children
         )
       }
       title={
