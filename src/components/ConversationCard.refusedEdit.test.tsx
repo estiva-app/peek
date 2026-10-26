@@ -86,14 +86,31 @@ describe('a refused edit', () => {
     )
     act(() => void putBackEdit(ID, REFUSED))
     await editorIn(container)
-    await new Promise((done) => setTimeout(done, 50))
+    await act(async () => {})
     expect(container.querySelectorAll('.ProseMirror')).toHaveLength(1)
+  })
+
+  /* An archived file's messages take no edit (Decided 2026-10-20): the box stays shut, and the note says what was lost. */
+  it('opens no box on a read-only card, and lets the note say it instead', async () => {
+    const { container } = render(
+      wrap(
+        <>
+          <ConversationCard authorName="You" timestamp="10:24" body="the old text" messageId={ID} readOnly onBodyChange={() => {}} />
+          <ReplyCard authorName="You" timestamp="10:24" body="the old text" messageId={ID} readOnly onBodyChange={() => {}} />
+        </>,
+      ),
+    )
+    let onScreen = true
+    act(() => void (onScreen = putBackEdit(ID, REFUSED)))
+    await act(async () => {})
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    expect(onScreen).toBe(false)
   })
 
   it('negative control: another message’s refused edit opens nothing here', async () => {
     const { container } = render(wrap(<ConversationCard authorName="You" timestamp="10:24" body="the old text" messageId={'f'.repeat(64)} onBodyChange={() => {}} />))
     act(() => void putBackEdit(ID, REFUSED))
-    await new Promise((done) => setTimeout(done, 50))
+    await act(async () => {})
     expect(container.querySelector('.ProseMirror')).toBeNull()
   })
 })

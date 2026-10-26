@@ -206,14 +206,15 @@ export function ReplyCard({
   // Sync body from prop when it changes externally
   useEffect(() => { setBodyState(body) }, [body])
   useEffect(() => { setHighlightState(highlightType) }, [highlightType])
-  // Edit mode: the shared box's edit form, a new box per opening (PEEKM-4, as ConversationCard).
+  // Edit mode: the shared box's edit form, a new box per opening, none on a read-only card (PEEKM-4, as ConversationCard).
   const [editing, setEditing] = useState<{ key: number; refused?: RefusedEdit } | null>(null)
-  const isEditing = editing !== null
+  const isEditing = editing !== null && !readOnly
 
   const handleEditStart = (refused?: RefusedEdit) => setEditing((was) => ({ key: (was?.key ?? 0) + 1, refused }))
 
   // A refused edit: the old text is back, and the edit box reopens with what was saved and why (OPT-8, as ConversationCard).
-  const refusedEdit = useRefusedEdit(messageId)
+  // A read-only card cannot reopen it, so it does not count as drawing the message: the note says so instead.
+  const refusedEdit = useRefusedEdit(readOnly ? undefined : messageId)
   useEffect(() => {
     if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)

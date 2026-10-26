@@ -464,6 +464,8 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
     }
     const kept = files.flatMap((f) => (f.value ? [attachmentOf(f.value)] : []))
     if (!text && kept.length === 0 && !resolution.hasResolution) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
+    // An edit with no `imeta` keeps the files it had, so none can take the last one off: said here, as in Ship and Leaf.
+    if (kept.length === 0 && (message.files?.length ?? 0) > 0) return { accepted: false, reason: 'the last file cannot be taken off a message yet' }
     // An edit makes nobody urgent (CON-24).
     text = withoutNewUrgency(text, message.body)
     const links = linksOfBox(body, here, previous)

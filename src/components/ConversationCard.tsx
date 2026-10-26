@@ -174,10 +174,11 @@ export function ConversationCard({
     Edit mode: the shared box's edit form (PEEKM-4), drawn only while editing.
     `editing` is what it opens with — the message, or a save the relay refused
     (OPT-8) — and `editKey` makes each opening a new box, since the box reads
-    what it opens with only as it mounts.
+    what it opens with only as it mounts. A read-only card (an archived file,
+    a deleted message) draws no box, even one opened before it became so.
   */
   const [editing, setEditing] = useState<{ key: number; refused?: RefusedEdit } | null>(null)
-  const isEditing = editing !== null
+  const isEditing = editing !== null && !readOnly
 
   // Resolved state - sync from parent when prop changes
   const [resolved, setResolved] = useState(initialResolved)
@@ -238,7 +239,8 @@ export function ConversationCard({
     9 Oct) — now, or when this card is next drawn if the person had moved on.
     A box already open again is left as the person has it.
   */
-  const refusedEdit = useRefusedEdit(messageId)
+  // A read-only card cannot reopen it, so it does not count as drawing the message: the note says so instead.
+  const refusedEdit = useRefusedEdit(readOnly ? undefined : messageId)
   useEffect(() => {
     if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)

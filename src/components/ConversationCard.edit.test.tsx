@@ -62,7 +62,8 @@ async function openEditor(props: Partial<React.ComponentProps<typeof Conversatio
   return { dom, editor: dom.editor as Editor, container, onHighlightChange, onBodyChange, onResolvedChange }
 }
 
-const type = (editor: Editor, text: string) => act(() => void editor.chain().focus('end').insertContent(text).run())
+// A text node, as a keystroke adds one: a string is parsed as HTML and can land as a paragraph of its own.
+const type = (editor: Editor, text: string) => act(() => void editor.chain().focus('end').insertContent({ type: 'text', text }).run())
 const nodeTypes = (editor: Editor) => {
   const out: string[] = []
   editor.state.doc.descendants((node) => void out.push(node.type.name))
