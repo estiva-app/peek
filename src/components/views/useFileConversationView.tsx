@@ -307,6 +307,10 @@ export function useFileConversationView({
           files = outgoing(edit.files) ?? undefined
           if (!files) return
         }
+      } else if (conversation) {
+        // Files untouched still ride the edit: an edit is the whole new message, and one with none takes them off.
+        // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
+        files = currentFiles(conversation, targetEventId)
       }
       // The card set rides the same edit, so it cannot race the body either (OPT-17).
       void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
@@ -821,10 +825,19 @@ function pillsOf(target: string, reactions: readonly ReactionEvent[], viewerPubk
   return grouped.map((r) => ({ emoji: r.emoji, count: r.count, owner: r.mine ? ('yours' as const) : ('others' as const), names: r.by.map(nameOf) }))
 }
 
+const messageOf = (conversation: FileConversation, id: string): ConversationEvent | undefined =>
+  [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
+
 /** A root's or a reply's body as it stands — its latest edit's, else its own. */
 function currentBody(conversation: FileConversation, id: string): string | undefined {
-  const event = [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
+  const event = messageOf(conversation, id)
   return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.body ?? event.body) : undefined
+}
+
+/** A root's or a reply's files as they stand, drawn as {@link currentBody}'s: the latest edit's set, else its own. */
+function currentFiles(conversation: FileConversation, id: string): ConversationEvent['files'] {
+  const event = messageOf(conversation, id)
+  return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.attachments?.map(relayAttachmentOf) ?? event.files) : []
 }
 
 const asAttachment = (f: ConversationEvent['files'][number]): FileAttachment => ({

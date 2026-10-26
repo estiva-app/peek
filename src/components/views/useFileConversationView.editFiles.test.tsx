@@ -1,0 +1,123 @@
+/**
+ * An edit lists every file the message keeps — "Editing can take every file
+ * off a message", stage 1.
+ *
+ * An edit is the whole new message (SPEC §6.8, record
+ * an-edit-is-the-whole-new-message): its `imeta` is the message's file set, and
+ * none means no files. So an edit that changes only the words still carries the
+ * files, or a reader on the new rule takes them off. The real view and
+ * `useFileConversation` run over a mocked relay read; what is pinned is the
+ * `kind:40003` handed to the signer.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { imetaTag, type UnsignedEvent } from '@estiva-app/protocol'
+import type { People } from '@estiva-app/interop'
+import type { FileConversation } from '@/api'
+
+const relay = vi.hoisted(() => ({ read: vi.fn<() => Promise<FileConversation>>() }))
+vi.mock('@/nostr/conversationCatchUp', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/conversationCatchUp')),
+  readConversation: async () => ({ value: await relay.read(), events: [] }),
+  catchUpConversation: async (store: { settle: (key: string, at: number, value: FileConversation) => void }, key: string) => {
+    store.settle(key, Date.now(), await relay.read())
+    return { changed: true, object: false, mentions: false }
+  },
+}))
+const signed = vi.hoisted(() => ({ events: [] as UnsignedEvent[] }))
+vi.mock('@/nostr/bridge', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/bridge')),
+  signViaEstivaId: async (unsigned: UnsignedEvent) => {
+    signed.events.push(unsigned)
+    return { ...unsigned, id: 'e'.repeat(64), sig: 'f'.repeat(128) }
+  },
+  publishSigned: async () => ({ ok: true }),
+}))
+const viewer = vi.hoisted(() => () => ({ relayUrl: 'https://relay.test', token: { pubkey: 'a'.repeat(64), accessToken: 't' } }))
+vi.mock('@/api/foreign', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/api/foreign')),
+  useRelayViewer: () => viewer,
+}))
+vi.mock('@/nostr/useLiveFile', () => ({ useLiveFile: () => ({ relayState: 'live' }) }))
+vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
+const membership = vi.hoisted(() => ({ refresh: () => Promise.resolve() }))
+vi.mock('@/api', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  useWorkspaceDirectory: () => people,
+  useMembership: () => membership,
+  useReadActions: () => ({ markThreadRead: () => {}, markContainerRead: () => {}, markFileRead: () => {} }),
+}))
+vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null, ClosedBox: () => null }))
+// The card's own edit box reports a words-only save as the body alone, as the real one does when the files are unchanged.
+vi.mock('@/components/ConversationCard', () => ({
+  ConversationCard: ({ body, onBodyChange }: { body: string; onBodyChange?: (b: string) => void }) => (
+    <button onClick={() => onBodyChange?.(`${body}, reworded`)}>{body}</button>
+  ),
+}))
+
+import { useFileConversationView } from './useFileConversationView'
+
+const ME = 'a'.repeat(64)
+const people: People = { [ME]: { displayName: 'Me' } } as unknown as People
+const T = 1_700_000_000
+const file = (name: string, x: string) => ({ name, contentType: 'application/pdf', size: 10, sha256: x.repeat(64), mediaUrl: `https://relay.test/${x.repeat(64)}` })
+const root = (files: ReturnType<typeof file>[]) => ({ id: '1'.repeat(64), author: ME, body: 'First', createdAt: T, kind: 1111, files, references: [] })
+const conversationOf = (r: ReturnType<typeof root>, byId: FileConversation['decorations']['byId'] = {}): FileConversation => ({
+  roots: [r],
+  replies: {},
+  decorations: { byId, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+})
+
+function View() {
+  const { conversation } = useFileConversationView({
+    container: { kind: 'file', address: `30840:${ME}:d`, h: 'team' },
+    rootIds: ['1'.repeat(64)],
+    openThreadId: undefined,
+    onOpenThread: () => {},
+    title: 'A file',
+    onCommented: async () => {},
+  })
+  return <>{conversation}</>
+}
+
+const sentEdit = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: 'First' }))
+  await waitFor(() => expect(signed.events.some((e) => e.kind === 40003)).toBe(true))
+  const edit = signed.events.find((e) => e.kind === 40003)!
+  return { edit, imeta: edit.tags.filter((t) => t[0] === 'imeta') }
+}
+
+afterEach(() => {
+  relay.read.mockReset()
+  signed.events = []
+})
+
+describe('an edit that changes only the words still lists the message’s files (SPEC §6.8)', () => {
+  it('carries the files the message was sent with', async () => {
+    relay.read.mockResolvedValue(conversationOf(root([file('brief.pdf', 'ab')])))
+    render(<View />)
+    const { edit, imeta } = await sentEdit()
+    expect(edit.content).toBe('First, reworded')
+    expect(imeta).toEqual([imetaTag({ url: `https://relay.test/${'ab'.repeat(64)}`, m: 'application/pdf', x: 'ab'.repeat(64), size: 10, filename: 'brief.pdf' })])
+  })
+
+  it('carries the set an earlier edit left, not the one it was sent with', async () => {
+    const later = { url: `https://relay.test/${'cd'.repeat(64)}`, m: 'image/png', x: 'cd'.repeat(64), size: 20, dim: '800x600', filename: 'shot.png' }
+    relay.read.mockResolvedValue(
+      conversationOf(root([file('brief.pdf', 'ab')]), { ['1'.repeat(64)]: { edit: { body: 'First', edited: false, attachments: [later] }, reactions: [], resolutions: [] } }),
+    )
+    render(<View />)
+    const { imeta } = await sentEdit()
+    expect(imeta).toEqual([imetaTag(later)])
+  })
+
+  it('control: a message with no files gets an edit with no files', async () => {
+    relay.read.mockResolvedValue(conversationOf(root([])))
+    render(<View />)
+    const { edit, imeta } = await sentEdit()
+    expect(edit.content).toBe('First, reworded')
+    expect(imeta).toEqual([])
+  })
+})

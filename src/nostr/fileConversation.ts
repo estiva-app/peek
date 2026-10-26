@@ -156,6 +156,8 @@ export interface OutgoingAttachment {
   sha256?: string
   mediaUrl?: string
   thumbUrl?: string
+  /** An image's size, kept when an edit re-lists a file it already had. */
+  dim?: string
 }
 
 const withTags = (comment: FileComment, event: SignedEvent | undefined, address: string): ConversationEvent => ({
@@ -244,7 +246,7 @@ export function imetaTagsFor(files: readonly OutgoingAttachment[]): NostrTag[] {
   const out: NostrTag[] = []
   for (const f of files) {
     if (!f.sha256 || !f.mediaUrl) continue
-    out.push(imetaTag({ url: f.mediaUrl, m: f.contentType, x: f.sha256, size: f.size, thumb: f.thumbUrl, filename: f.name }))
+    out.push(imetaTag({ url: f.mediaUrl, m: f.contentType, x: f.sha256, size: f.size, thumb: f.thumbUrl, dim: f.dim, filename: f.name }))
   }
   return out
 }
@@ -711,11 +713,11 @@ export async function eventIdOf(event: UnsignedEvent): Promise<string> {
 /**
  * Edit a comment or a reply — `kind:40003`, newest wins for every reader (CON-8).
  *
- * `files`, when given, is the attachment set after the edit, as `imeta` — RFC
- * 0.4 §7.2.1 as amended 2026-09-23 (CON-5), which `@estiva-app/conversation`'s `foldEdits` reads. A
- * set replaces the one before it, and an edit carrying none leaves the
- * attachments as they were, so an empty set cannot be said: the caller refuses
- * it before it gets here.
+ * `files` is the message's whole attachment set after the edit, as `imeta`
+ * (SPEC §6.8): the caller lists every file it keeps, changed or not, because an
+ * edit is the whole new message and one with none takes them all off. Until
+ * the readers switch (`foldEdits` still reads none as "unchanged"), the caller
+ * refuses an empty set before it gets here.
  */
 export async function editCommentAsViewer(
   args: EditArgs,
