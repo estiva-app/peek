@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { IconMoodPlus, IconMessage2, IconCircleCheck, IconCircleDashed } from '@tabler/icons-react'
 import { Popover, ReactionPicker, Toolbar, ToolbarButton, ToolbarSeparator } from '@estiva-app/ui'
-import { REACTION_NAMES } from './ui/Reaction'
+import { REACTION_EMOJI } from '@estiva-app/conversation'
 import { cn } from '@/lib/utils'
 
-/** The palette as the package's `ReactionPicker` takes it: each emoji with
- *  the word for it, in the order Peek offers them (D49, 2026-09-10). */
-const REACTION_OPTIONS = Object.entries(REACTION_NAMES).map(([emoji, label]) => ({ emoji, label }))
+/** The five every app offers, each with the word for it (`@estiva-app/conversation`,
+ *  SPEC §6.6), as the package's `ReactionPicker` and `ReactionRow` take them. */
+export const REACTION_OPTIONS = REACTION_EMOJI.map(({ emoji, name }) => ({ emoji, label: name }))
 
 interface ConversationQuickMenuProps {
   isResolved?: boolean

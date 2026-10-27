@@ -65,14 +65,11 @@ export const HIGHLIGHT_TEXT_CLASSES: Record<HighlightType, string> = {
   summary:    'text-highlight-summary',
 }
 
+/** One emoji on one message, as the shared `ReactionRow` takes it: who chose
+ *  it by name, in reaction order, the viewer as `CURRENT_USER_NAME`. */
 export interface ReactionData {
   emoji: string
-  count: number
-  owner: 'yours' | 'others'
-  /** Reactors in reaction order, the viewer as 'You' (drives the pill
-   *  tooltip). Absent on static mock reactions — the tooltip then shows
-   *  just the reaction name. */
-  names?: string[]
+  by: string[]
 }
 
 /** A real uploaded file attached to a message/reply (Phase 5). `previewUrl` is
@@ -194,7 +191,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Daniel Stanton',
           timestamp: '11:08 AM',
           body: "Found the root cause. `@testing-library/react` was bumped to 15.x in the last merge but `react-scripts` on our current version doesn't support it yet.\n\nPinning it back to 14.x now. Will update once build is confirmed green.",
-          reactions: [{ emoji: '🙏', count: 3, owner: 'others' }],
+          reactions: [{ emoji: '🙏', by: ['Ana Duarte', 'Ben Ortiz', 'Cath'] }],
           replyCount: 2,
         },
       ],
@@ -207,7 +204,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Daniel Stanton',
           timestamp: '10:05 AM',
           body: "Build #4826 passed. Pipeline is green again.\n\nI've also added a `.npmrc` rule to block major version bumps on that package without a manual override so we don't hit this again.",
-          reactions: [{ emoji: '🚀', count: 4, owner: 'yours' }, { emoji: '💯', count: 2, owner: 'others' }],
+          reactions: [{ emoji: '🚀', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'You'] }, { emoji: '💯', by: ['Ana Duarte', 'Ben Ortiz'] }],
           replyCount: 4,
           isResolved: true,
           resolvedBy: 'Daniel Stanton',
@@ -267,7 +264,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Zack Bright',
           timestamp: '1:14 PM',
           body: "P0-1 is fixed and PR is up. It was a missing null check in the biometrics handler when device auth returns nil instead of a typed error.\n\nPR #892 is ready for review and should be mergeable today.",
-          reactions: [{ emoji: '👍', count: 2, owner: 'others' }],
+          reactions: [{ emoji: '👍', by: ['Ana Duarte', 'Ben Ortiz'] }],
           replyCount: 2,
         },
         {
@@ -288,7 +285,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Hallie Pratt',
           timestamp: '11:00 AM',
           body: "P0-2 cleared overnight. It was a misconfigured SNS topic ARN for EU-West-1. Notifications are flowing correctly in the staging environment now.\n\nBoth P0s resolved. Submitting the build to App Store this afternoon.",
-          reactions: [{ emoji: '🎉', count: 5, owner: 'yours' }, { emoji: '🚀', count: 3, owner: 'others' }],
+          reactions: [{ emoji: '🎉', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'Dana Kim', 'You'] }, { emoji: '🚀', by: ['Ana Duarte', 'Ben Ortiz', 'Cath'] }],
           replyCount: 4,
         },
         {
@@ -324,7 +321,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Greg Bothman',
           timestamp: '10:22 AM',
           body: "Funnel data is in. The biggest drop-off is at the liveness check step: 41% of users who reach it don't complete it.\n\nSession recordings show a mix of confusion about face positioning, degraded performance on older Android devices, and error messages that are way too technical for regular users.\n\nNone of this is a surprise honestly. We've been on SDK 3.1.0 for over a year.",
-          reactions: [{ emoji: '👍', count: 3, owner: 'yours' }],
+          reactions: [{ emoji: '👍', by: ['Ana Duarte', 'Ben Ortiz', 'You'] }],
           replyCount: 3,
           isResolved: true,
           resolvedBy: 'Greg Bothman',
@@ -429,7 +426,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Daniel Stanton',
           timestamp: '4:15 PM',
           body: "Export button discoverability is a fast fix this sprint. Moving it to the primary toolbar requires no design changes, Jira ticket raised.\n\nFor the legend: what's the target font size? 12px or 13px?",
-          reactions: [{ emoji: '👍', count: 2, owner: 'others' }],
+          reactions: [{ emoji: '👍', by: ['Ana Duarte', 'Ben Ortiz'] }],
           replyCount: 2,
           isResolved: true,
           resolvedBy: 'Daniel Stanton',
@@ -474,7 +471,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Hallie Pratt',
           timestamp: '9:05 AM',
           body: "It's Friday and I have decided we are doing this.\n\nIntroducing Mochi: 4-year-old shiba inu who has fully committed to the bit that he is a cat. Sits in boxes, knocks things off tables, ignores commands selectively. Somehow still the best.",
-          reactions: [{ emoji: '🎉', count: 8, owner: 'yours' }, { emoji: '💯', count: 4, owner: 'others' }],
+          reactions: [{ emoji: '🎉', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'Dana Kim', 'Eli Ross', 'Fay Lin', 'Gus Hale', 'You'] }, { emoji: '💯', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'Dana Kim'] }],
           replyCount: 12,
         },
         {
@@ -482,7 +479,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Jake Walter',
           timestamp: '9:32 AM',
           body: "Here's Pretzel: retired racing greyhound who operates exclusively at two speeds.\n\nFull sprint across the garden or completely unconscious on the sofa. No in between. We tried walking pace once. He looked offended.",
-          reactions: [{ emoji: '🚀', count: 3, owner: 'others' }],
+          reactions: [{ emoji: '🚀', by: ['Ana Duarte', 'Ben Ortiz', 'Cath'] }],
           replyCount: 8,
         },
         {
@@ -497,7 +494,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Alice Johnson',
           timestamp: '11:45 AM',
           body: "Here's Noodle: a rescue tabby who decided my laptop keyboard is her preferred napping spot.\n\nShe joined a client call last Thursday uninvited. The client said 'can she stay?' She stayed.",
-          reactions: [{ emoji: '💯', count: 6, owner: 'yours' }, { emoji: '🙏', count: 2, owner: 'others' }],
+          reactions: [{ emoji: '💯', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'Dana Kim', 'Eli Ross', 'You'] }, { emoji: '🙏', by: ['Ana Duarte', 'Ben Ortiz'] }],
           replyCount: 9,
         },
       ],
@@ -596,7 +593,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Amie Miles',
           timestamp: '2:19 PM',
           body: "Found and fixed. The new env variable `FEATURE_FLAG_NEW_AUTH` wasn't set in the staging environment config. Service was crashing on startup trying to read it as a required value.\n\nAdded the variable and redeployed. Health checks are green across all instances. Good for the demo.",
-          reactions: [{ emoji: '🙏', count: 4, owner: 'yours' }, { emoji: '🚀', count: 2, owner: 'others' }],
+          reactions: [{ emoji: '🙏', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'You'] }, { emoji: '🚀', by: ['Ana Duarte', 'Ben Ortiz'] }],
           replyCount: 2,
           isResolved: true,
           resolvedBy: 'Amie Miles',
@@ -693,7 +690,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Daniel Stanton',
           timestamp: '2:40 PM',
           body: "Confirmed we're using Stripe Checkout rather than building our own card form. It keeps us out of most of the PCI scope and we get 3DS and wallets for free.\n\nTradeoff is less control over the exact UI, but for v1 that's the right call. We can revisit a custom flow later if there's a real need.",
-          reactions: [{ emoji: '👍', count: 4, owner: 'others' }, { emoji: '🚀', count: 2, owner: 'yours' }],
+          reactions: [{ emoji: '👍', by: ['Ana Duarte', 'Ben Ortiz', 'Cath', 'Dana Kim'] }, { emoji: '🚀', by: ['Ana Duarte', 'You'] }],
           replyCount: 2,
         },
       ],
@@ -739,7 +736,7 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Daniel Stanton',
           timestamp: '9:30 AM',
           body: "Reconciliation approach is settled. We store the payment intent id on the order, handle webhooks idempotently by event id, and run a job every 15 minutes that reconciles anything still pending against Stripe.\n\nWriting it up as the first PR now.",
-          reactions: [{ emoji: '🙌', count: 3, owner: 'yours' }],
+          reactions: [{ emoji: '🙌', by: ['Ana Duarte', 'Ben Ortiz', 'You'] }],
           replyCount: 2,
           isResolved: true,
           resolvedBy: 'Daniel Stanton',

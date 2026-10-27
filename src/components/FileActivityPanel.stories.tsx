@@ -44,8 +44,8 @@ const IN_TOPIC: ConversationData = {
   body: 'The billing question is parked until the Stripe key lands — nostr:naddr1… has where that stands.',
   nostrReferences: ['30840:aa:this-file'],
   reactions: [
-    { emoji: '👍', count: 2, owner: 'others', names: ['Ana Duarte', 'Jan Mikula'] },
-    { emoji: '🎉', count: 1, owner: 'yours', names: ['You'] },
+    { emoji: '👍', by: ['Ana Duarte', 'Jan Mikula'] },
+    { emoji: '🎉', by: ['You'] },
   ],
   replyCount: 3,
   replyAuthors: [{ name: 'Ana Duarte' }, { name: 'Jan Mikula' }],
@@ -136,7 +136,7 @@ function ChangingRow(args: Parameters<typeof FileActivityPanelView>[0]) {
   const conv: ConversationData = {
     ...IN_DM,
     ...(step >= 1 && { body: "@Miky it's done. Basic for now, but the topics view is flat. Update in nostr:naddr1…", editedAt: EDITED_AT }),
-    ...(step >= 2 && { reactions: [{ emoji: '👍', count: 1, owner: 'others' as const, names: ['Miky'] }] }),
+    ...(step >= 2 && { reactions: [{ emoji: '👍', by: ['Miky'] }] }),
     ...(step >= 3 && { replyCount: 1, replyAuthors: [{ name: 'Miky' }], lastReplyTime: 'Just now' }),
     ...(step >= 4 && { isResolved: true, resolvedBy: 'Miky', resolutionMessage: 'Looks good, merging.' }),
   }
