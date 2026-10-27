@@ -59,7 +59,7 @@ describe('project', () => {
   })
 
   it('shows the newest edit as the body and tells the card when it happened', () => {
-    const edit = { body: 'First, corrected', edited: true, editedAt: (T + 30) * 1000 }
+    const edit = { body: 'First, corrected', edited: true, editedAt: (T + 30) * 1000, attachments: [] }
     const view = project(conversation({ decorations: decorations({ [rootA.id]: { edit, reactions: [], resolutions: [] } }) }), ME, people)
     expect(view.roots[0].body).toBe('First, corrected')
     expect(view.roots[0].editedAt).toBe((T + 30) * 1000)
@@ -87,10 +87,10 @@ describe('project', () => {
     const view = project(
       conversation({
         roots: [withFile, rootB],
-        replies: { [rootA.id]: [reply] },
+        replies: { [rootA.id]: [{ ...reply, files: [own] }] },
         decorations: decorations({
           [rootA.id]: { edit: { body: 'First', edited: false, attachments: [imeta('old.png', 'old', 1), imeta('new.png', 'new', 2)] }, reactions: [], resolutions: [] },
-          [reply.id]: { edit: { body: 'Agreed', edited: false }, reactions: [], resolutions: [] },
+          [reply.id]: { edit: { body: 'Agreed', edited: false, attachments: [] }, reactions: [], resolutions: [] },
         }),
       }),
       ME,
@@ -98,7 +98,7 @@ describe('project', () => {
     )
     expect(view.roots[0].files?.map((f) => f.sha256)).toEqual(['old', 'new'])
     expect(view.roots[0].editedAt).toBeUndefined()
-    // An edit fold with no set leaves the comment's own files.
+    // An edit with no files takes the reply's own off (SPEC §6.8).
     expect(view.byId[rootA.id].replies[0].files).toEqual([])
     expect(project(conversation({ roots: [withFile] }), ME, people).roots[0].files?.map((f) => f.sha256)).toEqual(['old'])
   })

@@ -726,9 +726,7 @@ export async function eventIdOf(event: UnsignedEvent): Promise<string> {
  *
  * `files` is the message's whole attachment set after the edit, as `imeta`
  * (SPEC §6.8): the caller lists every file it keeps, changed or not, because an
- * edit is the whole new message and one with none takes them all off. Until
- * the readers switch (`foldEdits` still reads none as "unchanged"), the caller
- * refuses an empty set before it gets here.
+ * edit is the whole new message and one with none takes them all off.
  */
 export async function editCommentAsViewer(
   args: EditArgs,

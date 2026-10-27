@@ -133,15 +133,15 @@ describe('attaching a file while editing a sent message', () => {
     expect(onFilesChange).toHaveBeenCalledWith([expect.objectContaining({ name: 'budget.xlsx', sha256: 'ef'.repeat(32) })])
   })
 
-  /* An edit carrying no `imeta` keeps the files it had, so the box says so instead of closing on a file that stays. */
-  it('refuses taking off the last file, under the box, and saves nothing', async () => {
+  /* An edit is the whole new message, so one with no files takes them all off (SPEC §6.8). */
+  it('takes off the last file: the box closes and saves an empty file set', async () => {
     const { container, onFilesChange } = await openEditor({ files: [EXISTING] })
     await userEvent.click(await screen.findByRole('button', { name: 'Remove brief.pdf' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText(/the last file cannot be taken off a message yet/)).toBeTruthy()
-    expect(container.querySelector('.ProseMirror')).not.toBeNull()
-    expect(onFilesChange).not.toHaveBeenCalled()
+    expect(onFilesChange).toHaveBeenCalledWith([])
+    await waitFor(() => expect(container.querySelector('.ProseMirror')).toBeNull())
+    expect(screen.queryByText(/cannot be taken off/)).toBeNull()
   })
 
   it('saves the message its files, old and new together', async () => {

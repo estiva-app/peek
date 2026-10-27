@@ -172,13 +172,13 @@ describe('an edit that changes only the words still lists the message’s files 
 })
 
 describe('an edit that changes the files', () => {
-  // Until every reader takes an edit with no `imeta` as "no files" (stage 3), the last file stays and the person is told.
-  it('taking the last file off still sends the files the message has, and says it cannot be removed yet', async () => {
+  it('taking the last file off sends an edit with no files, and no note', async () => {
     relay.read.mockResolvedValue(conversationOf(root([file('brief.pdf', 'ab')])))
     render(<View />)
-    const { imeta } = await sentEdit('Take every file off First')
-    expect(imeta).toEqual([BRIEF_TAG])
-    expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ label: 'The last attachment cannot be removed from a message yet.' }))
+    const { edit, imeta } = await sentEdit('Take every file off First')
+    expect(edit.kind).toBe(40003)
+    expect(imeta).toEqual([])
+    expect(toast.show).not.toHaveBeenCalled()
   })
 
   it('a file kept beside a new one goes back with every field it was read with', async () => {
