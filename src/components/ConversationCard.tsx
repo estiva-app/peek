@@ -321,8 +321,10 @@ export function ConversationCard({
                 if (isEditing) return
                 // Don't open thread when any overlay is active
                 if (moreMenuOpen || showResolveDialog || pickerOpen || confirmingDelete) return
-                // Don't open thread when clicking interactive children
+                // Nor for a click in a portal (a card's Select options, a menu): React bubbles it here (PEE-62)
                 const target = e.target as HTMLElement
+                if (!e.currentTarget.contains(target)) return
+                // Don't open thread when clicking interactive children
                 if (target.closest('button, [role="button"], [data-interactive]')) return
                 onClick()
               }
