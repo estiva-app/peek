@@ -299,14 +299,12 @@ export function useFileConversationView({
       if (body === undefined) return
       const current = conversation ? currentFiles(conversation, targetEventId) : undefined
       let files: OutgoingAttachment[]
-      if (edit?.files?.length) {
+      if (edit?.files) {
         // A file the message already had goes back as its `imeta` was read, every field kept; a new one as uploaded.
+        // An empty set is the edit that takes every file off.
         const had = new Map((current ?? []).map((f) => [f.sha256, f]))
         files = edit.files.map((f) => (f.sha256 && had.get(f.sha256)) || outgoing([f])[0])
       } else {
-        // Until every reader takes an edit with no `imeta` as "no files" (stage 3), taking the last file off is not
-        // offered: the words still travel, with the files the message has, so the edit means the same to every reader.
-        if (edit?.files) showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
         // Files untouched still ride the edit: an edit is the whole new message, and one with none takes them off.
         // Unknown when the message is not in hand, so that edit is not sent.
         // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md

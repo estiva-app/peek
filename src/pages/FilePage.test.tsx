@@ -1005,7 +1005,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
       decorations: {
         byId: {
           [mention.id]: {
-            ...(over.edit ? { edit: { body: over.edit, edited: true, editedAt: 1_700_000_100_000 } } : {}),
+            ...(over.edit ? { edit: { body: over.edit, edited: true, editedAt: 1_700_000_100_000, attachments: [] } } : {}),
             reactions: (over.reactions ?? []).map((emoji, i) => ({ id: `r${i}`, target: mention.id, emoji, by: CATH, at: mention.createdAt + 1 })),
             resolutions: [],
           },

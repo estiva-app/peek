@@ -206,7 +206,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
     const d = found.decorations.byId[root.id]
     // The edit folded for the body, the mark and the files (`@estiva-app/conversation`, CON-5).
-    expect(d.edit).toEqual({ body: 'First, corrected', edited: true, editedAt: edit.created_at * 1000, editedBy: CATH })
+    expect(d.edit).toEqual({ body: 'First, corrected', edited: true, editedAt: edit.created_at * 1000, editedBy: CATH, attachments: [] })
     expect(d.reactions).toEqual([{ id: reaction.id, target: root.id, emoji: '👍', by: MIKY, at: reaction.created_at }])
     expect(d.resolutions).toEqual([
       { id: resolved.id, action: 'resolved', by: MIKY, at: resolved.created_at, message: 'done', supportingEventId: reply.id },
