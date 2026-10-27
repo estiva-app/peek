@@ -9,7 +9,8 @@ import {
 } from '@tabler/icons-react'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
-import { Reaction as ReactionPill } from './ui/Reaction'
+import { MessageReactions } from './ui/MessageReactions'
+import { toggledReaction, useRefusedReaction } from '@/lib/refusedReactions'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
@@ -198,6 +199,11 @@ export function ReplyCard({
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
   // Sync local reactions state when the parent passes a new override (e.g. after navigation back).
   useEffect(() => { setReactionsState(reactions ?? []) }, [reactions])
+  const refusedReaction = useRefusedReaction(messageId)
+  // Refused: the reaction drawn here at once goes, and the relay's view stands — even when that view never changed.
+  useEffect(() => {
+    if (refusedReaction) setReactionsState(reactions ?? [])
+  }, [refusedReaction]) // eslint-disable-line react-hooks/exhaustive-deps
   const [highlightState, setHighlightState] = useState<HighlightType | undefined>(highlightType)
   // The picker is the quick menu's (§4.1, D30); the card only knows it is open.
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -260,23 +266,7 @@ export function ReplyCard({
     // updaters during render, and telling the parent from there set state in
     // another component mid-render — a warning on every reaction until
     // 2026-09-10 (PEEK-ADOPTION.md §11.5).
-    const prev = reactionsState
-    let next: ReactionData[]
-    const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
-    if (existing) {
-      next = existing.count <= 1
-        ? prev.filter((r) => r !== existing)
-        : prev.map((r) => (r === existing
-            ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
-            : r))
-    } else {
-      const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
-      next = othersExisting
-        ? prev.map((r) => (r === othersExisting
-            ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
-            : r))
-        : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
-    }
+    const next = toggledReaction(reactionsState, emoji)
     setReactionsState(next)
     onReactionsChange?.(next, emoji)
   }
@@ -391,13 +381,7 @@ export function ReplyCard({
                 ))}
               </div>
             )}
-            {reactionsState.length > 0 && (
-              <div className="flex items-center gap-2 pl-8 pt-1 pb-2 w-full">
-                {reactionsState.map((r, i) => (
-                  <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={readOnly ? undefined : () => handleReact(r.emoji)} />
-                ))}
-              </div>
-            )}
+            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly ? undefined : handleReact} />
           </div>
         )}
 

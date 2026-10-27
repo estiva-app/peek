@@ -115,8 +115,8 @@ describe('project', () => {
       people,
     )
     expect(view.roots[0].reactions).toEqual([
-      { emoji: '👍', count: 2, owner: 'yours', names: ['Cath', 'You'] },
-      { emoji: '🎉', count: 1, owner: 'others', names: ['Cath'] },
+      { emoji: '👍', by: ['Cath', 'You'] },
+      { emoji: '🎉', by: ['Cath'] },
     ])
     expect(view.reactionsById[rootA.id]).toEqual([r1, r2, r3])
     expect(view.reactionTargetsOmitted).toBe(7)

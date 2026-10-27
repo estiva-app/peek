@@ -45,6 +45,7 @@ import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
 import { notSavedNote, notSentNote, notSentReason } from '@/lib/notSent'
 import { putBackEdit } from '@/lib/refusedEdits'
+import { clearRefusedReaction, refuseReaction } from '@/lib/refusedReactions'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -260,7 +261,11 @@ export function useFileConversationView({
   */
   const toggleReaction = (targetEventId: string, emoji: string) => {
     const mine = view?.reactionsById[targetEventId]?.find((r) => r.emoji === emoji && r.by === viewerPubkey)
-    void (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji)).then((result) => notSaved('reaction', result))
+    clearRefusedReaction(targetEventId)
+    void (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji)).then((result) => {
+      // Said under the message, as Ship and Leaf say it; a note only when no card draws it any more.
+      if (!result.ok && !refuseReaction(targetEventId, notSentReason(noteName, result.reason))) notSaved('reaction', result)
+    })
   }
 
   /*
@@ -707,8 +712,8 @@ interface ProjectedConversation {
  * The relay's events as the cards take them, all at once.
  *
  * Names come from the workspace directory by pubkey, the viewer's own as
- * `CURRENT_USER_NAME` — which is what `ReactionData.owner` and the "You"
- * the card draws both key on. A pubkey the directory does not know is drawn
+ * `CURRENT_USER_NAME` — which is what the reaction row lights your pills and
+ * says "you" by. A pubkey the directory does not know is drawn
  * shortened, the way `CommentRow` draws it, rather than blank.
  */
 export function project(conversation: FileConversation, viewerPubkey: string | null, people: People | undefined): ProjectedConversation {
@@ -822,10 +827,10 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   }
 }
 
-/** One pill per emoji (`@estiva-app/conversation`'s `groupReactions`, SPEC §6.6), the viewer's own marked, reactors in reaction order. */
+/** One pill per emoji (`@estiva-app/conversation`'s `groupReactions`, SPEC §6.6), reactors in reaction order. */
 function pillsOf(target: string, reactions: readonly ReactionEvent[], viewerPubkey: string | null, nameOf: (pubkey: string) => string): ReactionData[] {
   const grouped = groupReactions(reactions, viewerPubkey ?? undefined)[target.toLowerCase()] ?? []
-  return grouped.map((r) => ({ emoji: r.emoji, count: r.count, owner: r.mine ? ('yours' as const) : ('others' as const), names: r.by.map(nameOf) }))
+  return grouped.map((r) => ({ emoji: r.emoji, by: r.by.map(nameOf) }))
 }
 
 const messageOf = (conversation: FileConversation, id: string): ConversationEvent | undefined =>

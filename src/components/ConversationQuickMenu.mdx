@@ -51,8 +51,9 @@ import { ConversationQuickMenu } from '@/components/ConversationQuickMenu'
 
 - **Which of Resolve and Reopen is shown**, from `isResolved`, so no call site
   decides that twice.
-- **The reaction palette and its words** — the five emoji Peek offers, in Peek's
-  order, each with its meaning, read from the same map `Reaction` uses.
+- **The reaction palette and its words** — the five every app offers, each with
+  its meaning, from `@estiva-app/conversation`'s `REACTION_EMOJI`, the same list
+  the reaction row under a message takes (`MessageReactions`).
 - **Being one Tab stop with arrow keys along it** (§4.2, D29), which is the
   package's `Toolbar` doing its job.
 - **The box itself.** This file used to draw its own, and two cards had re-typed

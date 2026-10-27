@@ -27,7 +27,7 @@ function hover(node: React.ReactElement) {
   return container
 }
 
-const reactions: ReactionData[] = [{ emoji: '👍', count: 1, owner: 'others', names: ['Katerina'] }]
+const reactions: ReactionData[] = [{ emoji: '👍', by: ['Katerina'] }]
 
 describe('a read-only message card', () => {
   it('draws the hover menu when it is not read-only — the control', () => {
@@ -48,6 +48,18 @@ describe('a read-only message card', () => {
     fireEvent.click(screen.getByText('👍'))
     expect(onReactionsChange).not.toHaveBeenCalled()
   })
+
+  it('offers the reaction row\'s add button when it is not read-only — the control', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} />)
+    expect(screen.getAllByRole('button', { name: 'Add a reaction' }).length).toBeGreaterThan(0)
+  })
+
+  it('offers no way to react, and its pills cannot be pressed', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'React' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
 })
 
 describe('a read-only reply card', () => {
@@ -61,5 +73,11 @@ describe('a read-only reply card', () => {
     hover(<ReplyCard authorName="You" timestamp="10:24" body="Mine." reactions={reactions} onReactionsChange={onReactionsChange} readOnly />)
     fireEvent.click(screen.getByText('👍'))
     expect(onReactionsChange).not.toHaveBeenCalled()
+  })
+
+  it('offers no way to react, and its pills cannot be pressed', () => {
+    hover(<ReplyCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
   })
 })

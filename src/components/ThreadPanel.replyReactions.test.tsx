@@ -43,7 +43,7 @@ const reply: ReplyData = {
   authorName: 'Amie Miles',
   timestamp: '9:22 AM',
   body: 'Same on my branch.',
-  reactions: [{ emoji: '👍', count: 1, owner: 'others', names: ['Amie Miles'] }],
+  reactions: [{ emoji: '👍', by: ['Amie Miles'] }],
 }
 
 function open(onReplyReactionsChange: (...args: unknown[]) => void) {
@@ -87,6 +87,6 @@ describe('a reaction on a reply', () => {
       skipped silently.
     */
     expect(prev).toEqual(reply.reactions)
-    expect(next).toEqual([{ emoji: '👍', count: 2, owner: 'yours', names: ['Amie Miles', 'You'] }])
+    expect(next).toEqual([{ emoji: '👍', by: ['Amie Miles', 'You'] }])
   })
 })

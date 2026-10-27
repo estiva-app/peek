@@ -32,7 +32,7 @@ export const Default: Story = {}
 
 export const WithReactions: Story = {
   args: {
-    reactions: [{ emoji: '👍', count: 2, owner: 'others' }],
+    reactions: [{ emoji: '👍', by: ['Ana Duarte', 'Ben Ortiz'] }],
   },
 }
 

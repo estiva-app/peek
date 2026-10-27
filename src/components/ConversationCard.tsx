@@ -8,7 +8,7 @@ import {
 } from '@tabler/icons-react'
 import { AttachmentCard, Avatar, Card, ToolbarButton } from '@estiva-app/ui'
 import { RepliesRow } from './ui/RepliesRow'
-import { Reaction as ReactionPill } from './ui/Reaction'
+import { MessageReactions } from './ui/MessageReactions'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ResolveDialog } from './ResolveDialog'
@@ -23,6 +23,7 @@ import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
+import { toggledReaction, useRefusedReaction } from '@/lib/refusedReactions'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { MetaText } from '@/components/ui/MetaText'
@@ -153,7 +154,11 @@ export function ConversationCard({
   // the strip (§4.1, D30, 2026-09-10); the card only needs to know it is open.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
   const [pickerOpen, setPickerOpen] = useState(false)
-
+  const refusedReaction = useRefusedReaction(messageId)
+  // Refused: the reaction drawn here at once goes, and the relay's view stands — even when that view never changed.
+  useEffect(() => {
+    if (refusedReaction) setReactionsState(reactions ?? [])
+  }, [refusedReaction]) // eslint-disable-line react-hooks/exhaustive-deps
   // Sync local reaction state if the parent passes a different override (e.g. after navigation back).
   useEffect(() => {
     setReactionsState(reactions ?? [])
@@ -285,23 +290,7 @@ export function ConversationCard({
     // updaters during render, and telling the parent from there set state in
     // another component mid-render — a warning on every reaction until
     // 2026-09-10 (PEEK-ADOPTION.md §11.5).
-    const prev = reactionsState
-    let next: ReactionData[]
-    const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
-    if (existing) {
-      next = existing.count <= 1
-        ? prev.filter((r) => r !== existing)
-        : prev.map((r) => (r === existing
-            ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
-            : r))
-    } else {
-      const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
-      next = othersExisting
-        ? prev.map((r) => (r === othersExisting
-            ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
-            : r))
-        : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
-    }
+    const next = toggledReaction(reactionsState, emoji)
     setReactionsState(next)
     onReactionsChange?.(next, emoji)
   }
@@ -427,13 +416,9 @@ export function ConversationCard({
             </div>
           )}
 
-          {/* Reactions */}
-          {!isEditing && reactionsState.length > 0 && (
-            <div className="flex items-center gap-2 pl-8 pt-1 pb-2 w-full">
-              {reactionsState.map((r, i) => (
-                <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={readOnly ? undefined : () => handleReact(r.emoji)} />
-              ))}
-            </div>
+          {/* Reactions: the shared row; on an archived file it only shows. */}
+          {!isEditing && (
+            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly ? undefined : handleReact} />
           )}
 
           {/* Replies */}

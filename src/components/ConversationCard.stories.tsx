@@ -81,8 +81,8 @@ export const WithAttachments: Story = {
 export const WithReactions: Story = {
   args: {
     reactions: [
-      { emoji: '🙏', count: 3, owner: 'others' },
-      { emoji: '🚀', count: 1, owner: 'yours' },
+      { emoji: '🙏', by: ['Ana Duarte', 'Ben Ortiz', 'Cath'] },
+      { emoji: '🚀', by: ['You'] },
     ],
   },
 }
