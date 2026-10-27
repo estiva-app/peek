@@ -132,7 +132,8 @@ function readerFor(token: StoredToken | null): LinkReader | null {
   if (watched?.reader !== reader) {
     watched?.stop()
     watched = { reader, stop: reader.changed(linksHeard) }
-    // Another viewer: nothing the last one was told holds.
+    // Another viewer: nothing the last one was told holds, nor what it was refused.
+    resting.clear()
     linkVersion += 1
   }
   return reader
@@ -165,7 +166,51 @@ export function knownBlockOfUrl(url: string): { address: string; block: string }
  * a read failed (the relay or the token), so the editor asks again later.
  */
 export async function askLinks(urls: readonly string[]): Promise<void> {
-  await readerFor(validToken())?.ask(urls)
+  const reader = readerFor(validToken())
+  if (!reader) return
+  const wanted = [...new Set(urls)]
+  const now = Date.now()
+  const due = wanted.filter((url) => (resting.get(url)?.until ?? 0) <= now)
+  const settled = await Promise.allSettled(due.map((url) => answerAfterRest(reader, url)))
+  if (due.length < wanted.length || settled.some((result) => result.status === 'rejected')) {
+    throw new Error('A link could not be asked about; asked again later.')
+  }
+}
+
+/*
+  A link whose read failed rests before it is asked again: 5, 10, then 20 s,
+  then a minute, however often something asks for it. Every answer redraws
+  every message that draws links, and a box asks on each keystroke, so without
+  the rest one refused read (a 429) would be asked again by every message on
+  every other link's answer: 24 links came to about 1.7K `#d` queries in 35 s
+  (PEEKM-7's review). The rest over, the messages are told, and ask. The reader
+  itself is made with no retries of its own (`linkReaderAsViewer`), so this is
+  the one schedule.
+*/
+const LINK_REST_MS = 5000
+const LINK_REST_MAX_MS = 60_000
+const LINK_RETRIES_TOLD = 3
+const resting = new Map<string, { failures: number; until: number }>()
+const failuresCounted = new WeakSet<Promise<unknown>>()
+
+function answerAfterRest(reader: LinkReader, url: string): Promise<void> {
+  const pending = reader.answerOf(url)
+  return pending.then(
+    () => {
+      resting.delete(url)
+    },
+    (error: unknown) => {
+      // Two asks of one read in flight share its failure: it counts once.
+      if (!failuresCounted.has(pending)) {
+        failuresCounted.add(pending)
+        const failures = (resting.get(url)?.failures ?? 0) + 1
+        const wait = Math.min(LINK_REST_MS * 2 ** (failures - 1), LINK_REST_MAX_MS)
+        resting.set(url, { failures, until: Date.now() + wait })
+        if (failures <= LINK_RETRIES_TOLD) setTimeout(linksHeard, wait)
+      }
+      throw error
+    },
+  )
 }
 
 /** What an app link in the message box draws as, from what has come back (`linkTargetOf`). A `LinkResolver`. */

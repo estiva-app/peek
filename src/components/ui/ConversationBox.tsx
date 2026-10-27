@@ -47,6 +47,7 @@ import {
 import { registerActiveComposer, unregisterComposer, type ComposerHandle } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
+import { isWebLink } from '@/lib/referenceLink'
 import type { RefusedEdit } from '@/lib/refusedEdits'
 import { HighlightTag } from '@/extensions/highlight'
 import { extractResolutionFromText, ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
@@ -122,7 +123,8 @@ const DEFAULT_DRAFTS = browserDrafts()
   read failed is asked again only once the reader says it may be.
 */
 const askAbout = (urls: readonly string[]) => {
-  if (urls.length) askLinks(urls.slice(0, MAX_LINKS_ASKED)).catch(() => {})
+  const web = urls.filter(isWebLink)
+  if (web.length) askLinks(web.slice(0, MAX_LINKS_ASKED)).catch(() => {})
 }
 
 type DocumentNode = { type?: string; attrs?: Record<string, unknown>; content?: DocumentNode[] }

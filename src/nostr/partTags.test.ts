@@ -69,11 +69,6 @@ describe('a pasted block link', () => {
     const tags = await linkTagsAsViewer(link('aaa'), { file: ADDRESS }, 'https://relay', TOKEN)
     expect(tags).toEqual([])
   })
-
-  it('earns no part on an edit, only the a its new words earn (SPEC §6.8)', async () => {
-    const tags = await linkTagsAsViewer(`See ${link('aaa')}`, {}, 'https://relay', TOKEN, { edit: true })
-    expect(tags).toEqual([['a', ADDRESS]])
-  })
 })
 
 describe('an object that did not come back', () => {

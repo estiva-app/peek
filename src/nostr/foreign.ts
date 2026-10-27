@@ -247,10 +247,18 @@ function urlManifests(query: QueryFn): Promise<SignedEvent[]> {
     return found
   })
   manifestsRead = read
-  // A failed read must not poison the session — the next link asks again.
-  read.catch(() => {
-    if (manifestsRead === read) manifestsRead = null
-  })
+  // A failed read must not poison the session, nor an empty one (a relay still
+  // starting, a read that raced sign-in): the next link asks again, as
+  // interop's reader does with its own read. Kept, `[]` would leave every app
+  // link a plain link until a reload.
+  read.then(
+    (found) => {
+      if (found.length === 0 && manifestsRead === read) manifestsRead = null
+    },
+    () => {
+      if (manifestsRead === read) manifestsRead = null
+    },
+  )
   return read
 }
 
@@ -274,7 +282,8 @@ export function linkReaderAsViewer(relayUrl: string, token: StoredToken): LinkRe
   }
   // Each read goes with the newest token handed in.
   const query: QueryFn = (filters) => viewerQuery(relayUrl, current.token)(filters)
-  const current = { viewer, token, reader: linkReader({ query, manifests: () => urlManifests(query) }) }
+  // No retries of the reader's own: `askLinks` (src/api/foreign.ts) rests a failed link and says when to ask again.
+  const current = { viewer, token, reader: linkReader({ query, manifests: () => urlManifests(query), retries: 0 }) }
   links = current
   return current.reader
 }
@@ -429,7 +438,19 @@ export async function resolveObjectAsViewer(
       (FOL-38); before that, its id was put to a `#d` query and found nothing.
     */
     if (/^https?:\/\//i.test(reference)) {
-      const { value } = await linkReaderAsViewer(relayUrl, token).answerOf(reference)
+      // The reader rejects with a plain Error while no manifest has been read
+      // (it asks again later); here that is a link that names nothing yet, so
+      // an ordinary link, as before PEEKM-7. A refused read keeps its lane's
+      // meaning below.
+      const value = await linkReaderAsViewer(relayUrl, token)
+        .answerOf(reference)
+        .then(
+          (found) => found.value,
+          (error: unknown) => {
+            if (error instanceof RelayReadError) throw error
+            return null
+          },
+        )
       if (!value) return null
       if (!value.includes(':')) return await resolveForeignEvent(value, query, cachedPeople(query), manifests)
       return await resolveForeignObject(value, query, cachedPeople(query), 0, manifests, options)

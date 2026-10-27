@@ -14,6 +14,7 @@ import { INLINE_TOKEN_RE } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
 import { linksIn, type ForeignObject } from '@estiva-app/interop'
 import { PartCard } from './PartCard'
+import { isWebLink } from '@/lib/referenceLink'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
 import {
@@ -148,7 +149,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
   */
   const tree = body ? toRenderTree(body, 'marker') : []
-  const urls = linksIn(tree)
+  // Web links only: a `mailto:` names nothing, and must not use up `MAX_LINKS_PER_MESSAGE` below.
+  const urls = linksIn(tree).filter(isWebLink)
   const named = new Set(findNaddrs(body).map(addressOf))
   // A comment's anchor (§13.6) is what it is about, not something it names, so
   // it is drawn above the text whatever the body says — with the same card.

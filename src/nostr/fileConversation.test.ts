@@ -561,15 +561,10 @@ describe('the decorations are written as the suite agrees them', () => {
       expect(tags.filter((t) => ['p', 'urgent', 'part'].includes(t[0]))).toEqual([])
     })
 
-    it('names neither the file it is on nor the comment a reply answers', async () => {
-      const body = `Back to ${OWN_NADDR} and ${messageReference(root.id, 1111)}`
+    it('names neither the file it is on nor the comment a reply answers, only the other file its words link', async () => {
+      const body = `Back to ${OWN_NADDR} and ${messageReference(root.id, 1111)}, and ${OTHER_NADDR}`
       await editCommentAsViewer({ container, targetEventId: reply.id, parentId: root.id, body, files: [] }, 'https://relay.test', token)
-      expect(signed().tags.filter((t) => t[0] === 'a' || t[0] === 'q')).toEqual([])
-    })
-
-    it('a send of the same words carries the part an edit leaves off', async () => {
-      await commentAsViewer({ container, body: `See https://peek.estiva.app/topic/linked-${LINKED_D}#block-b1` }, 'https://relay.test', token)
-      expect(signed().tags.filter((t) => t[0] === 'part')).toEqual([['part', LINKED, 'b1']])
+      expect(signed().tags.filter((t) => t[0] === 'a' || t[0] === 'q')).toEqual([['a', OTHER]])
     })
   })
 

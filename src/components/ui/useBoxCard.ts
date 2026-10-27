@@ -5,6 +5,7 @@ import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
 import { askLinks, knownBlockOfUrl, knownCardValue } from '@/api'
 import { boxLinksOf, embedsToEdit, embedsToSend, namedBefore, type BoxLinkContext, type BoxLinks } from '@estiva-app/conversation'
 import { serializeTiptapToText } from '@/lib/textParsing'
+import { isWebLink } from '@/lib/referenceLink'
 
 /*
   The card under a message box, as it will be sent (why:
@@ -14,8 +15,8 @@ import { serializeTiptapToText } from '@/lib/textParsing'
   `BoxCardUnder` draws it.
 */
 
-/** The links a body names something by, as a send tags them: none in code, and `[A](B)`'s B. */
-const urlsOf = (body: string) => linksIn(toRenderTree(body, 'marker'))
+/** The web links a body names something by, as a send tags them: none in code, `[A](B)`'s B, and no `mailto:`. */
+const urlsOf = (body: string) => linksIn(toRenderTree(body, 'marker')).filter(isWebLink)
 
 const CONTEXT: Pick<BoxLinkContext, 'resolveLink' | 'blockOf'> = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
 

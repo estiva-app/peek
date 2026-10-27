@@ -9,8 +9,8 @@
  * rendering as somebody's object, and that Peek's reader reads as the viewer
  * and starts afresh for another one.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fileAddressAsViewer, forgetUrlShapes, linkReaderAsViewer, linkTagsAsViewer } from './foreign'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fileAddressAsViewer, forgetUrlShapes, linkReaderAsViewer, linkTagsAsViewer, resolveObjectAsViewer } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -175,13 +175,31 @@ describe('what a pasted link names', () => {
     }
   })
 
-  it('reads the published shapes once for the whole session', async () => {
-    for (const slug of ['a', 'b', 'c']) await valueOf(`https://ship.estiva.app/issue/${slug}-${UUID}`)
-    const manifestReads = queryRelay.mock.calls.filter((c) => {
-      const kinds = (c[1] as Record<string, unknown>[])[0]?.kinds as number[] | undefined
-      return kinds?.includes(31990) ?? false
+  describe('when the first manifest read comes back empty (a relay still starting, a read that raced sign-in)', () => {
+    let published: unknown[]
+    beforeEach(() => {
+      vi.useFakeTimers()
+      published = []
+      queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+        if ((filters[0]?.kinds as number[] | undefined)?.includes(31990)) return { ok: true, events: published }
+        const d = (filters[0]?.['#d'] as string[] | undefined)?.[0]
+        return { ok: true, events: d === UUID ? [issue] : [] }
+      })
     })
-    expect(manifestReads).toHaveLength(1)
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('the link draws as a plain link meanwhile, not as an error', async () => {
+      await expect(resolveObjectAsViewer(`https://ship.estiva.app/issue/plan-${UUID}`, 'https://relay', TOKEN)).resolves.toBeNull()
+    })
+
+    it('the next ask names the object once the relay has the manifests, with no reload', async () => {
+      const url = `https://ship.estiva.app/issue/plan-${UUID}`
+      await expect(valueOf(url)).rejects.toThrow()
+      published = [manifest]
+      await expect(valueOf(url)).resolves.toBe(`30851:${AUTHOR}:${UUID}`)
+    })
   })
 
   it('asks again as another viewer: one sign-in’s answers are not the next one’s', async () => {

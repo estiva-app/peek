@@ -43,6 +43,14 @@ export type ReferenceLink =
 
 const EVENT_ID = /^[0-9a-f]{64}$/i
 
+/**
+ * Whether a link's target is one an app can name (http or https). `linksIn`
+ * hands back every target, a `mailto:` and a relative one too; only a web
+ * link may count toward a message's or a box's cap on links asked about, or
+ * a few `mailto:` links would leave a later app link with no chip or card.
+ */
+export const isWebLink = (url: string): boolean => /^https?:\/\//i.test(url)
+
 export function referenceLink(uri: string, object: ForeignObject | null | undefined): ReferenceLink | null {
   if (!object || object.unreachable) return null
 

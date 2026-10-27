@@ -191,7 +191,9 @@ export async function catchUpConversation(
       (event) => HELD_KINDS.has(event.kind) && (!address || belongsToFile(event, address, held, answered)),
     ),
   )
-  const { mentions, authors } = newsOf(first.added, address)
+  const news = newsOf(first.added, address)
+  const { authors } = news
+  const mentions = news.mentions || editsElsewhereName(answer, address, held, answered)
   if (first.added.length === 0) {
     store.settle(key, startedAt)
     return { changed: false, object, mentions, authors }
@@ -275,7 +277,16 @@ export async function applyLiveEvents(
     key,
     ours.filter((event) => HELD_KINDS.has(event.kind)),
   )
-  const { mentions, authors } = newsOf(merged.added, address)
+  const news = newsOf(merged.added, address)
+  const { authors } = news
+  const mentions =
+    news.mentions ||
+    editsElsewhereName(
+      events.filter((event) => event.tags.some((tag) => tag[0] === 'h' && tag[1] === container.h)),
+      address,
+      held,
+      taken,
+    )
   if (merged.added.length === 0) return { changed: false, object, mentions, authors }
   if (merged.disputed.length) {
     const remaining = new Set((await query([{ ids: merged.disputed, limit: merged.disputed.length }])).map((event) => event.id))
@@ -439,10 +450,34 @@ const namesTarget = (event: SignedEvent, id: string) => event.tags.some((tag) =>
  */
 function belongsToFile(event: SignedEvent, address: string, held: ReadonlySet<string>, answered: ReadonlySet<string>): boolean {
   if (isDeletion(event)) return true
+  // An edit belongs with the message it edits: one of a message elsewhere that links the file is a mention, told, not held.
+  if (event.kind === KIND.MESSAGE_EDIT) return isEditOfHeld(event, held, answered)
   return event.tags.some(
     (tag) =>
       ((tag[0] === 'a' || tag[0] === 'A') && tag[1] === address) ||
       (tag[0] === 'e' && !!tag[1] && (held.has(tag[1]) || answered.has(tag[1]))),
+  )
+}
+
+const isEditOfHeld = (event: SignedEvent, held: ReadonlySet<string>, answered: ReadonlySet<string>): boolean =>
+  event.tags.some((tag) => tag[0] === 'e' && !!tag[1] && (held.has(tag[1]) || answered.has(tag[1])))
+
+/**
+ * Whether an edit of a message elsewhere now links the file (SPEC §6.4): it is
+ * not held — it edits nothing in this conversation — but Mentioned in is told.
+ */
+function editsElsewhereName(
+  events: readonly SignedEvent[],
+  address: string | null,
+  held: ReadonlySet<string>,
+  answered: ReadonlySet<string>,
+): boolean {
+  if (!address) return false
+  return events.some(
+    (event) =>
+      event.kind === KIND.MESSAGE_EDIT &&
+      !isEditOfHeld(event, held, answered) &&
+      event.tags.some((tag) => tag[0] === 'a' && tag[1] === address),
   )
 }
 
