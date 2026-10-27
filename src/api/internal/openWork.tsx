@@ -69,6 +69,9 @@ const NO_ENTRIES: OpenWorkRef[] = []
 /** The longest the Desk waits for Open work's files before drawing without them. */
 const FILES_WAIT_MS = 2_500
 
+/** Open work's files are followed while it is mounted (PEE-28). One object, so the read's options are stable. */
+const FOLLOW = { live: true }
+
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
   items: OpenWorkItem[]
@@ -175,10 +178,13 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     A file's row is rendered from the relay, not from a workspace index: it has
     no Convex id and no Convex copy (FOL-34). One read for every file (PER-10),
     once per change to the set; the unread badge is read separately, by the
-    Desk, where it is drawn. `held` draws this tab's newer copy of a file when
-    there is one — asked again after a rename or a summary change in its
-    Details — so the row shows the new title and summary (SUM-5). It follows
-    no file: a change made in another tab or app shows on the next read.
+    Desk, where it is drawn. `live` follows each file's field changes, as a
+    widget does: a rename or a summary change — in this tab's Details (SUM-5),
+    by somebody else, in another tab or in Ship — asks for that one file again,
+    and the row shows its new title and summary without a reload (PEE-28).
+    Open work is the short list a person keeps in front of themselves, not a
+    Folder listing, so following it is a watch for each Folder it holds files
+    in, shared with whatever else on screen watches that Folder.
   */
   const fileAddresses = useMemo(
     () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'file' ? [e.address] : []))),
@@ -190,7 +196,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   )
   const fileObjects = useResolvedReferences(
     useMemo(() => [...fileAddresses].sort(), [fileAddresses]),
-    { held: true },
+    FOLLOW,
   )
 
   const items = useMemo<OpenWorkItem[]>(() => {
