@@ -17,6 +17,7 @@ import {
   FILE_TIER,
   MESSAGE_TIER,
   messageReference,
+  openingWords,
   rankReferences,
   referenceSearch,
   type ReferenceCandidate,
@@ -24,8 +25,8 @@ import {
 import { KIND_BARE_FILE, type FolderContents, type ForeignObject } from '@estiva-app/interop'
 import { referenceConversations, type ConversationMessage } from '@/lib/conversationRegistry'
 import { rememberedFile, rememberRecent } from '@/lib/recents'
-import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
+import { personByPubkey } from './mentions'
 import { fileCandidatesAsViewer, searchFileReferencesAsViewer } from '@/nostr/foreign'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRelayViewer } from './foreign'
@@ -88,7 +89,8 @@ function messageCandidate(message: ConversationMessage, tier: number, at: number
     type: 'message',
     kind: MESSAGE_KIND,
     title: message.author,
-    caption: previewText(message.body),
+    // A message's opening words, read as Ship and Leaf read them (PEEKM-6).
+    caption: openingWords(message.body, (pubkey) => personByPubkey(pubkey)?.name),
     search: message.body,
     tier,
     at,

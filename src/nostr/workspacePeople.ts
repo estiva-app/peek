@@ -23,9 +23,9 @@
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-agent-says-it-is-a-bot-in-its-profile.md
  */
 import type { SignedEvent } from '@estiva-app/protocol'
+import { KIND_MEMBERSHIP_LIST, mentionablePeople, namedProfilesOf, rosterOf, type NamedProfile } from '@estiva-app/conversation'
 
-/** NIP-43's relay membership list. */
-export const KIND_MEMBERSHIP_LIST = 13534
+export { KIND_MEMBERSHIP_LIST, rosterOf }
 
 export interface WorkspacePerson {
   pubkey: string
@@ -41,20 +41,12 @@ export function workspaceFilters(): Record<string, unknown>[] {
   ]
 }
 
-interface ProfileContent {
-  display_name?: unknown
-  name?: unknown
-  picture?: unknown
-  bot?: unknown
-}
-
-/** A named profile, and whether it is an agent's (NIP-24 `bot`). */
-export interface WorkspaceProfile extends WorkspacePerson {
-  bot: boolean
-}
+/** A named profile, and whether it is an agent's (NIP-24 `bot`, present only when true). */
+export type WorkspaceProfile = NamedProfile
 
 /**
- * Every named profile in the events, newest `kind:0` per pubkey (REM-6).
+ * Every named profile in the events, newest `kind:0` per pubkey (REM-6) — the
+ * shared package's reading (PEEKM-6).
  *
  * Not narrowed to the roster, humans or anyone but the viewer: this answers
  * "what is this key called", which a mention of you, of an agent or of someone
@@ -62,40 +54,7 @@ export interface WorkspaceProfile extends WorkspacePerson {
  * a key is not a name.
  */
 export function profilesOf(events: readonly SignedEvent[]): Map<string, WorkspaceProfile> {
-  const newest = new Map<string, SignedEvent>()
-  for (const e of events) {
-    if (e.kind !== 0) continue
-    const seen = newest.get(e.pubkey)
-    if (!seen || e.created_at > seen.created_at) newest.set(e.pubkey, e)
-  }
-
-  const out = new Map<string, WorkspaceProfile>()
-  for (const [pubkey, event] of newest) {
-    let content: ProfileContent
-    try {
-      content = JSON.parse(event.content) as ProfileContent
-    } catch {
-      continue
-    }
-    const name = [content.display_name, content.name].find((n): n is string => typeof n === 'string' && n.trim() !== '')
-    if (!name) continue
-    out.set(pubkey, {
-      pubkey,
-      name,
-      bot: content.bot === true,
-      ...(typeof content.picture === 'string' && content.picture ? { picture: content.picture } : {}),
-    })
-  }
-  return out
-}
-
-/** The newest roster's members, or `null` when the relay keeps no roster. */
-export function rosterOf(events: readonly SignedEvent[]): Set<string> | null {
-  const roster = events
-    .filter((e) => e.kind === KIND_MEMBERSHIP_LIST)
-    .sort((a, b) => b.created_at - a.created_at)[0]
-  if (!roster) return null
-  return new Set(roster.tags.filter((t) => (t[0] === 'member' || t[0] === 'p') && typeof t[1] === 'string').map((t) => t[1]))
+  return namedProfilesOf(events)
 }
 
 /**
@@ -116,7 +75,8 @@ export function workspacePeopleOf(
 }
 
 /**
- * Everyone the viewer can @-mention or invite, sorted by name (REM-6).
+ * Everyone the viewer can @-mention or invite, sorted by name (REM-6): the
+ * rule every app's `@` uses (`mentionablePeople`, PEEKM-6).
  *
  * The roster as {@link workspacePeopleOf} reads it, **agents included**: you do
  * not DM an agent from People, but mentioning one is how you ask it something.
@@ -128,8 +88,5 @@ export function mentionablePeopleOf(events: readonly SignedEvent[], me: string |
 
 function membersOf(events: readonly SignedEvent[], me: string | undefined, include: Iterable<string>): WorkspaceProfile[] {
   const roster = rosterOf(events)
-  const members = roster ? new Set([...roster, ...include]) : null
-  return [...profilesOf(events).values()]
-    .filter((p) => p.pubkey !== me && (!members || members.has(p.pubkey)))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  return mentionablePeople(profilesOf(events).values(), roster ? new Set([...roster, ...include]) : null, me)
 }

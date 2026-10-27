@@ -1,7 +1,7 @@
 import { IconMessage } from '@tabler/icons-react'
 import { referenceMenu, type CaptionedItem } from '@estiva-app/ui/editor'
-import { messageReference } from '@estiva-app/conversation'
-import { previewText } from '@/lib/textParsing'
+import { messageReference, openingWords } from '@estiva-app/conversation'
+import { personByPubkey } from '@/api'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
 
@@ -34,7 +34,7 @@ export function toReferenceItem(message: ConversationMessage): CaptionedItem {
   const item = {
     id: message.eventId as string,
     label: message.author,
-    snippet: previewText(message.body),
+    snippet: openingWords(message.body, (pubkey) => personByPubkey(pubkey)?.name),
     uri: messageReference(message.eventId as string, MESSAGE_KIND),
     search: message.body,
   }

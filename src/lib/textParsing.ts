@@ -1,6 +1,6 @@
 import { PEOPLE } from '@/data/peopleData'
 import { addrToNaddr, decodeNevent, decodeNpub, referenceToPointer } from '@estiva-app/protocol'
-import { mentionText } from '@estiva-app/conversation'
+import { mentionText, referenceWord } from '@estiva-app/conversation'
 import { personByPubkey } from '@/api/mentions'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -187,20 +187,9 @@ export function serializeTextChild(child: TiptapInlineChild): string {
 
 /** A `nostr:` reference in a body, as a preview line names it. */
 const NOSTR_REFERENCE_RE = /nostr:(?:npub1|nprofile1|nevent1|note1|naddr1)[a-z0-9]+/gi
-/** What a referenced address is, by its kind — the type word its chip wears. */
-const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic', 30842: 'Document' }
-
+/** A reference as a preview line says it: the words every app's captions use (`referenceWord`, PEEKM-6). */
 function previewReference(uri: string): string {
-  if (/^nostr:npub1/i.test(uri)) {
-    let pubkey: string | null = null
-    try {
-      pubkey = decodeNpub(uri)
-    } catch {
-      pubkey = null
-    }
-    return `@${(pubkey && personByPubkey(pubkey)?.name) || shortUri(uri)}`
-  }
-  return referenceTypeWord(uri) ?? `@${shortUri(uri)}`
+  return referenceWord(uri, (pubkey) => personByPubkey(pubkey)?.name)
 }
 
 /**
@@ -210,15 +199,7 @@ function previewReference(uri: string): string {
  * that cannot be found say (OPT-10).
  */
 export function referenceTypeWord(uri: string): string | undefined {
-  if (/^nostr:naddr1/i.test(uri)) {
-    try {
-      return REFERENCE_TYPE_WORDS[referenceToPointer(uri).kind] ?? 'File'
-    } catch {
-      return 'File'
-    }
-  }
-  if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'Message'
-  return undefined
+  return /^nostr:(?:naddr1|nevent1|note1)/i.test(uri) ? referenceWord(uri, () => undefined) : undefined
 }
 
 /**
