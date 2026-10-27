@@ -81,8 +81,17 @@ const agentEnv = () => {
 }
 
 /** Weekly Plans' title and its last heading that draws as plain words (no link, chip or mark). */
-async function weeklyTexts() {
-  const { stdout } = await run('npx', ['tsx', 'scripts/agent.ts', 'file', 'show', WEEKLY.address], { cwd: CLI, env: agentEnv(), maxBuffer: 1 << 26 })
+async function weeklyTexts(tries = 4) {
+  let stdout
+  try {
+    ;({ stdout } = await run('npx', ['tsx', 'scripts/agent.ts', 'file', 'show', WEEKLY.address], { cwd: CLI, env: agentEnv(), maxBuffer: 1 << 26 }))
+  } catch (error) {
+    // A run straight after another can find the agent's quota spent; the relay says when to come back.
+    const wait = /rate-limited.*retry in (\d+)s/.exec(error.stderr ?? '')?.[1]
+    if (!wait || tries <= 1) throw error
+    await new Promise((r) => setTimeout(r, (Number(wait) + 1) * 1000))
+    return weeklyTexts(tries - 1)
+  }
   const file = JSON.parse(stdout)
   const headings = file.text.split('\n').map((l) => /^#{1,3} (.+)$/.exec(l)?.[1]).filter((h) => h && !/[[\]()<>:*_`]/.test(h))
   if (!headings.length) throw new Error('Weekly Plans has no plain heading to wait for')
@@ -101,7 +110,7 @@ const LEGS = {
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
-  peek: () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${WEEKLY.address}`, ...settle(60000), ...whole, ...report('peek')],
+  peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
 }
 
 /** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
@@ -109,16 +118,19 @@ const TOGETHER = { weekly: 'qa1', 'ship-project': 'qa2', peek: 'qa1', agent: 'ag
 
 async function browserLeg(leg, awaitFile, as = 'qa1') {
   let stdout
+  // Why the probe itself died (its exit and last stderr line), when it printed no report.
+  let died = ''
   try {
     ;({ stdout } = await run('node', [PROBE, '--as', as, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
   } catch (error) {
     stdout = error.stdout
+    died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
   }
   let out = {}
   try { out = JSON.parse(stdout) } catch {}
   const step = (out.steps ?? []).find((s) => 'eval' in s && typeof s.result === 'string' && s.result.startsWith('{"label"'))
   const failure = out.failure ?? (out.steps ?? []).filter((s) => s.error).map((s) => s.error).join('; ')
-  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || 'no report' }
+  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
 }
 
 /** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */
@@ -288,8 +300,9 @@ if (args.includes('--compare')) {
     const texts = await weeklyTexts()
     console.error(`Weekly Plans: waiting for ${JSON.stringify(texts)}`)
     awaitList.push(['^leaf\\.', '^/(document|f)/', texts])
-    // Peek's leg is the page's conversation: its title is the topic's.
-    awaitList.push(['^peek\\.', '^/topic/', [texts[0]]])
+    // Peek's leg is the page's conversation, at /document/ since Peek redirects /topic/ there. Its title is also a
+    // row in the topic list inside <main>, so wait for the first message and its Leaf card instead.
+    awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together', 'Open in Leaf']])
   }
   const awaitFile = join(scratch, 'recorder.js')
   writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
