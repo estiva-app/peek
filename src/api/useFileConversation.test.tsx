@@ -36,6 +36,8 @@ const relay = vi.hoisted(() => ({
 }))
 /** An edit's link answers (PEEKM-7): `wait` holds its signed build, `named` gives that one an `a` its draft lacked. */
 const links = vi.hoisted(() => ({ wait: Promise.resolve(), named: false, drafted: new Map<string, number>() }))
+/** The ids whose draw merges them and then throws. */
+const drawing = vi.hoisted(() => ({ throws: new Set<string>() }))
 /** The same read against the copy on the device (PEE-4): holds nothing unless a case says so. */
 const copy = vi.hoisted(() => ({ read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<FileConversation>>() }))
 vi.mock('@/nostr/conversationFromCopy', () => ({
@@ -49,6 +51,8 @@ vi.mock('@/nostr/conversationCatchUp', () => ({
     relay.apply(store, key, container, rootIds, events),
   showOwnEvent: async (_store: unknown, _key: string, _container: unknown, _roots: unknown, event: SignedEvent) => {
     relay.own.push(`shown ${event.id}`)
+    // Merged, then the fold threw: what the real one does when settling fails.
+    if (drawing.throws.has(event.id)) throw new Error('the fold failed')
     return true
   },
   confirmOwnEvent: (id: string) => relay.own.push(`confirmed ${id}`),
@@ -163,6 +167,7 @@ afterEach(() => {
   links.wait = Promise.resolve()
   links.named = false
   links.drafted.clear()
+  drawing.throws.clear()
 })
 
 const event = (id: string) => ({ id, kind: 1111, tags: [['h', FOLDER]] }) as unknown as SignedEvent
@@ -600,6 +605,45 @@ describe('useFileConversation — a channel (REM-1)', () => {
     await act(async () => answerLinks())
     expect(await edited).toEqual({ ok: true, id: idOf(2) })
     expect(relay.own).toEqual([`shown ${idOf(1)}`, `shown ${idOf(2)}`, `withdrawn ${idOf(1)}`, `confirmed ${idOf(2)}`])
+  })
+
+  const refused = { ok: false as const, reason: 'The relay refused the edit.' }
+
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
+  it('a refused edit whose links named nothing more takes its drawn words out again', async () => {
+    relay.publish.mockResolvedValueOnce(refused)
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    await act(async () => {
+      expect(await result.current.actions.edit('e'.repeat(64), 'new text', [])).toEqual(refused)
+    })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `withdrawn ${idOf(1)}`])
+  })
+
+  it('a refused edit whose links named more takes out both its draft and the signed one', async () => {
+    links.named = true
+    relay.publish.mockResolvedValueOnce(refused)
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    await act(async () => {
+      expect(await result.current.actions.edit('e'.repeat(64), 'new text', [])).toEqual(refused)
+    })
+    const drawn = relay.own.filter((line) => line.startsWith('shown')).map((line) => line.slice(6))
+    const withdrawn = relay.own.filter((line) => line.startsWith('withdrawn')).map((line) => line.slice(10))
+    expect(drawn).toEqual([idOf(1), idOf(2)])
+    expect(withdrawn.sort()).toEqual(drawn.sort())
+  })
+
+  it('a refused edit whose draft failed to draw takes that draft out too', async () => {
+    links.named = true
+    drawing.throws.add(idOf(1))
+    relay.publish.mockResolvedValueOnce(refused)
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    await act(async () => {
+      expect(await result.current.actions.edit('e'.repeat(64), 'new text', [])).toEqual(refused)
+    })
+    expect(relay.own.filter((line) => line.startsWith('withdrawn')).sort()).toEqual([`withdrawn ${idOf(1)}`, `withdrawn ${idOf(2)}`])
   })
 
   it('taking back a reaction still being sent waits for it (OPT-8)', async () => {

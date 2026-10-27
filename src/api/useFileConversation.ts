@@ -533,14 +533,19 @@ export function useFileConversation(
   /** A change drawn before its signed event is built: its id when it was drawn. */
   const drawDraft = async (v: Viewer, draft: (v: Viewer) => Promise<UnsignedEvent>): Promise<string | undefined> => {
     if (!container || !key) return undefined
+    const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
+    const roots = ids ? ids.split(',') : []
+    const query = viewerQuery(v.relayUrl, v.token)
+    let id: string | undefined
     try {
       const event = await draft(v)
-      const id = await eventIdOf(event)
-      const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
-      const shown = await showOwnEvent(conversations, key, container, ids ? ids.split(',') : [], { ...event, id, sig: '' }, viewerQuery(v.relayUrl, v.token))
+      id = await eventIdOf(event)
+      const shown = await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query)
       return shown ? id : undefined
     } catch (error) {
       console.warn('[nostr] drawing your change failed:', error)
+      // Withdrawn even so, as `publishOwn` does: the draw may have merged it before its fold threw.
+      if (id) await withdrawOwnEvent(conversations, key, container, roots, id, query).catch((failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure))
       return undefined
     }
   }
