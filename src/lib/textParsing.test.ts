@@ -1,4 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// One colleague the workspace can name, so a preview has somebody to name.
+// Every other key is answered by the real directory, as the app answers it.
+const ADA = vi.hoisted(() => 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46')
+vi.mock('@/api/mentions', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/api/mentions')>()
+  return {
+    ...real,
+    personByPubkey: (pubkey: string) =>
+      pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : real.personByPubkey(pubkey),
+  }
+})
+
 import {
   MENTION_RE,
   INLINE_TOKEN_RE,
@@ -459,7 +472,14 @@ describe('links — [label](url) (PEE-19)', () => {
       const issue = `nostr:${addrToNaddr(`30851:${'a'.repeat(64)}:d1`)}`
       const message = `nostr:${encodeNevent({ id: 'e'.repeat(64), relays: [] })}`
       expect(previewText(`see ${issue} and ${message}`)).toBe('see Issue and Message')
-      expect(previewText(`ping nostr:${encodeNpub('c'.repeat(64))}`)).toMatch(/^ping @\S+/)
+      // A colleague the workspace knows is named, not shown as a shortened key
+      // (PEEKM-6): the sidebar and a notification say who was pinged.
+      expect(previewText(`ping nostr:${encodeNpub(ADA)}`)).toBe('ping @Ada Lovelace')
+      // Somebody nobody can name still reads as a mention, never bech32 in full.
+      const stranger = encodeNpub('c'.repeat(64))
+      const unknown = previewText(`ping nostr:${stranger}`)
+      expect(unknown).toMatch(/^ping @\S+/)
+      expect(unknown).not.toContain(stranger)
       expect(previewText('see nostr:naddr1broken')).toBe('see File')
     })
 
