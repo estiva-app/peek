@@ -189,7 +189,7 @@ async function seedTopic(address: string, title: string, other: string, people: 
         reactAsViewer({ targetEventId: id, emoji: i % 14 === 0 ? '👍' : '🎉' }, RELAY_URL, people[(i + 1) % 2]),
       )
     if (i === 60)
-      await write(`${address.slice(-6)} #${i} edit`, () => editCommentAsViewer({ container, targetEventId: id, body: `${body} (edited)` }, RELAY_URL, author))
+      await write(`${address.slice(-6)} #${i} edit`, () => editCommentAsViewer({ container, targetEventId: id, body: `${body} (edited)`, files: [] }, RELAY_URL, author))
     if (i === 100) await write(`${address.slice(-6)} #${i} delete`, () => deleteEventAsViewer(id, RELAY_URL, author))
     previous = comment
     if (i % 20 === 0) console.log(`${title}: ${i} of ${MESSAGES}`)

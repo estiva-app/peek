@@ -103,6 +103,8 @@ export interface RelayAttachment {
   mediaUrl: string
   thumbUrl?: string
   dim?: string
+  /** The `imeta` as read, every field: what an edit lists again for a file it keeps. */
+  imeta?: Imeta
 }
 
 /** A root or a reply, with its attachments and references read off its own tags. */
@@ -156,6 +158,10 @@ export interface OutgoingAttachment {
   sha256?: string
   mediaUrl?: string
   thumbUrl?: string
+  /** An image's size, kept when an edit re-lists a file it already had. */
+  dim?: string
+  /** A file the message already had: its `imeta` as read, listed again as it is. */
+  imeta?: Imeta
 }
 
 const withTags = (comment: FileComment, event: SignedEvent | undefined, address: string): ConversationEvent => ({
@@ -214,6 +220,7 @@ export const relayAttachmentOf = (f: Imeta): RelayAttachment => ({
   mediaUrl: f.url,
   ...(f.thumb ? { thumbUrl: f.thumb } : {}),
   ...(f.dim ? { dim: f.dim } : {}),
+  imeta: f,
 })
 
 /** The addresses a comment names besides the file it is on — `a` and NIP-22's `A`. */
@@ -238,13 +245,19 @@ export function urgentOf(event: Pick<SignedEvent, 'tags'>): string[] {
 /**
  * The `imeta` tags for a comment's attachments — CON-12, the same rule as
  * `convex/nostr/outbox.ts`: only a file that reached the relay is named, since
- * an `imeta` pointing at no blob is refused with the whole event.
+ * an `imeta` pointing at no blob is refused with the whole event. A file the
+ * message already had is listed from its `imeta` as read, so an edit keeps
+ * every field another app wrote (blurhash, duration, fallback…).
  */
 export function imetaTagsFor(files: readonly OutgoingAttachment[]): NostrTag[] {
   const out: NostrTag[] = []
   for (const f of files) {
+    if (f.imeta) {
+      out.push(imetaTag(f.imeta))
+      continue
+    }
     if (!f.sha256 || !f.mediaUrl) continue
-    out.push(imetaTag({ url: f.mediaUrl, m: f.contentType, x: f.sha256, size: f.size, thumb: f.thumbUrl, filename: f.name }))
+    out.push(imetaTag({ url: f.mediaUrl, m: f.contentType, x: f.sha256, size: f.size, thumb: f.thumbUrl, dim: f.dim, filename: f.name }))
   }
   return out
 }
@@ -711,11 +724,11 @@ export async function eventIdOf(event: UnsignedEvent): Promise<string> {
 /**
  * Edit a comment or a reply — `kind:40003`, newest wins for every reader (CON-8).
  *
- * `files`, when given, is the attachment set after the edit, as `imeta` — RFC
- * 0.4 §7.2.1 as amended 2026-09-23 (CON-5), which `@estiva-app/conversation`'s `foldEdits` reads. A
- * set replaces the one before it, and an edit carrying none leaves the
- * attachments as they were, so an empty set cannot be said: the caller refuses
- * it before it gets here.
+ * `files` is the message's whole attachment set after the edit, as `imeta`
+ * (SPEC §6.8): the caller lists every file it keeps, changed or not, because an
+ * edit is the whole new message and one with none takes them all off. Until
+ * the readers switch (`foldEdits` still reads none as "unchanged"), the caller
+ * refuses an empty set before it gets here.
  */
 export async function editCommentAsViewer(
   args: EditArgs,
@@ -729,7 +742,8 @@ export interface EditArgs {
   container: ConversationContainer
   targetEventId: string
   body: string
-  files?: readonly OutgoingAttachment[]
+  /** The message's whole file set after the edit (§6.8), changed or not: an empty set takes every file off. */
+  files: readonly OutgoingAttachment[]
   /**
    * The card set after the edit, when it changed (SPEC §13.6.2): `embed` folds
    * like `imeta`, so a set replaces the one before it — `none` for each card
@@ -753,7 +767,7 @@ export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
     // The whole folded set when it changed: a set replaces (§13.6.2).
     embeds: args.embeds,
   })
-  if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
+  unsigned.tags.push(...imetaTagsFor(args.files))
   return unsigned
 }
 

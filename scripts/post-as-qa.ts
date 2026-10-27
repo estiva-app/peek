@@ -27,7 +27,8 @@ export default async function main() {
   const target = option('edit')
   const container = { kind: 'file' as const, address, h: QA_FOLDER }
   const result = target
-    ? await editCommentAsViewer({ container, targetEventId: target, body }, RELAY_URL, await qaToken(who))
+    ? // An edit lists the message's whole file set (§6.8); this script posts and edits words only, so the set is empty.
+      await editCommentAsViewer({ container, targetEventId: target, body, files: [] }, RELAY_URL, await qaToken(who))
     : await commentAsViewer({ container, body }, RELAY_URL, await qaToken(who))
   if (!result.ok) throw new Error(`refused: ${result.reason}`)
   console.log(result.id)

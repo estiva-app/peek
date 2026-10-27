@@ -297,23 +297,32 @@ export function useFileConversationView({
       pending.delete(targetEventId)
       const body = edit?.body ?? (conversation ? currentBody(conversation, targetEventId) : undefined)
       if (body === undefined) return
-      let files: OutgoingAttachment[] | undefined
-      if (edit?.files) {
-        // An edit carrying no `imeta` means "unchanged", so there is no event
-        // that takes the last file off; the body still travels.
-        if (edit.files.length === 0) {
-          showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
-        } else {
-          files = outgoing(edit.files) ?? undefined
-          if (!files) return
+      const current = conversation ? currentFiles(conversation, targetEventId) : undefined
+      let files: OutgoingAttachment[]
+      if (edit?.files?.length) {
+        // A file the message already had goes back as its `imeta` was read, every field kept; a new one as uploaded.
+        const had = new Map((current ?? []).map((f) => [f.sha256, f]))
+        files = edit.files.map((f) => (f.sha256 && had.get(f.sha256)) || outgoing([f])[0])
+      } else {
+        // Until every reader takes an edit with no `imeta` as "no files" (stage 3), taking the last file off is not
+        // offered: the words still travel, with the files the message has, so the edit means the same to every reader.
+        if (edit?.files) showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
+        // Files untouched still ride the edit: an edit is the whole new message, and one with none takes them off.
+        // Unknown when the message is not in hand, so that edit is not sent.
+        // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
+        if (!current) {
+          const reason = 'The message could not be read, so the edit was not sent. Try again.'
+          if (!putBackEdit(targetEventId, { text: body, reason })) notSaved('edit', { ok: false, reason })
+          return
         }
+        files = current
       }
       // The card set rides the same edit, so it cannot race the body either (OPT-17).
       void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
         if (result.ok) return
         // The old text is back on the message; what was saved goes back in its edit box with why under it (Miky, 9 Oct;
         // PEEKM-4). A note only when no card of it is on screen to reopen.
-        if (!putBackEdit(targetEventId, { text: body, reason: notSentReason(noteName, result.reason), files: files && edit?.files })) notSaved('edit', result)
+        if (!putBackEdit(targetEventId, { text: body, reason: notSentReason(noteName, result.reason), files: edit?.files })) notSaved('edit', result)
       })
     })
   }
@@ -821,10 +830,19 @@ function pillsOf(target: string, reactions: readonly ReactionEvent[], viewerPubk
   return grouped.map((r) => ({ emoji: r.emoji, count: r.count, owner: r.mine ? ('yours' as const) : ('others' as const), names: r.by.map(nameOf) }))
 }
 
+const messageOf = (conversation: FileConversation, id: string): ConversationEvent | undefined =>
+  [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
+
 /** A root's or a reply's body as it stands — its latest edit's, else its own. */
 function currentBody(conversation: FileConversation, id: string): string | undefined {
-  const event = [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
+  const event = messageOf(conversation, id)
   return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.body ?? event.body) : undefined
+}
+
+/** A root's or a reply's files as they stand, drawn as {@link currentBody}'s: the latest edit's set, else its own. */
+function currentFiles(conversation: FileConversation, id: string): ConversationEvent['files'] | undefined {
+  const event = messageOf(conversation, id)
+  return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.attachments?.map(relayAttachmentOf) ?? event.files) : undefined
 }
 
 const asAttachment = (f: ConversationEvent['files'][number]): FileAttachment => ({
