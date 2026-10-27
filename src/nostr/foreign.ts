@@ -363,7 +363,7 @@ export function linkTagsAsViewer(
   own: OwnPlace,
   relayUrl: string,
   token: StoredToken,
-  options: { edit?: boolean } = {},
+  options: { edit?: boolean; waitMs?: number } = {},
 ): Promise<string[][]> {
   return linkReaderAsViewer(relayUrl, token).tagsFor(toRenderTree(body, 'marker'), own, options)
 }

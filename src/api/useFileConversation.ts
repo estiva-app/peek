@@ -493,14 +493,23 @@ export function useFileConversation(
   /*
     A reaction, an edit or a delete (OPT-8): built, drawn under the id it will
     have, then sent, exactly as a message is — waiting first for the message
-    it names, when that is still being sent.
+    it names, when that is still being sent. An edit waits for what its links
+    name (PEEKM-7), so its `draft` — the same edit from the answers in hand —
+    is drawn first, and the signed one takes its place.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
   */
   const change = useCallback(
-    async (target: string, build: (v: Viewer) => UnsignedEvent | Promise<UnsignedEvent>, refusal: string): Promise<WriteResult> => {
+    async (
+      target: string,
+      build: (v: Viewer) => UnsignedEvent | Promise<UnsignedEvent>,
+      refusal: string,
+      draft?: (v: Viewer) => Promise<UnsignedEvent>,
+    ): Promise<WriteResult> => {
       const blocked = await afterSend(target)
       if (blocked) return blocked
       const v = viewer()
       if (!v || !container || !key) return SIGNED_OUT
+      const drafted = draft ? await drawDraft(v, draft) : undefined
       let event: UnsignedEvent
       let id: string
       try {
@@ -508,20 +517,41 @@ export function useFileConversation(
         id = await eventIdOf(event)
       } catch (error) {
         console.warn('[nostr] building a change failed:', error)
+        if (drafted) {
+          await withdrawOwnEvent(conversationsFor(v.relayUrl, v.token.pubkey), key, container, ids ? ids.split(',') : [], drafted, viewerQuery(v.relayUrl, v.token)).catch(
+            (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
+          )
+        }
         return { ok: false, reason: 'The change could not be prepared. Try again.' }
       }
-      return publishOwn(v, event, id, refusal)
+      return publishOwn(v, event, id, refusal, drafted)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
     [key, ids, viewer, sync],
   )
 
+  /** A change drawn before its signed event is built: its id when it was drawn. */
+  const drawDraft = async (v: Viewer, draft: (v: Viewer) => Promise<UnsignedEvent>): Promise<string | undefined> => {
+    if (!container || !key) return undefined
+    try {
+      const event = await draft(v)
+      const id = await eventIdOf(event)
+      const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
+      const shown = await showOwnEvent(conversations, key, container, ids ? ids.split(',') : [], { ...event, id, sig: '' }, viewerQuery(v.relayUrl, v.token))
+      return shown ? id : undefined
+    } catch (error) {
+      console.warn('[nostr] drawing your change failed:', error)
+      return undefined
+    }
+  }
+
   /*
     Signed and sent while it is drawn; the relay's answer confirms it or takes
     it out again. Nothing is read after an accepted one — the socket's echo of
-    it is already held — unless it could not be drawn.
+    it is already held — unless it could not be drawn. A draft drawn under
+    another id is taken out once this one is in.
   */
-  const publishOwn = async (v: Viewer, event: UnsignedEvent, id: string, refusal: string): Promise<WriteResult> => {
+  const publishOwn = async (v: Viewer, event: UnsignedEvent, id: string, refusal: string, drafted?: string): Promise<WriteResult> => {
     if (!container || !key) return SIGNED_OUT
     const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
     const roots = ids ? ids.split(',') : []
@@ -538,10 +568,17 @@ export function useFileConversation(
         )
       : publishConfirmed(event, v.relayUrl, v.token, refusal)
     sending.set(id, flight)
-    const drawn = await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query).catch((error: unknown) => {
-      console.warn('[nostr] drawing your own event failed:', error)
-      return false
-    })
+    const drawn =
+      drafted === id ||
+      (await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query).catch((error: unknown) => {
+        console.warn('[nostr] drawing your own event failed:', error)
+        return false
+      }))
+    if (drafted && drafted !== id) {
+      await withdrawOwnEvent(conversations, key, container, roots, drafted, query).catch((error: unknown) =>
+        console.warn('[nostr] withdrawing your draft failed:', error),
+      )
+    }
     const result = await flight
     sending.delete(id)
     if (result.ok && result.id === id) {
@@ -564,14 +601,13 @@ export function useFileConversation(
   const actions: FileConversationActions = {
     comment: (body, files, urgent, embeds) => send({ body, files, urgent, embeds }),
     reply: (parent, body, files, urgent, embeds) => send({ body, parent, files, urgent, embeds }),
-    edit: (targetEventId, body, files, embeds) =>
-      container
-        ? change(
-            targetEventId,
-            (v) => composeEdit({ container, targetEventId, parentId: parentIn(key, v, targetEventId), body, files, embeds }, v.relayUrl, v.token),
-            'The relay refused the edit.',
-          )
-        : Promise.resolve(SIGNED_OUT),
+    edit: (targetEventId, body, files, embeds) => {
+      if (!container) return Promise.resolve(SIGNED_OUT)
+      const at = Date.now()
+      const compose = (v: Viewer, waitMs?: number) =>
+        composeEdit({ container, targetEventId, parentId: parentIn(key, v, targetEventId), body, files, embeds }, v.relayUrl, v.token, { at, waitMs })
+      return change(targetEventId, (v) => compose(v), 'The relay refused the edit.', (v) => compose(v, 0))
+    },
     remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
     react: (targetEventId, emoji) =>
       change(targetEventId, (v) => composeReaction({ targetEventId, emoji }, v.token.pubkey), 'The relay refused the reaction.'),

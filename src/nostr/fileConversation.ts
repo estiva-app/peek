@@ -757,10 +757,20 @@ export interface EditArgs {
  * (PEEKM-7). No `part`, and never a person: `p` and `urgent` stay as sent.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
  */
-export async function composeEdit(args: EditArgs, relayUrl: string, token: StoredToken): Promise<UnsignedEvent> {
+export async function composeEdit(
+  args: EditArgs,
+  relayUrl: string,
+  token: StoredToken,
+  /**
+   * `waitMs: 0` builds it from the link answers already in hand, as it is
+   * drawn the moment Save is pressed (OPT-8); the same `at` gives the signed
+   * one the same id when the wait named nothing more.
+   */
+  options: { at?: number; waitMs?: number } = {},
+): Promise<UnsignedEvent> {
   const own = { file: args.container.kind === 'file' ? args.container.address : undefined, parent: args.parentId }
-  const links = await linkTagsAsViewer(args.body, own, relayUrl, token, { edit: true })
-  const unsigned = buildEdit(token.pubkey, Date.now(), {
+  const links = await linkTagsAsViewer(args.body, own, relayUrl, token, { edit: true, waitMs: options.waitMs })
+  const unsigned = buildEdit(token.pubkey, options.at ?? Date.now(), {
     channelUuid: args.container.h,
     targetEventId: args.targetEventId,
     body: args.body,
