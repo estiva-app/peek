@@ -374,6 +374,8 @@ describe('Reference, as a link (RIC-16)', () => {
   })
 
   it('a message on screen opens its conversation rather than leaving the page', () => {
+    // The opener mounts nothing, so the scroll waits out its 3 s on this clock, not after the test.
+    vi.useFakeTimers()
     const opener = vi.fn()
     registerThreadOpener(opener)
     registerTopicConversation({
@@ -386,6 +388,8 @@ describe('Reference, as a link (RIC-16)', () => {
     fireEvent.click(a)
     expect(opener).toHaveBeenCalledWith('c1')
     expect(r.getByTestId('where').textContent).toBe('/topics')
+    vi.advanceTimersByTime(3000)
+    vi.useRealTimers()
   })
 
   it('a message elsewhere leaves for /message/<id>, which finds its topic', () => {
