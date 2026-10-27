@@ -1,0 +1,44 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/MessageReactions" />
+
+# MessageReactions
+
+The reactions under a message or a reply: the package's `ReactionRow`, the same
+row Ship and Leaf draw, with what only Peek knows around it.
+
+**Seen in** — *Messages/ConversationCard* → **With reactions**, and
+*Messages/ReplyCard*. Those are both the places it is used.
+
+## When
+
+- Under a message or a reply that somebody has reacted to. Nobody has: it draws
+  nothing, and React stays in the card's hover strip.
+- With `onToggle` where a reaction can be written. Without it (an archived file,
+  a card nothing writes from) the pills only show and there is no add button.
+- With `refused` after the relay refused this message's last reaction: "Not
+  reacted: …" under the row, never a toast.
+
+## When not
+
+- Drawing pills one by one, or importing `Reaction` from `@estiva-app/ui`: the
+  row is what keeps Peek, Ship and Leaf the same.
+- Offering the emoji anywhere else: the five and their words are
+  `@estiva-app/conversation`'s `REACTION_EMOJI`, through `REACTION_OPTIONS`.
+
+## How
+
+```tsx
+import { MessageReactions } from '@/components/ui/MessageReactions'
+
+<MessageReactions reactions={reactions} refused={refusedReaction} onToggle={readOnly ? undefined : toggle} />
+```
+
+- `reactions` is each emoji and who chose it by name, in reaction order, the
+  reader as `CURRENT_USER_NAME`; their pills are lit and the hover says "you".
+
+## What it owns
+
+- Peek's indent under the message, its reader, and the refusal line.
+- Stopping a click inside the row (its picker opens in a portal) from opening
+  the message's thread.
