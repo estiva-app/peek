@@ -190,6 +190,16 @@ describe('catchUpConversation — a file', () => {
     expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
   })
 
+  it('an edit elsewhere that now links the file is reported as a mention, live', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    relay.events.push(event({ kind: 40003, tags: [['e', 'f'.repeat(64)], ['h', '33333333-3333-4333-8333-333333333333'], ['a', ADDRESS]] }))
+    const found = await catchUpConversation(store, 'k', file, [first.id], relay.query)
+    expect(found.mentions).toBe(true)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
+  })
+
   it('talk elsewhere in the Folder is not taken into the file’s conversation', async () => {
     const first = comment()
     const relay = fakeRelay([first])

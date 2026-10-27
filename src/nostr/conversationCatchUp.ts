@@ -166,7 +166,8 @@ export async function catchUpConversation(
   if (address) {
     filters.push(
       { kinds: [KIND.COMMENT], '#A': [address], since },
-      { kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE], '#a': [address], since },
+      // An edit carries the `a` its new words earn (SPEC §6.4), so one that links the file is a mention too.
+      { kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT], '#a': [address], since },
       { kinds: [KIND_FIELD_CHANGE], '#a': [address], since },
     )
     try {
