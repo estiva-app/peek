@@ -365,6 +365,25 @@ describe('the two views (Katerina, 5 October)', () => {
     expect(section(TOPIC_FOLDER)).toBeNull()
   })
 
+  it('a Folder closed in Topics stays closed when the column is drawn again, and only in Topics (PEE-74)', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    dots.member = { [TEAM]: true, [OTHER]: true }
+    const first = mount({ currentFolder: OTHER })
+    expect(openOf(section(TEAM))).toBe('true')
+    fireEvent.click(within(section(TEAM)).getAllByRole('button')[0])
+    expect(openOf(section(TEAM))).toBe('false')
+    // Leaving the file for Desk and coming back draws the column again.
+    first.unmount()
+    const again = mount({ currentFolder: OTHER })
+    expect(openOf(section(TEAM))).toBe('false')
+    expect(openOf(section(OTHER))).toBe('true')
+    // Folders keeps its own folds: the one holding the open file is open there.
+    again.unmount()
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM })
+    expect(openOf(section(TEAM))).toBe('true')
+  })
+
   it('the title opens a menu of the views, and the choice is remembered in this browser', async () => {
     window.localStorage.removeItem('peek.tree.view')
     mount()

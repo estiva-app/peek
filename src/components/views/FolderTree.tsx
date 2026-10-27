@@ -737,8 +737,14 @@ function FolderSection({
     Folder somebody closed under `All` is closed again the moment they go back
     to it, and closing one here is this view's, not a change of mind about the
     tree. `useRememberedOpen` is still what holds it under `All`.
+
+    Topics remembers its own folds, under its own key (PEE-74, Miky
+    27 October): a Folder closed there is one the person does not follow, and
+    it reopened every time the file page drew the column again — after Desk,
+    say. Starts open, as before; Unread still starts every Folder open.
   */
   const [remembered, setRemembered] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
+  const [topics, setTopics] = useRememberedOpen(`peek.tree.topics.folder.${folder.id}`, true)
   const [filtered, setFiltered] = useState(true)
   /*
     In Archive every Folder starts closed (5 October): what is archived in one
@@ -759,8 +765,8 @@ function FolderSection({
     [folder.id],
   )
   const archive = filter === 'archive'
-  const open = archive ? archiveOpen : filter === 'all' ? remembered : filtered
-  const setOpen = archive ? setArchiveOpen : filter === 'all' ? setRemembered : setFiltered
+  const open = archive ? archiveOpen : filter === 'all' ? remembered : filter === 'mine' ? topics : filtered
+  const setOpen = archive ? setArchiveOpen : filter === 'all' ? setRemembered : filter === 'mine' ? setTopics : setFiltered
   /*
     A Folder's link always lands on it open, and scrolled to (Katerina,
     5 October): a notification, another app or a new Folder leading to a
