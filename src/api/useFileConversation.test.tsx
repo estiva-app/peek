@@ -543,7 +543,7 @@ describe('useFileConversation — a channel (REM-1)', () => {
     const target = 'e'.repeat(64)
     await act(async () => {
       expect(await result.current.actions.react(target, '👍')).toEqual({ ok: true, id: idOf(1) })
-      expect(await result.current.actions.edit(target, 'new text')).toEqual({ ok: true, id: idOf(2) })
+      expect(await result.current.actions.edit(target, 'new text', [])).toEqual({ ok: true, id: idOf(2) })
       expect(await result.current.actions.remove(target)).toEqual({ ok: true, id: idOf(3) })
     })
     expect(relay.own).toEqual([1, 2, 3].flatMap((n) => [`shown ${idOf(n)}`, `confirmed ${idOf(n)}`]))
@@ -559,7 +559,7 @@ describe('useFileConversation — a channel (REM-1)', () => {
     const refused = { ok: false, reason: 'invalid: event id does not match' }
     await act(async () => {
       expect(await result.current.actions.react(target, '👍')).toEqual(refused)
-      expect(await result.current.actions.edit(target, 'new text')).toEqual(refused)
+      expect(await result.current.actions.edit(target, 'new text', [])).toEqual(refused)
       expect(await result.current.actions.remove(target)).toEqual(refused)
     })
     expect(relay.own).toEqual([1, 2, 3].flatMap((n) => [`shown ${idOf(n)}`, `withdrawn ${idOf(n)}`]))

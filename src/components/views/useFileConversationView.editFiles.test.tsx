@@ -12,7 +12,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { imetaTag, type UnsignedEvent } from '@estiva-app/protocol'
+import type { UnsignedEvent } from '@estiva-app/protocol'
 import type { People } from '@estiva-app/interop'
 import type { FileConversation } from '@/api'
 
@@ -48,12 +48,19 @@ vi.mock('@/api', async () => ({
   useMembership: () => membership,
   useReadActions: () => ({ markThreadRead: () => {}, markContainerRead: () => {}, markFileRead: () => {} }),
 }))
-vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+const toast = vi.hoisted(() => ({ show: vi.fn() }))
+vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: toast.show }) }))
 vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null, ClosedBox: () => null }))
-// The card's own edit box reports a words-only save as the body alone, as the real one does when the files are unchanged.
+const ADDED = vi.hoisted(() => ({ name: 'new.txt', contentType: 'text/plain', size: 3, sha256: '9'.repeat(64), mediaUrl: `https://relay.test/${'9'.repeat(64)}` }))
+// The card's own edit box reports a words-only save as the body alone, as the real one does when the files are unchanged,
+// and a change to the files as the set the box holds — each file as the box draws it, its `dim` and the rest not kept.
 vi.mock('@/components/ConversationCard', () => ({
-  ConversationCard: ({ body, onBodyChange }: { body: string; onBodyChange?: (b: string) => void }) => (
-    <button onClick={() => onBodyChange?.(`${body}, reworded`)}>{body}</button>
+  ConversationCard: ({ body, files = [], onBodyChange, onFilesChange }: { body: string; files?: object[]; onBodyChange?: (b: string) => void; onFilesChange?: (f: object[]) => void }) => (
+    <>
+      <button onClick={() => onBodyChange?.(`${body}, reworded`)}>{body}</button>
+      <button onClick={() => onFilesChange?.([])}>Take every file off {body}</button>
+      <button onClick={() => onFilesChange?.([...files, ADDED])}>Add a file to {body}</button>
+    </>
   ),
 }))
 vi.mock('@/components/ReplyCard', () => ({
@@ -101,8 +108,34 @@ const sentEdit = async (name = 'First') => {
 
 afterEach(() => {
   relay.read.mockReset()
+  toast.show.mockReset()
   signed.events = []
 })
+
+// The tags as the relay must receive them, written out: a lossy encoder would pass a check built with `imetaTag`.
+const BRIEF_TAG = ['imeta', `url https://relay.test/${'ab'.repeat(64)}`, 'm application/pdf', `x ${'ab'.repeat(64)}`, 'size 10', 'filename brief.pdf']
+const rich = {
+  url: `https://relay.test/${'cd'.repeat(64)}`,
+  m: 'image/png',
+  x: 'cd'.repeat(64),
+  size: 20,
+  dim: '800x600',
+  blurhash: 'LKO2?U%2Tw=w',
+  fallback: ['https://a.example/shot.png'],
+  filename: 'shot.png',
+}
+const RICH_TAG = [
+  'imeta',
+  `url https://relay.test/${'cd'.repeat(64)}`,
+  'm image/png',
+  `x ${'cd'.repeat(64)}`,
+  'size 20',
+  'dim 800x600',
+  'blurhash LKO2?U%2Tw=w',
+  'fallback https://a.example/shot.png',
+  'filename shot.png',
+]
+const editedTo = (attachments: (typeof rich)[]) => ({ ['1'.repeat(64)]: { edit: { body: 'First', edited: false, attachments }, reactions: [], resolutions: [] } })
 
 describe('an edit that changes only the words still lists the message’s files (SPEC §6.8)', () => {
   it('carries the files the message was sent with', async () => {
@@ -110,17 +143,14 @@ describe('an edit that changes only the words still lists the message’s files 
     render(<View />)
     const { edit, imeta } = await sentEdit()
     expect(edit.content).toBe('First, reworded')
-    expect(imeta).toEqual([imetaTag({ url: `https://relay.test/${'ab'.repeat(64)}`, m: 'application/pdf', x: 'ab'.repeat(64), size: 10, filename: 'brief.pdf' })])
+    expect(imeta).toEqual([BRIEF_TAG])
   })
 
-  it('carries the set an earlier edit left, not the one it was sent with', async () => {
-    const later = { url: `https://relay.test/${'cd'.repeat(64)}`, m: 'image/png', x: 'cd'.repeat(64), size: 20, dim: '800x600', filename: 'shot.png' }
-    relay.read.mockResolvedValue(
-      conversationOf(root([file('brief.pdf', 'ab')]), { ['1'.repeat(64)]: { edit: { body: 'First', edited: false, attachments: [later] }, reactions: [], resolutions: [] } }),
-    )
+  it('carries the set an earlier edit left, not the one it was sent with, every field as it was read', async () => {
+    relay.read.mockResolvedValue(conversationOf(root([file('brief.pdf', 'ab')]), editedTo([rich])))
     render(<View />)
     const { imeta } = await sentEdit()
-    expect(imeta).toEqual([imetaTag(later)])
+    expect(imeta).toEqual([RICH_TAG])
   })
 
   it('carries the files of a reply, edited in its open thread', async () => {
@@ -129,7 +159,7 @@ describe('an edit that changes only the words still lists the message’s files 
     render(<View openThreadId={'1'.repeat(64)} />)
     const { edit, imeta } = await sentEdit('Answer')
     expect(edit.tags).toContainEqual(['e', '2'.repeat(64)])
-    expect(imeta).toEqual([imetaTag({ url: `https://relay.test/${'ef'.repeat(64)}`, m: 'application/pdf', x: 'ef'.repeat(64), size: 10, filename: 'notes.pdf' })])
+    expect(imeta).toEqual([['imeta', `url https://relay.test/${'ef'.repeat(64)}`, 'm application/pdf', `x ${'ef'.repeat(64)}`, 'size 10', 'filename notes.pdf']])
   })
 
   it('control: a message with no files gets an edit with no files', async () => {
@@ -138,5 +168,23 @@ describe('an edit that changes only the words still lists the message’s files 
     const { edit, imeta } = await sentEdit()
     expect(edit.content).toBe('First, reworded')
     expect(imeta).toEqual([])
+  })
+})
+
+describe('an edit that changes the files', () => {
+  // Until every reader takes an edit with no `imeta` as "no files" (stage 3), the last file stays and the person is told.
+  it('taking the last file off still sends the files the message has, and says it cannot be removed yet', async () => {
+    relay.read.mockResolvedValue(conversationOf(root([file('brief.pdf', 'ab')])))
+    render(<View />)
+    const { imeta } = await sentEdit('Take every file off First')
+    expect(imeta).toEqual([BRIEF_TAG])
+    expect(toast.show).toHaveBeenCalledWith(expect.objectContaining({ label: 'The last attachment cannot be removed from a message yet.' }))
+  })
+
+  it('a file kept beside a new one goes back with every field it was read with', async () => {
+    relay.read.mockResolvedValue(conversationOf(root([file('brief.pdf', 'ab')]), editedTo([rich])))
+    render(<View />)
+    const { imeta } = await sentEdit('Add a file to First')
+    expect(imeta).toEqual([RICH_TAG, ['imeta', `url https://relay.test/${'9'.repeat(64)}`, 'm text/plain', `x ${'9'.repeat(64)}`, 'size 3', 'filename new.txt']])
   })
 })

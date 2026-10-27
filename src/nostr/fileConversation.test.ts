@@ -24,6 +24,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 import {
   CHANNEL_PAGE,
   PUBLISH_ATTEMPTS,
+  attachmentsOf,
   channelConversationAsViewer,
   commentAsViewer,
   deleteEventAsViewer,
@@ -187,7 +188,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     const found = await fileConversationAsViewer(container, [withPicture.id, root.id], 'https://relay.test', token)
     expect(found.roots.map((r) => r.id)).toEqual([withPicture.id, root.id])
     expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
-    expect(found.roots[0].files).toEqual([
+    expect(found.roots[0].files).toMatchObject([
       {
         name: 'shot.png',
         contentType: 'image/png',
@@ -493,7 +494,7 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
 
 describe('the decorations are written as the suite agrees them', () => {
   it('an edit is a kind:40003 naming the comment and the Folder', async () => {
-    await editCommentAsViewer({ container, targetEventId: root.id, body: 'First, corrected' }, 'https://relay.test', token)
+    await editCommentAsViewer({ container, targetEventId: root.id, body: 'First, corrected', files: [] }, 'https://relay.test', token)
     const published = signed()
     expect(published.kind).toBe(40003)
     expect(published.content).toBe('First, corrected')
@@ -568,7 +569,7 @@ describe('a channel conversation (REM-1)', () => {
     expect(found.roots.map((r) => r.body)).toEqual(['Hello', 'Here it is'])
     expect(found.replies[hello.id]?.map((r) => r.body)).toEqual(['Hi!', 'deep'])
     expect(Object.keys(found.replies)).toEqual([hello.id])
-    expect(found.roots[1].files).toEqual([
+    expect(found.roots[1].files).toMatchObject([
       { name: 'photo.jpg', contentType: 'image/jpeg', size: 4096, sha256: 'def456', mediaUrl: 'https://relay.test/media/def' },
     ])
     expect(found.decorations.byId[hello.id].edit?.body).toBe('Hello there')
@@ -696,6 +697,7 @@ describe('a channel conversation (REM-1)', () => {
         targetEventId: picture.id,
         body: 'Here it is',
         embeds: [{ value: issue, layout: 'none' }, { value: other, layout: 'detailed' }],
+        files: attachmentsOf(picture),
       },
       'https://relay.test',
       token,
@@ -706,6 +708,10 @@ describe('a channel conversation (REM-1)', () => {
     expect(published.tags.filter((t) => t[0] === 'embed')).toEqual([
       ['embed', issue, 'none'],
       ['embed', other, 'detailed'],
+    ])
+    // The message's file rides the same edit, its tag as the message has it (SPEC §6.8).
+    expect(published.tags.filter((t) => t[0] === 'imeta')).toEqual([
+      ['imeta', 'url https://relay.test/media/def', 'm image/jpeg', 'x def456', 'size 4096', 'filename photo.jpg'],
     ])
   })
 })

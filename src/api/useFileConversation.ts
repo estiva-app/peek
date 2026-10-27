@@ -68,10 +68,11 @@ export interface FileConversationActions {
   comment: (body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[], embeds?: readonly Embed[]) => Promise<WriteResult>
   reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[], embeds?: readonly Embed[]) => Promise<WriteResult>
   /**
-   * `files`, when given, is the whole attachment set after the edit — never empty.
+   * `files` is the whole attachment set after the edit, every file it keeps, changed or not (§6.8): an edit is the
+   * whole new message, so an empty set takes every file off.
    * `embeds`, when given, is the whole card set after it, `none` for each card taken away.
    */
-  edit: (targetEventId: string, body: string, files?: readonly OutgoingAttachment[], embeds?: readonly Embed[]) => Promise<WriteResult>
+  edit: (targetEventId: string, body: string, files: readonly OutgoingAttachment[], embeds?: readonly Embed[]) => Promise<WriteResult>
   remove: (targetEventId: string) => Promise<WriteResult>
   react: (targetEventId: string, emoji: string) => Promise<WriteResult>
   resolve: (
