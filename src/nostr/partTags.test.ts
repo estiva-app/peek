@@ -3,7 +3,7 @@
  * read tells deleted from not-yours-to-see.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { absenceAsViewer, forgetUrlShapes, urlReferenceTagsAsViewer } from './foreign'
+import { absenceAsViewer, forgetUrlShapes, linkTagsAsViewer } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -47,7 +47,7 @@ const link = (block: string) => `https://ship.estiva.app/issue/plan-${UUID}#bloc
 
 describe('a pasted block link', () => {
   it('earns a part beside the a', async () => {
-    const tags = await urlReferenceTagsAsViewer([link('8373a025427f')], '', 'https://relay', TOKEN)
+    const tags = await linkTagsAsViewer(`See ${link('8373a025427f')}`, {}, 'https://relay', TOKEN)
     expect(tags).toEqual([
       ['a', ADDRESS],
       ['part', ADDRESS, '8373a025427f'],
@@ -56,18 +56,23 @@ describe('a pasted block link', () => {
 
   it('earns only the a while the app declares no block in its links', async () => {
     declared = 'https://ship.estiva.app/issue/<slug>-<d>'
-    const tags = await urlReferenceTagsAsViewer([link('8373a025427f')], '', 'https://relay', TOKEN)
+    const tags = await linkTagsAsViewer(`See ${link('8373a025427f')}`, {}, 'https://relay', TOKEN)
     expect(tags).toEqual([['a', ADDRESS]])
   })
 
   it('writes one part per object, the first link’s', async () => {
-    const tags = await urlReferenceTagsAsViewer([link('aaa'), link('bbb')], '', 'https://relay', TOKEN)
+    const tags = await linkTagsAsViewer(`${link('aaa')} and ${link('bbb')}`, {}, 'https://relay', TOKEN)
     expect(tags.filter((t) => t[0] === 'part')).toEqual([['part', ADDRESS, 'aaa']])
   })
 
   it('earns nothing for a block of the file the comment is on: the link is its chip only', async () => {
-    const tags = await urlReferenceTagsAsViewer([link('aaa')], ADDRESS, 'https://relay', TOKEN)
+    const tags = await linkTagsAsViewer(link('aaa'), { file: ADDRESS }, 'https://relay', TOKEN)
     expect(tags).toEqual([])
+  })
+
+  it('earns no part on an edit, only the a its new words earn (SPEC §6.8)', async () => {
+    const tags = await linkTagsAsViewer(`See ${link('aaa')}`, {}, 'https://relay', TOKEN, { edit: true })
+    expect(tags).toEqual([['a', ADDRESS]])
   })
 })
 

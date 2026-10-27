@@ -43,14 +43,14 @@ import {
   type AddressPointer,
   type UnsignedEvent,
   absenceOf,
-  partTag,
+  toRenderTree,
 } from '@estiva-app/protocol'
 import {
   ARCHIVED_FIELD,
   SUMMARY_FIELD,
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
-  matchObjectUrl,
+  linkReader,
   urlPatternsOf,
   blockUrlOf,
   buildActionEvents,
@@ -98,6 +98,8 @@ import {
   fileCandidates,
   resolveForeignRoots,
   searchFileReferences,
+  type LinkReader,
+  type OwnPlace,
 } from '@estiva-app/interop'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
 
@@ -215,36 +217,66 @@ const manifests = createProjectionCache(60 * 60_000)
  * is turn a message into an error.
  */
 /**
- * Every URL shape any app has published, cached for the session.
+ * Every app's published manifest, read once for the session: the URL shapes
+ * the link reader matches a pasted link against, and the route words Peek
+ * draws its own links with.
  *
  * One query answers it for the whole ecosystem — `kind:31990` is global, so
  * this is the registry, and there is no service to keep alive (RFC 0.5 §7.5).
- * Cached because a conversation full of links would otherwise ask once per
+ * Kept because a conversation full of links would otherwise ask once per
  * link, and the answer changes only when somebody republishes a manifest.
  */
-let shapesPromise: Promise<ReturnType<typeof urlPatternsOf>> | null = null
+let manifestsRead: Promise<SignedEvent[]> | null = null
 
-/** Forget the cached shapes and manifests. Only tests call it today. */
+/** The one link reader, for the viewer it reads as (PEEKM-7): its answers are what that viewer can read. */
+let links: { viewer: string; token: StoredToken; reader: LinkReader } | null = null
+
+/** Forget the cached manifests and the link reader. Only tests call it today. */
 export function forgetUrlShapes(): void {
-  shapesPromise = null
+  manifestsRead = null
+  links = null
   manifests.clear()
 }
 
-async function urlShapes(query: QueryFn) {
-  shapesPromise ??= query([{ kinds: [31990], limit: 100 }]).then((manifests) => {
-    const shapes = manifests.flatMap((manifest) => urlPatternsOf(manifest))
+function urlManifests(query: QueryFn): Promise<SignedEvent[]> {
+  if (manifestsRead) return manifestsRead
+  const read = query([{ kinds: [31990], limit: 100 }]).then((found) => {
     // The same read answers which words Peek routes (FOL-39); `filePath` reads
     // the registry in render, where it cannot await this.
-    rememberRouteWords(routeWordsOf(shapes))
-    return shapes
+    rememberRouteWords(routeWordsOf(found.flatMap((manifest) => urlPatternsOf(manifest))))
+    return found
   })
-  try {
-    return await shapesPromise
-  } catch (error) {
-    // A failed read must not poison the session — the next message tries again.
-    shapesPromise = null
-    throw error
+  manifestsRead = read
+  // A failed read must not poison the session — the next link asks again.
+  read.catch(() => {
+    if (manifestsRead === read) manifestsRead = null
+  })
+  return read
+}
+
+async function urlShapes(query: QueryFn) {
+  return (await urlManifests(query)).flatMap((manifest) => urlPatternsOf(manifest))
+}
+
+/**
+ * The viewer's link reader (PEEKM-7): what a pasted app link names, its chip,
+ * its card and the `a`/`q`/`part` a send earns for it, the same in every app
+ * (interop's `linkReader`). One per viewer, made again when the viewer
+ * changes: an answer is what that viewer can read, so another sign-in starts
+ * with none. A renewed token reads on in the same reader.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
+ */
+export function linkReaderAsViewer(relayUrl: string, token: StoredToken): LinkReader {
+  const viewer = `${relayUrl}|${token.pubkey}`
+  if (links?.viewer === viewer) {
+    links.token = token
+    return links.reader
   }
+  // Each read goes with the newest token handed in.
+  const query: QueryFn = (filters) => viewerQuery(relayUrl, current.token)(filters)
+  const current = { viewer, token, reader: linkReader({ query, manifests: () => urlManifests(query) }) }
+  links = current
+  return current.reader
 }
 
 /**
@@ -262,7 +294,7 @@ export async function routeWordsAsViewer(relayUrl: string, token: StoredToken): 
  *
  * The short route carries only the `d`, and a NIP-33 address also needs the
  * author. This is the one `#d` query that recovers it, on the same footing as
- * `referenceFromUrlAsViewer` below: one `(kind, pubkey)` must hold the `d`
+ * the link reader's (`linkReaderAsViewer`): one `(kind, pubkey)` must hold the `d`
  * over the word's kinds, and two holders answer nothing. A word no manifest declares is resolved over every kind any of them
  * does (§7.7 rule 4) — and never as a bare `#d`, because a Folder's 39000 and
  * its 30890 share one uuid (§7.4's correction) and a bare `#d` could answer
@@ -305,162 +337,26 @@ export async function projectOwnFileAsViewer(event: SignedEvent, relayUrl: strin
 }
 
 /**
- * What a pasted app URL names: an addressable object, by its NIP-33 address,
- * or an event, by its id. The two are resolved differently and tagged
- * differently, so the caller is told which it has rather than left to sniff.
+ * The `a`, `q` and `part` tags a message's words earn for what they name
+ * (SPEC §13.1, §13.6.1): every `nostr:` reference and every app link the
+ * viewer's link reader answers, less the comment's own file (its `A`) and
+ * the message it replies to (its `e`). A URL in code names nothing, and
+ * `[A](B)` names B. A link not answered within the reader's wait earns
+ * nothing; the body keeps it.
+ *
+ * An edit carries the same `a` and `q` set its new words earn, and no
+ * `part`: it says what the message links now. A person is never here —
+ * `p` and `urgent` stay as the send wrote them.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
  */
-export type UrlReference =
-  | {
-      address: string
-      eventId?: undefined
-      /** One block of it, from a link like Ship's Copy link (`#block-<id>`, SPEC §13.6.1, COM-2). */
-      block?: string
-    }
-  | { eventId: string; address?: undefined; block?: undefined }
-
-/**
- * The reference a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
- *
- * **Two steps, and the second is why this cannot be a pure function.**
- * `matchObjectUrl` recovers the kind and the `d`; a NIP-33 address also needs
- * the author, and only the relay knows who that is. So a matched URL costs one
- * `#d` query. §7.4 measured no `(kind, d)` shared by two authors, but nothing
- * stops a member publishing one, so a `d` two authors hold names nothing.
- *
- * A URL that names an event — Peek's `/message/<id>`, or a thread's
- * `?thread=<id>` (FOL-38) — costs nothing: the id is the whole identity, and
- * whether the event exists is the resolver's question, not this one's.
- *
- * A URL no manifest claims returns null and stays a plain link, which §7.5 says
- * is the honest outcome — it is a link, and nothing should pretend otherwise.
- */
-export async function referenceFromUrlAsViewer(
-  url: string,
+export function linkTagsAsViewer(
+  body: string,
+  own: OwnPlace,
   relayUrl: string,
   token: StoredToken,
-): Promise<UrlReference | null> {
-  try {
-    return await askReferenceFromUrlAsViewer(url, relayUrl, token)
-  } catch (error) {
-    if (error instanceof RelayReadError) return null
-    throw error
-  }
-}
-
-/**
- * {@link referenceFromUrlAsViewer}, rejecting when the relay could not be
- * asked instead of answering null, so a caller that remembers the answer can
- * ask again (the message box's block links).
- */
-export async function askReferenceFromUrlAsViewer(
-  url: string,
-  relayUrl: string,
-  token: StoredToken,
-): Promise<UrlReference | null> {
-  const query = viewerQuery(relayUrl, token)
-  const hit = matchObjectUrl(url, await urlShapes(query))
-  if (!hit) return null
-  if (hit.by === 'id') return { eventId: hit.identifier }
-  // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
-  // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
-  // `(kind, d)` could take a link's mention.
-  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  // Narrow by kind when the apps named one or more (a host-swapped path can read as several, LTX-6): the query is
-  // cheaper and the intent is clearer.
-  const kinds = kindsOf(hit)
-  if (kinds) filter.kinds = kinds
-  const found = await query([filter])
-  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
-  if (authors.size !== 1) return null
-  const address = `${[...authors][0]}:${hit.identifier}`
-  return hit.block === undefined ? { address } : { address, block: hit.block }
-}
-
-/**
- * What an app link's card is for, as SPEC §13.6.2 lets a link name one: the
- * `embed` value — an address, or a message's event id — or null (OPT-17).
- *
- * §7.7 as `referenceFromUrlAsViewer` reads it, and **stricter in one place**:
- * the `#d` query asks for two, and a `d` that two authors hold names nothing.
- * `limit: 1` would hand the card to whichever answered first, so anybody who
- * publishes the same `(kind, d)` could put their object's card under a link to
- * somebody else's — §13.6.2's "one author for the identity". A link to one
- * block names its file (§7.7), so it reads as that file's chip; its `part`
- * draws the block under the message and keeps the file's card off (WBM-11).
- *
- * Throws a `RelayReadError` for an outage, so a caller that remembers answers
- * does not remember "the relay could not be asked" as "nothing".
- */
-export async function cardValueOfUrlAsViewer(url: string, relayUrl: string, token: StoredToken): Promise<string | null> {
-  const query = viewerQuery(relayUrl, token)
-  const hit = matchObjectUrl(url, await urlShapes(query))
-  if (!hit) return null
-  if (hit.by === 'id') return /^[0-9a-f]{64}$/i.test(hit.identifier) ? hit.identifier.toLowerCase() : null
-  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
-  const kinds = kindsOf(hit)
-  if (kinds) filter.kinds = kinds
-  const found = await query([filter])
-  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
-  if (authors.size !== 1) return null
-  return `${[...authors][0]}:${hit.identifier}`
-}
-
-/**
- * The kinds a matched link is looked up under: every kind the shapes reading
- * that path name — `kinds` when there are several, as a path on another app's
- * host can be (SPEC §7.7) — or none, to ask by `d` alone.
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
- */
-function kindsOf(hit: { kind?: number; kinds?: number[] }): number[] | undefined {
-  return hit.kinds ?? (hit.kind === undefined ? undefined : [hit.kind])
-}
-
-/**
- * The tags a comment carries for the app URLs its body names — the index half
- * of a pasted link, as `referenceTagsFor` is for a `nostr:naddr…` (FOL-38).
- *
- * An addressable object is an `a` tag, the same index CON-11's Activity reads;
- * the file the comment is on is left out for the reason `referenceTagsFor`
- * gives. An event is a `q` tag — NIP-18's quote — and **not** an `e`: on a
- * `kind:1111` a lowercase `e` is NIP-22's parent, and a root that carried one
- * would read as a reply to whatever it mentioned (`fileMentions.ts` files a
- * thread by its first `e`). The ticket said "an `a` or `e` tag"; `q` is the
- * tag that says *mentioned* without saying *replied to*.
- *
- * Resolved here rather than in the composer because a URL is prose until it
- * is sent — nothing chips it — and the address needs the relay anyway.
- * A link that resolves to nothing carries no tag; the body still has it.
- * Takes the URLs rather than the body: `findUrls` lives with the composer's
- * parser (`lib/textParsing`), which this module does not import.
- */
-export async function urlReferenceTagsAsViewer(
-  urls: readonly string[],
-  own: string,
-  relayUrl: string,
-  token: StoredToken,
+  options: { edit?: boolean } = {},
 ): Promise<string[][]> {
-  if (urls.length === 0) return []
-  const found = await Promise.all([...new Set(urls)].map((url) => referenceFromUrlAsViewer(url, relayUrl, token)))
-  const addresses = new Set<string>()
-  const events = new Set<string>()
-  // One block per address, the first link's (SPEC §13.6.1): `partsOf` reads
-  // only the first tag for an address, so writing a second would be noise.
-  const parts = new Map<string, string>()
-  for (const ref of found) {
-    if (!ref) continue
-    // A block of the file this is said on is its chip only, with no part
-    // (COMM-8, Miky 2026-10-19), as that file gets no `a`.
-    if (ref.address !== undefined && ref.address !== own) {
-      addresses.add(ref.address)
-      if (ref.block !== undefined && !parts.has(ref.address)) parts.set(ref.address, ref.block)
-    }
-    if (ref.eventId !== undefined) events.add(ref.eventId)
-  }
-  return [
-    ...[...addresses].map((a) => ['a', a]),
-    ...[...events].map((id) => ['q', id]),
-    ...[...parts].map(([address, block]) => partTag(address, block)),
-  ]
+  return linkReaderAsViewer(relayUrl, token).tagsFor(toRenderTree(body, 'marker'), own, options)
 }
 
 /**
@@ -526,19 +422,17 @@ export async function resolveObjectAsViewer(
 
       Taken here rather than at each call site so every surface that already
       renders an `naddr` — a message, a thread reply, a comment — renders a
-      pasted link with no further wiring. `referenceFromUrlAsViewer` returns
+      pasted link with no further wiring. The viewer's link reader answers
       null for a URL no manifest claims, and null is what the widget draws
       nothing for, so an ordinary link is unaffected. A URL that names an
       event — a message, a thread's root comment — takes the event path below
       (FOL-38); before that, its id was put to a `#d` query and found nothing.
     */
     if (/^https?:\/\//i.test(reference)) {
-      const ref = await referenceFromUrlAsViewer(reference, relayUrl, token)
-      if (!ref) return null
-      if (ref.eventId !== undefined) {
-        return await resolveForeignEvent(ref.eventId, query, cachedPeople(query), manifests)
-      }
-      return await resolveForeignObject(ref.address, query, cachedPeople(query), 0, manifests, options)
+      const { value } = await linkReaderAsViewer(relayUrl, token).answerOf(reference)
+      if (!value) return null
+      if (!value.includes(':')) return await resolveForeignEvent(value, query, cachedPeople(query), manifests)
+      return await resolveForeignObject(value, query, cachedPeople(query), 0, manifests, options)
     }
     /*
       A message is an event, not an address (RIC-11).

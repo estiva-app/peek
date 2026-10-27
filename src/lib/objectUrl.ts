@@ -287,7 +287,7 @@ export function shortFilePath(address: string, title?: string): string | null {
  * uuid, and RFC 0.5 §7.4 measured that no `(kind, d)` is shared by two
  * authors, so the `d` alone recovers the address with one
  * `{kinds: [<kind>], "#d": [d]}` query — the same reasoning
- * `referenceFromUrlAsViewer` already rests on for a pasted Ship URL. The slug is
+ * the link reader already rests on for a pasted Ship URL. The slug is
  * decorative, as everywhere in §7: a caller without the title writes the bare
  * uuid and `FilePage` canonicalises once it knows what the file is called.
  *

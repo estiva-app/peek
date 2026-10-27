@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
-import type { Embed } from '@estiva-app/protocol'
+import { toRenderTree, type Embed } from '@estiva-app/protocol'
+import { linksIn, MAX_LINKS_ASKED } from '@estiva-app/interop'
 import { askLinks, knownBlockOfUrl, knownCardValue } from '@/api'
 import { boxLinksOf, embedsToEdit, embedsToSend, namedBefore, type BoxLinkContext, type BoxLinks } from '@estiva-app/conversation'
-import { findUrls, serializeTiptapToText } from '@/lib/textParsing'
+import { serializeTiptapToText } from '@/lib/textParsing'
 
 /*
   The card under a message box, as it will be sent (why:
@@ -13,8 +14,8 @@ import { findUrls, serializeTiptapToText } from '@/lib/textParsing'
   `BoxCardUnder` draws it.
 */
 
-/** How many of a box's links are asked what they name: `LinkChips`' own limit. */
-const ASKED = 24
+/** The links a body names something by, as a send tags them: none in code, and `[A](B)`'s B. */
+const urlsOf = (body: string) => linksIn(toRenderTree(body, 'marker'))
 
 const CONTEXT: Pick<BoxLinkContext, 'resolveLink' | 'blockOf'> = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
 
@@ -73,7 +74,7 @@ export function useBoxCard(editor: Editor | null, { here, previousBody }: { here
   }, [editor])
 
   // Only while a box is open: an edit box's card hook sits on every sent message, and nothing is asked for one not being edited.
-  const urlKey = editor ? [...new Set([...findUrls(text), ...findUrls(previousBody ?? '')])].slice(0, ASKED).join('\n') : ''
+  const urlKey = editor ? [...new Set([...urlsOf(text), ...urlsOf(previousBody ?? '')])].slice(0, MAX_LINKS_ASKED).join('\n') : ''
   useEffect(() => {
     if (!urlKey) return
     let live = true

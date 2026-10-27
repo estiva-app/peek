@@ -235,37 +235,6 @@ export function matchUrl(part: string): { href: string; trailing: string } | nul
   return m ? { href: m[1], trailing: m[2] } : null
 }
 
-/**
- * Every http(s) URL in a body — the candidates for RFC 0.5 §7.5 matching.
- *
- * Deliberately not filtered by host. A consumer that only tried `estiva.app`
- * links would be hardcoding the ecosystem it belongs to, which is the whole
- * thing the projection layer exists not to do: the shapes come from published
- * manifests, so an app nobody here has heard of resolves on the same path.
- *
- * Cheap on purpose. Matching is a pure function against cached patterns, so a
- * body full of ordinary links costs no queries at all — only a URL some app
- * claims reaches the relay.
- */
-export function findUrls(body: string): string[] {
-  const out: string[] = []
-  const add = (href: string) => {
-    if (!out.includes(href)) out.push(href)
-  }
-  // A labelled link's target counts too, so the widget under a message does
-  // not depend on how the link was written. Only http(s): a mailto: target
-  // is nothing a manifest could claim.
-  for (const token of body.match(LINK_SPLIT_RE) ?? []) {
-    const link = matchLink(token)
-    if (link && /^https?:/i.test(link.href)) add(link.href)
-  }
-  for (const part of body.replace(LINK_SPLIT_RE, ' ').split(/\s+/)) {
-    const url = matchUrl(part)
-    if (url) add(url.href)
-  }
-  return out
-}
-
 // ── Inline content parser ──
 
 /** §13.1's shortened form of a URI, for a reference nothing here can name. */

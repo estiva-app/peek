@@ -10,9 +10,9 @@ import {
   IconPresentation,
 } from '@tabler/icons-react'
 import { DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, findUrls } from '@/lib/textParsing'
+import { INLINE_TOKEN_RE } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
-import type { ForeignObject } from '@estiva-app/interop'
+import { linksIn, type ForeignObject } from '@estiva-app/interop'
 import { PartCard } from './PartCard'
 import { useLinkResolver, useResolvedReferences } from '@/api'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
@@ -147,7 +147,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     who took the link out meant the card to go with it. The body names it by a
     `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
   */
-  const urls = findUrls(body)
+  const tree = body ? toRenderTree(body, 'marker') : []
+  const urls = linksIn(tree)
   const named = new Set(findNaddrs(body).map(addressOf))
   // A comment's anchor (§13.6) is what it is about, not something it names, so
   // it is drawn above the text whatever the body says — with the same card.
@@ -162,10 +163,10 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     .slice(0, MAX_PARTS_PER_MESSAGE)
   /*
     What each app link names (§7.7), as answers come back — the message draws
-    again with each. Only a link's target or a bare URL is asked about
-    (`findUrls`); the package's tree has no link mark, so a URL written in a
-    link's *label* would otherwise name an object the link does not open
-    (OPT-17's security review). A link to one block names its file, so it is
+    again with each. Only a link's target or a bare URL is asked about, and
+    none in code (`linksIn`, the links a send tags): a URL written in a link's
+    *label* would otherwise name an object the link does not open (OPT-17's
+    security review). A link to one block names its file, so it is
     that file's chip, the block live under the message (WBM-11). At most
     `MAX_LINKS_PER_MESSAGE`, the first ones, as Ship asks: each claimed link is
     a relay query (OPT-18's security review). The rest stay links.
@@ -173,7 +174,6 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const asked = urls.slice(0, MAX_LINKS_PER_MESSAGE)
   const lookup = useLinkResolver(asked)
   const claimed = (url: string) => (asked.includes(url) ? lookup(url) : undefined)
-  const tree = body ? toRenderTree(body, 'marker') : []
   /*
     What the caller already has, if anything. `resolvedObjects` is the seam for
     a surface with no relay to ask — a story, a test — and the widget below

@@ -22,7 +22,6 @@ import {
   matchLink,
   wrapLink,
   previewText,
-  findUrls,
   textToTiptapContent,
 } from './textParsing'
 // The marker dialect lives in the package now (RIC-4). What is left here is
@@ -461,11 +460,6 @@ describe('links — [label](url) (PEE-19)', () => {
       expect(tokenMatches('see [the topic](https://x/y) now')).toEqual(['[the topic](https://x/y)'])
       expect(tokenMatches('[CI/CD pipeline stuck during build stage](https://x/y)')).toEqual(['[CI/CD pipeline stuck during build stage](https://x/y)'])
       expect(tokenMatches('[CI/CD pipeline stuck during build stage] above')).toEqual(['[CI/CD pipeline stuck during build stage]'])
-    })
-
-    it('findUrls sees the target of a labelled link, and never a mailto', () => {
-      expect(findUrls('see [the issue](https://ship.estiva.app/issue/x) and https://example.com')).toEqual(['https://ship.estiva.app/issue/x', 'https://example.com'])
-      expect(findUrls('[write](mailto:jan@estiva.app)')).toEqual([])
     })
 
     it('previewText names a reference the way its chip does, never as bech32 (PEE-21)', () => {

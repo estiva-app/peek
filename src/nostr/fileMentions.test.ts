@@ -1,16 +1,21 @@
 /**
- * The mentions half of a file's Activity — CON-11, CON-14.
+ * The mentions half of a file's Activity — CON-11, CON-14, PEEKM-7.
  *
- * Three claims worth pinning. A mention is the `a` tag: a comment that carries
- * the file's address is one, and a comment that merely has the text is not
- * (the filter never sees it). The file's own conversation is excluded —
- * a comment whose `A` is this file is the stream, and identity merges. And a
- * topic message is read by SPEC §6.4's rule: its `a` is a mention when the
- * body names the file, and a pre-REW-10 comment anchor when it does not.
+ * Which messages list is interop's `mentionedInOf`: one carrying the file's
+ * address as `a` (or whose latest edit does) and whose latest words still
+ * link the file. What is Peek's, and pinned here: the row each one draws —
+ * where it was said, the thread it opens, a topic message's topic — the
+ * file's own conversation left out, and the whole read at the wire, where an
+ * edit that swaps a link moves the row from one file to the other.
  */
-import { describe, expect, it } from 'vitest'
-import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
-import { fileMentionFilter, fileMentionsOf, mentionConversationWith, mentionRepliesOf, stillNames, type FileMention } from './fileMentions'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { encodeNaddr, type LinkResolver, type SignedEvent } from '@estiva-app/protocol'
+import { mentionedInOf } from '@estiva-app/interop'
+import { fileMentionsAsViewer, fileMentionsOf, mentionConversationWith, mentionRepliesOf, type FileMention } from './fileMentions'
+import { forgetUrlShapes } from './foreign'
+
+const queryRelay = vi.hoisted(() => vi.fn())
+vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
 const AUTHOR = 'cd'.repeat(32)
 const RELAY = 'ab'.repeat(32)
@@ -26,52 +31,46 @@ const event = (id: string, over: Partial<SignedEvent> & { h?: string; A?: string
     pubkey: AUTHOR,
     created_at: 1_000,
     kind: 1111,
-    content: `about ${id}`,
+    content: `See ${THIS_NADDR}`,
     sig: '',
     ...rest,
     tags: [...(h ? [['h', h]] : []), ...(A ? [['A', A]] : []), ...(a ?? []).map((x) => ['a', x]), ...(rest.tags ?? [])],
   } as SignedEvent
 }
 
-describe('fileMentionFilter', () => {
-  it('asks for comments and topic messages by the address', () => {
-    expect(fileMentionFilter(THIS)).toEqual({ kinds: [1111, 9], '#a': [THIS], limit: 200 })
-  })
-})
+/** The rows a relay answer draws for this file, as `fileMentionsAsViewer` reads them. */
+const rowsOf = (events: SignedEvent[], relayKey?: string | null, resolve?: LinkResolver) => fileMentionsOf(mentionedInOf(events, THIS, resolve), relayKey)
 
-describe('fileMentionsOf reads a topic message by SPEC §6.4 (CON-14)', () => {
-  const topicMessage = event('said-in-topic', { kind: 9, h: OTHER_H, a: [THIS], content: `See ${THIS_NADDR}`, created_at: 5 })
+describe('a topic message under Mentioned in (SPEC §6.4, CON-14)', () => {
+  const topicMessage = event('said-in-topic', { kind: 9, h: OTHER_H, a: [THIS], created_at: 5 })
 
   it('one whose body names the file is a mention, said in its topic', () => {
-    const [m] = fileMentionsOf([topicMessage], THIS, RELAY)
+    const [m] = rowsOf([topicMessage], RELAY)
     expect(m).toMatchObject({ id: 'said-in-topic', kind: 9, folder: OTHER_H, saidIn: `39000:${RELAY}:${OTHER_H}`, threadId: 'said-in-topic' })
   })
 
-  it('one whose body does not name the file is a mention too — a kind:9 is chat, never a comment (SPEC §6.4, CON-20, CON-5)', () => {
+  it('one whose words do not name the file lists nothing, whatever its `a` says: the latest words decide (PEEKM-7)', () => {
     const legacy = event('legacy-anchor', { kind: 9, h: OTHER_H, a: [THIS], content: 'anchored the old way' })
-    expect(fileMentionsOf([legacy], THIS, RELAY)).toMatchObject([{ id: 'legacy-anchor', kind: 9, saidIn: `39000:${RELAY}:${OTHER_H}` }])
+    expect(rowsOf([legacy], RELAY)).toEqual([])
   })
 
   it('is left out when the relay’s key is unknown, and the comments stay', () => {
     const comment = event('comment', { h: OTHER_H, A: OTHER, a: [THIS] })
-    expect(fileMentionsOf([topicMessage, comment], THIS, null).map((m) => m.id)).toEqual(['comment'])
+    expect(rowsOf([topicMessage, comment], null).map((m) => m.id)).toEqual(['comment'])
   })
 
   it('sorts with the comments, newest first', () => {
     const comment = event('comment', { h: OTHER_H, A: OTHER, a: [THIS], created_at: 1 })
-    expect(fileMentionsOf([comment, topicMessage], THIS, RELAY).map((m) => m.id)).toEqual(['said-in-topic', 'comment'])
+    expect(rowsOf([comment, topicMessage], RELAY).map((m) => m.id)).toEqual(['said-in-topic', 'comment'])
   })
 })
 
-describe('fileMentionsOf', () => {
+describe('a comment under Mentioned in', () => {
   it('is every comment rooted on another file that tags the address, newest first', () => {
-    const out = fileMentionsOf(
-      [
-        event('older', { h: OTHER_H, A: OTHER, a: [OTHER, THIS], created_at: 100 }),
-        event('newer', { h: 'third-uuid', A: `30851:${AUTHOR}:pay-1`, a: [THIS], created_at: 900 }),
-      ],
-      THIS,
-    )
+    const out = rowsOf([
+      event('older', { h: OTHER_H, A: OTHER, a: [OTHER, THIS], created_at: 100 }),
+      event('newer', { h: 'third-uuid', A: `30851:${AUTHOR}:pay-1`, a: [THIS], created_at: 900 }),
+    ])
     expect(out.map((m) => [m.id, m.folder, m.saidIn])).toEqual([
       ['newer', 'third-uuid', `30851:${AUTHOR}:pay-1`],
       ['older', OTHER_H, OTHER],
@@ -80,50 +79,118 @@ describe('fileMentionsOf', () => {
 
   /* Identity merges: a comment on the file is the stream, not Activity. */
   it('excludes a comment on the file itself — its A is this file, or it has none', () => {
-    const out = fileMentionsOf(
-      [
-        event('root', { h: 'this-uuid', A: THIS, a: [THIS] }),
-        event('legacy', { h: 'this-uuid', a: [THIS] }),
-      ],
-      THIS,
-    )
-    expect(out).toEqual([])
+    expect(rowsOf([event('root', { h: 'this-uuid', A: THIS, a: [THIS] }), event('legacy', { h: 'this-uuid', a: [THIS] })])).toEqual([])
   })
 
-  /* A relay answering a `#a` filter cannot return this, but the function must
-     not trust the filter it did not run. */
+  /* A relay answering a `#a` filter cannot return this, but the function must not trust the filter it did not run. */
   it('excludes a comment that does not carry the address', () => {
-    const out = fileMentionsOf([event('other', { h: OTHER_H, A: OTHER, a: [OTHER] })], THIS)
-    expect(out).toEqual([])
+    expect(rowsOf([event('other', { h: OTHER_H, A: OTHER, a: [OTHER] })])).toEqual([])
   })
 
   it('a reply opens the thread its e names; a root opens itself', () => {
-    const [reply, root] = fileMentionsOf(
-      [
-        event('reply', { h: OTHER_H, A: OTHER, a: [THIS], created_at: 2, tags: [['e', 'parent-id']] }),
-        event('root', { h: OTHER_H, A: OTHER, a: [OTHER, THIS], created_at: 1 }),
-      ],
-      THIS,
-    )
+    const [reply, root] = rowsOf([
+      event('reply', { h: OTHER_H, A: OTHER, a: [THIS], created_at: 2, tags: [['e', 'parent-id']] }),
+      event('root', { h: OTHER_H, A: OTHER, a: [OTHER, THIS], created_at: 1 }),
+    ])
     expect(reply.threadId).toBe('parent-id')
     expect(root.threadId).toBe('root')
   })
 
   it('carries every address the comment names, the file it is on included', () => {
-    const [m] = fileMentionsOf([event('m', { h: OTHER_H, A: OTHER, a: [OTHER, `30851:${AUTHOR}:pay-1`, THIS] })], THIS)
+    const [m] = rowsOf([event('m', { h: OTHER_H, A: OTHER, a: [OTHER, `30851:${AUTHOR}:pay-1`, THIS] })])
     expect(m.references).toEqual([OTHER, `30851:${AUTHOR}:pay-1`, THIS])
   })
 
   it('reports one row per event', () => {
     const e = event('dup', { h: OTHER_H, A: OTHER, a: [THIS] })
-    expect(fileMentionsOf([e, e], THIS)).toHaveLength(1)
+    expect(rowsOf([e, e])).toHaveLength(1)
+  })
+})
+
+/*
+  Mentioned in at the wire (PEEKM-7, Miky 2026-10-27): a file lists a comment
+  while its latest words link it — an edit's words, by an app link as much as
+  by a `nostr:` reference. Read through the viewer's link reader, against a
+  relay that answers the filters the read sends.
+*/
+describe('Mentioned in after an edit', () => {
+  const UUID_A = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
+  const UUID_B = 'c5fb7a7b-e5b3-4944-9a3b-7bb2f3a4d5e6'
+  const ISSUE_A = `30851:${AUTHOR}:${UUID_A}`
+  const ISSUE_B = `30851:${AUTHOR}:${UUID_B}`
+  const TOKEN = { accessToken: 't', pubkey: 'e'.repeat(64), expiresAt: Date.now() + 60_000 } as never
+  const manifest = {
+    id: 'm1',
+    kind: 31990,
+    pubkey: AUTHOR,
+    created_at: 1,
+    content: '{}',
+    sig: '',
+    tags: [['d', 'estiva-ship'], ['web', 'https://ship.estiva.app/o/<bech32>', 'naddr'], ['urls', 'https://ship.estiva.app/issue/<slug>-<d>', '30851']],
+  }
+  const issue = (d: string) => ({ id: `i-${d}`, kind: 30851, pubkey: AUTHOR, created_at: 2, content: '', sig: '', tags: [['d', d]] })
+  const COMMENT = '1'.repeat(64)
+
+  /** A relay holding `events`, answering by kinds, ids, `#a`, `#e`, `#d` and limit, as buzz does. */
+  const relayHolding = (events: object[]) =>
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => ({
+      ok: true,
+      events: (events as SignedEvent[]).filter((e) =>
+        filters.some((f) => {
+          if (Array.isArray(f.kinds) && !(f.kinds as number[]).includes(e.kind)) return false
+          if (Array.isArray(f.ids) && !(f.ids as string[]).includes(e.id)) return false
+          for (const name of ['a', 'e', 'd']) {
+            const want = f[`#${name}`] as string[] | undefined
+            if (want && !e.tags.some((t) => t[0] === name && want.includes(t[1]))) return false
+          }
+          return true
+        }),
+      ),
+    }))
+
+  const comment = event(COMMENT, {
+    h: OTHER_H,
+    A: OTHER,
+    a: [ISSUE_A],
+    content: `Blocked on https://ship.estiva.app/issue/billing-${UUID_A}`,
+    created_at: 10,
+  })
+  const swap = event('2'.repeat(64), {
+    kind: 40003,
+    h: OTHER_H,
+    a: [ISSUE_B],
+    content: `Blocked on https://ship.estiva.app/issue/payout-${UUID_B}`,
+    created_at: 20,
+    tags: [['e', COMMENT]],
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    forgetUrlShapes()
+    queryRelay.mockReset()
+    relayHolding([manifest, issue(UUID_A), issue(UUID_B), comment, swap])
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('an edit that swaps one pasted link for another moves the comment to the new file, with its new words', async () => {
+    expect(await fileMentionsAsViewer(ISSUE_A, 'https://relay', TOKEN)).toEqual([])
+    const [row, ...rest] = await fileMentionsAsViewer(ISSUE_B, 'https://relay', TOKEN)
+    expect(rest).toEqual([])
+    expect(row).toMatchObject({ id: COMMENT, saidIn: OTHER, folder: OTHER_H, body: swap.content, references: [ISSUE_B, OTHER] })
+  })
+
+  it('before the edit, the comment lists under the file its words link', async () => {
+    relayHolding([manifest, issue(UUID_A), issue(UUID_B), comment])
+    expect((await fileMentionsAsViewer(ISSUE_A, 'https://relay', TOKEN)).map((m) => m.id)).toEqual([COMMENT])
+    expect(await fileMentionsAsViewer(ISSUE_B, 'https://relay', TOKEN)).toEqual([])
   })
 })
 
 /*
   Each mention as it is now — PEE-48. The row draws what was done to the
-  message where it was said: its replies, edits, reactions and resolution,
-  and leaves the Activity when an edit takes the file out of the text.
+  message where it was said: its replies, edits, reactions and resolution.
 */
 const hex = (c: string) => c.repeat(64)
 const M_ROOT = hex('1')
@@ -183,21 +250,6 @@ describe('mentionRepliesOf (PEE-48)', () => {
   })
 })
 
-describe('stillNames (PEE-48, Katerina 8 October)', () => {
-  it('keeps a mention nobody edited', () => {
-    expect(stillNames(`See ${THIS_NADDR}`, undefined, THIS)).toBe(true)
-  })
-
-  it('keeps one whose edit still names the file, and drops one whose edit took it out', () => {
-    expect(stillNames(`See ${THIS_NADDR}`, `Look at ${THIS_NADDR} again`, THIS)).toBe(true)
-    expect(stillNames(`See ${THIS_NADDR}`, 'Never mind', THIS)).toBe(false)
-  })
-
-  it('never drops a mention made by a pasted link, whose text cannot be read for the file (FOL-38)', () => {
-    expect(stillNames('See https://peek.estiva.app/topic/this-file', 'Never mind', THIS)).toBe(true)
-  })
-})
-
 describe('mentionConversationWith (PEE-48)', () => {
   const root = mentionOf({ id: M_ROOT, createdAt: 10 })
   const asReply = mentionOf({ id: M_REPLY, threadId: hex('8'), createdAt: 11 })
@@ -213,7 +265,7 @@ describe('mentionConversationWith (PEE-48)', () => {
 
   it('reads each mention’s replies, reactions and resolution', async () => {
     const { query } = relayOf([reply, reaction, resolved])
-    const conversation = await mentionConversationWith([root], THIS, query)
+    const conversation = await mentionConversationWith([root], query)
     expect(conversation.roots.map((r) => r.id)).toEqual([M_ROOT])
     expect(conversation.replies[M_ROOT].map((r) => r.id)).toEqual([hex('a')])
     const d = conversation.decorations.byId[M_ROOT]
@@ -221,18 +273,16 @@ describe('mentionConversationWith (PEE-48)', () => {
     expect(d.resolutions.map((r) => [r.action, r.message])).toEqual([['resolved', 'Done']])
   })
 
-  it('reads the latest text, and leaves out a mention an edit took the file out of', async () => {
-    const stillThere = event(hex('d'), { kind: 40003, content: `Now: ${THIS_NADDR}`, tags: [['e', M_ROOT]], created_at: 30 })
-    const takenOut = event(hex('e'), { kind: 40003, content: 'Never mind', tags: [['e', M_REPLY]], created_at: 31 })
-    const { query } = relayOf([stillThere, takenOut])
-    const conversation = await mentionConversationWith([root, asReply], THIS, query)
-    expect(conversation.roots.map((r) => r.id)).toEqual([M_ROOT])
+  it('reads the latest text of each mention', async () => {
+    const edited = event(hex('d'), { kind: 40003, content: `Now: ${THIS_NADDR}`, tags: [['e', M_ROOT]], created_at: 30 })
+    const { query } = relayOf([edited])
+    const conversation = await mentionConversationWith([root], query)
     expect(conversation.decorations.byId[M_ROOT].edit?.body).toBe(`Now: ${THIS_NADDR}`)
   })
 
   it('asks for no replies when no mention opens a thread', async () => {
     const { query, asked } = relayOf([])
-    await mentionConversationWith([asReply], THIS, query)
+    await mentionConversationWith([asReply], query)
     expect(asked.some((f) => Array.isArray(f.kinds) && (f.kinds as number[]).includes(1111))).toBe(false)
   })
 })

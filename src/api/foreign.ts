@@ -43,8 +43,7 @@ import {
   listFoldersAsViewer,
   folderLoadAsViewer,
   resolveFolderProjectAsViewer,
-  cardValueOfUrlAsViewer,
-  askReferenceFromUrlAsViewer,
+  linkReaderAsViewer,
   resolveObjectAsViewer,
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
@@ -63,7 +62,7 @@ import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { linkTargetOf, rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
-import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type LinkReader } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
@@ -112,93 +111,61 @@ export function folderLoad(): QueryFn | undefined {
 }
 
 /*
-  An app link's card value (SPEC §13.6.2, OPT-17), once per link for the tab:
-  a link names the same object for as long as its owner's manifest does. A
-  read that failed is forgotten, so the next ask tries again.
+  What an app link names (SPEC §7.7, §13.6): the viewer's one link reader
+  (`linkReaderAsViewer`, interop's `linkReader`, PEEKM-7), which every box,
+  message and card here asks. A link is asked once for the reader's life; a
+  read that failed is forgotten and said as a change later, so whoever still
+  draws from it asks again. What is heard here outlives a change of viewer:
+  the new reader's answers are told to the same listeners.
 */
-const cardValues = new Map<string, Promise<string | null>>()
-const knownCardValues = new Map<string, string | null>()
-
-/** The `embed` value an app link names, or null — what the composer offers a card for. Rejects when the relay could not be asked, so the caller asks again later. */
-export function cardValueOfUrl(url: string): Promise<string | null> {
-  const token = validToken()
-  if (!RELAY_URL || !token) return Promise.resolve(null)
-  let value = cardValues.get(url)
-  if (!value) {
-    value = cardValueOfUrlAsViewer(url, RELAY_URL, token).then(
-      (answer) => {
-        knownCardValues.set(url, answer)
-        return answer
-      },
-      (error: unknown) => {
-        cardValues.delete(url)
-        throw error
-      },
-    )
-    cardValues.set(url, value)
-  }
-  return value
+let watched: { reader: LinkReader; stop: () => void } | null = null
+const linkListeners = new Set<() => void>()
+let linkVersion = 0
+const linksHeard = () => {
+  linkVersion += 1
+  for (const listener of linkListeners) listener()
 }
+
+function readerFor(token: StoredToken | null): LinkReader | null {
+  if (!RELAY_URL || !token) return null
+  const reader = linkReaderAsViewer(RELAY_URL, token)
+  if (watched?.reader !== reader) {
+    watched?.stop()
+    watched = { reader, stop: reader.changed(linksHeard) }
+    // Another viewer: nothing the last one was told holds.
+    linkVersion += 1
+  }
+  return reader
+}
+
+/** Called each time a link's answer comes back, or a failed one may be asked again. Returns the unsubscribe. */
+export function onLinksChanged(listener: () => void): () => void {
+  linkListeners.add(listener)
+  return () => {
+    linkListeners.delete(listener)
+  }
+}
+
+/** A snapshot of {@link onLinksChanged}, for `useSyncExternalStore`. */
+export const linksVersion = (): number => linkVersion
 
 /** What an app link names, from what has come back: undefined until it has, and for nothing. A `LinkResolver`. */
 export function knownCardValue(url: string): string | undefined {
-  return knownCardValues.get(url) ?? undefined
-}
-
-/**
- * Ask what each of these links names; settles when every answer is in. A
- * description editor's `LinkChips` asks this way. Rejects when a read failed
- * (the relay or the token), so the editor forgets those links and asks again.
- */
-export async function askCardValues(urls: readonly string[]): Promise<void> {
-  const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
-  if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
-}
-
-/*
-  The block a link to one block names (SPEC §13.6.1), once per link for the
-  tab, as `cardValues` is: what the message box shows live under it, and the
-  file its chip is. Only a link with a fragment is asked; any other names no
-  block. A read that failed (an outage, a 429) is forgotten, so the next ask
-  tries again; until then the link stays the URL it is.
-*/
-const blockLinks = new Map<string, Promise<{ address: string; block: string } | null>>()
-const knownBlockLinks = new Map<string, { address: string; block: string } | null>()
-
-/** The file and block a link to one block names, or null. Rejects when the relay could not be asked, so the caller asks again later. */
-export function blockOfUrl(url: string): Promise<{ address: string; block: string } | null> {
-  const token = validToken()
-  if (!RELAY_URL || !token || !url.includes('#')) return Promise.resolve(null)
-  let answer = blockLinks.get(url)
-  if (!answer) {
-    answer = askReferenceFromUrlAsViewer(url, RELAY_URL, token).then(
-      (ref) => {
-        const found = ref?.address !== undefined && ref.block !== undefined ? { address: ref.address, block: ref.block } : null
-        knownBlockLinks.set(url, found)
-        return found
-      },
-      (error: unknown) => {
-        blockLinks.delete(url)
-        throw error
-      },
-    )
-    blockLinks.set(url, answer)
-  }
-  return answer
+  return readerFor(heldToken())?.known(url)
 }
 
 /** What a link to one block names, from what has come back: undefined until it has, and for any other link. */
 export function knownBlockOfUrl(url: string): { address: string; block: string } | undefined {
-  return knownBlockLinks.get(url) ?? undefined
+  return readerFor(heldToken())?.knownBlock(url)
 }
 
 /**
- * What the message box asks of each link (§7.7): the file it names for a card,
- * and the block it names for a part. A `LinkChips` `ask`; rejects as
- * {@link askCardValues} does, so the editor asks again later.
+ * Ask what each of these links names: the file for a card, the block for a
+ * part. A `LinkChips` `ask`; settles when every answer is in, and rejects when
+ * a read failed (the relay or the token), so the editor asks again later.
  */
 export async function askLinks(urls: readonly string[]): Promise<void> {
-  await Promise.all([askCardValues(urls), ...urls.filter((url) => !knownBlockLinks.has(url)).map((url) => blockOfUrl(url))])
+  await readerFor(validToken())?.ask(urls)
 }
 
 /** What an app link in the message box draws as, from what has come back (`linkTargetOf`). A `LinkResolver`. */
@@ -213,19 +180,12 @@ export function knownLinkTarget(url: string): string | undefined {
  */
 export function useLinkResolver(urls: readonly string[]): (url: string) => string | undefined {
   const key = urls.join('\n')
-  const [, setAnswered] = useState(0)
+  const version = useSyncExternalStore(onLinksChanged, linksVersion)
   useEffect(() => {
-    let live = true
-    const waiting = key ? key.split('\n').filter((url) => !knownCardValues.has(url)) : []
-    if (waiting.length === 0) return
-    void Promise.all(waiting.map((url) => cardValueOfUrl(url).catch(() => null))).then(() => {
-      if (live) setAnswered((n) => n + 1)
-    })
-    return () => {
-      live = false
-    }
-  }, [key])
-  return (url: string) => knownCardValues.get(url) ?? undefined
+    // Asked again on a change: a read that failed may be asked again, and a known link costs nothing.
+    if (key) askLinks(key.split('\n')).catch(() => {})
+  }, [key, version])
+  return (url: string) => knownCardValue(url)
 }
 
 /**

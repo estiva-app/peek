@@ -50,7 +50,7 @@ export function useMentionConversation(
     const v = viewer()
     if (!v) return null
     try {
-      const conversation = await mentionConversationAsViewer(mentions, file, v.relayUrl, v.token)
+      const conversation = await mentionConversationAsViewer(mentions, v.relayUrl, v.token)
       return { file, ids, answer: { asked: new Set(mentions.map((m) => m.id)), conversation } }
     } catch (error) {
       const kind = error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')

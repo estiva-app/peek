@@ -66,14 +66,13 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, foldEmbeds, groupThreads, isCommentOn, KIND_EDIT, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
+import { anchorsOf, decorationsOf, foldEmbeds, groupThreads, isCommentOn, KIND_EDIT, mentionTagsFor, parentOf, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
 import type { QueryFn, Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, retryAfterMs } from './relayRead'
-import { buildCommentAsViewer, fileCommentOf, threadEventsWith, urlReferenceTagsAsViewer, viewerQuery, type FileComment, type FileThreads } from './foreign'
-import { findUrls } from '@/lib/textParsing'
+import { buildCommentAsViewer, fileCommentOf, threadEventsWith, linkTagsAsViewer, viewerQuery, type FileComment, type FileThreads } from './foreign'
 
 /** Where a conversation lives; see the module header. */
 export type ConversationContainer =
@@ -637,22 +636,14 @@ export async function composeCommentAsViewer(
   const { container } = args
   const own = container.kind === 'file' ? container.address : ''
   /*
-    A pasted app URL is indexed like a `nostr:naddr…` (FOL-38): an `a` for an
-    object, a `q` for an event. Resolved before the event is built because the
-    address needs the relay; a URL that names nothing stays prose. The two
-    sources can name one object twice — a pointer and its link in the same
-    sentence — so the union is by tag, not by source. A `nostr:nevent…` the
-    body names — a `[` pick — earns its `q` the same way (CON-25, SPEC §13.1),
-    except the message a reply answers, which is its `e`.
+    What the words name, by `nostr:` reference or by a pasted app link (FOL-38,
+    CON-25, PEEKM-7): an `a` for an object, a `q` for an event, a `part` for a
+    link to one block — the link reader's, as every app tags them. Asked before
+    the event is built because a link's address needs the relay; a URL that
+    names nothing, or sits in code, stays prose. Never the file it is said on
+    (its `A`) nor the message a reply answers (its `e`).
   */
-  const fromUrls = await urlReferenceTagsAsViewer(findUrls(args.body), own, relayUrl, token)
-  const seen = new Set<string>()
-  const references = [...referenceTagsFor(args.body, own), ...quoteTagsFor(args.body, args.parent?.id), ...fromUrls].filter((tag) => {
-    const key = `${tag[0]}:${tag[1]}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
+  const references = await linkTagsAsViewer(args.body, { file: own || undefined, parent: args.parent?.id }, relayUrl, token)
   const urgent = urgentTagsFor(args.body, args.urgent)
   // Beside the `a`/`q` each one's value has (SPEC §13.6.2): the composer sends only values its body names.
   const embeds = (args.embeds ?? []).map((embed) => embedTag(embed.value, embed.layout))
@@ -733,12 +724,14 @@ export async function editCommentAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
-  return publish(composeEdit(args, token.pubkey), relayUrl, token, 'The relay refused the edit.')
+  return publish(await composeEdit(args, relayUrl, token), relayUrl, token, 'The relay refused the edit.')
 }
 
 export interface EditArgs {
   container: ConversationContainer
   targetEventId: string
+  /** The message the edited one replies to, if it is a reply: its new words earn no `q` for it, as its send did not. */
+  parentId?: string
   body: string
   /** The message's whole file set after the edit (§6.8), changed or not: an empty set takes every file off. */
   files: readonly OutgoingAttachment[]
@@ -753,19 +746,28 @@ export interface EditArgs {
 /*
   An edit, a deletion and a reaction, built and not sent (OPT-8), so each can
   be drawn under the id it will have before the relay answers — as a message
-  is ({@link composeCommentAsViewer}). None of them asks the relay anything.
+  is ({@link composeCommentAsViewer}). Only an edit asks the relay anything:
+  what an app link in its new words names.
 */
 
-/** The `kind:40003` {@link editCommentAsViewer} sends. */
-export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
-  const unsigned = buildEdit(pubkey, Date.now(), {
+/**
+ * The `kind:40003` {@link editCommentAsViewer} sends. It carries the `a` and
+ * `q` its new words earn, as a send's would, so the file a link added by the
+ * edit names lists the message under Mentioned in, and one it took out stops
+ * (PEEKM-7). No `part`, and never a person: `p` and `urgent` stay as sent.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
+ */
+export async function composeEdit(args: EditArgs, relayUrl: string, token: StoredToken): Promise<UnsignedEvent> {
+  const own = { file: args.container.kind === 'file' ? args.container.address : undefined, parent: args.parentId }
+  const links = await linkTagsAsViewer(args.body, own, relayUrl, token, { edit: true })
+  const unsigned = buildEdit(token.pubkey, Date.now(), {
     channelUuid: args.container.h,
     targetEventId: args.targetEventId,
     body: args.body,
     // The whole folded set when it changed: a set replaces (§13.6.2).
     embeds: args.embeds,
   })
-  unsigned.tags.push(...imetaTagsFor(args.files))
+  unsigned.tags.push(...imetaTagsFor(args.files), ...links)
   return unsigned
 }
 

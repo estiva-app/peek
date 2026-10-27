@@ -87,6 +87,12 @@ const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this c
 
 type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 
+/** The comment a held reply answers, by id: an edit of the reply earns no `q` for it, as the reply's send did not. */
+function parentIn(key: string, v: Viewer, id: string): string | undefined {
+  const replies = conversationsFor(v.relayUrl, v.token.pubkey).value(key)?.replies ?? {}
+  return Object.keys(replies).find((root) => replies[root].some((reply) => reply.id === id))
+}
+
 /** Your own messages drawn and not yet answered by the relay, by id, with the answer to come. */
 const sending = new Map<string, Promise<WriteResult>>()
 
@@ -490,7 +496,7 @@ export function useFileConversation(
     it names, when that is still being sent.
   */
   const change = useCallback(
-    async (target: string, build: (pubkey: string) => UnsignedEvent, refusal: string): Promise<WriteResult> => {
+    async (target: string, build: (v: Viewer) => UnsignedEvent | Promise<UnsignedEvent>, refusal: string): Promise<WriteResult> => {
       const blocked = await afterSend(target)
       if (blocked) return blocked
       const v = viewer()
@@ -498,7 +504,7 @@ export function useFileConversation(
       let event: UnsignedEvent
       let id: string
       try {
-        event = build(v.token.pubkey)
+        event = await build(v)
         id = await eventIdOf(event)
       } catch (error) {
         console.warn('[nostr] building a change failed:', error)
@@ -560,11 +566,15 @@ export function useFileConversation(
     reply: (parent, body, files, urgent, embeds) => send({ body, parent, files, urgent, embeds }),
     edit: (targetEventId, body, files, embeds) =>
       container
-        ? change(targetEventId, (pubkey) => composeEdit({ container, targetEventId, body, files, embeds }, pubkey), 'The relay refused the edit.')
+        ? change(
+            targetEventId,
+            (v) => composeEdit({ container, targetEventId, parentId: parentIn(key, v, targetEventId), body, files, embeds }, v.relayUrl, v.token),
+            'The relay refused the edit.',
+          )
         : Promise.resolve(SIGNED_OUT),
-    remove: (targetEventId) => change(targetEventId, (pubkey) => composeDeletion(targetEventId, pubkey), 'The relay refused the deletion.'),
+    remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
     react: (targetEventId, emoji) =>
-      change(targetEventId, (pubkey) => composeReaction({ targetEventId, emoji }, pubkey), 'The relay refused the reaction.'),
+      change(targetEventId, (v) => composeReaction({ targetEventId, emoji }, v.token.pubkey), 'The relay refused the reaction.'),
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>
