@@ -56,7 +56,7 @@ vi.mock('@/api', async () => {
   knownCardValue: () => undefined,
   // A card after a description's line is the card under a message, and counts its conversation (16acb5bd).
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  askCardValues: async () => undefined,
+  askLinks: async () => undefined,
   useLinkResolver: () => () => undefined,
   // A chip in the body resolves through the seam; here nothing answers, so it draws as it loads.
   useResolvedReferences: () => ({}),

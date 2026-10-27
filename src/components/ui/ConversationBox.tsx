@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
-import type { ForeignObject } from '@estiva-app/interop'
+import { MAX_LINKS_ASKED, type ForeignObject } from '@estiva-app/interop'
 import {
   boxReadOf,
   composerDocument,
@@ -31,6 +31,7 @@ import {
   knownBlockOfUrl,
   knownCardValue,
   knownLinkTarget,
+  onLinksChanged,
   mentionsVersion,
   personByPubkey,
   referenceSections,
@@ -46,6 +47,7 @@ import {
 import { registerActiveComposer, unregisterComposer, type ComposerHandle } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
+import { isWebLink } from '@/lib/referenceLink'
 import type { RefusedEdit } from '@/lib/refusedEdits'
 import { HighlightTag } from '@/extensions/highlight'
 import { extractResolutionFromText, ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
@@ -112,30 +114,17 @@ export const BOX_EXTENSIONS = [
 // read from a draft, but `/` no longer offers one until stage 2 gives it a place on the relay (PEEKM-3).
 const INSERT = [commentBoxRows.file, commentBoxRows.mention, commentBoxRows.urgent, commentBoxRows.reference, ...PEEK_INSERT_ROWS]
 
-/** How many of a box's links are asked about at once — `LinkChips`' default `limit`. */
-const MAX_LINKS_ASKED = 24
-
 const DEFAULT_DRAFTS = browserDrafts()
 
 /*
-  The links a box has asked about, and who hears when one is answered. Each
-  URL is asked once: `read` runs on every keystroke and again on each answer,
-  so asking a known URL again would answer again, and read again, for ever.
+  Ask what a box's links name, the first `MAX_LINKS_ASKED` — `LinkChips`' own
+  limit. `read` runs on every keystroke and again on each answer: the link
+  reader asks each URL once, so a known one answers nothing new, and one whose
+  read failed is asked again only once the reader says it may be.
 */
-const askedLinks = new Set<string>()
-const linkListeners = new Set<() => void>()
-const linksChanged = (listener: () => void) => {
-  linkListeners.add(listener)
-  return () => {
-    linkListeners.delete(listener)
-  }
-}
 const askAbout = (urls: readonly string[]) => {
-  const fresh = urls.filter((url) => !askedLinks.has(url)).slice(0, MAX_LINKS_ASKED)
-  if (fresh.length === 0) return
-  for (const url of fresh) askedLinks.add(url)
-  const heard = () => linkListeners.forEach((listener) => listener())
-  askLinks(fresh).then(heard, heard)
+  const web = urls.filter(isWebLink)
+  if (web.length) askLinks(web.slice(0, MAX_LINKS_ASKED)).catch(() => {})
 }
 
 type DocumentNode = { type?: string; attrs?: Record<string, unknown>; content?: DocumentNode[] }
@@ -206,7 +195,7 @@ function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUn
         names: [...links.values, ...links.parts.map((part) => part.address)],
       }
     },
-    changed: linksChanged,
+    changed: onLinksChanged,
   }
 }
 

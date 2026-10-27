@@ -13,8 +13,9 @@ const LIVE = { live: true }
  * A file's own conversation is the middle column; this is the other list
  * CON-9's model allows, *conversations on files related to it*, and a file
  * has one relation today: it was mentioned. A comment on another file whose
- * body names this one carries the address as an `a` tag (`referenceTagsFor`),
- * and `useFileMentions` reads those off the relay by `#a`.
+ * body names this one carries the address as an `a` tag (the link reader's
+ * `tagsFor`, an edit's too), and `useFileMentions` reads those off the relay
+ * by `#a`, listing each while its latest words still name the file.
  *
  * ## Drawn the way the topic panel draws one
  *

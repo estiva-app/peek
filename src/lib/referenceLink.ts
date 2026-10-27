@@ -29,7 +29,7 @@
  * thread opener are the chip's business.
  */
 import { addressToPointer } from '@estiva-app/protocol'
-import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, writtenOpenerOf, type ForeignObject } from '@estiva-app/interop'
 import { currentRouteWords, filePath, objectRef } from '@/lib/objectUrl'
 import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
 
@@ -42,6 +42,14 @@ export type ReferenceLink =
   | { place: 'app'; href: string }
 
 const EVENT_ID = /^[0-9a-f]{64}$/i
+
+/**
+ * Whether a link's target is one an app can name (http or https). `linksIn`
+ * hands back every target, a `mailto:` and a relative one too; only a web
+ * link may count toward a message's or a box's cap on links asked about, or
+ * a few `mailto:` links would leave a later app link with no chip or card.
+ */
+export const isWebLink = (url: string): boolean => /^https?:\/\//i.test(url)
 
 export function referenceLink(uri: string, object: ForeignObject | null | undefined): ReferenceLink | null {
   if (!object || object.unreachable) return null
@@ -80,11 +88,13 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
  * Where a chip written as a URL opens: the address as written, in the app it
  * names (SPEC §7.7, LTX-6) — so `leaf.estiva.app/issue/…` opens Leaf, not Ship,
  * and a link to one block lands on the block, not the top of its file
- * (§13.6.1, WBM-11). Undefined for anything but http(s), and for a host no app
- * declares, which open where {@link referenceLink} says: a chip that draws one
- * file never opens a site no app serves from (WBM-11 security review). `opens`
- * is where the file itself opens, and its origin counts as declared. Peek's own
- * URL is a route, so the router takes it without a reload.
+ * (§13.6.1, WBM-11). Undefined for anything but https — an `http://` link
+ * stays a link — and for a host no app declares, which open where
+ * {@link referenceLink} says: a chip that draws one file never opens a site no
+ * app serves from (WBM-11 security review). The rule is interop's
+ * `writtenOpenerOf`, the same in every app (PEEKM-7). `opens` is where the file
+ * itself opens, and its origin counts as declared. Peek's own URL is a route,
+ * so the router takes it without a reload.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  */
 export function writtenLinkOf(
@@ -93,14 +103,12 @@ export function writtenLinkOf(
   origin = window.location.origin,
   declared: readonly string[] = currentRouteWords().origins ?? [],
 ): ReferenceLink | undefined {
-  if (!url || !opens || !/^https?:\/\//i.test(url)) return undefined
+  if (!url || !opens || !writtenOpenerOf(url, opens, origin, new Set(declared))) return undefined
   let parsed: URL
   let opensHere: boolean
   try {
     parsed = new URL(url)
-    const opensAt = new URL(opens, origin).origin
-    opensHere = opensAt === origin
-    if (parsed.origin !== origin && parsed.origin !== opensAt && !declared.includes(parsed.origin)) return undefined
+    opensHere = new URL(opens, origin).origin === origin
   } catch {
     return undefined
   }

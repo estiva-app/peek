@@ -15,7 +15,8 @@
  */
 import { addrToNaddr } from '@estiva-app/protocol'
 import { queryRelay } from '@/nostr/bridge'
-import { fileMentionsAsViewer, fileMentionsOf } from '@/nostr/fileMentions'
+import { fileMentionsAsViewer } from '@/nostr/fileMentions'
+import { mentionedInOf } from '@estiva-app/interop'
 import { isCommentOn } from '@estiva-app/conversation'
 import type { StoredToken } from '@/auth/estivaId'
 
@@ -60,7 +61,8 @@ export default async function main() {
   for (const a of addresses) {
     const hits = tagged.events.filter((e) => e.tags.some((t) => t[0] === 'a' && t[1] === a))
     own += hits.filter((e) => isCommentOn(e, a)).length
-    mentionRows += fileMentionsOf(hits, a).length
+    // Counted by `nostr:` references alone: an app link's answer needs the link reader.
+    mentionRows += mentionedInOf(hits, a).length
   }
   console.log(`${tagged.events.length} kind:1111 carry a file address as \`a\`: ${own} are the file's own comments, ${mentionRows} are mentions`)
 

@@ -122,6 +122,12 @@ describe('writtenLinkOf', () => {
     expect(writtenLinkOf('https://peek.estiva.app/topic/plan-x#block-p1', '/topic/plan-x', PEEK, DECLARED)).toEqual({ place: 'file', href: '/topic/plan-x#block-p1' })
   })
 
+  // PEEKM-7: the opener is https only in every app — an http:// link stays a link, even on a host an app declares.
+  it('an http link never opens as a card, even on a host an app declares over http or on Peek’s own', () => {
+    expect(writtenLinkOf('http://ship.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, [...DECLARED, 'http://ship.estiva.app'])).toBeUndefined()
+    expect(writtenLinkOf('http://localhost:5173/issue/plan-x#block-p1', '/topic/plan-x', 'http://localhost:5173', DECLARED)).toBeUndefined()
+  })
+
   it('a lookalike of a declared host is still another site', () => {
     expect(writtenLinkOf('https://leaf.estiva.app.evil.com/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()
     expect(writtenLinkOf('http://leaf.estiva.app/issue/plan-x', SHIP_ISSUE, PEEK, DECLARED)).toBeUndefined()

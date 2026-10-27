@@ -33,7 +33,8 @@ vi.mock('@/api', () => ({
   hasRelay: true,
   isFromCopy: () => false,
   // §7.7 as the reader asks it: Ship's link names the issue; anything else names nothing.
-  useLinkResolver: () => (url: string) => (url === ISSUE_URL ? ISSUE : undefined),
+  // Only a link the message asked about is answered: one past its cap is never asked.
+  useLinkResolver: (asked: readonly string[]) => (url: string) => (url === ISSUE_URL && asked.includes(url) ? ISSUE : undefined),
   useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((ref) => [ref, object()])),
   useHeldObject: () => ({ object: object(), reload: async () => {}, gone: answer === 'none' }),
   useForeignObjects: () => ({ applyAction: async () => ({ ok: true }) }),
@@ -137,6 +138,12 @@ describe('the card a message asks for', () => {
     expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'row' }])
     expect(rows(c)).toBe(0)
     expect(c.textContent?.match(/Peek draws the card/g)).toHaveLength(1)
+  })
+
+  it('draws the card under an app link that follows many mailto links: a mailto names nothing and takes no place in the links asked about', () => {
+    const mails = Array.from({ length: 10 }, (_, i) => `[write ${i}](mailto:person${i}@estiva.app)`).join(' ')
+    show(`${mails}\n\nand the plan: ${ISSUE_URL}`, [{ value: ISSUE, layout: 'compact' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'row' }])
   })
 
   it('draws a lone line whose file has the card as nothing: the card stands for it, with no row of its own', () => {

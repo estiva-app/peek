@@ -9,7 +9,7 @@
  * `5` to take any of them back. Each is pinned here by its tags, because a
  * wrong tag publishes for ever.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeNaddr, encodeNpub } from '@estiva-app/protocol'
 import { boxLinksOf, embedsToSend, messageReference } from '@estiva-app/conversation'
 
@@ -446,6 +446,27 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', `${BARE_FILE}:${CATH}:${LINKED_D}`]])
   })
 
+  /*
+    PEEKM-7: what a send names is what a reader's link reader reads — a URL in
+    code names nothing, and `[A](B)` is one link, to B.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
+  */
+  it('a link in a code block earns no tag, and a link on words earns only its target’s (PEEKM-7)', async () => {
+    vi.useFakeTimers()
+    try {
+      const SECOND_D = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
+      const second = event({ kind: BARE_FILE, tags: [['d', SECOND_D], ['title', 'Second'], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([manifest, peekManifest, file, linked, second]))
+      const secondUrl = `https://peek.estiva.app/topic/second-${SECOND_D}`
+      const body = ['Not this one:', '```', secondUrl, '```', `This one: [${secondUrl}](https://peek.estiva.app/topic/linked-${LINKED_D})`].join('\n')
+      await commentAsViewer({ container, body }, 'https://relay.test', token)
+      expect(signed().content).toBe(body)
+      expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', `${BARE_FILE}:${CATH}:${LINKED_D}`]])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a reply that names another file carries its address as a, beside the parent trio', async () => {
     const parent = { id: root.id, author: CATH, body: 'First', createdAt: root.created_at, kind: COMMENT }
     await commentAsViewer({ container, body: `Also ${OTHER_NADDR}`, parent }, 'https://relay.test', token)
@@ -500,6 +521,51 @@ describe('the decorations are written as the suite agrees them', () => {
     expect(published.content).toBe('First, corrected')
     expect(published.tags).toContainEqual(['e', root.id])
     expect(published.tags).toContainEqual(['h', FOLDER])
+  })
+
+  /*
+    PEEKM-7, Miky 2026-10-27: an edit says what the message links now — the
+    whole `a`/`q` set its new words earn, so Mentioned in follows it — and
+    still never a person (`p`, `urgent`) nor a `part`.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
+  */
+  describe('an edit’s links', () => {
+    const blocks = event({
+      kind: 31990,
+      tags: [
+        ['d', 'estiva-peek'],
+        ['web', 'https://peek.estiva.app/o/<bech32>', 'naddr'],
+        ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', String(BARE_FILE)],
+        ['urls', 'https://peek.estiva.app/topic/<slug>-<d>#block-<block>', String(BARE_FILE)],
+      ],
+      content: JSON.stringify({ name: 'Peek', projections: {} }),
+    })
+    const LINKED = `${BARE_FILE}:${CATH}:${LINKED_D}`
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      queryRelay.mockImplementation(relayOver([manifest, blocks, file, linked]))
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('carries the a and q its new words earn, and no p, urgent or part', async () => {
+      const thread = 'd'.repeat(64)
+      const body = `Now https://peek.estiva.app/topic/linked-${LINKED_D}#block-b1 and ${OTHER_NADDR}, see ${messageReference(thread, 1111)} nostr:${encodeNpub(MIKY)}`
+      await editCommentAsViewer({ container, targetEventId: root.id, body, files: [] }, 'https://relay.test', token)
+      const tags = signed().tags
+      expect(signed().kind).toBe(40003)
+      expect(tags.filter((t) => t[0] === 'a')).toEqual([['a', LINKED], ['a', OTHER]])
+      expect(tags.filter((t) => t[0] === 'q')).toEqual([['q', thread]])
+      expect(tags.filter((t) => ['p', 'urgent', 'part'].includes(t[0]))).toEqual([])
+    })
+
+    it('names neither the file it is on nor the comment a reply answers, only the other file its words link', async () => {
+      const body = `Back to ${OWN_NADDR} and ${messageReference(root.id, 1111)}, and ${OTHER_NADDR}`
+      await editCommentAsViewer({ container, targetEventId: reply.id, parentId: root.id, body, files: [] }, 'https://relay.test', token)
+      expect(signed().tags.filter((t) => t[0] === 'a' || t[0] === 'q')).toEqual([['a', OTHER]])
+    })
   })
 
   it('a reaction is a kind:7 with the emoji as content', async () => {

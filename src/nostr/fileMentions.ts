@@ -1,16 +1,17 @@
 /**
  * Where else a file was named — the mentions half of a file's Activity (CON-11).
  *
- * ## A mention is the `a` tag, not the body
+ * ## The `a` tag finds it, the latest words confirm it
  *
  * A person writing another file into a comment picks it from the `[` menu,
- * which serialises to `nostr:naddr…` in the body, and `commentAsViewer` carries
- * every such address as an `a` tag on the `kind:1111`
- * (`referenceTagsFor`, the rule `convex/nostr/refs.ts` applies to a `kind:9`).
- * The body is the source and the tag is the index — one `#a` filter answers
- * "who named this file" across every Folder the viewer can read, where reading
- * bodies would mean reading every conversation. The relay's own mention index
- * is `p`-tag based and knows nothing about addresses, so this is not it.
+ * which serialises to `nostr:naddr…` in the body, or pastes its link, and
+ * `commentAsViewer` carries every such address as an `a` tag — and an edit
+ * the `a` its new words earn (PEEKM-7). The tag is the index — one `#a` filter
+ * answers "who named this file" across every Folder the viewer can read, where
+ * reading bodies would mean reading every conversation — and the message's
+ * latest words are the source: a row lists while they still link the file
+ * (interop's `readMentionedIn`). The relay's own mention index is `p`-tag
+ * based and knows nothing about addresses, so this is not it.
  *
  * ## Both message kinds, every conversation but this file's own
  *
@@ -42,13 +43,11 @@
  * can keep the last answer rather than draw an empty list.
  */
 import { embedsOf, KIND, type Embed, type SignedEvent } from '@estiva-app/protocol'
-import type { QueryFn } from '@estiva-app/interop'
+import { readMentionedIn, type MentionedIn, type QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
-import { queryRelay } from './bridge'
-import { RelayReadError } from './relayRead'
-import { anchorsOf, namedInBody, parentOf } from '@estiva-app/conversation'
+import { parentOf } from '@estiva-app/conversation'
 import { attachmentsOf, decorate, urgentOf, type ConversationEvent, type FileConversation, type RelayAttachment } from './fileConversation'
-import { relaySigningKeyAsViewer, viewerQuery } from './foreign'
+import { linkReaderAsViewer, relaySigningKeyAsViewer, viewerQuery } from './foreign'
 import { TOPIC_KIND } from './manifest'
 
 /** One comment in some other file's conversation, or one topic message, that names this file. */
@@ -79,36 +78,18 @@ export interface FileMention {
   embeds?: Embed[]
 }
 
-/**
- * Enough for a panel that is scanned, not read. The list is newest first, so
- * what a cap drops is the oldest mention, which is the right end.
- */
-export const FILE_MENTIONS_LIMIT = 200
-
-/** The one filter: everything that tags the address, in either message kind. */
-export function fileMentionFilter(address: string, limit = FILE_MENTIONS_LIMIT): Record<string, unknown> {
-  return { kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE], '#a': [address], limit }
-}
-
 const tagsNamed = (event: SignedEvent, name: string): string[] =>
   event.tags.filter((t) => t[0] === name && typeof t[1] === 'string' && t[1]).map((t) => t[1])
 
 /**
- * The mentions among a relay answer: tagged with the address, said somewhere
- * other than this file's own conversation, newest first, one row per event.
- *
- * Pure, so the claim — a comment on the file is not a mention of it, and
- * neither is a topic message whose `a` its body does not name — is provable
- * without a relay. `relayKey` spells a topic message's `saidIn`; without one
- * those rows are left out (the module header says why).
+ * The rows Mentioned in draws, from interop's reading of it (`mentionedInOf`,
+ * newest first): each message as its latest words say, said somewhere other
+ * than this file's own conversation. `relayKey` spells a topic message's
+ * `saidIn`; without one those rows are left out (the module header says why).
  */
-export function fileMentionsOf(events: readonly SignedEvent[], address: string, relayKey?: string | null): FileMention[] {
-  const seen = new Set<string>()
+export function fileMentionsOf(mentioned: readonly MentionedIn[], relayKey?: string | null): FileMention[] {
   const out: FileMention[] = []
-  for (const event of events) {
-    if (seen.has(event.id)) continue
-    // This file's own conversation, root or reply, is not a mention of it.
-    if (anchorsOf(event).includes(address)) continue
+  for (const { event, body, edit } of mentioned) {
     const folder = tagsNamed(event, 'h')[0]
     const saidIn =
       event.kind === KIND.STREAM_MESSAGE
@@ -117,45 +98,43 @@ export function fileMentionsOf(events: readonly SignedEvent[], address: string, 
           : undefined
         : tagsNamed(event, 'A')[0]
     if (!saidIn || !folder) continue
-    const references = [...new Set([...tagsNamed(event, 'a'), ...tagsNamed(event, 'A')])]
-    if (!references.includes(address)) continue
-    seen.add(event.id)
     out.push({
       id: event.id,
       author: event.pubkey,
-      body: event.content,
+      body,
       createdAt: event.created_at,
       kind: event.kind,
       folder,
       saidIn,
       threadId: tagsNamed(event, 'e')[0] ?? event.id,
-      references,
+      // What it names now: the latest edit's `a` when there is one (§6.8), and where it was said.
+      references: [...new Set([...tagsNamed(edit ?? event, 'a'), ...tagsNamed(event, 'A')])],
       urgent: urgentOf(event),
       files: attachmentsOf(event),
       embeds: embedsOf(event),
     })
   }
-  return out.sort((a, b) => b.createdAt - a.createdAt)
+  return out
 }
 
 /**
  * Every comment on any file, and every topic message in any channel, the
- * viewer can read that names this file.
+ * viewer can read whose latest words name this file — by `nostr:` reference
+ * or by an app link, an edit's words included (interop's `readMentionedIn`,
+ * through the viewer's link reader, PEEKM-7).
  *
- * Throws {@link RelayReadError} on a refused read, like every read in
+ * Throws `RelayReadError` on a refused read, like every read in
  * `foreign.ts`: an unreadable relay and a file nobody has mentioned must not
  * be the same empty list. The relay's key is a second read, paid only when a
  * topic message is in the answer; `relaySigningKeyAsViewer` answers `null`
  * for a refused read too, and those rows are then left out of an answer the
  * comments are still in.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-says-what-the-message-links-now.md
  */
 export async function fileMentionsAsViewer(address: string, relayUrl: string, token: StoredToken): Promise<FileMention[]> {
-  const result = await queryRelay(relayUrl, [fileMentionFilter(address)], token.accessToken, token.pubkey)
-  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-  const relayKey = result.events.some((e) => e.kind === KIND.STREAM_MESSAGE)
-    ? await relaySigningKeyAsViewer(relayUrl, token)
-    : null
-  return fileMentionsOf(result.events, address, relayKey)
+  const mentioned = await readMentionedIn(viewerQuery(relayUrl, token), address, { links: linkReaderAsViewer(relayUrl, token) })
+  const relayKey = mentioned.some((m) => m.event.kind === KIND.STREAM_MESSAGE) ? await relaySigningKeyAsViewer(relayUrl, token) : null
+  return fileMentionsOf(mentioned, relayKey)
 }
 
 /*
@@ -197,32 +176,17 @@ export function mentionRepliesOf(events: readonly SignedEvent[], threadIds: Read
 }
 
 /**
- * Whether a mention still names the file once edited (PEE-48, Katerina, 8
- * October): an edit that took the file out of the text takes the row out of
- * Activity.
- *
- * Read only where it can be: when the text first named the file by
- * `nostr:naddr…`. A mention made by pasting the file's web address names it in
- * no way the text shows (FOL-38), so an edit to it cannot be read for the file
- * and the row stays — never dropped on a guess.
- */
-export function stillNames(originalBody: string, editedBody: string | undefined, address: string): boolean {
-  if (editedBody === undefined) return true
-  const file = address.toLowerCase()
-  const names = (body: string) => [...namedInBody(body)].some((named) => named.toLowerCase() === file)
-  return !names(originalBody) || names(editedBody)
-}
-
-/**
  * The mentions as one conversation, `project`'s input: each mention a root,
- * its thread's replies under it, and what has been done to every one of them
- * — less the mentions an edit took the file out of.
+ * its thread's replies under it, and what has been done to every one of them.
+ * Which messages are mentions is already the latest words' answer
+ * ({@link fileMentionsAsViewer}): an edit that took the file out took the row
+ * out (PEE-48, Katerina, 8 October), and one that linked it put it in.
  *
  * Two reads after the mentions: the replies by `#e`, then `decorate`'s. Throws
- * {@link RelayReadError} on a refused read, so a failure keeps the rows as they
+ * `RelayReadError` on a refused read, so a failure keeps the rows as they
  * were rather than drawing every message as never touched.
  */
-export async function mentionConversationWith(mentions: readonly FileMention[], address: string, query: QueryFn): Promise<FileConversation> {
+export async function mentionConversationWith(mentions: readonly FileMention[], query: QueryFn): Promise<FileConversation> {
   const asEvent = (event: SignedEvent): ConversationEvent => ({
     id: event.id,
     author: event.pubkey,
@@ -252,19 +216,10 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
   const replies: Record<string, ConversationEvent[]> = {}
   for (const [id, list] of Object.entries(mentionRepliesOf(events, threadIds))) replies[id] = list.map(asEvent)
 
-  const conversation = await decorate(roots, replies, query)
-  const kept = conversation.roots.filter((root) =>
-    stillNames(root.body, conversation.decorations.byId[root.id.toLowerCase()]?.edit?.body, address),
-  )
-  return { ...conversation, roots: kept }
+  return decorate(roots, replies, query)
 }
 
 /** {@link mentionConversationWith} as the viewer. */
-export function mentionConversationAsViewer(
-  mentions: readonly FileMention[],
-  address: string,
-  relayUrl: string,
-  token: StoredToken,
-): Promise<FileConversation> {
-  return mentionConversationWith(mentions, address, viewerQuery(relayUrl, token))
+export function mentionConversationAsViewer(mentions: readonly FileMention[], relayUrl: string, token: StoredToken): Promise<FileConversation> {
+  return mentionConversationWith(mentions, viewerQuery(relayUrl, token))
 }

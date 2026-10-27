@@ -190,6 +190,18 @@ describe('catchUpConversation — a file', () => {
     expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
   })
 
+  it('an edit elsewhere that now links the file is reported as a mention, live', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    relay.events.push(event({ kind: 40003, tags: [['e', 'f'.repeat(64)], ['h', '33333333-3333-4333-8333-333333333333'], ['a', ADDRESS]] }))
+    const found = await catchUpConversation(store, 'k', file, [first.id], relay.query)
+    expect(found.mentions).toBe(true)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
+    // It edits a message in another conversation: the file's conversation holds nothing new for it.
+    expect(store.ids('k')).toEqual([first.id])
+  })
+
   it('talk elsewhere in the Folder is not taken into the file’s conversation', async () => {
     const first = comment()
     const relay = fakeRelay([first])
@@ -212,6 +224,16 @@ describe('applyLiveEvents', () => {
     event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['a', ADDRESS], ['k', '30840'], ['h', FOLDER]], ...over })
   const reply = (root: SignedEvent, over: Partial<SignedEvent> = {}) =>
     event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['e', root.id], ['k', '1111'], ['h', FOLDER]], ...over })
+
+  it('an edit of a message on another file in the Folder that now links this one is told as a mention, and not held', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const edit = event({ kind: 40003, tags: [['e', 'f'.repeat(64)], ['h', FOLDER], ['a', ADDRESS]] })
+    const found = await applyLiveEvents(store, 'k', file, [first.id], [edit], relay.query)
+    expect(found.mentions).toBe(true)
+    expect(store.ids('k')).toEqual([first.id])
+  })
 
   it('a new root and a reply on a file are drawn, and nothing is asked', async () => {
     const first = comment()
