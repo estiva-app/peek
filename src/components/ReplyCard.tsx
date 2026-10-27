@@ -10,7 +10,7 @@ import {
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { MessageReactions } from './ui/MessageReactions'
-import { toggledReaction, useRefusedReaction } from '@/lib/refusedReactions'
+import { toggledReaction, useRefusedReaction } from '@/lib/reactions'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
@@ -381,7 +381,7 @@ export function ReplyCard({
                 ))}
               </div>
             )}
-            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly ? undefined : handleReact} />
+            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly || !onReactionsChange ? undefined : handleReact} />
           </div>
         )}
 
@@ -391,7 +391,7 @@ export function ReplyCard({
         {isHovered && !isEditing && !readOnly && (
           <ConversationQuickMenu
             className="absolute right-1 top-1"
-            onReact={handleReact}
+            onReact={onReactionsChange ? handleReact : undefined}
             onPickerOpenChange={setPickerOpen}
             more={
               <ReplyMoreMenu

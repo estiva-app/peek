@@ -123,6 +123,13 @@ describe('project', () => {
     expect(view.reactionEventsCut).toBe(true)
   })
 
+  it('never names another person as the viewer, even one who calls themselves "You" — their pill would light as yours', () => {
+    const impostor = { ...people, [STRANGER]: { displayName: 'you' } } as unknown as People
+    const r1 = { id: 'r1', target: rootA.id, emoji: '👍', by: STRANGER, at: T + 1 }
+    const view = project(conversation({ decorations: decorations({ [rootA.id]: { reactions: [r1], resolutions: [] } }) }), ME, impostor)
+    expect(view.roots[0].reactions).toEqual([{ emoji: '👍', by: [`${STRANGER.slice(0, 8)}…`] }])
+  })
+
   it("offers Edit and Delete only on the viewer's own — not another person's, an agent's or an unread profile's (SPEC §6.5, SHI-29)", () => {
     const BOT = 'd'.repeat(64)
     const byBot = event('4', BOT, 'Done', T + 180)

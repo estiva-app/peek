@@ -45,7 +45,7 @@ import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
 import { notSavedNote, notSentNote, notSentReason } from '@/lib/notSent'
 import { putBackEdit } from '@/lib/refusedEdits'
-import { clearRefusedReaction, refuseReaction } from '@/lib/refusedReactions'
+import { clearRefusedReaction, refuseReaction } from '@/lib/reactions'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -717,8 +717,12 @@ interface ProjectedConversation {
  * shortened, the way `CommentRow` draws it, rather than blank.
  */
 export function project(conversation: FileConversation, viewerPubkey: string | null, people: People | undefined): ProjectedConversation {
-  const nameOf = (pubkey: string) =>
-    pubkey === viewerPubkey ? CURRENT_USER_NAME : (people?.[pubkey]?.displayName ?? `${pubkey.slice(0, 8)}…`)
+  // Only the viewer is CURRENT_USER_NAME: someone who calls themselves "You" is drawn by their key, or their pill would light as yours.
+  const nameOf = (pubkey: string) => {
+    if (pubkey === viewerPubkey) return CURRENT_USER_NAME
+    const name = people?.[pubkey]?.displayName
+    return name && name.trim().toLowerCase() !== CURRENT_USER_NAME.toLowerCase() ? name : `${pubkey.slice(0, 8)}…`
+  }
   const avatarOf = (pubkey: string) => people?.[pubkey]?.picture
 
   const byId: Record<string, RootView> = {}

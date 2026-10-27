@@ -21,7 +21,8 @@ export function MessageReactions({ reactions, refused, onToggle }: {
   const shown = reactions.some((r) => r.by.length > 0)
   if (!shown && !refused) return null
   return (
-    <div className="flex flex-col gap-1 pl-8 pt-1 pb-2 w-full">
+    // The add button's picker opens in a portal, and a click on it bubbles here: it is not a click on the message.
+    <div className="flex flex-col gap-1 pl-8 pt-1 pb-2 w-full" onClick={(e) => e.stopPropagation()}>
       <ReactionRow reactions={reactions} options={REACTION_OPTIONS} nameOf={(name) => name} viewer={CURRENT_USER_NAME} onToggle={onToggle} />
       {refused && <FieldLine tone="error">Not reacted: {refused}.</FieldLine>}
     </div>

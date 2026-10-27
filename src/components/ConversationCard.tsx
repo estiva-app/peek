@@ -23,7 +23,7 @@ import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
-import { toggledReaction, useRefusedReaction } from '@/lib/refusedReactions'
+import { toggledReaction, useRefusedReaction } from '@/lib/reactions'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { MetaText } from '@/components/ui/MetaText'
@@ -418,7 +418,7 @@ export function ConversationCard({
 
           {/* Reactions: the shared row; on an archived file it only shows. */}
           {!isEditing && (
-            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly ? undefined : handleReact} />
+            <MessageReactions reactions={reactionsState} refused={refusedReaction} onToggle={readOnly || !onReactionsChange ? undefined : handleReact} />
           )}
 
           {/* Replies */}
@@ -451,7 +451,7 @@ export function ConversationCard({
           <div className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
             <ConversationQuickMenu
               isResolved={resolved}
-              onReact={handleReact}
+              onReact={onReactionsChange ? handleReact : undefined}
               onPickerOpenChange={setPickerOpen}
               onReply={onReply}
               onResolve={() => setShowResolveDialog(true)}

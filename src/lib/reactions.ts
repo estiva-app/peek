@@ -12,8 +12,8 @@ export function toggledReaction(reactions: readonly ReactionData[], emoji: strin
 /**
  * Reactions the relay refused, by the id of the message reacted to. The
  * reaction is already taken back (OPT-8); what stays is why, said under the
- * message ("Not reacted: …") as Ship and Leaf say it, with no toast. In memory
- * only, and until the person reacts there again.
+ * message ("Not reacted: …") as Ship and Leaf say it, with no toast. Kept only
+ * while a card draws the message, and until the person reacts there again.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
  */
@@ -28,9 +28,10 @@ const changed = () => {
 
 /** The relay refused a reaction on `id`, for `reason`. True when a card drawing the message is on screen to say so. */
 export function refuseReaction(id: string, reason: string): boolean {
+  if ((drawn.get(id) ?? 0) === 0) return false
   refused.set(id, reason)
   changed()
-  return (drawn.get(id) ?? 0) > 0
+  return true
 }
 
 /** Reacting on `id` again: the old reason goes. */
@@ -51,7 +52,11 @@ export function useRefusedReaction(id: string | undefined): string | undefined {
     return () => {
       const left = (drawn.get(id) ?? 1) - 1
       if (left > 0) drawn.set(id, left)
-      else drawn.delete(id)
+      else {
+        // The last card drawing it went: the line goes with it, as Ship's and Leaf's do.
+        drawn.delete(id)
+        refused.delete(id)
+      }
     }
   }, [id])
   return useSyncExternalStore(subscribe, () => (id ? refused.get(id) : undefined))

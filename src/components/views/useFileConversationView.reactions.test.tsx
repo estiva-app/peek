@@ -116,8 +116,10 @@ describe('a reaction in Peek', () => {
     relay.answer = { ok: false, reason: 'invalid: something the relay disliked' }
     open()
     await userEvent.click(await pill())
-    expect(await screen.findByText('Not reacted: the relay did not take it.')).toBeInTheDocument()
+    // Answered: either way it is said somewhere, so the checks below see the answer, not a wait.
+    await waitFor(() => expect(toast.show.mock.calls.length + screen.queryAllByText(/Not reacted/).length).toBeGreaterThan(0))
     expect(toast.show).not.toHaveBeenCalled()
+    expect(screen.getByText('Not reacted: the relay did not take it.')).toBeInTheDocument()
     // Taken back: Cath's alone again.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toHaveAttribute('aria-pressed', 'false'))
   })

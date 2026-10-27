@@ -54,6 +54,13 @@ describe('a read-only message card', () => {
     expect(screen.getAllByRole('button', { name: 'Add a reaction' }).length).toBeGreaterThan(0)
   })
 
+  it('offers no way to react where nothing writes a reaction', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'React' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
+
   it('offers no way to react, and its pills cannot be pressed', () => {
     hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
     expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
