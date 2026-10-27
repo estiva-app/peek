@@ -78,6 +78,13 @@ describe('referenceSections', () => {
     expect(files).toMatchObject({ label: 'Files', items: [] })
   })
 
+  it('reads a list on one line without its markers, as Ship and Leaf caption the same comment (PEEKM-6)', () => {
+    registerActiveConversation({ references: [], messages: [message(3, 'Miky', '## Plan\n- [the guide](https://example.com/guide)\n- **second**')] })
+
+    const [messages] = referenceSections('')
+    expect(messages.items[0].snippet).toBe('Plan the guide second')
+  })
+
   it('offers the Folder on screen first, then what was read recently, by title alone — the row’s icon says what it is (7 October)', async () => {
     relay.merged = { [address(30851, 'old')]: 100, 'h:not-an-address': 300, [address(30840, 'new')]: 200 }
     relay.files.mockImplementation(async (_files, tier) =>

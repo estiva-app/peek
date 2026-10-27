@@ -92,7 +92,7 @@ describe('who People lists', () => {
 describe('who the viewer can mention (REM-6)', () => {
   it('is the roster with agents, still never the viewer', () => {
     const out = mentionablePeopleOf([roster([MIKY, KATERINA, AGENT, ME]), ...people], ME)
-    expect(out.map((p) => [p.name, p.bot])).toEqual([
+    expect(out.map((p) => [p.name, p.bot === true])).toEqual([
       ['Claude (steered by Katerina)', true],
       ['Katerina Kelepouri', false],
       ['Miky', false],
