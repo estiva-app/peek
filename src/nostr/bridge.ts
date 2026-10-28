@@ -43,8 +43,11 @@
 import {
   authorizationHeaderFor,
   buildUnsignedAuthEvent,
+  isRelayBusyResponse,
   parsePublishResponse,
   parseQueryResponse,
+  RELAY_BUSY_MESSAGE,
+  retryWhileBusy,
 } from '@estiva-app/protocol'
 import type { ReadLane } from '@estiva-app/platform'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
@@ -108,8 +111,22 @@ export async function signViaEstivaId(
  * `pubkey` is left empty in the auth event for the same reason as the server
  * path — `/sign` overwrites it with the token's subject, and the guard above
  * rejects a mismatch.
+ *
+ * A relay too busy to answer is asked again quietly, as the protocol's own
+ * client does, each time with fresh auth; the last answer comes back as it came.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
  */
-async function bridgePost(
+function bridgePost(
+  relayUrl: string,
+  path: string,
+  payload: unknown,
+  token: string,
+  pubkey?: string,
+): Promise<{ status: number; text: string }> {
+  return retryWhileBusy(() => bridgePostOnce(relayUrl, path, payload, token, pubkey))
+}
+
+async function bridgePostOnce(
   relayUrl: string,
   path: string,
   payload: unknown,
@@ -155,6 +172,7 @@ export async function publishSigned(
   pubkey?: string,
 ): Promise<PublishResult> {
   const { status, text } = await bridgePost(relayUrl, '/events', event, token, pubkey)
+  if (isRelayBusyResponse(status, text)) return { ok: false, reason: RELAY_BUSY_MESSAGE, httpStatus: status }
   return parsePublishResponse(status, text)
 }
 
@@ -191,7 +209,9 @@ export async function queryRelay(
       const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {
         const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-        answer = parseQueryResponse(status, text)
+        answer = isRelayBusyResponse(status, text)
+          ? { ok: false, events: [], reason: RELAY_BUSY_MESSAGE }
+          : parseQueryResponse(status, text)
       } finally {
         release?.()
       }

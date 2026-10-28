@@ -104,3 +104,55 @@ describe("the loader's HTTP reads (PEE-5)", () => {
     void busy
   })
 })
+
+/*
+  A relay too busy to answer says so with a 503 (a 502 from the proxy while it
+  restarts). Peek asks again quietly, as the protocol's client does, and only a
+  relay that stays busy reaches the person, in the same words as every app.
+  why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
+*/
+describe('a busy relay (APP-9)', () => {
+  const BUSY = { status: 503, text: async () => JSON.stringify({ error: 'relay busy, retry shortly' }) }
+  const EVENT = { id: 'e1', kind: 9 }
+
+  function relayAnswering(...answers: { status: number; text: () => Promise<string> }[]) {
+    const auths: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { headers: Record<string, string> }) => {
+        auths.push(init.headers.authorization)
+        return answers[Math.min(auths.length - 1, answers.length - 1)]
+      }),
+    )
+    return auths
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    setSocketReader(null)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('is asked again quietly over HTTP, and the read draws what it then sends', async () => {
+    const auths = relayAnswering(BUSY, { status: 502, text: async () => 'Bad Gateway' }, {
+      status: 200,
+      text: async () => JSON.stringify([EVENT]),
+    })
+    const read = queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await expect(read).resolves.toMatchObject({ ok: true, events: [EVENT] })
+    expect(auths).toHaveLength(3)
+  })
+
+  it('that stays busy is reported as "the relay is busy, try again in a moment"', async () => {
+    const auths = relayAnswering(BUSY)
+    const read = queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await expect(read).resolves.toEqual({ ok: false, events: [], reason: 'the relay is busy, try again in a moment' })
+    expect(auths).toHaveLength(4)
+  })
+})
