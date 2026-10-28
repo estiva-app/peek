@@ -43,8 +43,13 @@
 import {
   authorizationHeaderFor,
   buildUnsignedAuthEvent,
+  isRelayBusyResponse,
   parsePublishResponse,
   parseQueryResponse,
+  RELAY_BUSY_MESSAGE,
+  retryAfterMsOf,
+  retryWhileBusy,
+  type RelayAnswer,
 } from '@estiva-app/protocol'
 import type { ReadLane } from '@estiva-app/platform'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
@@ -108,14 +113,29 @@ export async function signViaEstivaId(
  * `pubkey` is left empty in the auth event for the same reason as the server
  * path — `/sign` overwrites it with the token's subject, and the guard above
  * rejects a mismatch.
+ *
+ * A relay too busy to answer is asked again quietly, as the protocol's own
+ * client does, each time with fresh auth; the last answer comes back as it came.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
  */
-async function bridgePost(
+function bridgePost(
   relayUrl: string,
   path: string,
   payload: unknown,
   token: string,
   pubkey?: string,
-): Promise<{ status: number; text: string }> {
+): Promise<RelayAnswer> {
+  return retryWhileBusy(() => bridgePostOnce(relayUrl, path, payload, token, pubkey))
+}
+
+/** One ask, with the relay's `Retry-After` so a quiet retry waits as long as it was told. */
+async function bridgePostOnce(
+  relayUrl: string,
+  path: string,
+  payload: unknown,
+  token: string,
+  pubkey?: string,
+): Promise<RelayAnswer> {
   const url = `${relayUrl.replace(/\/+$/, '')}${path}`
   const body = JSON.stringify(payload)
   const auth = await signViaEstivaId(
@@ -137,7 +157,7 @@ async function bridgePost(
   // the refresh triggers and `withRateLimitRetry` honour (PER-13). No reader
   // has to know about quotas.
   if (refusal) relayBudget.noteRateLimited(text)
-  return { status: res.status, text }
+  return { status: res.status, text, retryAfterMs: retryAfterMsOf(res.headers.get('retry-after')) }
 }
 
 /**
@@ -155,6 +175,7 @@ export async function publishSigned(
   pubkey?: string,
 ): Promise<PublishResult> {
   const { status, text } = await bridgePost(relayUrl, '/events', event, token, pubkey)
+  if (isRelayBusyResponse(status, text)) return { ok: false, reason: RELAY_BUSY_MESSAGE, httpStatus: status }
   return parsePublishResponse(status, text)
 }
 
@@ -190,8 +211,13 @@ export async function queryRelay(
     if (!answer) {
       const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {
-        const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-        answer = parseQueryResponse(status, text)
+        // An ahead read asks once: it holds the one ahead slot while it waits, and a busy relay is the moment
+        // to leave it alone, not to keep it for seconds of quiet retries. A read the person has joined is theirs.
+        const post = laneNow() === 'ahead' ? bridgePostOnce : bridgePost
+        const { status, text } = await post(relayUrl, '/query', filters, token, pubkey)
+        answer = isRelayBusyResponse(status, text)
+          ? { ok: false, events: [], reason: RELAY_BUSY_MESSAGE }
+          : parseQueryResponse(status, text)
       } finally {
         release?.()
       }

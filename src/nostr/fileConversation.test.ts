@@ -832,6 +832,14 @@ describe('publishConfirmed — success is the relay’s acceptance, and a transi
     expect(waits).toEqual([7_000])
   })
 
+  it('a relay still busy after the quiet asks is reported at once, not asked three times more (APP-9)', async () => {
+    publishSigned.mockResolvedValue({ ok: false, reason: 'the relay is busy, try again in a moment', httpStatus: 503 } as never)
+    const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
+    expect(result).toEqual({ ok: false, reason: 'the relay is busy, try again in a moment' })
+    expect(publishSigned).toHaveBeenCalledTimes(1)
+    expect(waits).toEqual([])
+  })
+
   it('a considered refusal is reported at once — asking again returns the same no', async () => {
     publishSigned.mockResolvedValue({ ok: false, reason: 'invalid: imeta size (129682) does not match stored size (129661)', httpStatus: 400 } as never)
     const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
