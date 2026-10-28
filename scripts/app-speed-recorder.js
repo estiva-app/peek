@@ -22,6 +22,10 @@
   const key = (t) => (typeof t === 'string' ? t : `/${t.re}/`)
   const shows = (text, t) => (typeof t === 'string' ? text.includes(t) : new RegExp(t.re).test(text))
   const refused = (text) => /rate.?limit|too many|slow down/i.test(text)
+  // The relay failing to answer at all, not refusing a quota: a busy database shows as "no community is configured"
+  // (a 404), a 500 or 503, a socket that never opens, or a subscription closed with an error (APP-9).
+  sp.failed = []
+  const failedAnswer = (text) => /no community|busy|internal|failed|error:/i.test(text) && !refused(text)
   const relay = (h) => /estiva\.estiva\.app$/.test(h.host)
 
   const NativeWS = window.WebSocket
@@ -29,12 +33,18 @@
     constructor(...args) {
       super(...args)
       sp.ws.push({ at: now(), dir: 'open', url: String(args[0]).slice(0, 80) })
+      let opened = false
+      this.addEventListener('open', () => (opened = true))
+      this.addEventListener('close', (e) => {
+        if (!opened && relay(new URL(String(args[0])))) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
+      })
       this.addEventListener('message', (e) => {
         const text = String(e.data)
         const type = /^\["(\w+)"/.exec(text)?.[1]
         if (type === 'CLOSED' || type === 'NOTICE' || (type === 'OK' && /^\["OK",[^,]+,false/.test(text))) {
           sp.ws.push({ at: now(), dir: 'in', type, body: text.slice(0, 200) })
           if (refused(text)) sp.refusals.push({ at: now(), via: 'ws', body: text.slice(0, 200) })
+          if (type !== 'OK' && failedAnswer(text)) sp.failed.push({ at: now(), via: 'ws', body: text.slice(0, 200) })
         }
       })
     }
@@ -56,8 +66,11 @@
       entry.status = response.status
       entry.ms = now() - entry.at
       if (response.status === 429) sp.refusals.push({ at: now(), via: 'http', path: url.pathname })
+      // A 404 is "no community" only on the relay's read doors; elsewhere (a deleted blob) it is a real answer.
+      const readDoor = /\/(query|events|count)$/.test(url.pathname)
+      if (relay(entry) && (response.status >= 500 || (response.status === 404 && readDoor))) sp.failed.push({ at: now(), via: 'http', path: url.pathname, status: response.status })
       // Bytes of a relay answer, read from a clone so the app's own read is untouched.
-      if (/\/(query|events|count)$/.test(url.pathname)) {
+      if (readDoor) {
         entry.pending = true
         response.clone().text().then((t) => {
           entry.bytes = t.length
@@ -125,6 +138,7 @@
       socketReqs: sp.ws.filter((w) => w.dir === 'out' && w.type === 'REQ').length,
       statuses: reads.reduce((s, h) => ({ ...s, [h.status ?? h.error ?? 'pending']: (s[h.status ?? h.error ?? 'pending'] ?? 0) + 1 }), {}),
       refusals: sp.refusals,
+      failed: sp.failed,
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
       biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at })),

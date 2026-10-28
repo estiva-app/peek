@@ -4,6 +4,7 @@
  *
  *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>]
+ *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
  *   node scripts/app-speed.mjs --table /tmp/before.json
  *   node scripts/app-speed.mjs --compare /tmp/before.json /tmp/after.json
  *
@@ -18,6 +19,12 @@
  * - `agent`: the agent's `ship_get_issue` on "Peek opens instantly" and `peek_read_topic` on "Planning and
  *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
  *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
+ * - `peek`: Weekly Plans' conversation in Peek.
+ * - `--together` starts Weekly Plans in Leaf (QA-1), the Ship project (QA-2), Peek (QA-1) and the agent's
+ *   `ship_get_issue` at the same moment, then reads the relay's log on the box for "pool timed out" in that window:
+ *   the relay must keep answering when several people load at once (APP-9). "Relay failed" counts answers that are
+ *   not a quota refusal: a 404 "no community is configured", a 5xx, a socket that never opened, a subscription
+ *   closed with an error.
  *
  * Per browser leg: when every awaited text was on screen ("text") and when the page also had no placeholder
  * outside the sidebar ("ready"), both from the first document of the app's sign-in, so the bounce through Estiva ID
@@ -43,6 +50,8 @@ const RECORDER = new URL('./app-speed-recorder.js', import.meta.url).pathname
 const FETCHLOG = new URL('./app-speed-fetchlog.mjs', import.meta.url).href
 const AGENT = option('agent', `${homedir()}/.estiva-agent-runtime`)
 const ENV_FILE = `${homedir()}/.estiva-agent.env`
+/** The box the relay runs on, for its log (`--together`). */
+const BOX = process.env.ESTIVA_BOX ?? 'root@167.233.252.136'
 /** The CLI that reads Weekly Plans' text: the checkout the `ship` and `peek` wrappers run, at origin/main. */
 const CLI = process.env.ESTIVA_AGENT_DIR ?? `${homedir()}/estiva/estiva-agent-main`
 
@@ -72,8 +81,17 @@ const agentEnv = () => {
 }
 
 /** Weekly Plans' title and its last heading that draws as plain words (no link, chip or mark). */
-async function weeklyTexts() {
-  const { stdout } = await run('npx', ['tsx', 'scripts/agent.ts', 'file', 'show', WEEKLY.address], { cwd: CLI, env: agentEnv(), maxBuffer: 1 << 26 })
+async function weeklyTexts(tries = 4) {
+  let stdout
+  try {
+    ;({ stdout } = await run('npx', ['tsx', 'scripts/agent.ts', 'file', 'show', WEEKLY.address], { cwd: CLI, env: agentEnv(), maxBuffer: 1 << 26 }))
+  } catch (error) {
+    // A run straight after another can find the agent's quota spent; the relay says when to come back.
+    const wait = /rate-limited.*retry in (\d+)s/.exec(error.stderr ?? '')?.[1]
+    if (!wait || tries <= 1) throw error
+    await new Promise((r) => setTimeout(r, (Number(wait) + 1) * 1000))
+    return weeklyTexts(tries - 1)
+  }
   const file = JSON.parse(stdout)
   const headings = file.text.split('\n').map((l) => /^#{1,3} (.+)$/.exec(l)?.[1]).filter((h) => h && !/[[\]()<>:*_`]/.test(h))
   if (!headings.length) throw new Error('Weekly Plans has no plain heading to wait for')
@@ -92,20 +110,27 @@ const LEGS = {
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
+  peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
 }
 
-async function browserLeg(leg, awaitFile) {
+/** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
+const TOGETHER = { weekly: 'qa1', 'ship-project': 'qa2', peek: 'qa1', agent: 'agent' }
+
+async function browserLeg(leg, awaitFile, as = 'qa1') {
   let stdout
+  // Why the probe itself died (its exit and last stderr line), when it printed no report.
+  let died = ''
   try {
-    ;({ stdout } = await run('node', [PROBE, '--as', 'qa1', '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
+    ;({ stdout } = await run('node', [PROBE, '--as', as, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
   } catch (error) {
     stdout = error.stdout
+    died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
   }
   let out = {}
   try { out = JSON.parse(stdout) } catch {}
   const step = (out.steps ?? []).find((s) => 'eval' in s && typeof s.result === 'string' && s.result.startsWith('{"label"'))
   const failure = out.failure ?? (out.steps ?? []).filter((s) => s.error).map((s) => s.error).join('; ')
-  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || 'no report' }
+  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
 }
 
 /** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */
@@ -172,6 +197,20 @@ async function agentCall(name, callArgs) {
   }
 }
 
+/** "pool timed out" lines the relay logged between two ISO times, read on the box; null when the box can't be read. */
+async function poolTimeouts(since, until) {
+  // A log that could not be read (no relay container, docker refusing) exits 3, never "0".
+  const cmd = `id=$(cd /opt/buzz && docker compose ps -q relay) && [ -n "$id" ] || exit 3; ` +
+    `{ docker logs --since ${since} --until ${until} "$id" 2>&1 || echo LOGS_UNREAD; } | ` +
+    `awk '/LOGS_UNREAD/ { u = 1 } /pool timed out/ { n++ } END { if (u) exit 3; print n + 0 }'`
+  try {
+    const { stdout } = await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', BOX, cmd], { timeout: 60000 })
+    return Number(stdout.trim())
+  } catch {
+    return null
+  }
+}
+
 // --- the table ----------------------------------------------------------------------------------------------------
 
 const median = (xs) => {
@@ -182,9 +221,9 @@ const range = (xs) => {
   const got = xs.filter((x) => typeof x === 'number').sort((a, b) => a - b)
   return got.length > 1 ? [got[0], got.at(-1)] : null
 }
-const sec = (ms) => (ms === null ? 'never' : `${(ms / 1000).toFixed(1)} s`)
-const mbs = (mb) => (mb === null ? '–' : `${mb.toFixed(1)} MB`)
-const kb = (b) => (b === null ? '–' : b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : `${Math.round(b / 1000)} KB`)
+const sec = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`)
+const mbs = (mb) => (mb == null ? '–' : `${mb.toFixed(1)} MB`)
+const kb = (b) => (b == null ? '–' : b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : `${Math.round(b / 1000)} KB`)
 
 /** One row's numbers from a leg's runs: medians, and how many runs never showed the text. */
 function summary(runs) {
@@ -197,6 +236,7 @@ function summary(runs) {
         ready: median(runs.map((r) => at(r, 'allNoPlaceholder'))),
         reads: median(runs.map((r) => r.reads)), mb: median(runs.map((r) => r.mb)),
         refusals: runs.reduce((n, r) => n + (r.refusals?.length ?? 0), 0),
+        failed: runs.reduce((n, r) => n + (r.failed?.length ?? 0), 0),
         failures: runs.filter((r) => r.failure).map((r) => r.failure),
       }
     : {
@@ -204,6 +244,8 @@ function summary(runs) {
         text: median(runs.map((r) => r.ms)), textRange: range(runs.map((r) => r.ms)), ready: null,
         reads: median(runs.map((r) => r.reads)), mb: median(runs.map((r) => r.mb)), toClaude: median(runs.map((r) => r.toClaude)),
         refusals: runs.reduce((n, r) => n + (r.refusals ?? 0), 0),
+        // A quota refusal is counted under Refused, as on the browser legs.
+        failed: runs.filter((r) => r.failure && !/rate.?limit|too many|slow down/i.test(r.failure)).length,
         failures: runs.filter((r) => r.failure).map((r) => r.failure),
       }
 }
@@ -211,15 +253,17 @@ const cell = (s) => `${sec(s.text)}${s.textRange ? ` (${sec(s.textRange[0])}–$
 
 function table(result) {
   const lines = [
-    '| Leg | Runs | Text on screen / answer (median, range) | Page ready | Relay reads | MB read | Handed to Claude | Refused |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Leg | Runs | Text on screen / answer (median, range) | Page ready | Relay reads | MB read | Handed to Claude | Refused | Relay failed |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const [label, runs] of Object.entries(result.rows)) {
     const s = summary(runs)
-    lines.push(`| ${label} | ${s.runs} | ${cell(s)} | ${s.ready === null ? '–' : sec(s.ready)} | ${s.reads ?? '–'} | ${mbs(s.mb)} | ${s.toClaude === undefined ? '–' : kb(s.toClaude)} | ${s.refusals} |`)
+    lines.push(`| ${label} | ${s.runs} | ${cell(s)} | ${s.ready === null ? '–' : sec(s.ready)} | ${s.reads ?? '–'} | ${mbs(s.mb)} | ${s.toClaude === undefined ? '–' : kb(s.toClaude)} | ${s.refusals} | ${s.failed} |`)
   }
   const builds = [...new Set(Object.values(result.rows).flat().map((r) => r.build && `${new URL(r.href).host}${r.build}`).filter(Boolean))]
-  lines.push('', `Measured ${result.at} as QA-1 (agent: its own key, ${result.agent}). Builds: ${builds.join(', ') || '–'}.`)
+  const who = result.relay ? 'together, Leaf and Peek as QA-1, Ship as QA-2' : 'as QA-1'
+  lines.push('', `Measured ${result.at} ${who} (agent: its own key, ${result.agent}). Builds: ${builds.join(', ') || '–'}.`)
+  if (result.relay) lines.push(`Relay "pool timed out" per run: ${result.relay.map((r) => r.timeouts ?? '?').join(', ')}.`)
   for (const [label, runs] of Object.entries(result.rows)) for (const f of summary(runs).failures) lines.push(`- ${label} failed: ${String(f).slice(0, 200)}`)
   return lines.join('\n')
 }
@@ -247,7 +291,8 @@ if (args.includes('--compare')) {
 } else if (args.includes('--table')) {
   console.log(table(JSON.parse(readFileSync(option('table'), 'utf8'))))
 } else {
-  const legs = option('legs', 'weekly,weekly-from-peek,ship-project,ship-issue,agent').split(',')
+  const together = args.includes('--together')
+  const legs = option('legs', together ? Object.keys(TOGETHER).join(',') : 'weekly,weekly-from-peek,ship-project,ship-issue,agent').split(',')
   for (const leg of legs) if (leg !== 'agent' && !LEGS[leg]) throw new Error(`--legs: ${[...Object.keys(LEGS), 'agent'].join(',')}`)
   const runs = Number(option('runs', '3'))
   const scratch = mkdtempSync(join(tmpdir(), 'app-speed-'))
@@ -255,23 +300,40 @@ if (args.includes('--compare')) {
   const { stdout: agentRev } = await run('git', ['-C', AGENT, 'log', '-1', '--format=%h %cs']).catch(() => ({ stdout: AGENT }))
   const result = { at: new Date().toISOString(), agent: agentRev.trim(), rows: {} }
   const awaitList = [...SHIP_AWAIT]
-  if (legs.some((l) => l.startsWith('weekly'))) {
+  if (legs.some((l) => l.startsWith('weekly') || l === 'peek')) {
     const texts = await weeklyTexts()
     console.error(`Weekly Plans: waiting for ${JSON.stringify(texts)}`)
     awaitList.push(['^leaf\\.', '^/(document|f)/', texts])
+    // Peek's leg is the page's conversation, at /document/ since Peek redirects /topic/ there. Its title is also a
+    // row in the topic list inside <main>, so wait for the first message and its Leaf card instead.
+    awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together', 'Open in Leaf']])
   }
   const awaitFile = join(scratch, 'recorder.js')
   writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
+  const keep = (n, reports) => {
+    for (const r of reports) {
+      ;(result.rows[r.label] ??= []).push(r)
+      console.error(`run ${n} ${r.label}: ${r.marks ? `text ${sec(r.marks.allTexts === undefined ? null : r.marks.allTexts + r.bounceMs)}` : `answer ${sec(r.ms)}`}, ${r.reads} reads, ${mbs(r.mb)}${r.failed?.length ? `, relay failed ${r.failed.length}×` : ''}${r.failure ? `, FAILED: ${String(r.failure).slice(0, 160)}` : ''}`)
+    }
+    writeFileSync(out, JSON.stringify(result))
+  }
   for (let n = 1; n <= runs; n++) {
+    if (together) {
+      // Every leg cold at the same moment, as its own person; the agent asks for one issue, as `ship show` does.
+      const since = new Date().toISOString()
+      const reports = await Promise.all(legs.map((leg) => (leg === 'agent' ? agentCall(...AGENT_CALLS[0]) : browserLeg(leg, awaitFile, TOGETHER[leg]))))
+      keep(n, reports)
+      const timeouts = await poolTimeouts(since, new Date().toISOString())
+      ;(result.relay ??= []).push({ run: n, since, timeouts })
+      console.error(`run ${n} relay: ${timeouts ?? '?'} "pool timed out" in the log`)
+      writeFileSync(out, JSON.stringify(result))
+      continue
+    }
     for (const leg of legs) {
       const reports = []
       if (leg === 'agent') for (const [name, a] of AGENT_CALLS) reports.push(await agentCall(name, a))
       else reports.push(await browserLeg(leg, awaitFile))
-      for (const r of reports) {
-        ;(result.rows[r.label] ??= []).push(r)
-        console.error(`run ${n} ${r.label}: ${r.marks ? `text ${sec(r.marks.allTexts === undefined ? null : r.marks.allTexts + r.bounceMs)}` : `answer ${sec(r.ms)}`}, ${r.reads} reads, ${mbs(r.mb)}${r.failure ? `, FAILED: ${String(r.failure).slice(0, 160)}` : ''}`)
-      }
-      writeFileSync(out, JSON.stringify(result))
+      keep(n, reports)
     }
   }
   console.log(table(result))
