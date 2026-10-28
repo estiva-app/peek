@@ -199,7 +199,10 @@ async function agentCall(name, callArgs) {
 
 /** "pool timed out" lines the relay logged between two ISO times, read on the box; null when the box can't be read. */
 async function poolTimeouts(since, until) {
-  const cmd = `docker logs --since ${since} --until ${until} $(cd /opt/buzz && docker compose ps -q relay) 2>&1 | grep -c "pool timed out" || true`
+  // A log that could not be read (no relay container, docker refusing) exits 3, never "0".
+  const cmd = `id=$(cd /opt/buzz && docker compose ps -q relay) && [ -n "$id" ] || exit 3; ` +
+    `{ docker logs --since ${since} --until ${until} "$id" 2>&1 || echo LOGS_UNREAD; } | ` +
+    `awk '/LOGS_UNREAD/ { u = 1 } /pool timed out/ { n++ } END { if (u) exit 3; print n + 0 }'`
   try {
     const { stdout } = await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', BOX, cmd], { timeout: 60000 })
     return Number(stdout.trim())
@@ -241,7 +244,8 @@ function summary(runs) {
         text: median(runs.map((r) => r.ms)), textRange: range(runs.map((r) => r.ms)), ready: null,
         reads: median(runs.map((r) => r.reads)), mb: median(runs.map((r) => r.mb)), toClaude: median(runs.map((r) => r.toClaude)),
         refusals: runs.reduce((n, r) => n + (r.refusals ?? 0), 0),
-        failed: runs.filter((r) => r.failure).length,
+        // A quota refusal is counted under Refused, as on the browser legs.
+        failed: runs.filter((r) => r.failure && !/rate.?limit|too many|slow down/i.test(r.failure)).length,
         failures: runs.filter((r) => r.failure).map((r) => r.failure),
       }
 }

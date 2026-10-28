@@ -36,7 +36,7 @@
       let opened = false
       this.addEventListener('open', () => (opened = true))
       this.addEventListener('close', (e) => {
-        if (!opened) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
+        if (!opened && relay(new URL(String(args[0])))) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
       })
       this.addEventListener('message', (e) => {
         const text = String(e.data)
@@ -66,9 +66,11 @@
       entry.status = response.status
       entry.ms = now() - entry.at
       if (response.status === 429) sp.refusals.push({ at: now(), via: 'http', path: url.pathname })
-      if (relay(entry) && (response.status >= 500 || response.status === 404)) sp.failed.push({ at: now(), via: 'http', path: url.pathname, status: response.status })
+      // A 404 is "no community" only on the relay's read doors; elsewhere (a deleted blob) it is a real answer.
+      const readDoor = /\/(query|events|count)$/.test(url.pathname)
+      if (relay(entry) && (response.status >= 500 || (response.status === 404 && readDoor))) sp.failed.push({ at: now(), via: 'http', path: url.pathname, status: response.status })
       // Bytes of a relay answer, read from a clone so the app's own read is untouched.
-      if (/\/(query|events|count)$/.test(url.pathname)) {
+      if (readDoor) {
         entry.pending = true
         response.clone().text().then((t) => {
           entry.bytes = t.length
