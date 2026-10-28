@@ -57,6 +57,7 @@ import {
   blockRunTag,
   partsOf,
   QUOTE_TAG,
+  RELAY_BUSY_MESSAGE,
   type Embed,
   type Imeta,
   type NostrTag,
@@ -549,9 +550,12 @@ const sleepFor = (ms: number) => new Promise<void>((done) => setTimeout(done, ms
  * reached a verdict — the request threw, the answer was a 5xx or a 408 — is
  * worth another try after a backoff. Anything else is the relay's considered
  * answer about this event (a 4xx, `accepted:false`), and asking again returns
- * the same refusal.
+ * the same refusal. So is a busy relay's ({@link RELAY_BUSY_MESSAGE}): the
+ * bridge has already asked it again quietly, and these tries on top of those
+ * would ask a struggling relay twelve times for one write (APP-9).
  */
 function retryWaitMs(result: PublishResult, threw: boolean, attempt: number): number | null {
+  if (result.reason === RELAY_BUSY_MESSAGE) return null
   const quota = retryAfterMs(result.reason ?? '')
   if (quota !== null || result.httpStatus === 429) {
     const wait = quota ?? PUBLISH_BACKOFF_MS
