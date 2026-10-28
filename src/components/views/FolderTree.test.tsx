@@ -96,9 +96,23 @@ const reads = vi.hoisted(() => ({
 }))
 const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean>, member: {} as Record<string, boolean> }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
+/** Joined files no listing holds (an issue, under its project), for the Topics tests: by parent, and as read. */
+const joined = vi.hoisted(() => ({
+  under: {} as Record<string, string[]>,
+  resolved: {} as Record<string, ForeignObject>,
+}))
 
-vi.mock('@/api', async () => ({
-  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+vi.mock('@/api', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/api')
+  const useMembership = actual.useMembership as () => { isMember: (address: string) => boolean }
+  return {
+  ...actual,
+  useMembership: () => {
+    const membership = useMembership()
+    return { ...membership, isMember: (address: string) => address in joined.resolved || membership.isMember(address) }
+  },
+  useResolvedReferences: (refs: readonly string[]) =>
+    Object.fromEntries(refs.filter((ref) => ref in joined.resolved).map((ref) => [ref, joined.resolved[ref]])),
   useFolders: () => ({ folders, signedOut: false, reload: async () => {} }),
   useFolderContents: (folder: string | null | undefined, options?: { archived?: boolean }) => {
     reads.contents(folder, options)
@@ -114,9 +128,15 @@ vi.mock('@/api', async () => ({
     return { state: [], reload: async () => {} }
   },
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: dots.unread, member: dots.member, holdsJoined: new Set<string>() }),
+  useTeamUnread: () => ({
+    unread: dots.unread,
+    member: dots.member,
+    holdsJoined: new Set(Object.keys(joined.under)),
+    joinedUnder: joined.under,
+  }),
   useCurrentUser: () => (viewer.id ? { id: viewer.id } : undefined),
-}))
+  }
+})
 
 function Probe() {
   const location = useLocation()
@@ -154,6 +174,8 @@ beforeEach(() => {
   reads.extra = []
   dots.unread = {}
   dots.member = {}
+  joined.under = {}
+  joined.resolved = {}
   viewer.id = undefined
   window.localStorage.clear()
   // The tree's mechanics are the Folders view's — every Folder. Topics is `describe('The two views')`.
@@ -363,6 +385,23 @@ describe('the two views (Katerina, 5 October)', () => {
     // Not yours, but the open file is in it: where the tree says it is.
     expect(section(OTHER)).not.toBeNull()
     expect(section(TOPIC_FOLDER)).toBeNull()
+  })
+
+  it('an archived issue you joined is not in Topics; a live one beside it is (PEE-58)', () => {
+    const ARCHIVED_ISSUE = `30851:${SHIP}:aa000000-0000-4000-8000-000000000001`
+    const LIVE_ISSUE = `30851:${SHIP}:bb000000-0000-4000-8000-000000000002`
+    const issue = (address: string, name: string, over: Partial<ForeignObject> = {}) =>
+      foreign({ ref: address, address, kind: 30851, appName: 'Estiva Ship', slots: { title: { value: name } }, ...over })
+    joined.under = { [PROJECT_ADDRESS]: [ARCHIVED_ISSUE, LIVE_ISSUE] }
+    joined.resolved = {
+      [ARCHIVED_ISSUE]: issue(ARCHIVED_ISSUE, 'Archived issue of mine', { archived: { by: SHIP, at: 1 } } as Partial<ForeignObject>),
+      [LIVE_ISSUE]: issue(LIVE_ISSUE, 'Live issue of mine'),
+    }
+    dots.member = { [TEAM]: true }
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount()
+    expect(within(section(TEAM)).queryByText('Live issue of mine')).not.toBeNull()
+    expect(within(section(TEAM)).queryByText('Archived issue of mine')).toBeNull()
   })
 
   it('a Folder closed in Topics stays closed when the column is drawn again, and only in Topics (PEE-74)', () => {
