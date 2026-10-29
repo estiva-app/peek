@@ -53,6 +53,18 @@ describe('fetchOwnSlot', () => {
 describe('loadMergedReadState', () => {
   const identity = { slotId: SLOT, clientId: 'peek-1a2b3c4d' }
 
+  it('says a merge is incomplete when a slot this tab never decrypted is refused for now (PEE-68)', async () => {
+    const other = 'f'.repeat(32)
+    queryRelay.mockResolvedValue({ ok: true, events: [slotEvent(SLOT, 100), slotEvent(other, 90)] })
+    decryptBlobUnlessRefused.mockImplementation(async (c: string) => {
+      if (c === `cipher-${other}`) throw new Error('POST /nip44/decrypt failed: 429')
+      return blob('peek-1a2b3c4d', { [FILE]: 50 })
+    })
+    const state = await loadMergedReadState(seam, identity, 1_000_000)
+    expect(state?.complete).toBe(false)
+    expect(state?.merged).toEqual({ [FILE]: 50 })
+  })
+
   it('merges every slot by maximum, skipping one it cannot decrypt', async () => {
     const other = 'f'.repeat(32)
     const lost = 'a'.repeat(32)

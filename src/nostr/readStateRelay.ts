@@ -106,6 +106,12 @@ export async function publishReadState(
 export interface MergedReadState {
   /** context id → unix seconds, maximum across every slot (CRO-5). */
   merged: Record<string, number>
+  /**
+   * False when a slot is missing from `merged` — refused for now, with no
+   * earlier copy in this tab. What was read through it would look unread, so
+   * nothing is judged on it (PEE-68).
+   */
+  complete: boolean
   verdict: OwnSlotVerdict
 }
 
@@ -147,5 +153,5 @@ export async function loadMergedReadState(
       : (ciphertext: string) => decryptBlobUnlessRefused(ciphertext, seam.accessToken)
   const state = await fetchReadState(query, seam.pubkey, { decrypt }, identity, nowMs, horizonDays ?? PEEK_HORIZON_DAYS, slotCache)
   if (!state.reachable) return undefined
-  return { merged: state.merged, verdict: classifyOwnSlots(state.slots, identity) }
+  return { merged: state.merged, complete: state.complete, verdict: classifyOwnSlots(state.slots, identity) }
 }
