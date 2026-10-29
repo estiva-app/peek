@@ -181,6 +181,13 @@ let lastMergeAt: number | undefined
 
 /** How soon an incomplete merge is read again: past a 429's burst, well inside the 30 s interval. */
 export const READ_AGAIN_MS = 10_000
+/**
+ * Incomplete merges in a row before the tab takes the best one it has. A
+ * refusal that never clears (401, 403, 422) would otherwise keep a new tab's
+ * Screener and dots blank for good, and freeze a warm tab's frontier.
+ */
+export const READ_AGAIN_TIMES = 3
+let incompleteMerges = 0
 let readAgainTimer: ReturnType<typeof setTimeout> | undefined
 function readAgainSoon(run: () => void): void {
   if (readAgainTimer !== undefined) return
@@ -267,6 +274,7 @@ export function resetReadStateQueueForTests(): void {
   lastMergeAt = undefined
   clearTimeout(readAgainTimer)
   readAgainTimer = undefined
+  incompleteMerges = 0
   frontierCache = undefined
   frontierChanged()
 }
@@ -390,6 +398,10 @@ export function ReadStateSync(): null {
         .catch(() => {})
     }
     void refresh()
+    return () => {
+      clearTimeout(readAgainTimer)
+      readAgainTimer = undefined
+    }
   }, [refresh])
   // Focus, visibility and a slow interval — the same triggers every other
   // background read in this app uses, for the same reasons.
@@ -439,9 +451,6 @@ export function useMergedReadState(): MergedReadStateView {
     try {
       const state = await loadMergedReadState(current, currentIdentity())
       if (!state) return
-      setMerged(state.merged)
-      readPathRuns += 1
-      lastMergeAt = Date.now()
       setStaleDuplicates(state.verdict.staleDuplicates.map((s) => s.dTag))
       /*
        * Our coordinate holds another installation's `client_id`. Publishing to
@@ -460,11 +469,20 @@ export function useMergedReadState(): MergedReadStateView {
        * the dots would show those items as new and drop them at the next merge
        * (PEE-68). Keep the frontier as it is and read again soon; the slots that
        * did decrypt are cached, so the next round asks only for the missing one.
+       * After READ_AGAIN_TIMES in a row, take what did decrypt.
        */
       if (!state.complete) {
-        readAgainSoon(() => void refresh())
-        return
+        if (incompleteMerges < READ_AGAIN_TIMES) {
+          incompleteMerges += 1
+          readAgainSoon(() => void refresh())
+          return
+        }
+        console.warn(`[read-state] a slot is still refused after ${READ_AGAIN_TIMES} re-reads; using the slots that decrypted`)
       }
+      incompleteMerges = 0
+      setMerged(state.merged)
+      readPathRuns += 1
+      lastMergeAt = Date.now()
       previousRelayMerge = state.merged
       frontierChanged()
 

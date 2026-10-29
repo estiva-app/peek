@@ -81,4 +81,35 @@ describe('ReadStateSync', () => {
       vi.useRealTimers()
     }
   })
+
+  it('a copy on the device missing a slot is not drawn while the relay answers (PEE-68)', async () => {
+    // The copy misses the slot that read READ; the relay has not answered yet.
+    loadMergedReadState.mockImplementation((...args: unknown[]) =>
+      args[4] === 'copy' ? Promise.resolve(merge({}, false)) : new Promise(() => {}),
+    )
+    const { ReadStateSync, useReadFrontier } = await import('./useReadStateSync')
+    render(<ReadStateSync />)
+    const { result } = renderHook(() => useReadFrontier())
+    await waitFor(() => expect(loadMergedReadState).toHaveBeenCalledTimes(2))
+    await act(() => Promise.resolve())
+    expect(result.current.ready).toBe(false)
+  })
+
+  it('a slot refused every time does not keep the Screener and dots blank: after a few re-reads the tab takes what decrypted', async () => {
+    vi.useFakeTimers()
+    try {
+      loadMergedReadState.mockImplementation(async () => merge({ [READ]: 1000 }, false))
+      const { ReadStateSync, useReadFrontier, READ_AGAIN_MS, READ_AGAIN_TIMES } = await import('./useReadStateSync')
+      render(<ReadStateSync />)
+      const { result } = renderHook(() => useReadFrontier())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(result.current.ready).toBe(false)
+
+      await act(() => vi.advanceTimersByTimeAsync(READ_AGAIN_MS * (READ_AGAIN_TIMES + 1)))
+      expect(result.current.ready).toBe(true)
+      expect(result.current.marker(READ)).toBe(1000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
