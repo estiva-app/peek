@@ -495,7 +495,7 @@ async function run(page, step, value) {
       const at = value.indexOf('@')
       if (at === -1) await page.screenshot({ path: value })
       else await page.locator(value.slice(at + 1)).first().screenshot({ path: value.slice(0, at), timeout })
-      return value
+      return at === -1 ? value : value.slice(0, at)
     }
     // `--cpu start` starts the page's CPU profiler; `--cpu <file>` stops it and writes a .cpuprofile there (OPT-6).
     case 'cpu': {
