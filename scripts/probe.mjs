@@ -16,7 +16,7 @@
  * hook to settle before reading it: a read straight after sign-in reports
  * `relayState: "connecting"` and no Folders.
  *
- * Steps run in argument order, so `--click`, `--fill`, `--press`, `--hover`,
+ * Steps run in argument order, so `--click`, `--fill`, `--press`, `--type`, `--hover`,
  * `--drag`, `--wait`, `--until`, `--eval`, `--screenshot` and `--tab` can be
  * repeated and interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
  * `--init <file>` runs a script in every page before the app's own, and `--tab
@@ -83,12 +83,12 @@ import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--tapped-ago s] [--last-used-ago s] [--relogin -] [--start signed-out]
-  [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
+  [--url path] [--click label] [--fill label=text] [--press key] [--type text] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
   [--init file] [--tab path] [--also path] [--window path] [--switch -] [--follow expr]
   [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch', '--relogin', '--follow'])
+const STEPS = new Set(['--click', '--fill', '--press', '--type', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch', '--relogin', '--follow'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 /** The page's DevTools session, opened by the first `--cpu` step. */
 let cdp = null
@@ -125,8 +125,10 @@ if (process.env.PROBE_CHROME_TRACE)
 try {
   const idOrigin = new URL(options.id)
   // A service worker would answer from production's cache, around the routes below.
+  // PROBE_PHONE=1: a phone's width, touch and no hover, as a phone reads Peek. PROBE_HIDPI=1: screenshots at 2x, for a look someone judges.
   const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
+    ...(process.env.PROBE_PHONE ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 800 } }),
+    ...(process.env.PROBE_HIDPI ? { deviceScaleFactor: 2 } : {}),
     ...(process.env.PROBE_SERVE ? { serviceWorkers: 'block' } : {}),
   })
   const signInCookie = (signedIn) => ({
@@ -455,6 +457,10 @@ async function run(page, step, value) {
     case 'press':
       await page.keyboard.press(value)
       return true
+    // Key by key into whatever has focus, so an editor sees "@" and opens its suggestions.
+    case 'type':
+      await page.keyboard.type(value, { delay: 30 })
+      return true
     // The real pointer over the first match: what draws a control that exists only under the pointer.
     case 'hover':
       await page.locator(value).first().hover({ timeout })
@@ -484,9 +490,13 @@ async function run(page, step, value) {
     }
     case 'relogin':
       return relogin()
-    case 'screenshot':
-      await page.screenshot({ path: value })
-      return value
+    // `--screenshot <file>@<css>` crops to the first match, for a picture of one part on a PR.
+    case 'screenshot': {
+      const at = value.indexOf('@')
+      if (at === -1) await page.screenshot({ path: value })
+      else await page.locator(value.slice(at + 1)).first().screenshot({ path: value.slice(0, at), timeout })
+      return at === -1 ? value : value.slice(0, at)
+    }
     // `--cpu start` starts the page's CPU profiler; `--cpu <file>` stops it and writes a .cpuprofile there (OPT-6).
     case 'cpu': {
       cdp ??= await page.context().newCDPSession(page)
