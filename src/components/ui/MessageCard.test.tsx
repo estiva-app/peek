@@ -92,7 +92,7 @@ describe('an issue card under a message keeps its height while it loads', () => 
     expect((again.container.querySelector('[data-card]') as HTMLElement).style.minHeight).toBe('134px')
   })
 
-  it('draws "not available." from the first paint for a card this device found not available', async () => {
+  it('draws "not available" from the first paint for a card this device found not available', async () => {
     const issue = issueNaddr('issue-3')
     resolveObject.mockResolvedValue({ ...object('issue-3'), unreachable: true, noun: 'issue' })
     const first = render(<MessageCard uri={`nostr:${issue}`} />)
@@ -101,7 +101,7 @@ describe('an issue card under a message keeps its height while it loads', () => 
     resolveObject.mockReturnValue(new Promise(() => {}))
     const again = render(<MessageCard uri={`nostr:${issue}`} />)
     expect(again.container.querySelector('[aria-busy]')).toBeNull()
-    expect(again.container.textContent).toContain('not available.')
+    expect(again.container.textContent).toContain('not available')
   })
 })
 

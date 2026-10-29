@@ -276,7 +276,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} opensAt={written} />
   const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
-    <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
+    // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px).
+    <div data-message-body className="flex flex-col gap-2 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}

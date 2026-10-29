@@ -216,7 +216,7 @@ describe('ForeignObjectWidget', () => {
   it('names an unreachable object by its type when the app declares one', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true, noun: 'issue' }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/^Issue — not available/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Issue not available/)).toBeInTheDocument()
   })
 
   it('degrades to nothing when the reference cannot be resolved', async () => {
@@ -772,7 +772,7 @@ describe('a chosen card keeps its size while it loads (OPT-10)', () => {
   it('says a chosen card whose file is gone is gone, in its place, rather than closing up', async () => {
     resolveObject.mockResolvedValue(null)
     const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
-    await waitFor(() => expect(container.textContent).toBe('Issue — not available.'))
+    await waitFor(() => expect(container.textContent).toBe('Issue not available'))
   })
 
   it('does not call a card gone when the read failed', async () => {
@@ -790,7 +790,7 @@ describe('a chosen card keeps its size while it loads (OPT-10)', () => {
     resolveObject.mockReturnValue(new Promise(() => {}))
     const again = render(<ForeignObjectWidget naddr={issue} layout="card" />)
     expect(again.container.querySelector('[data-skeleton-layout]')).toBeNull()
-    expect(again.container.textContent).toBe('Issue — not available.')
+    expect(again.container.textContent).toBe('Issue not available')
   })
 
   it('forgets it once the card can be shown again', async () => {

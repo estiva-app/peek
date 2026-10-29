@@ -157,7 +157,7 @@ describe('the card under the message', () => {
     loading.remove()
     objects[naddr(CARD_ISSUE)] = { ...cardIssue(), unreachable: true, noun: 'Issue' }
     const unreadable = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe('Issue — not available.Open in Ship ↗')
+    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe('Issue not availableOpen in Ship ↗')
   })
 })
 

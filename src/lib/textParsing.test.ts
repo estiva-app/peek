@@ -201,6 +201,40 @@ describe('serializeInline', () => {
     ])
     expect(serializeInline(node)).toBe('just the text')
   })
+
+  // Katerina, 30 Oct: "test" typed right after a chip was saved onto its address, which then named nothing.
+  describe('a word typed right after a chip', () => {
+    const URL_ = 'https://ship.estiva.app/p/0b2c6f1e-1111-4222-8333-944455556666'
+    const chip = { type: 'reference', attrs: { uri: 'nostr:naddr1abc', href: URL_ } }
+
+    it('is written a space apart from the address, which stays whole', () => {
+      expect(serializeInline(makeNode([chip, { type: 'text', text: 'test' }]))).toBe(`${URL_} test`)
+    })
+
+    it('a nostr: address is kept apart too', () => {
+      const topic = { type: 'messageMention', attrs: { uri: 'nostr:nevent1qqs' } }
+      expect(serializeInline(makeNode([topic, { type: 'text', text: 'and more' }]))).toBe('nostr:nevent1qqs and more')
+    })
+
+    it('two chips side by side are written apart', () => {
+      expect(serializeInline(makeNode([chip, chip]))).toBe(`${URL_} ${URL_}`)
+    })
+
+    it('a space, or a sentence ending, after a chip is written as typed', () => {
+      expect(serializeInline(makeNode([chip, { type: 'text', text: ' test' }]))).toBe(`${URL_} test`)
+      expect(serializeInline(makeNode([chip, { type: 'text', text: ', test' }]))).toBe(`${URL_}, test`)
+      expect(serializeInline(makeNode([chip, { type: 'text', text: '.' }]))).toBe(`${URL_}.`)
+    })
+
+    it('a full stop with a word after it would run on, so it gets the space', () => {
+      expect(serializeInline(makeNode([chip, { type: 'text', text: '.next' }]))).toBe(`${URL_} .next`)
+    })
+
+    it('a topic with no address keeps its own space', () => {
+      const topic = { type: 'topicMention', attrs: { id: '1', label: 'Topic one' } }
+      expect(serializeInline(makeNode([topic, { type: 'text', text: 'thanks' }]))).toBe('[Topic one] thanks')
+    })
+  })
 })
 
 // ── Tokenizer (INLINE_TOKEN_RE) ──

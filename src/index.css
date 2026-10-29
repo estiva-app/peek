@@ -46,8 +46,12 @@
    underline-offset-2; the info colour until estiva-ui 0.64.0, the same value
    in Signal), so a link reads the same while you type and once sent.
    The composer's only: a sent message's widgets carry links of their own,
-   and an unlayered rule over them would win over their classes. */
-.tiptap a {
+   and an unlayered rule over them would win over their classes. The same
+   holds for the row a lone link draws in the box (`data-box-row`, the
+   package's LinkRow): its title keeps the row's look, not a typed link's
+   (Katerina, 30 Oct: "we don't need this blue underlined styling in the
+   cards"). */
+.tiptap a:not([data-box-row] a) {
   color: var(--text-interactive);
   text-decoration: underline;
   text-underline-offset: 2px;

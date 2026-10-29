@@ -59,7 +59,7 @@ describe('a topic or a message in a message body', () => {
     const c = show(`as ${NEVENT} said`)
     expect(asked.at(-1)).toContain(NEVENT)
     // Resolved to nothing here; still a chip, saying so, and never a 60-character pointer.
-    expect(c.textContent).toContain('as Message, not available said')
+    expect(c.textContent).toContain('as Message not available said')
     expect(c.querySelector('[data-link-row]')).toBeNull()
     expect(c.textContent).not.toContain(NEVENT)
   })
@@ -68,7 +68,7 @@ describe('a topic or a message in a message body', () => {
     const c = show(`Look at this.\n\n${NEVENT}`)
     expect(asked.at(-1)).toContain(NEVENT)
     expect(c.textContent).toContain('Look at this.')
-    expect(c.querySelector('[data-link-row]')?.textContent).toBe('Message — not available.')
+    expect(c.querySelector('[data-link-row]')?.textContent).toBe('Message not available')
     expect(c.textContent).not.toContain(NEVENT.replace(/^nostr:/, ''))
   })
 
