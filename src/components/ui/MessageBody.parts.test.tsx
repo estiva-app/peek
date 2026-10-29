@@ -82,7 +82,7 @@ describe('deleted and not available read the same (Miky, 15 Oct)', () => {
     it(`${state} says only that a part of the issue is not available: no title, no text`, () => {
       const { container } = show({ state })
       expect(card(container)?.dataset.part).toBe(state)
-      expect(card(container)?.textContent).toBe('A part of this issue — not available.')
+      expect(card(container)?.textContent).toBe('A part of this issue not available')
       expect(screen.queryByText(/Plan the launch/)).toBeNull()
     })
   }

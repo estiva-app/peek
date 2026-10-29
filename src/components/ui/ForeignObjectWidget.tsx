@@ -667,7 +667,7 @@ function kindOf(reference: string): number | undefined {
 function NotAvailableRow({ naddr }: { naddr: string }) {
   return (
     <Card fill="none" unreadable className="mt-1 px-3 py-2" data-card-gone>
-      <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — not available.</div>
+      <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} not available</div>
     </Card>
   )
 }
@@ -735,7 +735,7 @@ export function ForeignObjectWidget({
       // same way as one you cannot read, so only words true of both (Miky, 15 Oct, OPT-10's /land).
       <Card fill="none" unreadable className="mt-1 px-3 py-2">
         <div className="text-caption text-text-secondary">
-          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — not available.{' '}
+          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} not available{' '}
           {object.openUrl && <OpenInApp object={object} />}
         </div>
       </Card>

@@ -1,6 +1,6 @@
 import { serializeBlockDocument, toRenderTree, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, PartCard as KitPartCard, RichText, ShowMore, thingKindOf } from '@estiva-app/ui'
+import { Button, PartCard as KitPartCard, RichText, thingKindOf } from '@estiva-app/ui'
 import { IconExternalLink } from '@tabler/icons-react'
 import { usePart, type PartView } from '@/api'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
@@ -103,13 +103,13 @@ export function PartCardView({
   ) : undefined
   return (
     <div data-part={view.state} data-part-address={address} data-part-block={block} className="mt-1">
-      <KitPartCard {...frame}>
-        {/* An attachment is never cut (no height reaches Infinity): its card is
-            already the thumbnail, and a click on it opens the full picture as it
-            does on a message's own. ShowMore still draws the row for Open in. */}
-        <ShowMore surface="inset" maxHeight={run.length === 1 && view.block.type === 'attachment' ? Infinity : CUT_AT} action={openIn}>
-          {content}
-        </ShowMore>
+      {/* The kit's PartCard draws Show more and Open in on one row under the
+          blocks, outside its quote bar (ui 0.91.1; Katerina, 30 Oct). An
+          attachment is never cut (no height reaches Infinity): its card is
+          already the thumbnail, and a click on it opens the full picture as it
+          does on a message's own. */}
+      <KitPartCard {...frame} action={openIn} maxHeight={run.length === 1 && view.block.type === 'attachment' ? Infinity : CUT_AT}>
+        {content}
         {/* The words a comment quoted, once they are no longer in its blocks
             (§13.6 `reworded`): said as what the commenter quoted, never as what
             the page said, since the relay does not check a quote (Miky, LEAF-7

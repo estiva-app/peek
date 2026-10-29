@@ -224,7 +224,7 @@ describe('the author’s ✕ on a sent card (4136f999)', () => {
         onRemoveCard={onRemoveCard}
       />,
     )
-    const removes = screen.getAllByRole('button', { name: 'Remove card' })
+    const removes = screen.getAllByRole('button', { name: 'Remove' })
     expect(removes).toHaveLength(2)
     fireEvent.click(removes[1])
     expect(onRemoveCard).toHaveBeenCalledExactlyOnceWith(OTHER)
@@ -232,6 +232,6 @@ describe('the author’s ✕ on a sent card (4136f999)', () => {
 
   it('is not offered to a reader who cannot edit the message', () => {
     render(<MessageBody body={`see ${ISSUE_REF}`} embeds={[{ value: ISSUE, layout: 'detailed' }]} />)
-    expect(screen.queryByRole('button', { name: 'Remove card' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull()
   })
 })
