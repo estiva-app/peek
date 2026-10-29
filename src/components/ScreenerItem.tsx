@@ -5,6 +5,7 @@ import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
 import { Button } from './ui/Button'
+import { Chip } from './ui/Chip'
 import { IconButton } from './ui/IconButton'
 import { hasRelay } from '@/api'
 import { previewText } from '@/lib/textParsing'
@@ -43,6 +44,8 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
         <span className="text-body-2-strong text-text-primary truncate">
           {item.kind === 'file' ? item.title : item.authorName}
         </span>
+        {/* The chip Open work shows on an archived file (peek#515), always in sight here. */}
+        {item.kind === 'file' && item.archived && <Chip type="neutral" label="Archived" className="shrink-0" />}
       </div>
 
       {/* Preview */}
