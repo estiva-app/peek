@@ -425,10 +425,28 @@ interface TiptapNode {
   forEach: (cb: (child: TiptapInlineChild) => void) => void
 }
 
+/**
+ * Whether text written right after a chip's address would be read as more of
+ * it: anything but a space, a sentence's closing punctuation before a space or
+ * the end, or a character an address never holds. The protocol's own rule for
+ * a URL chip (`continuesUrl`, @estiva-app/protocol's editor bridge); a
+ * `nostr:` address runs on the same way into a letter or a digit.
+ */
+function runsOnAddress(next: string): boolean {
+  return next !== '' && !/^(\s|[.,;:!?)\]]+(\s|$))/.test(next) && !/^[<>"'`]/.test(next)
+}
+
+/** The chips written as an address: a reference, a person, a topic, a message or an object by its `nostr:` URI. */
+const ADDRESS_CHIPS = new Set(['reference', 'mention', 'urgentMention', 'topicMention', 'messageMention', 'objectMention'])
+
 /** Serialize a Tiptap inline node (paragraph or list-item paragraph) back to text. */
 export function serializeInline(node: TiptapNode): string {
   let text = ''
+  // Where the last chip's address ended, while nothing has been written after it.
+  let addressEnd = -1
   node.forEach((child) => {
+    const before = text.length
+    const spaced = addressEnd === before
     if (child.type.name === 'highlightTag') { /* skip */ }
     else if (child.type.name === 'hardBreak') {
       text += '\n'
@@ -467,6 +485,15 @@ export function serializeInline(node: TiptapNode): string {
     } else {
       text += serializeTextChild(child)
     }
+    /*
+      A word typed right after a chip, with no space, was written onto its
+      address: `…/p/<id>test` names nothing, and the message drew it as a plain
+      web link (Katerina, 30 Oct). A space keeps the address whole, as the box
+      showed them: the chip, then the word.
+    */
+    if (spaced && runsOnAddress(text.slice(before))) text = `${text.slice(0, before)} ${text.slice(before)}`
+    // A topic with no address is written `[Title] `, its own space after it: only an address runs on.
+    if (text.length > before) addressEnd = ADDRESS_CHIPS.has(child.type.name) && !text.endsWith(' ') ? text.length : -1
   })
   return text
 }
