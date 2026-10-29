@@ -98,7 +98,8 @@ describe('the card a message asks for', () => {
     const c = show(ISSUE_REF)
     expect(drawn).toEqual([])
     expect(rows(c)).toBe(1)
-    expect(c.textContent).toBe('Peek draws the card')
+    // The row alone: its title, and under it what it is (ui 0.91.0).
+    expect(c.textContent).toBe('Peek draws the cardIssue')
   })
 
   it('draws a lone message pointer as its row, not a quote card', () => {
@@ -111,7 +112,7 @@ describe('the card a message asks for', () => {
     const lone = show(ISSUE_URL)
     expect(drawn).toEqual([])
     expect(rows(lone)).toBe(1)
-    expect(lone.textContent).toBe('Peek draws the card')
+    expect(lone.textContent).toBe('Peek draws the cardIssue')
     const mid = show(`see ${ISSUE_URL}, then ship`)
     expect(drawn).toEqual([])
     expect(rows(mid)).toBe(0)

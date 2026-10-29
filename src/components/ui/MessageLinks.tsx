@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { CardUnder, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkState, type LoadingShape } from '@estiva-app/ui'
+import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkState, type LoadingShape } from '@estiva-app/ui'
 import { useConversationBadges } from '@/api'
 import { linkedKindOf, linkStateOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
@@ -114,13 +114,13 @@ export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: 
 
 /**
  * The card under a message (SPEC §13.6.2), or under the box writing one. With
- * `onRemove` it has the kit's ✕: always under a box, on hover under the
- * author's own sent message (`revealOnHover`). Any reader may change the file
+ * `onRemove` it has the kit's ✕, the round one a file has, shown on hover or
+ * focus (always on a screen that cannot hover). Any reader may change the file
  * from it (Decided 16 Oct), each change written and read back
  * (`useHeldCard`). Its comment count shows the dot only for a member with
  * something unread (record membership-replaces-following).
  */
-export function MessageCard({ uri, resolved, compact = false, onRemove, revealOnHover = false, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The ✕ waits for hover or focus: a sent message's. */ revealOnHover?: boolean; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
+export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
@@ -194,7 +194,7 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, revealOn
   return (
     <LinkClicks block>
       <div ref={box} data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr} style={loadingShape?.height ? { minHeight: loadingShape.height } : undefined}>
-        {compact ? <LinkRow link={link} /> : <CardUnder link={link} onRemove={onRemove} revealOnHover={revealOnHover} />}
+        {compact ? <LinkRow link={link} /> : <AttachedCard link={link} onRemove={onRemove} />}
         {error && (
           <FieldLine tone="error" className="mt-1">
             {error}

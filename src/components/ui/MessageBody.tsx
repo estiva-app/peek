@@ -309,7 +309,6 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
             resolved={supplied(card.reference)}
             compact={card.layout !== 'detailed'}
             onRemove={onRemoveCard && card.layout === 'detailed' ? () => onRemoveCard(card.value) : undefined}
-            revealOnHover
             opensAt={writtenUrl.get(card.value)}
           />
         ))}
