@@ -179,6 +179,17 @@ export function useReadStateSize(): ReadStateSize {
 let readPathRuns = 0
 let lastMergeAt: number | undefined
 
+/** How soon an incomplete merge is read again: past a 429's burst, well inside the 30 s interval. */
+export const READ_AGAIN_MS = 10_000
+let readAgainTimer: ReturnType<typeof setTimeout> | undefined
+function readAgainSoon(run: () => void): void {
+  if (readAgainTimer !== undefined) return
+  readAgainTimer = setTimeout(() => {
+    readAgainTimer = undefined
+    run()
+  }, READ_AGAIN_MS)
+}
+
 /** Set by the hook, read at call time. Null disables publishing entirely. */
 let relayOrigin: string | null = null
 let queue: ReadStateQueue | undefined
@@ -254,6 +265,8 @@ export function resetReadStateQueueForTests(): void {
   copyMerge = undefined
   readPathRuns = 0
   lastMergeAt = undefined
+  clearTimeout(readAgainTimer)
+  readAgainTimer = undefined
   frontierCache = undefined
   frontierChanged()
 }
@@ -369,7 +382,8 @@ export function ReadStateSync(): null {
     if (current) {
       void loadMergedReadState(current, currentIdentity(), Date.now(), undefined, 'copy')
         .then((state) => {
-          if (!state || previousRelayMerge !== undefined) return
+          // A copy missing a slot would draw what was read through it as new (PEE-68).
+          if (!state?.complete || previousRelayMerge !== undefined) return
           copyMerge = state.merged
           frontierChanged()
         })
@@ -439,6 +453,17 @@ export function useMergedReadState(): MergedReadStateView {
       if (state.verdict.coordinateConflicted) {
         console.warn('[read-state] our slot coordinate belongs to another installation; rotating')
         identity = rotateSlotId(currentIdentity())
+      }
+      /*
+       * A slot refused for now, with no earlier copy in this tab: what was read
+       * through it is missing from this merge. Judged on it, the Screener and
+       * the dots would show those items as new and drop them at the next merge
+       * (PEE-68). Keep the frontier as it is and read again soon; the slots that
+       * did decrypt are cached, so the next round asks only for the missing one.
+       */
+      if (!state.complete) {
+        readAgainSoon(() => void refresh())
+        return
       }
       previousRelayMerge = state.merged
       frontierChanged()

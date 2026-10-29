@@ -21,7 +21,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@estiva-app/conversation": "^0.21.0",
+    "@estiva-app/conversation": "^0.23.0",
     "@estiva-app/identity": "^0.3.0",
     "@estiva-app/interop": "^0.69.1",
     "@estiva-app/platform": "^0.7.0",

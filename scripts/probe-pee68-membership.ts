@@ -61,7 +61,7 @@ for (const [i, filter] of queries.entries()) {
   const small = (await relay.query([until])) as SignedEvent[]
   const big = (await relay.query([{ ...until, limit: 20_000 }])) as SignedEvent[]
   const oldest = (list: SignedEvent[]) => (list.length ? new Date(Math.min(...list.map((e) => e.created_at)) * 1000).toISOString() : '-')
-  console.log(`filter ${i}: ${JSON.stringify({ ...filter, limit: undefined, since: filter.since })}`)
+  console.log(`filter ${i}: ${JSON.stringify({ ...filter, limit: undefined })}`)
   console.log(`  limit ${MEMBERSHIP_LIMIT}: ${small.length} events, oldest ${oldest(small)}`)
   console.log(`  limit 20000: ${big.length} events, oldest ${oldest(big)}`)
   limited.push(...small)
