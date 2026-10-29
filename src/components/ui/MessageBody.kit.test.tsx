@@ -80,7 +80,8 @@ import { MessageBody } from './MessageBody'
 
 const naddr = (address: string) => ref(address).replace(/^nostr:/, '')
 const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
-const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.textContent)
+// A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
+const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
 
 beforeEach(() => {
   applyCardAction.mockClear()

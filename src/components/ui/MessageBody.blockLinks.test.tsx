@@ -58,7 +58,8 @@ import { MessageBody } from './MessageBody'
 const PART = [{ address: PAGE, block: 'p1' }]
 const show = (body: string, parts?: { address: string; block: string }[]) => render(<MessageBody body={body} parts={parts} />).container
 const part = (c: HTMLElement) => c.querySelector('[data-part]')
-const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.textContent)
+// A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
+const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
 
 beforeEach(() => {
   answers = { [BLOCK_LINK]: PAGE }

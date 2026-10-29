@@ -132,7 +132,8 @@ describe('a project linked in a message', () => {
     resolveObject.mockResolvedValue(project('project-1'))
     const { container, getByText } = render(<MessageCard uri={`nostr:${naddr}`} />)
     await waitFor(() => expect(container.textContent).toContain('Project one'))
-    expect(getByText('ABC')).toBeTruthy()
+    // The key under the title, with what it is (ui 0.91.0).
+    expect(getByText('ABC · Project')).toBeTruthy()
     const issues = [...container.textContent!.matchAll(/Issue (\d)/g)].map((m) => Number(m[1]))
     expect(issues).toEqual([9, 8, 7, 6, 5, 4, 3])
     expect(getByText('3/9')).toBeTruthy()
