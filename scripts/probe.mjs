@@ -240,8 +240,8 @@ try {
         // Only what bears on cost and refusal: a CLOSED or NOTICE, or an OK that says no.
         if (/^\["(CLOSED|NOTICE)"/.test(text) || /^\["OK",[^,]+,false/.test(text)) net.push({ at: Date.now(), kind: 'ws-in', body: text.slice(0, 300) })
         // PROBE_WS_MATCH=<text>[|<text>…]: also an incoming frame that contains any of them — when a live event
-        // reached the tab (OPT-5).
-        else if (process.env.PROBE_WS_MATCH?.split('|').some((match) => text.includes(match))) net.push({ at: Date.now(), kind: 'ws-event', body: text.slice(0, 3000) })
+        // reached the tab (OPT-5). PROBE_WS_MAX=<chars> keeps more of each (the relay sends `tags` last).
+        else if (process.env.PROBE_WS_MATCH?.split('|').some((match) => text.includes(match))) net.push({ at: Date.now(), kind: 'ws-event', body: text.slice(0, Number(process.env.PROBE_WS_MAX ?? 3000)) })
       })
     }
   })
