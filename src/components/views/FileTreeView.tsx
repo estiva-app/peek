@@ -277,10 +277,11 @@ export function JoinedFileRowsView({
   }
   if ('failed' in state) return <TreeLine message="This folder could not be read." />
 
+  // An archived file is Archive's, joined or not (PEE-58): the listing leaves it out, and so does a joined issue read by address.
   const rows = files.filter(
     (file) =>
       file.ref === selectedRef ||
-      (!!file.address && isMember(file.address) && (filter !== 'mine-unread' || unread[file.ref] === true)),
+      (!file.archived && !!file.address && isMember(file.address) && (filter !== 'mine-unread' || unread[file.ref] === true)),
   )
   if (rows.length === 0) {
     // A joined issue still on its way is a row coming, not an empty Folder.

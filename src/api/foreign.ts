@@ -41,6 +41,7 @@ import {
   renameFileAsViewer,
   renameFolderAsViewer,
   resolveFolderContentsAsViewer,
+  archivedChildrenAsViewer,
   listFoldersAsViewer,
   folderLoadAsViewer,
   resolveFolderProjectAsViewer,
@@ -646,6 +647,15 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /** The files archived on their own under live parents — the Archive view's other read (PEE-58). None signed out. */
+  const archivedChildren = useCallback(
+    async (parents: readonly string[], read?: QueryFn): Promise<ForeignObject[]> => {
+      const v = viewer()
+      return v ? archivedChildrenAsViewer(parents, v.relayUrl, v.token, read) : []
+    },
+    [viewer],
+  )
+
   /**
    * Every Folder this viewer can see, for the navigation.
    *
@@ -958,6 +968,7 @@ export function useForeignObjects() {
     resolveFileAddress,
     resolveFolderProject,
     resolveFolderContents,
+    archivedChildren,
     resolveFolderContentsFromDevice,
     conversations,
     listFolders,
