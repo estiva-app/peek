@@ -367,6 +367,8 @@ export function ReplyCard({
                 parts={parts}
                 embeds={embeds}
                 authorName={authorName}
+                // Words, not pickers, on a card where nothing can be changed: an archived file's conversation, a read-only copy.
+                readOnly={readOnly}
                 // The author's ✕, offered where Edit is: an edit with that card `none` and every other kept (§13.6.2).
                 onRemoveCard={isOwnMessage && !readOnly && onEmbedsChange ? (value) => onEmbedsChange(withoutCard(embeds, value)) : undefined}
               />

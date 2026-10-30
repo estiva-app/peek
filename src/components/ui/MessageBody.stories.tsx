@@ -215,6 +215,16 @@ export const ChipWithItsCard: Story = {
 }
 
 /**
+ * The same card where the reader cannot act — an archived file's conversation,
+ * a read-only copy: its status and its owner read as words, never pickers
+ * (Katerina, 30 Oct).
+ */
+export const CardWhereNothingCanChange: Story = {
+  args: { ...ChipWithItsCard.args, readOnly: true },
+  decorators: ChipWithItsCard.decorators,
+}
+
+/**
  * A topic mentioned mid-sentence (RIC-11). The chip is `Reference` drawing a
  * kind:39000 the runtime resolved, so the label is the topic's *current*
  * name — the body carries only its address, and a rename reaches every

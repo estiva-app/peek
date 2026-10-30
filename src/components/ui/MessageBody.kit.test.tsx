@@ -79,7 +79,7 @@ vi.mock('@/api/mentions', () => ({
 import { MessageBody } from './MessageBody'
 
 const naddr = (address: string) => ref(address).replace(/^nostr:/, '')
-const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
+const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean; readOnly?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
 // A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
 const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
 
@@ -140,6 +140,14 @@ describe('the card under the message', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Assignee' }))
     await userEvent.click(await screen.findByRole('option', { name: /Bruno Ferreira/ }))
     await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'assign-issue', value: BRUNO }))
+  })
+
+  it('reads its status and assignee as words where the reader cannot act: an archived or read-only conversation', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD, readOnly: true })
+    expect(screen.queryByRole('combobox')).toBeNull()
+    const card = c.querySelector('[data-card="detailed"]') as HTMLElement
+    expect(card.textContent).toContain('Todo')
+    expect(card.textContent).toContain('Ada Lovelace')
   })
 
   it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {

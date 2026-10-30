@@ -137,10 +137,11 @@ export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: 
  * `onRemove` it has the kit's ✕, the round one a file has, shown on hover or
  * focus (always on a screen that cannot hover). Any reader may change the file
  * from it (Decided 16 Oct), each change written and read back
- * (`useHeldCard`). Its comment count shows the dot only for a member with
- * something unread (record membership-replaces-following).
+ * (`useHeldCard`), except where the reader cannot act: then its values read as
+ * words (`readOnly`; Katerina, 30 Oct). Its comment count shows the dot only
+ * for a member with something unread (record membership-replaces-following).
  */
-export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
+export function MessageCard({ uri, resolved, compact = false, readOnly = false, onRemove, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** Its values as words, never pickers: the conversation it is in is archived or read-only. */ readOnly?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
@@ -164,7 +165,8 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt 
     // answered; only an answer of nothing is remembered on this device (`useHeldCard`).
     link = notAvailable
   } else {
-    link = openingAt(linkStateOf(uri, drawn as ForeignObject, { directory, onAct: act, ...(conversation ? { conversation } : {}) }), opensAt)
+    // Without `onAct` the kit draws the values as words.
+    link = openingAt(linkStateOf(uri, drawn as ForeignObject, { directory, ...(readOnly ? {} : { onAct: act }), ...(conversation ? { conversation } : {}) }), opensAt)
   }
   /*
     The drawn card's shape and height, kept for its placeholder next time. The
