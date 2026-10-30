@@ -385,6 +385,8 @@ describe('a stateless channel’s link (5 October)', () => {
   it('a Ship project’s channel opens the project, to be drawn open under its Folder', async () => {
     projects.resolve.mockResolvedValueOnce({ project: { address: SHIP_PROJECT, slots: { title: { value: 'Launch' } } } })
     mount(`/app/folders/${PROJECT_CHANNEL}`)
+    // On its way there the tab never names the channel's machine id (SFX-2 review).
+    expect(document.title).toBe('Peek')
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(filePath(SHIP_PROJECT, 'Launch')))
     expect(projects.resolve).toHaveBeenCalledWith(PROJECT_CHANNEL)
   })

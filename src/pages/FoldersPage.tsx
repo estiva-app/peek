@@ -109,8 +109,9 @@ export function FoldersPage() {
   }, [id, topic, dmForChannel, navigate])
 
   const selected = folders?.find((folder) => folder.id === id)
-  // As its heading says; "Folders" with none open, and nothing until the listing names it.
-  useTabTitle(selected ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Folders')
+  // As its heading says; "Folders" with none open, and nothing until the listing names it. A channel with no
+  // state is a project's record channel on its way to the project, and its name is a machine id: nothing either.
+  useTabTitle(selected?.hasState ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Folders')
   // "Not a DM" is not "a Folder" (PEE-42): a Folder is one the relay lists to this viewer.
   const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder && !!selected
   // Said only on an answer: a listing that failed is empty without meaning it.
