@@ -6,7 +6,7 @@ import * as ConversationBoxStories from './ConversationBox.stories'
 # MessageCard
 
 One file's card under a message, or under the box writing one (SPEC §13.6.2):
-the kit's `CardUnder`, held live by `useHeldCard`.
+the kit's `AttachedCard`, held live by `useHeldCard`.
 
 <Canvas of={ConversationBoxStories.AnIssueAloneOnItsLine} />
 
@@ -16,7 +16,8 @@ Line**, under the box with its ✕.
 ## When
 
 - Under a sent message, for each `embed` its body names: `MessageBody` places it.
-- Under a message box, for the one file's default card: `BoxCardUnder` places it.
+- Under a message box, for the one file's default card: `ConversationBox`
+  hands it to the kit's `CommentBox`, which puts its ✕ on it.
 
 ## When not
 
@@ -29,16 +30,16 @@ Line**, under the box with its ✕.
 ```tsx
 import { MessageCard } from '@/components/ui/MessageLinks'
 
-// Under a box: the ✕ always shows.
-<MessageCard uri={reference} onRemove={box.remove} />
-// Under the author's own sent message: the ✕ waits for hover or focus.
-<MessageCard uri={card.reference} onRemove={() => remove(card.value)} revealOnHover />
+// Under the author's own sent message: the ✕, shown on hover or focus.
+<MessageCard uri={card.reference} onRemove={() => remove(card.value)} />
+// Under a box: no ✕ of its own; the box's is put on it.
+<MessageCard uri={reference} resolved={supplied} />
 ```
 
 ## What it owns
 
-- **The ✕.** Only with `onRemove`; `revealOnHover` keeps it out of sight until
-  hover or focus (always on touch). A reader who cannot edit the message gets none.
+- **The ✕.** Only with `onRemove`, shown on hover or focus (always on touch). A
+  reader who cannot edit the message gets none.
 - **An old `compact` card.** Drawn as the file's row, as it drew before the
   kit, with no ✕.
 - **Changes from the card.** Any reader may change the file from it, each

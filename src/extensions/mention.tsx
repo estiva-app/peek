@@ -1,6 +1,6 @@
 import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
-import { CaptionedReference, PersonMention, ReferenceNode, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
+import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
@@ -8,31 +8,10 @@ import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
 import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
-import { InlineChip, KindIcon, LinkRow, inlineChipClassName } from '@estiva-app/ui'
+import { KindIcon, inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
 import { Reference } from '@/components/ui/Reference'
-import { linkStateOf } from '@/lib/linked'
-import { isRowOfDecorations } from './loneLinkRows'
-
-/**
- * A line that is only this link, drawn as its row while it is written, as the
- * sent message will draw it (`loneLinkRows`). A click on it while writing is
- * not a way out of the draft, as a chip's is not.
- */
-export function RowInTheBox({ uri, object }: { uri: string; object: ForeignObject | null | undefined }) {
-  return (
-    <span
-      data-box-row
-      className="block cursor-default"
-      onClickCapture={(event) => {
-        if ((event.target as Element).closest('a')) event.preventDefault()
-      }}
-    >
-      <LinkRow link={linkStateOf(uri, object)} preview={false} />
-    </span>
-  )
-}
 
 // ─── @ and !@ ───
 //
@@ -148,40 +127,8 @@ function messageMentionIcon(uri: string | null) {
   return glyph ? <KindIcon kind={glyph} size={14} tone="inherit" /> : <IconMessage size={14} stroke={1.5} />
 }
 
-/*
-  The package's chip, drawn with its own `InlineChip` instead of its node view,
-  so a line that is only this link can draw its row instead (`loneLinkRows`):
-  the package's view takes nothing beside the caption. The same icon, the same
-  `label: snippet` caption and the same 24ch cap as `CaptionedReference`'s view.
-*/
-function MessageMentionView({ node, decorations }: NodeViewProps) {
-  const uri: string = node.attrs.uri ?? ''
-  const row = isRowOfDecorations(decorations)
-  // Asked for only while it draws its row; a chip has its caption.
-  const fetched = useResolvedReferences(row && uri ? [uri] : [])
-  if (row) {
-    return (
-      <NodeViewWrapper as="span">
-        <RowInTheBox uri={uri} object={fetched[uri]} />
-      </NodeViewWrapper>
-    )
-  }
-  const label = String(node.attrs.label ?? '')
-  const snippet = String(node.attrs.snippet ?? '')
-  return (
-    <NodeViewWrapper as="span" className="cursor-default">
-      <InlineChip icon={messageMentionIcon(node.attrs.uri ?? null)} className="max-w-[24ch]">
-        <span className="truncate">{snippet ? `${label}: ${snippet}` : label}</span>
-      </InlineChip>
-    </NodeViewWrapper>
-  )
-}
-
 export const MessageMention = CaptionedReference.extend({
   name: 'messageMention',
-  addNodeView() {
-    return ReactNodeViewRenderer(MessageMentionView, { as: 'span' })
-  },
 }).configure({
   icon: <IconMessage size={14} stroke={1.5} />,
   iconFor: messageMentionIcon,
@@ -283,7 +230,7 @@ export const FileMention = Mention.extend({
 /** What a story or a test hands the composer instead of asking the relay: `ComposeBox`'s `resolvedObjects`. */
 type ObjectMentionStorage = { supplied?: Record<string, ForeignObject> }
 
-function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
+function ObjectMentionView({ node, editor }: NodeViewProps) {
   const uri: string = node.attrs.uri
   const storage = (editor.storage as unknown as { objectMention?: ObjectMentionStorage }).objectMention
   const supplied = storage?.supplied?.[uri] ?? storage?.supplied?.[uri.replace(/^nostr:/, '')]
@@ -292,32 +239,10 @@ function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
   const object = supplied ?? fetched[uri]
   return (
     <NodeViewWrapper as="span">
-      {isRowOfDecorations(decorations) ? <RowInTheBox uri={uri} object={object} /> : <Reference uri={uri} object={object} link={false} />}
+      <Reference uri={uri} object={object} link={false} />
     </NodeViewWrapper>
   )
 }
-
-/**
- * An app URL in the composer, as the chip of what it names — OPT-19 (Miky,
- * 14 Oct: a message keeps the link as pasted, and every app link in the box
- * reads as its chip). The package's URL chip (`ReferenceNode` with `href`),
- * which `LinkChips` makes from a pasted, typed or passage URL and
- * `serializeInline` writes back as the URL; drawn as `objectMention` is, its
- * row alone on its line. A link to one block reads as its file's chip, with
- * the block live under the box (Decided 16 Oct). Until the URL is answered it
- * reads as the URL.
- */
-function UrlChipView(props: NodeViewProps) {
-  const href = typeof props.node.attrs.href === 'string' ? props.node.attrs.href : ''
-  if (props.node.attrs.uri) return <ObjectMentionView {...props} />
-  return <NodeViewWrapper as="span">{href}</NodeViewWrapper>
-}
-
-export const UrlChip = ReferenceNode.extend({
-  addNodeView() {
-    return ReactNodeViewRenderer(UrlChipView, { as: 'span' })
-  },
-})
 
 /**
  * Another app's object in the composer — an issue the launcher just created, a
