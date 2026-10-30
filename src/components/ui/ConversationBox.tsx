@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createContext, useContext, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { MAX_LINKS_ASKED, type ForeignObject } from '@estiva-app/interop'
 import {
@@ -13,12 +13,11 @@ import {
   type ComposerLabels,
 } from '@estiva-app/conversation'
 import { referenceOfLink, type EditorDocument, type Embed } from '@estiva-app/protocol'
-import { Kbd } from '@estiva-app/ui'
+import { Kbd, LinkChip } from '@estiva-app/ui'
 import {
   CommentBox,
   commentBoxRows,
   LinkChips,
-  LinkPlaces,
   type BoxFile,
   type BoxSentUnder,
   type BoxUnder,
@@ -51,7 +50,8 @@ import { isWebLink } from '@/lib/referenceLink'
 import type { RefusedEdit } from '@/lib/refusedEdits'
 import { HighlightTag } from '@/extensions/highlight'
 import { extractResolutionFromText, ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
-import { RowInTheBox, referenceRowIcon } from '@/extensions/mention'
+import { referenceRowIcon } from '@/extensions/mention'
+import { linkStateOf } from '@/lib/linked'
 import { mentionDirectory } from './MentionMenu'
 import { MessageCard, MessagePart } from './MessageLinks'
 import { PartCard } from './PartCard'
@@ -101,11 +101,11 @@ export type BoxKind = 'conversation' | 'reply'
 
 // Every app link reads as its chip, pasted, typed or inside a passage, and is sent as the URL it was (OPT-19).
 // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-is-stored-as-the-url-a-person-wrote.md
+// No `LinkPlaces`: in a message's box every link is a chip while it is written, alone on its line too; its row, or
+// nothing behind its card, comes once it is sent (the kit's `LinkPlaces` page; Katerina, 30 Oct).
 // A module constant, so the editor `keepCommentBoxWarm` built ahead is the one the next empty box takes.
 export const BOX_EXTENSIONS = [
   LinkChips.configure({ referenceOf: (url: string) => referenceOfLink(url, knownLinkTarget), ask: askLinks }),
-  // A line that is only a link draws its row as it is written, as the sent message will.
-  LinkPlaces,
   ResolutionBlock,
   HighlightTag,
 ]
@@ -199,20 +199,32 @@ function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUn
   }
 }
 
+const isPerson = (uri: string) => /^nostr:npub1/i.test(uri)
+
+/** A click on the chip's link while writing is held: it is not a way out of the draft. */
+const holdLink = (event: MouseEvent) => {
+  if ((event.target as Element).closest('a')) event.preventDefault()
+}
+
 /**
- * A `nostr:` reference or an app link the box holds, as the sent message's
- * chip — `Reference`, with `link={false}`: a click while writing is not a way
- * out of the draft. Alone on its line it draws its row, as it will once sent.
- * An app link not answered yet reads as the URL it was written as.
+ * A `nostr:` reference or an app link the box holds, as the kit's `LinkChip`,
+ * from the same lookup the sent message's chip reads (Katerina, 30 Oct: one
+ * chip in every box, for a pasted link and a `[` pick alike). A chip wherever it
+ * sits. While writing a click does not follow it and hovering shows no card. A
+ * person is their name's chip, as in the sent message. An app link not
+ * answered yet reads as the URL it was written as.
  */
-export function BoxReference({ uri, href, place }: ReferenceViewProps) {
+export function BoxReference({ uri, href }: ReferenceViewProps) {
   const supplied = suppliedFor(useContext(Supplied), uri)
-  // Asked for only when nothing was handed in; the hook is called either way.
-  const fetched = useResolvedReferences(supplied || !uri ? [] : [uri])
+  // Asked for only when nothing was handed in, and never for a person, whom the directory names; the hook is called either way.
+  const fetched = useResolvedReferences(supplied || !uri || isPerson(uri) ? [] : [uri])
   if (!uri) return <span>{href}</span>
-  const object = supplied ?? fetched[uri]
-  if (place === 'row' || place === 'card') return <RowInTheBox uri={uri} object={object} />
-  return <Reference uri={uri} object={object} link={false} />
+  if (isPerson(uri)) return <Reference uri={uri} link={false} />
+  return (
+    <span onClickCapture={holdLink} onAuxClickCapture={holdLink}>
+      <LinkChip link={linkStateOf(uri, supplied ?? fetched[uri])} preview={false} />
+    </span>
+  )
 }
 
 export interface ConversationBoxProps {

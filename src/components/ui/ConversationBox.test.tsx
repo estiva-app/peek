@@ -7,12 +7,14 @@
  * writing into the box last used, and a refusal said under the box.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { Editor } from '@tiptap/react'
+import type { ForeignObject } from '@estiva-app/interop'
 import { addrToNaddr, encodeNpub } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { DebugProvider } from '@/lib/debug'
 import { createDraftStore, draftKeys } from '@/lib/drafts'
 import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
@@ -48,7 +50,7 @@ const ADA = 'ad'.repeat(32)
 const ISSUE = `30851:${'b3'.repeat(32)}:launcher-issue`
 
 /** A box opening with `text` as its draft (jsdom cannot type into the editor), and its editor and Send button. */
-async function boxWith(text: string, answer: SendAnswer = { accepted: true }) {
+async function boxWith(text: string, answer: SendAnswer = { accepted: true }, resolvedObjects?: Record<string, ForeignObject>) {
   const onSend = vi.fn<(payload: SendPayload, away: () => boolean) => Promise<SendAnswer>>(async () => answer)
   const drafts = createDraftStore(memoryStorage())
   const key = draftKeys.container('topic-1')
@@ -57,7 +59,7 @@ async function boxWith(text: string, answer: SendAnswer = { accepted: true }) {
     <MemoryRouter>
       <DebugProvider>
         <PeekDataProvider>
-          <ConversationBox draftKey={key} drafts={drafts} onSend={onSend} contextLabel="#Mobile rewrite" />
+          <ConversationBox draftKey={key} drafts={drafts} onSend={onSend} contextLabel="#Mobile rewrite" resolvedObjects={resolvedObjects} />
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
@@ -69,7 +71,7 @@ async function boxWith(text: string, answer: SendAnswer = { accepted: true }) {
   })) as HTMLElement & { editor?: Editor }
   const send = screen.getByRole('button', { name: 'Send' })
   await waitFor(() => expect(send).toBeEnabled())
-  return { onSend, send, editor: dom.editor!, unmount }
+  return { onSend, send, editor: dom.editor!, dom, unmount }
 }
 
 describe('ConversationBox — what a send carries', () => {
@@ -144,5 +146,25 @@ describe('ConversationBox — what a send carries', () => {
     // Moving to another topic takes the box away before the relay has answered.
     unmount()
     expect(away?.()).toBe(true)
+  })
+})
+
+describe('ConversationBox — a link while it is written', () => {
+  const resolved = { [recorded.naddr]: recorded.object as unknown as ForeignObject }
+
+  it('draws a link alone on its line as the kit’s chip, its key and title, not as its row', async () => {
+    const { dom } = await boxWith(`Words on the line above.
+nostr:${recorded.naddr}`, undefined, resolved)
+    const chip = await within(dom).findByRole('link', { name: /A project description does not resolve/ })
+    expect(chip).toHaveTextContent('RIC-9')
+    // A row says what it is under its title ("RIC-9 · Issue"); a chip does not.
+    expect(within(dom).queryByText(/RIC-9 · /)).toBeNull()
+  })
+
+  it('does not follow the chip when it is clicked while writing', async () => {
+    const { dom } = await boxWith(`Filed it: nostr:${recorded.naddr} `, undefined, resolved)
+    const chip = await within(dom).findByRole('link', { name: /A project description does not resolve/ })
+    // `fireEvent` answers false when the click's default was prevented.
+    expect(fireEvent.click(chip)).toBe(false)
   })
 })
