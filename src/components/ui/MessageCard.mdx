@@ -40,6 +40,11 @@ import { MessageCard } from '@/components/ui/MessageLinks'
 
 - **The ✕.** Only with `onRemove`, shown on hover or focus (always on touch). A
   reader who cannot edit the message gets none.
+- **Never a blank.** While it loads, the shape it drew last time on this device;
+  a file that cannot be read, or a read that failed (a busy relay, the network),
+  says "not available" in the card's place (Katerina, 30 Oct). A failed read is
+  asked again quietly, longer apart each time, and the card draws once the relay
+  answers; no Try again button.
 - **An old `compact` card.** Drawn as the file's row, as it drew before the
   kit, with no ✕.
 - **Changes from the card.** Any reader may change the file from it, each

@@ -142,14 +142,14 @@ export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: 
  */
 export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt }: { uri: string; resolved?: ForeignObject; /** An old message's `compact` card: the file's row under the message, as it drew before the kit. */ compact?: boolean; /** ✕: takes the card off. */ onRemove?: () => void; /** The URL the body wrote for its file: a click opens it, as the file's chip would (LTX-6). */ opensAt?: string }) {
   const naddr = uri.replace(/^nostr:/i, '')
-  const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
+  const { object, drawn, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
   const conversation = useConversationOf(ready)
   const act = useCallback((actionId: string, value: string) => {
     if (!busy) void onAct(actionId, value)
   }, [busy, onAct])
 
-  let link: LinkState | null
+  let link: LinkState
   let loadingShape: CardShape | undefined
   const notAvailable: LinkState = { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
   if (object === 'loading') {
@@ -159,8 +159,10 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt 
     loadingShape = rememberedUnavailable(naddr) || compact ? undefined : cardShapeOf(naddr, kind)
     link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: loadingShape }
   } else if (object === null) {
-    // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
-    link = gone || rememberedUnavailable(naddr) ? notAvailable : null
+    // An answer of nothing, or a read that failed (a busy relay, the network): "not available", never a blank where the
+    // card was (Katerina, 30 Oct). A failed read is asked again quietly (`useHeldObject`) and the card draws once it is
+    // answered; only an answer of nothing is remembered on this device (`useHeldCard`).
+    link = notAvailable
   } else {
     link = openingAt(linkStateOf(uri, drawn as ForeignObject, { directory, onAct: act, ...(conversation ? { conversation } : {}) }), opensAt)
   }
@@ -195,7 +197,6 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt 
       clearTimeout(settle)
     }
   }, [naddr, shapeKey, kindOfCard])
-  if (!link) return null
   return (
     <LinkClicks block>
       <div ref={box} data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr} style={loadingShape?.height ? { minHeight: loadingShape.height } : undefined}>

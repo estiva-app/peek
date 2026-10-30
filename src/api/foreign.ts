@@ -11,7 +11,8 @@
  * throwing. A reference that cannot be resolved must degrade to plain text; a
  * message is never broken because an attachment failed.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { retryDelayMs } from '@estiva-app/platform'
 import { validToken } from '@/auth/estivaId'
 import { heldToken } from '@/auth/heldSession'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
@@ -396,7 +397,8 @@ function pooledResolve(reference: string, relayUrl: string, token: StoredToken):
  * One reference's object for a message's widget, held for the tab: drawn at
  * once when it was resolved before, asked again only once it is older than
  * {@link HELD_OBJECT_FRESH_MS} or when its file changes while it is drawn, and
- * `reload` after an action. `null` asks for nothing and answers null.
+ * `reload` after an action. A read that failed with nothing held is asked again
+ * quietly while it is drawn. `null` asks for nothing and answers null.
  */
 export function useHeldObject(reference: string | null): {
   object: ForeignObject | null | 'loading'
@@ -431,6 +433,28 @@ export function useHeldObject(reference: string | null): {
   const folder = entry?.value && !entry.value.unreachable ? entry.value.folder : undefined
   const address = entry?.value?.address
   useEffect(() => (key ? followHeld(key, folder, address, load) : undefined), [key, folder, address, load])
+
+  /*
+    A read that failed with nothing held (a busy relay, the network) is asked
+    again quietly while something draws it, 5 s after the first failure and
+    twice as long after each next one, up to a minute (`retryDelayMs`), so the
+    card draws as soon as the relay answers (Katerina, 30 Oct). An answer, even
+    one of nothing, is not asked again; reads from the same tick share one
+    request (`pooledResolve`).
+  */
+  const failures = useRef<{ key: string | null; count: number }>({ key: null, count: 0 })
+  const failed = !!key && entry?.value === undefined && entry?.failure !== undefined && !entry.inflight
+  useEffect(() => {
+    if (!key) return
+    if (failures.current.key !== key) failures.current = { key, count: 0 }
+    if (!failed) {
+      if (entry?.value !== undefined) failures.current.count = 0
+      return
+    }
+    failures.current.count += 1
+    const timer = setTimeout(() => void heldObjects.read(key, load), retryDelayMs(failures.current.count, entry?.failure))
+    return () => clearTimeout(timer)
+  }, [failed, entry, key, load])
 
   const reload = useCallback(async () => {
     if (key) await heldObjects.read(key, load)

@@ -104,6 +104,63 @@ describe('a screen of widgets', () => {
   })
 })
 
+describe('a widget whose read failed', () => {
+  /** The relay's read: refused while `busy`, else each reference's object, or nothing for `none`. */
+  async function relayThat(answer: () => 'busy' | 'object' | 'none') {
+    const nostr = await import('@/nostr/foreign')
+    return vi.spyOn(nostr, 'resolveObjectsAsViewer').mockImplementation(async (references) => {
+      relay.resolves.push(...references)
+      const now = answer()
+      if (now === 'busy') throw new Error('relay busy')
+      return Object.fromEntries(references.map((reference) => [reference, now === 'none' ? null : objectFor(reference)]))
+    })
+  }
+  // A read asked from a timer goes out a tick later (`pooledResolve`), which fake time counts as 1 ms.
+  const after = async (ms: number) => {
+    await settle(ms)
+    await settle(1)
+  }
+
+  it('is asked again quietly, longer apart each time, and draws once the relay answers', async () => {
+    let answer: 'busy' | 'object' = 'busy'
+    const spy = await relayThat(() => answer)
+    try {
+      const { result } = renderHook(() => useHeldObject(ISSUE))
+      await settle()
+      expect(result.current.object).toBeNull()
+      expect(result.current.gone).toBe(false)
+      expect(relay.resolves).toEqual([ISSUE])
+      // 5 s after the first failure, then 10 s after the second.
+      await after(5_000)
+      expect(relay.resolves).toEqual([ISSUE, ISSUE])
+      await after(9_000)
+      expect(relay.resolves).toEqual([ISSUE, ISSUE])
+      answer = 'object'
+      await after(1_000)
+      expect(relay.resolves).toEqual([ISSUE, ISSUE, ISSUE])
+      expect(titleOf(result.current.object)).toBe('Old title')
+      // Answered: asked no more.
+      await after(120_000)
+      expect(relay.resolves).toEqual([ISSUE, ISSUE, ISSUE])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('is not asked again once the relay answered that there is nothing there', async () => {
+    const spy = await relayThat(() => 'none')
+    try {
+      const { result } = renderHook(() => useHeldObject(ISSUE))
+      await settle()
+      expect(result.current.gone).toBe(true)
+      await after(120_000)
+      expect(relay.resolves).toEqual([ISSUE])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
 describe('a widget follows its file', () => {
   it('joins its file’s Folder for field changes, and draws a rename from one read of that object', async () => {
     const { result } = renderHook(() => useHeldObject(ISSUE))

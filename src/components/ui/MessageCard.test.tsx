@@ -12,13 +12,13 @@ vi.mock('@/api', async () => {
     hasRelay: true,
     isFromCopy: () => false,
     useForeignObjects: () => ({ resolveObject, applyAction: vi.fn() }),
-    // The tab's held answer (OPT-3), reduced to a resolve on mount.
+    // The tab's held answer (OPT-3), reduced to a resolve on mount; a read that fails answers null, not gone.
     useHeldObject: (reference: string | null) => {
-      const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+      const [held, setHeld] = useState<{ object: unknown; failed?: true }>({ object: reference ? 'loading' : null })
       useEffect(() => {
-        if (reference) void resolveObject(reference).then(setObject)
+        if (reference) void resolveObject(reference).then((object: unknown) => setHeld({ object }), () => setHeld({ object: null, failed: true }))
       }, [reference])
-      return { object, reload: async () => {}, gone: !!reference && object === null }
+      return { object: held.object, reload: async () => {}, gone: !!reference && held.object === null && !held.failed }
     },
     useWorkspaceDirectory: () => ({}),
     useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -102,6 +102,14 @@ describe('an issue card under a message keeps its height while it loads', () => 
     const again = render(<MessageCard uri={`nostr:${issue}`} />)
     expect(again.container.querySelector('[aria-busy]')).toBeNull()
     expect(again.container.textContent).toContain('not available')
+  })
+})
+
+describe('an issue card whose read failed', () => {
+  it('draws "not available", never a blank where the card was, when this device remembers nothing of it', async () => {
+    resolveObject.mockRejectedValue(new Error('relay busy'))
+    const { container } = render(<MessageCard uri={`nostr:${issueNaddr('issue-5')}`} />)
+    await waitFor(() => expect(container.textContent).toBe('Issue not available'))
   })
 })
 
