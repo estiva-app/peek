@@ -19,6 +19,8 @@ const FOLDER = '22222222-2222-4222-8222-222222222222'
 
 const relay = vi.hoisted(() => ({
   titles: {} as Record<string, string>,
+  /** A file's archived file above it, read only when asked `archivedWith`, as interop does. */
+  archivedAbove: {} as Record<string, string>,
   resolves: [] as string[],
   joins: [] as { folder: string; listener: (event: SignedEvent) => void; left: boolean }[],
 }))
@@ -28,9 +30,11 @@ vi.mock('@/nostr/foreign', async () => ({
     relay.resolves.push(reference)
     return objectFor(reference)
   },
-  resolveObjectsAsViewer: async (references: string[]) => {
+  // (references, relayUrl, token, source, options): the options say whether a file's parents are read.
+  resolveObjectsAsViewer: async (references: string[], ...rest: unknown[]) => {
     relay.resolves.push(...references)
-    return Object.fromEntries(references.map((reference) => [reference, objectFor(reference)]))
+    const options = rest[3] as { archivedWith?: boolean } | undefined
+    return Object.fromEntries(references.map((reference) => [reference, objectFor(reference, options?.archivedWith)]))
   },
 }))
 vi.mock('@/nostr/useLiveFile', () => ({
@@ -58,8 +62,10 @@ vi.mock('@/nostr/useOpenWorkSync', () => ({
 import { clearListingCaches } from '@/platform/listingCache'
 import { OpenWorkProvider, useOpenWork } from './openWork'
 
-function objectFor(reference: string): ForeignObject {
+function objectFor(reference: string, archivedWith = false): ForeignObject {
+  const above = archivedWith ? relay.archivedAbove[reference] : undefined
   return {
+    ...(above ? { archived: { by: OWNER, at: 1, with: above } } : {}),
     ref: reference,
     address: reference,
     eventId: 'e'.repeat(64),
@@ -88,6 +94,7 @@ async function settle(ms = 0) {
 beforeEach(() => {
   vi.useFakeTimers()
   relay.titles = { [TOPIC]: 'Planning' }
+  relay.archivedAbove = {}
   relay.resolves = []
   relay.joins = []
   clearListingCaches()
@@ -109,6 +116,23 @@ describe('Open work follows its files (PEE-28)', () => {
     await settle(300)
     expect(relay.resolves).toEqual([TOPIC])
     expect(titles(result.current.items)).toEqual(['Planning and sequencing'])
+  })
+
+  it('marks a file archived with the project above it, and keeps the mark when a change reads it again', async () => {
+    const PROJECT = `30850:${OWNER}:project-1`
+    relay.archivedAbove = { [TOPIC]: PROJECT }
+    const archivedWith = (items: ReturnType<typeof useOpenWork>['items']) =>
+      items.map((item) => (item.kind === 'file' ? item.object.archived?.with : undefined))
+    const wrapper = ({ children }: { children: ReactNode }) => <OpenWorkProvider>{children}</OpenWorkProvider>
+    const { result } = renderHook(() => useOpenWork(), { wrapper })
+    await settle()
+    expect(archivedWith(result.current.items)).toEqual([PROJECT])
+
+    relay.resolves = []
+    act(() => relay.joins.filter((j) => j.folder === FOLDER && !j.left).forEach((j) => j.listener(renamed())))
+    await settle(300)
+    expect(relay.resolves).toEqual([TOPIC])
+    expect(archivedWith(result.current.items)).toEqual([PROJECT])
   })
 
   it('stops following when Open work is gone', async () => {
