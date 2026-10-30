@@ -18,7 +18,7 @@
  * The dwell tests that were here went with it, to `FilePage.test.tsx`: this
  * page marks nothing read, because a listing is not a reading.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -290,8 +290,11 @@ describe('FoldersPage opens a file at its own address', () => {
 
   it('names the open Folder in the browser tab, and leaving it does not leave its name behind (SFX-2)', async () => {
     relay.files = [topic]
+    // A channel drawn as a Folder page with no project (FOL-9): the tab names it as its heading does.
+    mount(`/app/folders/${RECORD_CHANNEL}`)
+    await waitFor(() => expect(document.title).toBe('project-0804b906 – Peek'))
+    cleanup()
     mount(`/app/folders/${FOLDER}`)
-    await waitFor(() => expect(document.title).toBe('Folders – Peek'))
     await userEvent.click(screen.getByText('FOL-15 test topic 2'))
     expect(document.title).toBe('Peek')
   })
