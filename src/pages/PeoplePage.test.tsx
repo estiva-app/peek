@@ -25,9 +25,15 @@ const person = (id: string, name: string, extra: Partial<PeopleListItem> = {}): 
   ...extra,
 })
 
-function mount({ selectedId = null as string | null, people = [] as PeopleListItem[], starred = [] as { id: string; name: string; isUnread?: boolean; isUrgent?: boolean }[] } = {}) {
+function mount({
+  selectedId = null as string | null,
+  people = [] as PeopleListItem[],
+  starred = [] as { id: string; name: string; isUnread?: boolean; isUrgent?: boolean }[],
+  inOpenWork = undefined as string[] | undefined,
+} = {}) {
   const onSelect = vi.fn()
   const onHideDm = vi.fn()
+  const onToggleOpenWork = vi.fn()
   render(
     <DebugProvider>
       <MemoryRouter>
@@ -39,11 +45,13 @@ function mount({ selectedId = null as string | null, people = [] as PeopleListIt
           selectedId={selectedId}
           onSelect={onSelect}
           onHideDm={onHideDm}
+          openWorkActionFor={inOpenWork ? (id) => (inOpenWork.includes(id) ? 'remove' : 'add') : undefined}
+          onToggleOpenWork={inOpenWork ? onToggleOpenWork : undefined}
         />
       </MemoryRouter>
     </DebugProvider>,
   )
-  return { onSelect, onHideDm }
+  return { onSelect, onHideDm, onToggleOpenWork }
 }
 
 const linkFor = (name: string) => within(screen.getByTestId('left')).getByText(name).closest('a')!
@@ -100,5 +108,35 @@ describe('People rows on NavItem', () => {
     expect(linkFor('Juan Foley').querySelector('[data-unread]')).not.toBeNull()
     expect(linkFor('Alice Johnson').querySelector('[data-urgent]')).not.toBeNull()
     expect(linkFor('Jake Walter').querySelector('[data-unread], [data-urgent]')).toBeNull()
+  })
+})
+
+describe('Open work on a person’s ⋮ (Katerina, 30 October)', () => {
+  it('a person not in Open work is added from their ⋮, without selecting them', () => {
+    const { onToggleOpenWork, onSelect } = mount({ people: [person('greg', 'Greg Bothman')], inOpenWork: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'More options for Greg Bothman' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add to Open work' }))
+    expect(onToggleOpenWork).toHaveBeenCalledWith('greg')
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('a person already in Open work offers Remove instead', () => {
+    mount({ people: [person('greg', 'Greg Bothman')], inOpenWork: ['greg'] })
+    fireEvent.click(screen.getByRole('button', { name: 'More options for Greg Bothman' }))
+    expect(screen.getByRole('menuitem', { name: 'Remove from Open work' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Add to Open work' })).toBeNull()
+  })
+
+  it('a starred person has the ⋮ for it too, with Open work and no Hide', () => {
+    const { onToggleOpenWork } = mount({ starred: [{ id: 'amie', name: 'Amie Miles' }], inOpenWork: [] })
+    fireEvent.click(screen.getByRole('button', { name: 'More options for Amie Miles' }))
+    expect(screen.queryByRole('menuitem', { name: /Hide conversation/ })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add to Open work' }))
+    expect(onToggleOpenWork).toHaveBeenCalledWith('amie')
+  })
+
+  it('where adding cannot succeed, no row offers it', () => {
+    mount({ people: [person('greg', 'Greg Bothman', { canHide: false })], starred: [{ id: 'amie', name: 'Amie Miles' }] })
+    expect(screen.queryByRole('button', { name: /More options/ })).toBeNull()
   })
 })

@@ -94,6 +94,33 @@ export function useOpenWorkFiles(): OpenWorkFiles {
   )
 }
 
+/** Which people's DMs are in Open work, and the toggle. */
+export interface OpenWorkDms {
+  /** By the partner's pubkey, off the list (PEE-6), as the Screener reads it. */
+  has: (dmId: string) => boolean
+  add: (dmId: string) => void
+  remove: (dmId: string) => void
+}
+
+/**
+ * Open work for DMs — the DM's own menu, on its header and its People row
+ * (Katerina, 30 October). Until then the Screener's Open was the only way in,
+ * so a DM read before it was triaged could never be added.
+ *
+ * Null where adding could not succeed: without the provider (a story, a test)
+ * or without a relay, whose list is the only one there is.
+ */
+export function useOpenWorkDms(): OpenWorkDms | null {
+  const openWork = useOpenWorkIfMounted()
+  const dmIds = openWork?.dmIds
+  const add = openWork?.addDm
+  const remove = openWork?.removeDm
+  return useMemo(
+    () => (hasRelay && dmIds && add && remove ? { has: (dmId: string) => dmIds.has(dmId), add, remove } : null),
+    [dmIds, add, remove],
+  )
+}
+
 /** True while any Desk list is still unsettled (drives the sidebar skeleton). */
 export function useDeskLoading(): boolean {
   const openWorkLoading = useOpenWork().isLoading

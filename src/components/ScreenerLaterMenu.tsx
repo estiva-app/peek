@@ -1,17 +1,13 @@
+import { useState } from 'react'
 import { Menu, MenuItem, MenuSection } from '@estiva-app/ui'
 import { Button } from './ui/Button'
-
-/** "Later" reminder options (user request 2026-07-15). Each returns an
- *  absolute timestamp after which the Screener item reappears. */
-const OPTIONS: { label: string; ms: number }[] = [
-  { label: 'In 1 hour', ms: 60 * 60 * 1000 },
-  { label: 'In 3 hours', ms: 3 * 60 * 60 * 1000 },
-  { label: 'Tomorrow', ms: 24 * 60 * 60 * 1000 },
-  { label: 'In a week', ms: 7 * 24 * 60 * 60 * 1000 },
-]
+import { MetaText } from './ui/MetaText'
+import { laterMenuTime, laterOptions } from '@/lib/laterTimes'
 
 /**
- * The "Later" button + its reminder-duration menu.
+ * The "Later" button + its reminder-duration menu (user request 2026-07-15).
+ * Each choice is an absolute instant after which the Screener item reappears,
+ * and its row says when that is (Katerina, 30 October): `laterOptions`.
  *
  * The menu owns its trigger (`@estiva-app/ui` 0.10.0), so everything this
  * file used to do to open one is gone: the wrapper div that existed only to
@@ -21,10 +17,23 @@ const OPTIONS: { label: string; ms: number }[] = [
  * the placement, the focus return and the first-row highlight, and a
  * `MenuItem` closes the menu by itself.
  */
-export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => void }) {
+export function ScreenerLaterMenu({
+  onPick,
+  onOpenChange,
+}: {
+  onPick: (untilMs: number) => void
+  /** Told when the menu opens and closes, so the row can stay lit under it. */
+  onOpenChange?: (open: boolean) => void
+}) {
+  // Read when the menu opens, so the times it shows are the ones a pick gets.
+  const [now, setNow] = useState(() => Date.now())
   return (
     <Menu
       trigger={<Button variant="outlined" size="small">Later</Button>}
+      onOpenChange={(open) => {
+        if (open) setNow(Date.now())
+        onOpenChange?.(open)
+      }}
       className="min-w-[160px]"
       // The 4px is the rows' content's; on `className` it added to the
       // package's 8px from 0.12.6 on (migration docs D68, Finding 60).
@@ -38,8 +47,13 @@ export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => voi
           rows it gets. The 12px inset goes with the override — the package
           insets a row by 8px, as it does in all six other menus. */}
       <MenuSection label="Remind me">
-        {OPTIONS.map((o) => (
-          <MenuItem key={o.label} label={o.label} onClick={() => onPick(Date.now() + o.ms)} />
+        {laterOptions(now).map((o) => (
+          <MenuItem
+            key={o.label}
+            label={o.label}
+            trailing={<MetaText>{laterMenuTime(o.untilMs, now)}</MetaText>}
+            onClick={() => onPick(o.untilMs)}
+          />
         ))}
       </MenuSection>
     </Menu>

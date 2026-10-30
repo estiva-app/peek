@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { Avatar, PreviewCard } from '@estiva-app/ui'
+import { Avatar, Card, PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
@@ -14,11 +14,16 @@ import type { ScreenerItem as ScreenerItemData } from '@/api'
 
 interface ScreenerItemProps {
   item: ScreenerItemData
-  /** "Open" → add to Open work. */
+  /** "Open work" → add to Open work. */
   onOpen?: (id: string) => void
   /** "Later" → snooze until the chosen absolute timestamp. */
   onLater?: (id: string, untilMs: number) => void
   onDismiss?: (id: string) => void
+  /**
+   * A click on the row, or on its hover card: the item on its own page, to be
+   * read (Katerina, 30 October). Leave it out and neither answers a click.
+   */
+  onRead?: (id: string) => void
   /**
    * What the hover card shows. The app leaves it out and gets
    * `ScreenerPreviewContent`, which reads the conversation. A story passes
@@ -29,10 +34,33 @@ interface ScreenerItemProps {
 }
 
 /** A single incoming item in the Desk Screener: who/what it is, a two-line preview,
- *  and the Open / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
-export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: ScreenerItemProps) {
+ *  and the Open work / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
+export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview }: ScreenerItemProps) {
+  // The Later menu opens outside the row, so the row would go dark under its own menu.
+  const [menuOpen, setMenuOpen] = useState(false)
+  /*
+    The row's buttons keep their own clicks, and so does the Later menu: it is
+    a portal, outside the row in the page, but React still hands its clicks up
+    to the row.
+  */
+  const readFromRow = onRead
+    ? (event: MouseEvent<HTMLDivElement>) => {
+        const target = event.target as Element
+        if (!event.currentTarget.contains(target) || target.closest('button')) return
+        onRead(item.id)
+      }
+    : undefined
+
   const row = (
-    <div className="flex flex-col p-2 rounded-lg transition-colors hover:bg-bg-hover has-[button:hover]:bg-transparent">
+    // A card in a feed (the package's `hover="fill"`): it lights when pointed at, and opens when clicked.
+    <Card
+      fill="none"
+      quietUntilHover
+      hover={onRead ? 'fill' : 'none'}
+      hovered={menuOpen}
+      onClick={readFromRow}
+      className="flex flex-col p-2"
+    >
       {/* Item header */}
       <div className="flex items-center gap-2">
         {item.kind === 'file' ? (
@@ -57,10 +85,11 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
       {/* Previous leading icons (dropped for visual calm): Open → IconPlus, Later → IconHistory */}
       <div className="flex items-center justify-between pl-6 pt-3">
         <div className="flex items-center gap-2">
+          {/* It says where the item goes: "Open" read as "open it" (Katerina, 30 October). */}
           <Button variant="primary" size="small" onClick={() => onOpen?.(item.id)}>
-            Open
+            Open work
           </Button>
-          <ScreenerLaterMenu onPick={(untilMs) => onLater?.(item.id, untilMs)} />
+          <ScreenerLaterMenu onPick={(untilMs) => onLater?.(item.id, untilMs)} onOpenChange={setMenuOpen} />
         </div>
         <IconButton
           variant="outlined"
@@ -71,7 +100,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
           <IconX size={16} stroke={1.5} />
         </IconButton>
       </div>
-    </div>
+    </Card>
   )
 
   /*
@@ -95,9 +124,24 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
     a story draws the card at all (UIG-17).
   */
   if (!hasRelay && !preview) return row
+  const content = preview ?? <ScreenerPreviewContent itemId={item.id} />
   return (
     <PreviewCard
-      content={preview ?? <ScreenerPreviewContent itemId={item.id} />}
+      /*
+        The card opens the item too (Katerina, 30 October). It departs from
+        PreviewCard's own page, which keeps a preview a read: here it is the
+        same click as the row's, and the row stays the way to reach it.
+      */
+      content={
+        onRead ? (
+          <Card fill="none" quietUntilHover hover="fill" onClick={() => onRead(item.id)} className="flex flex-col gap-3 p-2">
+            {content}
+          </Card>
+        ) : (
+          content
+        )
+      }
+      contentClassName={onRead ? 'p-1' : undefined}
       wrapperClassName="block w-full"
     >
       {row}

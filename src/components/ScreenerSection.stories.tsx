@@ -23,6 +23,7 @@ const meta = {
     onOpen: noop,
     onLater: noop,
     onDismiss: noop,
+    onRead: noop,
     /* Every row in the section opens the same card a lone row does — the
        section drew none at all before (Katerina, 23 September). */
     previewFor: () => <ScreenerPreviewCardView rows={SCREENER_PREVIEW_ROWS} />,

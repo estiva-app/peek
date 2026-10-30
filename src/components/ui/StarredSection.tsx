@@ -14,6 +14,9 @@ interface StarredSectionProps {
   items?: StarredItem[]
   selectedId?: string | null
   onSelect?: (id: string) => void
+  /** A row's Open work item on its ⋮: add or remove; undefined offers none. */
+  openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
+  onToggleOpenWork?: (id: string) => void
   className?: string
 }
 
@@ -31,6 +34,8 @@ export function StarredSection({
   items = [],
   selectedId,
   onSelect,
+  openWorkActionFor,
+  onToggleOpenWork,
   className,
 }: StarredSectionProps) {
   const isEmpty = items.length === 0
@@ -56,6 +61,8 @@ export function StarredSection({
             urgent={item.isUrgent}
             active={selectedId === item.id}
             onSelect={onSelect}
+            openWorkAction={openWorkActionFor?.(item.id)}
+            onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(item.id) : undefined}
           />
         ))
       )}

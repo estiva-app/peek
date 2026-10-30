@@ -16,7 +16,9 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DebugProvider } from '@/lib/debug'
+import { ToastProvider } from '@/lib/toast'
 import { DeskPage } from './DeskPage'
+import { filePath } from '@/lib/objectUrl'
 
 /** "Widgets", a bare-file topic. */
 const WIDGETS_FILE = '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:7a384136-31a6-4d91-80ac-1d599464d2f2'
@@ -127,6 +129,7 @@ function Go({ to, label }: { to: string; label: string }) {
 
 function mount(url = '/app/desk') {
   return render(
+    <ToastProvider>
     <DebugProvider>
       <LastSelectionProvider>
         <MemoryRouter initialEntries={[url]}>
@@ -137,7 +140,8 @@ function mount(url = '/app/desk') {
           </Routes>
         </MemoryRouter>
       </LastSelectionProvider>
-    </DebugProvider>,
+    </DebugProvider>
+    </ToastProvider>,
   )
 }
 
@@ -321,7 +325,7 @@ describe('Desk rows on NavItem', () => {
     expect(within(linkFor('Issue two')).queryByText('Archived')).toBeNull()
   })
 
-  it('a file archived while unread is in the Screener with the Archived chip, and its Open adds it to Open work (PEE-68)', () => {
+  it('a file archived while unread is in the Screener with the Archived chip, and its Open work adds it to Open work (PEE-68)', () => {
     desk.openWork = []
     const row = (address: string, title: string, archived?: boolean) => ({
       id: `sc_file_${address}`,
@@ -334,10 +338,10 @@ describe('Desk rows on NavItem', () => {
     })
     desk.screener = [row(ISSUE, 'Archived issue', true), row(SECOND, 'Live issue')]
     mount()
-    // A row is the nearest box around its title that holds its own Open.
+    // A row is the nearest box around its title that holds its own Open work.
     const rowOf = (title: string) => {
       let el: HTMLElement | null = screen.getByText(title)
-      while (el && !within(el).queryByRole('button', { name: 'Open' })) el = el.parentElement
+      while (el && !within(el).queryByRole('button', { name: 'Open work' })) el = el.parentElement
       return el as HTMLElement
     }
     const archivedRow = rowOf('Archived issue')
@@ -345,7 +349,7 @@ describe('Desk rows on NavItem', () => {
     expect(within(archivedRow).getByText('Archived')).toBeTruthy()
     expect(within(liveRow).queryByText('Archived')).toBeNull()
 
-    fireEvent.click(within(archivedRow).getByRole('button', { name: 'Open' }))
+    fireEvent.click(within(archivedRow).getByRole('button', { name: 'Open work' }))
     expect(openWork.addScreener).toHaveBeenCalledWith(`sc_file_${ISSUE}`, { kind: 'file', address: ISSUE })
   })
 
@@ -366,5 +370,101 @@ describe('Desk rows on NavItem', () => {
     mount(deskWith(ISSUE))
     expect(linkFor('Issue one').getAttribute('aria-current')).toBe('page')
     expect(linkFor('Ana').getAttribute('aria-current')).toBeNull()
+  })
+})
+
+/** The Desk's lists. */
+const leftColumn = () => within(screen.getByTestId('left'))
+
+/** A Screener row for a file, as the fold makes it. */
+const screenerFile = (address: string, title: string) => ({
+  id: `sc_file_${address}`,
+  kind: 'file',
+  address,
+  fileKind: 30851,
+  title,
+  preview: `A comment on ${title}`,
+})
+/** A Screener row for a DM. */
+const screenerDm = (dmId: string, authorName: string) => ({
+  id: `sc_dm_${dmId}`,
+  kind: 'dm',
+  dmId,
+  authorName,
+  preview: `A message from ${authorName}`,
+})
+/** The Screener row whose title or sender is `name`: the nearest box around it holding its own Open work. */
+function screenerRow(name: string): HTMLElement {
+  let el: HTMLElement | null = leftColumn().getAllByText(name)[0]
+  while (el && !within(el).queryByRole('button', { name: 'Open work' })) el = el.parentElement
+  return el as HTMLElement
+}
+
+describe('the Screener’s Open work (Katerina, 30 October)', () => {
+  it('with nothing open, opens the file it adds beside the lists, lit in Open work', () => {
+    desk.screener = [screenerFile(SECOND, 'Issue two')]
+    mount()
+    fireEvent.click(within(screenerRow('Issue two')).getByRole('button', { name: 'Open work' }))
+    expect(openWork.addScreener).toHaveBeenCalledWith(`sc_file_${SECOND}`, { kind: 'file', address: SECOND })
+    expect(url()).toBe(deskWith(SECOND))
+    expect(screen.getByTestId('file-pane').getAttribute('data-address')).toBe(SECOND)
+  })
+
+  it('with nothing open, opens the DM it adds', () => {
+    desk.screener = [screenerDm('dm-7', 'Cleo')]
+    mount()
+    fireEvent.click(within(screenerRow('Cleo')).getByRole('button', { name: 'Open work' }))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-7')
+  })
+
+  it('with a file already open, adds the item and leaves the open file where it is', () => {
+    desk.screener = [screenerFile(SECOND, 'Issue two')]
+    mount(deskWith(ISSUE))
+    fireEvent.click(within(screenerRow('Issue two')).getByRole('button', { name: 'Open work' }))
+    expect(openWork.addScreener).toHaveBeenCalledWith(`sc_file_${SECOND}`, { kind: 'file', address: SECOND })
+    expect(url()).toBe(deskWith(ISSUE))
+  })
+
+  it('says so in a toast, whose Undo takes the file off Open work, closes it, and brings its row back', () => {
+    desk.screener = [screenerFile(SECOND, 'Issue two')]
+    mount()
+    fireEvent.click(within(screenerRow('Issue two')).getByRole('button', { name: 'Open work' }))
+    expect(leftColumn().queryByText('A comment on Issue two')).toBeNull()
+    const toast = screen.getByText('Added to Open work').closest('[role="dialog"]') as HTMLElement
+    fireEvent.click(within(toast).getByRole('button', { name: 'Undo' }))
+    expect(openWork.remove).toHaveBeenCalledWith(SECOND)
+    expect(url()).toBe('/app/desk')
+    expect(leftColumn().getByText('A comment on Issue two')).toBeTruthy()
+  })
+})
+
+describe('a click on a Screener row reads the item on its own page (Katerina, 30 October)', () => {
+  it('a file goes to its page under Topics, and nothing is added to Open work', () => {
+    desk.screener = [screenerFile(SECOND, 'Issue two')]
+    mount()
+    fireEvent.click(leftColumn().getByText('A comment on Issue two'))
+    expect(url()).toBe(filePath(SECOND, 'Issue two'))
+    expect(openWork.addScreener).not.toHaveBeenCalled()
+  })
+
+  it('a DM goes to the person’s page', () => {
+    desk.screener = [screenerDm('dm-7', 'Cleo')]
+    mount()
+    fireEvent.click(leftColumn().getByText('A message from Cleo'))
+    expect(url()).toBe('/app/people/dm-7')
+  })
+})
+
+describe('what Urgent shows is not screened as well (Katerina, 30 October)', () => {
+  it('an urgent DM and an urgent file are left out of the Screener; the rest stay', () => {
+    desk.urgent = [
+      { id: 'urg_dm_dm-8', kind: 'dm', dmId: 'dm-8', name: 'Dara' },
+      { id: `urg_file_${ISSUE}`, kind: 'file', address: ISSUE, fileKind: 30851, title: 'Issue one' },
+    ]
+    desk.screener = [screenerDm('dm-8', 'Dara'), screenerFile(ISSUE, 'Issue one'), screenerDm('dm-7', 'Cleo')]
+    mount()
+    expect(leftColumn().queryByText('A message from Dara')).toBeNull()
+    expect(leftColumn().queryByText('A comment on Issue one')).toBeNull()
+    expect(leftColumn().getByText('A message from Cleo')).toBeTruthy()
   })
 })

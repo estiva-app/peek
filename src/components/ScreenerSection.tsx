@@ -9,6 +9,8 @@ interface ScreenerSectionProps {
   onOpen?: (id: string) => void
   onLater?: (id: string, untilMs: number) => void
   onDismiss?: (id: string) => void
+  /** A click on a row or its hover card: the item on its own page. */
+  onRead?: (id: string) => void
   /**
    * The hover card for a row. The app leaves it out and each row reads its own
    * conversation; a story passes fixture rows, which is the only way the hover
@@ -20,9 +22,9 @@ interface ScreenerSectionProps {
 
 /**
  * The Screener on the Desk: a folding list of incoming topics and messages,
- * each with Open, Later and Dismiss, and a count beside the title.
+ * each with Open work, Later and Dismiss, opened by a click on it, and a count beside the title.
  */
-export function ScreenerSection({ items, onOpen, onLater, onDismiss, previewFor, className }: ScreenerSectionProps) {
+export function ScreenerSection({ items, onOpen, onLater, onDismiss, onRead, previewFor, className }: ScreenerSectionProps) {
   if (items.length === 0) return null
 
   return (
@@ -43,6 +45,7 @@ export function ScreenerSection({ items, onOpen, onLater, onDismiss, previewFor,
           onOpen={onOpen}
           onLater={onLater}
           onDismiss={onDismiss}
+          onRead={onRead}
           preview={previewFor?.(item)}
         />
       ))}

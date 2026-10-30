@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState } from '@estiva-app/ui'
-import { useStarred, useDmChannels, useDmVisibility } from '@/api'
+import { useStarred, useDmChannels, useDmVisibility, useOpenWorkDms } from '@/api'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -99,6 +99,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   */
   const channelUuid = dmId ? channelOf(dmId) : undefined
   const { isDmStarred, toggleDm } = useStarred()
+  // Open work from the DM's own menu, as a file has it from its page (Katerina, 30 October).
+  const openWorkDms = useOpenWorkDms()
 
   const dm = useFileConversationView({
     container: dmId != null && channelUuid ? { kind: 'channel', h: channelUuid } : null,
@@ -150,6 +152,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
       isStarred={isDmStarred(dmId)}
       onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
       onHideDm={onHideDm}
+      openWorkAction={openWorkDms ? (openWorkDms.has(dmId) ? 'remove' : 'add') : undefined}
+      onToggleOpenWork={openWorkDms ? () => (openWorkDms.has(dmId) ? openWorkDms.remove(dmId) : openWorkDms.add(dmId)) : undefined}
       {...dm.conversationParts}
     />
   )
