@@ -22,6 +22,8 @@ vi.mock('@/api', () => ({
   useLinkResolver: () => (url: string) => (url.startsWith(FILE_LINK) || url === OLD_LINK ? PAGE : undefined),
   // `held.object`: the file as it came back — undefined while it loads, null when it is gone or cannot be read.
   useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((r) => [r, r.replace(/^nostr:/, '') === naddr ? held.object : null])),
+  // A row's comment count, which these rows do not look at.
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
 }))
 vi.mock('@/api/mentions', () => ({ personByPubkey: () => undefined, subscribeMentions: () => () => {}, mentionsVersion: () => 0 }))
 

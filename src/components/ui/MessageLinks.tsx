@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkState, type LoadingShape } from '@estiva-app/ui'
+import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkedConversation, type LinkState, type LoadingShape } from '@estiva-app/ui'
 import { useConversationBadges } from '@/api'
 import { linkedKindOf, linkStateOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
@@ -75,6 +75,23 @@ function LinkClicks({ block = false, children }: { block?: boolean; children: Re
   return block ? <div {...props}>{children}</div> : <span {...props}>{children}</span>
 }
 
+/**
+ * A file's comment count, opening its conversation (its page here), on its row
+ * and its card alike (Katerina, 30 Oct: the count on rows too). The dot shows
+ * only for a member with something unread (record membership-replaces-following).
+ * The hook keys on the address, not the object: one file, asked once and held
+ * for five minutes (OPT-5), so a topic of linked files is not a read per link
+ * on every open. A bare file is nobody's conversation, so it has no count.
+ */
+function useConversationOf(file: ForeignObject | null | undefined | 'loading'): LinkedConversation | undefined {
+  const counted = file && file !== 'loading' && !file.unreachable && file.kind !== KIND_BARE_FILE ? file : undefined
+  const { counts, unread } = useConversationBadges(counted ? [counted] : undefined, { hold: true })
+  const count = counted ? counts[counted.ref] : undefined
+  if (!counted?.address || count === undefined) return undefined
+  const title = counted.slots.title && !counted.slots.title.isPubkey ? counted.slots.title.value : undefined
+  return { count, href: filePath(counted.address, title), unread: unread[counted.ref] === true }
+}
+
 /** A file's link state, opening at the block a link to one block was written for (§13.6.1). */
 function openingAt(link: LinkState, written: string | undefined): LinkState {
   const block = link.state === 'ready' ? writtenLinkOf(written, link.linked.href) : undefined
@@ -102,7 +119,10 @@ export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { 
 
 /** A line that is only a link to a file or a message: that file's row, where the line was. */
 export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: string; object: ForeignObject | null | undefined; /** A reference that names no address or event id. */ unreadable?: boolean; /** The URL it was written as: a click opens it, on a host an app declares (LTX-6), at its block (WBM-11). */ opensAt?: string }) {
-  const link: LinkState = unreadable ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' } : openingAt(linkStateOf(uri, object), opensAt)
+  const conversation = useConversationOf(unreadable ? undefined : object)
+  const link: LinkState = unreadable
+    ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
+    : openingAt(linkStateOf(uri, object, conversation ? { conversation } : {}), opensAt)
   return (
     <LinkClicks block>
       <div data-link-row>
@@ -124,14 +144,7 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt 
   const naddr = uri.replace(/^nostr:/i, '')
   const { object, drawn, gone, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
-  /*
-    The hook keys on the addresses, not the array: one file, asked once, and
-    held for five minutes (OPT-5), so a topic of carded messages is not a read
-    per card on every open. A Peek topic has no comments to count: it is the
-    conversation itself.
-  */
-  const counted = ready && !compact && ready.kind !== KIND_BARE_FILE ? ready : undefined
-  const { counts, unread } = useConversationBadges(counted ? [counted] : undefined, { hold: true })
+  const conversation = useConversationOf(ready)
   const act = useCallback((actionId: string, value: string) => {
     if (!busy) void onAct(actionId, value)
   }, [busy, onAct])
@@ -149,15 +162,7 @@ export function MessageCard({ uri, resolved, compact = false, onRemove, opensAt 
     // Only an answer of nothing says "not available"; a failed read (a 429, the network) keeps what this device remembered.
     link = gone || rememberedUnavailable(naddr) ? notAvailable : null
   } else {
-    const count = counted ? counts[counted.ref] : undefined
-    const title = ready?.slots.title && !ready.slots.title.isPubkey ? ready.slots.title.value : undefined
-    link = openingAt(linkStateOf(uri, drawn as ForeignObject, {
-      directory,
-      onAct: act,
-      ...(ready?.address && count !== undefined
-        ? { conversation: { count, href: filePath(ready.address, title), unread: unread[ready.ref] === true } }
-        : {}),
-    }), opensAt)
+    link = openingAt(linkStateOf(uri, drawn as ForeignObject, { directory, onAct: act, ...(conversation ? { conversation } : {}) }), opensAt)
   }
   /*
     The drawn card's shape and height, kept for its placeholder next time. The

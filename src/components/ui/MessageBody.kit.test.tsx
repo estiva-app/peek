@@ -117,6 +117,12 @@ describe('where a link sits decides how it draws', () => {
     expect(c.querySelectorAll('ul li')[1].textContent).toBe('and Fix the sign-in too')
   })
 
+  it('gives a row its file’s comment count, opening the file’s conversation, as a card has it', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    const row = c.querySelector('[data-link-row]') as HTMLElement
+    expect(within(row).getByRole('link', { name: /comments — open the conversation/ })).toHaveTextContent('3')
+  })
+
   it('keeps a person or a Folder alone on its line a chip', () => {
     const c = show(`${PERSON}\n\n${ref(FOLDER)}`)
     expect(rows(c)).toEqual([])

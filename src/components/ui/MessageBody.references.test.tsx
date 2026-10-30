@@ -35,6 +35,8 @@ vi.mock('@/api', () => ({
       ]),
     )
   },
+  // A row's comment count, which these rows do not look at.
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
 }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: () => undefined,
