@@ -397,6 +397,11 @@ describe('FilePage opens a file by address, not against the listing', () => {
     expect(middle.querySelectorAll('[data-comment]')).toHaveLength(2)
   })
 
+  it('names the file, then Peek, in the browser tab (SFX-2)', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(document.title).toBe('The file route – Peek')
+  })
+
   /*
     For a Leaf document (Miky, 14 October): you comment on it in Peek, and you
     can open it easily in Leaf — its text is never edited here. And how the

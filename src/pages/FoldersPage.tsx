@@ -16,6 +16,7 @@ import { useFileControls } from '@/components/views/useFileControls'
 import { useToast } from '@/lib/toast'
 import { filePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
+import { useTabTitle } from '@/lib/useTabTitle'
 
 /**
  * `/app/folders` and `/app/folders/:id` — the Topics column, with no file open.
@@ -108,6 +109,8 @@ export function FoldersPage() {
   }, [id, topic, dmForChannel, navigate])
 
   const selected = folders?.find((folder) => folder.id === id)
+  // As its heading says; "Folders" with none open, and nothing until the listing names it.
+  useTabTitle(selected ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Folders')
   // "Not a DM" is not "a Folder" (PEE-42): a Folder is one the relay lists to this viewer.
   const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder && !!selected
   // Said only on an answer: a listing that failed is empty without meaning it.

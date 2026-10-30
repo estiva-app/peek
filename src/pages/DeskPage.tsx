@@ -33,6 +33,7 @@ import {
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
+import { useTabTitle } from '@/lib/useTabTitle'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
@@ -51,6 +52,7 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
+  useTabTitle('Desk')
   const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()

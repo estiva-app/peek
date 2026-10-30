@@ -34,7 +34,7 @@ export function PeekLogoMark({ height = 24, className }: { height?: number; clas
  * Brand badge: the mark on a rounded square. In-app it uses the theme's
  * lighter treatment (design review 2026-07-09): `accent-muted` background
  * with the mark in the `logo` color (indigo on light, white on dark).
- * The favicon keeps the saturated fixed-color version (public/favicon.svg).
+ * The favicon is not this badge but 💬 (public/favicon.svg, SFX-1).
  * Size = the square's edge in px.
  */
 export function PeekLogoBadge({ size = 32, className }: { size?: number; className?: string }) {

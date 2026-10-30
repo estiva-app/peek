@@ -288,6 +288,14 @@ describe('FoldersPage opens a file at its own address', () => {
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
   })
 
+  it('names the open Folder in the browser tab, and leaving it does not leave its name behind (SFX-2)', async () => {
+    relay.files = [topic]
+    mount(`/app/folders/${FOLDER}`)
+    await waitFor(() => expect(document.title).toBe('Folders – Peek'))
+    await userEvent.click(screen.getByText('FOL-15 test topic 2'))
+    expect(document.title).toBe('Peek')
+  })
+
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
     mount(`/app/folders/${FOLDER}`)
     const listed = [...document.querySelectorAll('[data-nav-group]')].map((node) => (node as HTMLElement).dataset.navGroup)
