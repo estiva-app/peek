@@ -107,6 +107,9 @@ const threads = vi.hoisted(() => ({
 }))
 const writes = vi.hoisted(() => ({
   applyAction: vi.fn(async () => ({ ok: true })),
+  // The Overview's card (the kit's, as a message draws it): a pick, and whether its file is archived with its parent.
+  applyCardAction: vi.fn(async () => ({ ok: true })),
+  parentArchiveOf: vi.fn(async () => undefined),
   moveFile: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
   resolveObject: vi.fn(async () => null),
@@ -1139,9 +1142,9 @@ describe("FilePage puts another app's widget in the third column", () => {
     expect(within(column).queryByText('Estiva Ship')).toBeNull()
     expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
     expect(within(column).getByText('In Progress')).toBeInTheDocument()
-    // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.
-    expect(column.querySelector(`[data-foreign-object="${ISSUE_ADDRESS}"]`)).not.toBeNull()
-    expect(screen.getByTestId('left').querySelector('[data-foreign-object]')).toBeNull()
+    // The card a message draws under it, the kit's (Katerina, 30 Oct); the tree beside it still draws rows.
+    expect(column.querySelector('[data-card="detailed"]')).not.toBeNull()
+    expect(screen.getByTestId('left').querySelector('[data-card]')).toBeNull()
   })
 
   it('…and for a file the viewer may comment on, whose column is otherwise Peek’s', () => {

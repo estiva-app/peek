@@ -8,13 +8,13 @@ import type { TopicActivityItem } from './TopicActivity'
 
 /**
  * A file's third column while no thread is open: its Overview (Katerina,
- * 7 October). Another app's card when the file is that app's (FOL-29), its
- * long description cut behind "Show more", and Activity under it, with its
- * empty line when nobody has named the file. Opening a thread replaces the
- * whole column; closing it brings this back.
+ * 7 October). Another app's card when the file is that app's (FOL-29) — the
+ * kit's card, as a message draws it (Katerina, 30 Oct) — and Activity under
+ * it, with its empty line when nobody has named the file. Opening a thread
+ * replaces the whole column; closing it brings this back.
  *
- * The object is handed in already resolved, as the page hands it: the widget
- * makes no read of its own here, and the controls it draws would land on the
+ * The object is handed in already resolved, as the page hands it: the card
+ * makes no read of its own here, and the pickers it draws would land on the
  * relay in the app.
  */
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -128,10 +128,10 @@ type Story = StoryObj<typeof meta>
 const labels = new Map([['30840:aa:roadmap', 'Roadmap']])
 const activity = (items: TopicActivityItem[]) => <FileActivityPanelView items={items} labelFor={labels} />
 
-/** A Ship issue: its title is the link into Ship, its status and assignee are the manifest's controls; nobody has named it yet. */
+/** A Ship issue, the kit's card: its title is the link into Ship, its status and assignee are the manifest's pickers; nobody has named it yet. */
 export const Issue: Story = { args: { activity: activity([]) } }
 
-/** A Ship project: the same card, with the description its manifest gives the subtitle. */
+/** A Ship project: the same card, with the summary its manifest gives it. */
 export const Project: Story = { args: { file: project, activity: activity([]) } }
 
 const LONG = Array.from({ length: 14 }, (_, i) =>
@@ -139,8 +139,8 @@ const LONG = Array.from({ length: 14 }, (_, i) =>
 ).join(' ')
 const longProject: ForeignObject = { ...project, slots: { ...project.slots, subtitle: { value: LONG } } }
 
-/** A description longer than the card allows: cut behind a fade, "Show more" under it, the controls and Activity still in view. */
-export const ALongDescription: Story = { args: { file: longProject, activity: activity([MENTION]) } }
+/** A summary longer than the card allows: cut at two lines, the pickers and Activity still in view. */
+export const ALongSummary: Story = { args: { file: longProject, activity: activity([MENTION]) } }
 
 /** A comment elsewhere named the issue: Activity, with its count beside the title. */
 export const WithActivity: Story = { args: { activity: activity([MENTION]) } }
