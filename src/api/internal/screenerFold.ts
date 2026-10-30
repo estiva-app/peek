@@ -118,6 +118,8 @@ export function foldFileScreenerRows(
         fileKind: file.kind,
         title: file.title,
         preview: screening.body,
+        at: screening.createdAt * 1000,
+        authorPubkey: screening.author,
         ...(file.archived ? { archived: true } : {}),
       },
     })
@@ -252,6 +254,7 @@ export function foldDmScreenerRows(
         authorName: dm.authorName,
         authorAvatarSrc: dm.authorAvatarSrc,
         preview: screening.body,
+        at: screening.at * 1000,
       },
     })
   }

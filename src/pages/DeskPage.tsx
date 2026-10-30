@@ -29,6 +29,7 @@ import {
   useOpenWorkFiles,
   useAvatarSrc,
   useLoadAhead,
+  useMentionNames,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -110,7 +111,12 @@ export function DeskPage() {
     what Urgent draws is skipped, so an item is never in neither.
   */
   const inUrgent = new Set(urgentItems.map((u) => (u.kind === 'file' ? `file:${u.address}` : `dm:${u.dmId}`)))
-  const screened = allScreenerItems.filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
+  // A file row's writer, named once for the whole list rather than asked for by every row.
+  const names = useMentionNames()
+  const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
+  const screened = allScreenerItems
+    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey) } : i))
+    .filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
   const screenerItems = (hasRelay ? screened : screened.slice(0, debug.desk.screenerItemsCount))
     .filter((i) => !dismissedScreenerIds.has(i.id))
 
