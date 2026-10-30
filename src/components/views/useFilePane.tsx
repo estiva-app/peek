@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Button, Panel, Toolbar, ToolbarButton, WithTooltip } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
@@ -14,7 +14,6 @@ import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
-import { OpenInApp } from '@/components/ui/OpenInApp'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -231,19 +230,31 @@ export function useFilePane(
         <div className="flex min-w-0 items-center gap-2">
           <p className="truncate text-body-2-strong text-text-primary">{title}</p>
           {/*
-            Another app's file: one link, "Open ↗", into the app that owns
-            it — the way to its text, which Peek shows and never edits for a
-            Leaf document (Miky, 14 October). No chip: *"I would simplify and
-            just say Open. Less words is better. it's more clear."* (Miky,
-            14 October), in place of the app-name chip that said whose file
-            it was (Katerina, 5 October). Which app is in the link's name
-            and tooltip ("Open in Leaf"), the one place an app is named
-            (PRO-24). A file of Peek's own gets nothing. Never cut short.
+            Another app's file: one way into the app that owns it, "Open" —
+            the way to its text, which Peek shows and never edits for a Leaf
+            document (Miky, 14 October). No chip: *"I would simplify and just
+            say Open. Less words is better. it's more clear."* (Miky, 14
+            October), in place of the app-name chip that said whose file it
+            was (Katerina, 5 October). The kit's own Button with a real icon,
+            quiet, and a link to a new tab (Katerina, 30 October: Peek and
+            Leaf alike, in place of a text link with a typed arrow). Which
+            app is in its name and tooltip ("Open in Leaf"), the one place an
+            app is named (PRO-24). A file of Peek's own gets nothing. The
+            address is the manifest's, a web page only (`openInAppUrl`).
           */}
           {file && elsewhereAppName(file) && openInAppUrl(file) && (
-            <span className="shrink-0 whitespace-nowrap text-caption text-text-secondary">
-              <OpenInApp object={file} />
-            </span>
+            <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
+              <Button
+                href={openInAppUrl(file)}
+                external
+                size="small"
+                className="shrink-0"
+                leadingIcon={<IconExternalLink size={14} stroke={1.5} />}
+                aria-label={`Open in ${elsewhereAppName(file)}`}
+              >
+                Open
+              </Button>
+            </WithTooltip>
           )}
         </div>
       }
