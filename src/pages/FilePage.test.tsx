@@ -1120,6 +1120,8 @@ describe("FilePage puts another app's widget in the third column", () => {
   /** The issue as Ship's manifest resolves it on production: a way into Ship, and a status. */
   const shipIssue = foreign({
     ...issue,
+    // Its type's word, as Ship's manifest names it: without one the kit names the app instead (ui 0.92).
+    noun: 'issue',
     openUrl: 'https://ship.estiva.app/issue/the-file-route',
     slots: { title: { value: 'The file route' }, status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' } },
   })

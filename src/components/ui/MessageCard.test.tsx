@@ -122,6 +122,8 @@ function project(identifier: string): ForeignObject {
     address: `30850:${'a'.repeat(64)}:${identifier}`,
     naddr: encodeNaddr({ kind: 30850, pubkey: 'a'.repeat(64), identifier, relays: [] }),
     kind: 30850,
+    // Its type's word, as Ship's manifest names it; without one the kit names the app (ui 0.92).
+    noun: 'project',
     widget: 'card',
     slots: { title: { value: 'Project one', field: 'title' }, subtitle: { value: 'What the project is for.', field: 'summary' } },
     meta: [{ value: 'ABC', field: 'key' }],

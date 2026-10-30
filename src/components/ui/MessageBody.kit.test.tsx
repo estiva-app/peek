@@ -152,12 +152,13 @@ describe('the card under the message', () => {
 
   it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {
     const quiet = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
+    // The number, and its name for a screen reader, which carries the number too (ui 0.92).
+    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
     quiet.remove()
     // QA-2, a reader who is no member: the badges leave the file out, and the count shows with no dot.
     unread = undefined
     const stranger = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
+    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
     stranger.remove()
     unread = true
     const member = show(THE_MESSAGE, { embeds: ITS_CARD })
