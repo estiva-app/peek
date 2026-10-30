@@ -83,6 +83,8 @@ export interface ScreenerValue {
   previewOf: (rowId: string) => ScreenerPreviewSource | undefined
   /** Files with an unread urgent comment for the viewer, newest first — Desk's Urgent (CON-17). */
   urgentFiles: FoldedUrgentFile[]
+  /** A DM's newest message, unix seconds, from the channel store this already reads; undefined until read. */
+  dmNewestAt: (dmId: string) => number | undefined
 }
 
 /** The fold's own facts about a row, handed to the hover card (CON-14). */
@@ -453,9 +455,18 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   // file would hold the whole Desk under a skeleton for the slowest read.
   const isLoading = hasRelay && effective === undefined
 
+  /** Open work's "Recent activity" sort (Katerina, 30 October): no read of its own, the DM half's messages. */
+  const dmNewestAt = useCallback(
+    (dmId: string) => {
+      const messages = dms.find((dm) => dm.partner === dmId)?.messages
+      return messages?.length ? Math.max(...messages.map((m) => m.at)) : undefined
+    },
+    [dms],
+  )
+
   const value = useMemo<ScreenerValue>(
-    () => ({ items, isLoading, dismiss, snooze, previewOf, urgentFiles }),
-    [items, isLoading, dismiss, snooze, previewOf, urgentFiles],
+    () => ({ items, isLoading, dismiss, snooze, previewOf, urgentFiles, dmNewestAt }),
+    [items, isLoading, dismiss, snooze, previewOf, urgentFiles, dmNewestAt],
   )
 
   return <ScreenerContext.Provider value={value}>{children}</ScreenerContext.Provider>

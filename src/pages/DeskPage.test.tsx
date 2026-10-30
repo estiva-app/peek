@@ -102,6 +102,7 @@ vi.mock('@/api', async () => ({
   useDeskLoading: () => false,
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
   useScreenerItems: () => desk.screener,
+  useOpenWorkActivity: () => () => undefined,
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
