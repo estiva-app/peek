@@ -17,7 +17,6 @@ const ADDRESS = `30851:${AUTHOR}:${UUID}`
 const LINK = `https://ship.estiva.app/issue/plan-${UUID}#block-p1`
 
 const views = new Map<string, PartView>()
-const widgets: string[] = []
 const asked: { address: string; anchorTags?: string[][] }[] = []
 
 vi.mock('@/api', () => ({
@@ -29,31 +28,22 @@ vi.mock('@/api', () => ({
     return views.get(pointer.address) ?? { state: 'loading' }
   },
 }))
-vi.mock('./ForeignObjectWidget', () => ({
-  ForeignObjectWidget: ({ naddr }: { naddr: string }) => {
-    widgets.push(naddr)
-    return <div data-widget={naddr} />
-  },
-  ForeignObjectSkeleton: () => <div data-skeleton />,
-}))
 
 const object = { slots: { title: { value: 'Plan the launch' } }, noun: 'issue', appName: 'Ship', openUrl: 'https://ship.estiva.app/o/x' } as never
 const blockOf = (text: string) => markerTextToBlockDocument(text).content[0]
 
 const show = (view: PartView, body = `what do you think? ${LINK}`, parts = [{ address: ADDRESS, block: 'p1' }]) => {
   views.set(ADDRESS, view)
-  widgets.length = 0
   return render(<MessageBody body={body} parts={parts} />)
 }
 const card = (container: HTMLElement) => container.querySelector('[data-part]') as HTMLElement | null
 
 describe('a part is drawn while the body names its object', () => {
-  it('draws the card in place of the plain link widget', () => {
+  it('draws the block’s card while the body names its file', () => {
     const { container } = show({ state: 'resolved', block: blockOf('Ship it on Friday'), object, link: LINK })
     expect(card(container)?.dataset.part).toBe('resolved')
     expect(screen.getByText('Ship it on Friday')).toBeTruthy()
     expect(screen.getByText('Plan the launch')).toBeTruthy()
-    expect(widgets).not.toContain(LINK)
   })
 
   it('is not named by a link that merely contains a short d', () => {

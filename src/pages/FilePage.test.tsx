@@ -667,7 +667,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
     const left = screen.getByTestId('left')
     // A card would carry the project's status pill and app name; a row is
     // its title alone, on the Topics list's row.
-    expect(left.querySelector('[data-foreign-object]')).toBeNull()
+    expect(left.querySelector('[data-card]')).toBeNull()
     expect(within(left).getByText('Folders: navigation for the whole suite')).toBeInTheDocument()
     expect(within(left).queryByText('Estiva Ship')).toBeNull()
   })
@@ -881,8 +881,8 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
 
   /*
     A Leaf document (30842): "In Peek you can comment" (Miky, 2026-10-14).
-    Its comments are a kind:1111 at its address, like an issue's. That its
-    text has no editor is the card's test (ForeignObjectWidget.test.tsx).
+    Its comments are a kind:1111 at its address, like an issue's. Peek offers
+    no editor on its text anywhere (the kit's card has none).
   */
   it('…and a Leaf document, identically', () => {
     const DOCUMENT_ADDRESS = `30842:${ISSUE_ADDRESS.split(':')[1]}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`

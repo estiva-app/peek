@@ -16,7 +16,7 @@
  * — a thread has references whether or not its composer is focused.
  *
  * **This is not a substitute for the widget.** A referenced object already
- * renders in the thread with its own actions (`ForeignObjectWidget`), and that
+ * renders in the thread with its own pickers (`MessageCard`), and that
  * remains the better place to act when the widget is on screen. What this adds
  * is reaching the same object from Cmd+K without hunting up a long thread for
  * the message that carries it.

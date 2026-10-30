@@ -23,7 +23,6 @@ vi.mock('@/api', () => ({
   useResolvedReferences: () => ({}),
   useLinkResolver: () => () => undefined,
 }))
-vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: (pubkey: string) =>
     pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : undefined,

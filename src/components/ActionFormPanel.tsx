@@ -17,8 +17,8 @@ import { TextInput } from './ui/TextInput'
  * `prose` Peek's editor (a block document, MAN-1), `enum` Peek's Select fed from the owning app's declared vocabulary,
  * `pubkey` the person picker, `parent` a Select over the objects the new one
  * would hang under. The owner declares which fields matter; Peek renders them
- * in its own design language — the same split `ForeignObjectWidget` makes for
- * reading, applied to writing.
+ * in its own design language — the same split a card makes for reading,
+ * applied to writing.
  *
  * **Fields only, since UIG-29.** The frame — the button, Ctrl+Enter, the lock
  * while creating, where focus goes — is the palette's (Katerina, 16 September,

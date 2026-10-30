@@ -21,7 +21,7 @@ import type { FormField, LauncherAction, VocabOption } from './launcherActions'
  *   here and marked required.
  * - **A label is the consumer's business.** The manifest names a property
  *   (`title`); what a person reads above the box is Peek's to choose, the same
- *   split `ForeignObjectWidget` makes for reading. Title-casing the property is
+ *   split a card makes for reading. Title-casing the property is
  *   a default, not a declaration.
  */
 

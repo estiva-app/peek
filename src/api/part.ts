@@ -7,8 +7,8 @@
  * A copy would go stale, and would keep showing the text to somebody who has
  * since lost access to the Folder it came from.
  *
- * **Live by re-reading.** A widget elsewhere in Peek reads once (see
- * `ForeignObjectWidget`); a part is the case where "as it is now" is the whole
+ * **Live by re-reading.** A card elsewhere in Peek reads once and is held (see
+ * `useHeldCard`); a part is the case where "as it is now" is the whole
  * point, so it reads again on an interval while the tab is visible and when
  * the tab comes back. Neither the object's Folder nor its `h` is known before
  * the first read — the pointer carries neither, by decision — so a relay

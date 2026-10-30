@@ -7,26 +7,26 @@ import { Meta } from '@storybook/addon-docs/blocks'
 The status of an item from another app — In Progress, Done, Cancelled — shown
 as coloured words.
 
-**Seen in** — every story on *Messages/ForeignObject/ForeignObjectCard*. It
-is also drawn in a reference to an object.
+**Seen in** — no story: it is drawn in a `Reference` chip for another app's
+object (a description form's `objectMention`); `Reference.test.tsx` draws it.
 
 ## When
 
-- On any foreign object that has a `status` slot: a reference card, a property
-  row in the topic details dialog.
+- On a foreign object's `Reference` chip that has a `status` slot.
 
 ## When not
 
 - For a **topic's** resolved state. That is `TopicState`, which draws a glyph
   Peek owns. This one draws words another app sent.
-- With a size of your own assumed. It is 12px, which suits the row widget and
-  the panel's dense property rows — the details dialog reads its properties at
-  body size, so **the size is the caller's to set** through `className`.
+- On a card, a row or a chip in a message: the kit's link widgets draw a status
+  as their mark (`LinkChip`, `LinkRow`, `LinkCard`).
+- With a size of your own assumed. It is 12px; **the size is the caller's to
+  set** through `className`.
 
 ## How
 
 ```tsx
-import { StatusPill } from '@/components/ui/ForeignObjectWidget'
+import { StatusPill } from '@/components/ui/StatusPill'
 
 <StatusPill slot={object.slots.status} />
 <StatusPill slot={ticket.slots.status} className="text-body" />

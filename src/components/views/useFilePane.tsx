@@ -14,7 +14,7 @@ import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
-import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
+import { OpenInApp } from '@/components/ui/OpenInApp'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -242,7 +242,7 @@ export function useFilePane(
           */}
           {file && elsewhereAppName(file) && openInAppUrl(file) && (
             <span className="shrink-0 whitespace-nowrap text-caption text-text-secondary">
-              <OpenInApp object={file} short />
+              <OpenInApp object={file} />
             </span>
           )}
         </div>

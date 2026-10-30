@@ -16,7 +16,7 @@ This file is what only Peek adds.
 |---|---|---|---|
 | **Shim** | nothing extra | `src/components/ui/X.tsx`, one line: `export { X } from '@estiva-app/ui'` | `Button.tsx`, `Select.tsx` |
 | **Wrapper** | its data, its defaults, its copy | `src/components/ui/X.tsx`, 10–50 lines mapping Peek's types onto the package's props and forwarding the rest | `Avatar.tsx` resolves the picture through Peek's registry, then renders the package's Avatar; `PersonChipInput.tsx` maps `Person` onto the package's `ChipInput` |
-| **Product** | a product object (a topic, a message, a huddle, a file) | `src/components/` and `src/components/ui/` | `MessageBody`, `ForeignObjectWidget`, `ComposeBox` |
+| **Product** | a product object (a topic, a message, a huddle, a file) | `src/components/` and `src/components/ui/` | `MessageBody`, `MessageCard`, `PartCard` |
 
 - A product component that draws a button, a chip, a field, a menu, a tooltip, a dialog, an avatar, a divider, an empty state or a skeleton draws them **with the package's components**, through the shims in `src/components/ui/`. It never re-types their class lists.
 - A second copy of anything inside this app is a shared component wanting a name. If you are about to paste a class string you can already see in another file, stop: that string is a component, and it belongs in the package.

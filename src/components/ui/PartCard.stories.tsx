@@ -8,7 +8,7 @@ import { PartCardView } from './PartCard'
  *
  * `PartCard` reads the block from the relay and draws `PartCardView`. The read
  * needs a relay and a token, so these stories draw the view with each answer
- * the read can give — the same split as `ForeignObjectWidget` and its card.
+ * the read can give.
  */
 const AUTHOR = 'f'.repeat(64)
 const UUID = '742cfe0e-23a2-4940-b5ef-bebab0c46902'

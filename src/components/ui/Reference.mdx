@@ -7,8 +7,8 @@ import { Meta } from '@storybook/addon-docs/blocks'
 A `nostr:` pointer drawn where it was written, as a chip: a person's name, or
 another app's object by its title and status, or the pointer's own short form
 when nothing could be looked up. Since the kit's link widgets, a file or a
-message is the kit's `LinkChip`; this draws a person, and an object in another
-app's description.
+message is the kit's `LinkChip`; this draws a person, and an object in a
+description's form.
 
 **Seen in** — no story: a person is named from the workspace's directory,
 which a story does not hold; `Reference.test.tsx` draws each case.
@@ -19,8 +19,8 @@ which a story does not hold; `Reference.test.tsx` draws each case.
   this, in the urgent tone when the message names them urgently.
 - The same person while they are being written: `BoxReference` draws them
   through this with `link={false}`, so what is written looks like what is sent.
-- A pointer inside another app's description (`ForeignBody`), and in the
-  `objectMention` node of a description's form (`ProseField`).
+- A pointer in the `objectMention` node of a description's form
+  (`ProseField`).
 
 ## When not
 

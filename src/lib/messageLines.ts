@@ -1,5 +1,4 @@
 import {
-  documentLineDrawOf,
   lineDrawOf,
   linesOf,
   type Embed,
@@ -22,8 +21,6 @@ export interface RowLine {
   unreadable?: true
   /** The URL the line was written as, when it was one: a link to one block opens there. */
   url?: string
-  /** In a block document, the card its writer chose (`embed: detailed`), drawn in the row's place (§13.3). */
-  card?: true
 }
 
 /** A paragraph's line that is a row, lifted out as a block of its own, so the row is not drawn inside a `<p>`. */
@@ -39,20 +36,19 @@ export interface PlacedLines {
 
 const BREAK: RenderInline = { text: '\n', marks: [] }
 
-type LineContext = NonNullable<Parameters<typeof lineDrawOf>[2]> & { stayChip?: (value: string) => boolean; document?: boolean }
+type LineContext = NonNullable<Parameters<typeof lineDrawOf>[2]> & { stayChip?: (value: string) => boolean }
 
 function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type'>, context: LineContext): RowLine | 'nothing' | undefined {
-  // A block document has no cards under it: its lone link is the row, or the card its writer chose in the row's place.
-  const drawn = context.document ? documentLineDrawOf(line, block, { resolveLink: context.resolveLink }) : lineDrawOf(line, block, context)
-  if ((drawn.draw === 'row' || drawn.draw === 'nothing' || drawn.draw === 'card') && context.stayChip?.(drawn.value)) return undefined
+  const drawn = lineDrawOf(line, block, context)
+  if ((drawn.draw === 'row' || drawn.draw === 'nothing') && context.stayChip?.(drawn.value)) return undefined
   if (drawn.draw === 'nothing') return 'nothing'
   if (drawn.draw === 'unreadable') return { reference: drawn.reference, unreadable: true }
-  if (drawn.draw !== 'row' && drawn.draw !== 'card') return undefined
+  if (drawn.draw !== 'row') return undefined
   // A lone URL is already its reference here: `linksAsReferences` turned every one this reader can read.
   const run = line.find((r) => r.reference)
   if (!run?.reference) return undefined
   // Its text is the URL as written, for a link (`linksAsReferences` keeps it): a link to one block opens there.
-  return { reference: run.reference, value: drawn.value, ...(/^https?:\/\//i.test(run.text) ? { url: run.text } : {}), ...(drawn.draw === 'card' ? { card: true as const } : {}) }
+  return { reference: run.reference, value: drawn.value, ...(/^https?:\/\//i.test(run.text) ? { url: run.text } : {}) }
 }
 
 /**
@@ -68,14 +64,10 @@ function rowLineOf(line: readonly RenderInline[], block: Pick<RenderBlock, 'type
  * drawn under the message. `stayChip` keeps a value's lines as sentences: the
  * file a "Mentioned in" list is on draws no card and no row there, only its
  * chip (Miky, WID-3).
- *
- * `document` reads a block document instead (protocol `documentLineDrawOf`):
- * nothing is under it, so a lone link is its row, or the card its writer chose
- * (`embed: detailed`) in the row's place, as the shared editor draws it.
  */
 export function placeLines(
   blocks: readonly RenderBlock[],
-  context: { cards?: readonly Embed[]; parts?: readonly PartPointer[]; resolveLink?: LinkResolver; stayChip?: (value: string) => boolean; document?: boolean },
+  context: { cards?: readonly Embed[]; parts?: readonly PartPointer[]; resolveLink?: LinkResolver; stayChip?: (value: string) => boolean },
 ): PlacedLines {
   const rows = new Map<object, RowLine>()
   const rowRuns = new Map<RenderInline, RowLine>()

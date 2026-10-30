@@ -15,16 +15,12 @@ link stays its chip (`BoxReference`); the row comes once it is sent.
 
 - A message's line that is only a link to a file or a message, with no card
   under the message standing for it (**MessageBody**).
-- A description's line that is only a link, in Peek's side panel, when its
-  writer chose "Show as Row" or nothing (**ForeignBody**, through
-  `DocumentLine`).
 
 ## When not
 
-- The writer chose a card: **MessageCard**, under the message or in the
-  description line's place.
-- A link inside a sentence, a person or a Folder: the chip (**Reference**,
-  `MessageChip`).
+- The writer chose a card: **MessageCard**, under the message.
+- A link inside a sentence, a person or a Folder: the chip (`MessageChip`; a
+  person's is **Reference**).
 
 ## How
 
@@ -36,8 +32,7 @@ import { MessageRow } from '@/components/ui/MessageLinks'
 
 ## What it owns
 
-- **One row for a lone link in every Peek text.** A message and a description
-  draw the same row, so they cannot drift apart.
+- **The kit's row.** Peek adds only where a link opens and its count.
 - **The comment count**, as a card has it, opening the file's conversation,
   with the unread dot for a member only (Katerina, 30 Oct).
 - **The unreadable row.** A reference that names no file draws "not

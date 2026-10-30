@@ -25,7 +25,6 @@ vi.mock('@/api', () => ({
   useResolvedReferences: () => ({}),
   useLinkResolver: () => () => undefined,
 }))
-vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 
 import { MessageBody } from './MessageBody'
 
