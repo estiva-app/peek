@@ -69,8 +69,13 @@ const NO_ENTRIES: OpenWorkRef[] = []
 /** The longest the Desk waits for Open work's files before drawing without them. */
 const FILES_WAIT_MS = 2_500
 
-/** Open work's files are followed while it is mounted (PEE-28). One object, so the read's options are stable. */
-const FOLLOW = { live: true }
+/**
+ * Open work's files are followed while it is mounted (PEE-28), and a file
+ * archived with an archived file above it — an issue of an archived project —
+ * reads as archived, so its row says "Archived" as the Screener's does (PEE-68).
+ * One object, so the read's options are stable.
+ */
+const FOLLOW = { live: true, archivedWith: true }
 
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
