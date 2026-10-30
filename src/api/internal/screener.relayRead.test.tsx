@@ -100,15 +100,28 @@ const fileObject = (address: string) => ({
   comments: [{ id: `c-${address}`, author: 'someone', body: `comment on ${address.slice(-1)}`, createdAt: 1_787_000_000 }],
 })
 let refuseReads = false
-const resolveObjects = vi.fn(async (addresses: readonly string[]) => {
+let archivedFiles = new Set<string>()
+/** Files under an archived parent: interop marks them only when asked `archivedWith`, as the relay read does. */
+let archivedAbove = new Map<string, string>()
+const resolveObjects = vi.fn(async (addresses: readonly string[], options?: { archivedWith?: boolean }) => {
   if (refuseReads) throw new Error('rate_limited')
-  return Object.fromEntries(addresses.map((address) => [address, fileObject(address)]))
+  return Object.fromEntries(
+    addresses.map((address) => {
+      const parent = options?.archivedWith ? archivedAbove.get(address) : undefined
+      const archived = archivedFiles.has(address)
+        ? { by: 'someone', at: 1_787_000_100 }
+        : parent
+          ? { by: 'someone', at: 1_787_000_100, with: parent }
+          : undefined
+      return [address, archived ? { ...fileObject(address), archived } : fileObject(address)]
+    }),
+  )
 })
 /** How many files were asked about, over every read — the cost PER-10 moved. */
 const filesAsked = () => resolveObjects.mock.calls.reduce((n, [addresses]) => n + addresses.length, 0)
 // The copy on the device holds nothing here (PEE-2): only the relay's reads are counted.
-const fromRelayOnly = (addresses: readonly string[], source?: string) =>
-  source === 'copy' ? Promise.resolve({}) : resolveObjects(addresses)
+const fromRelayOnly = (addresses: readonly string[], source?: string, options?: { archivedWith?: boolean }) =>
+  source === 'copy' ? Promise.resolve({}) : resolveObjects(addresses, options)
 vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects: fromRelayOnly }) }))
 const FRONTIER = {
   ready: true,
@@ -143,6 +156,8 @@ async function setup() {
 beforeEach(() => {
   vi.clearAllMocks()
   refuseReads = false
+  archivedFiles = new Set()
+  archivedAbove = new Map()
   dmStream = [dmMessage()]
   openWorkFileAddresses = new Set()
   openWorkDmIds = new Set()
@@ -203,14 +218,18 @@ describe('followed files (FOL-34)', () => {
   it('a file someone archived stays while its comment is unread, marked archived; the other is not marked (PEE-68)', async () => {
     followsState = 'present'
     followed = new Set([A, B])
-    resolveObjects.mockImplementationOnce(async (addresses) =>
-      Object.fromEntries(
-        addresses.map((address) => [
-          address,
-          address === A ? { ...fileObject(address), archived: { by: 'someone', at: 1_787_000_100 } } : fileObject(address),
-        ]),
-      ),
-    )
+    archivedFiles = new Set([A])
+    const { result } = await setup()
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
+    const marked = Object.fromEntries(result.current.items.flatMap((i) => (i.kind === 'file' ? [[i.address, i.archived === true]] : [])))
+    expect(marked).toEqual({ [A]: true, [B]: false })
+  })
+
+  it('a file whose project someone archived stays while unread, marked archived too (PEE-68)', async () => {
+    const PROJECT = `30850:${'a'.repeat(64)}:project`
+    followsState = 'present'
+    followed = new Set([A, B])
+    archivedAbove = new Map([[A, PROJECT]])
     const { result } = await setup()
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
     const marked = Object.fromEntries(result.current.items.flatMap((i) => (i.kind === 'file' ? [[i.address, i.archived === true]] : [])))

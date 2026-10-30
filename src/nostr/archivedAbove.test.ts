@@ -35,7 +35,7 @@ const { queryRelay, events } = vi.hoisted(() => {
 })
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
-import { resolveFolderContentsAsViewer, resolveObjectAsViewer } from './foreign'
+import { resolveFolderContentsAsViewer, resolveObjectAsViewer, resolveObjectsAsViewer } from './foreign'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -74,6 +74,18 @@ describe('the page a link opens names the closest archived file above it, at any
   it('unarchiving A reopens C', async () => {
     events.push(archiving(A, 'true', 200), archiving(A, '', 230))
     expect(await resolveObjectAsViewer(C, 'https://relay.test', token, { archivedWith: true }).then((file) => file?.archived)).toBeUndefined()
+  })
+})
+
+describe('the Screener’s batch read marks a file archived with a file above it (PEE-68)', () => {
+  const archivedOf = async (files: string[], options?: { archivedWith: boolean }) => {
+    const objects = await resolveObjectsAsViewer(files, 'https://relay.test', token, 'relay', options)
+    return Object.fromEntries(files.map((file) => [file.split(':')[2], objects[file]?.archived?.with ?? (objects[file]?.archived ? 'itself' : 'live')]))
+  }
+
+  it('with B archived, C under it reads as archived with B and A above it stays live', async () => {
+    events.push(archiving(B, 'true', 200))
+    expect(await archivedOf([A, B, C], { archivedWith: true })).toEqual({ 'page-a': 'live', 'page-b': 'itself', 'page-c': B })
   })
 })
 
