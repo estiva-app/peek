@@ -3,8 +3,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
-import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
+import { SCREENER_ITEMS } from '@/api/fixtures'
 import { ScreenerPreviewCardView } from '@/components/ScreenerPreviewCard'
+import type { ScreenerItem } from '@/api'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { DeskPageView, type DeskRow } from './DeskPage'
@@ -27,9 +28,16 @@ const STARRED: StarredItem[] = [
   { id: 'daniel', name: 'Daniel Stanton', isUnread: false, isUrgent: false },
 ]
 
-/** The hover card a Screener row opens, from the one fixture every Screener
- *  story uses. The real one reads the conversation, which needs a backend. */
-const screenerPreview = () => <ScreenerPreviewCardView rows={SCREENER_PREVIEW_ROWS} />
+/**
+ * The hover card a Screener row opens: the row's own message, by whoever the
+ * row names. It showed one shared thread, Juan Foley's, on Amie Miles's row
+ * (Katerina, 30 October). The real one reads the conversation, which needs a backend.
+ */
+const screenerPreview = (item: ScreenerItem) => (
+  <ScreenerPreviewCardView
+    rows={[{ kind: 'message', authorName: item.kind === 'dm' ? item.authorName : 'Priya Nair', timestamp: '9:14 AM', body: item.preview }]}
+  />
+)
 
 const row = (
   id: string,
@@ -49,7 +57,7 @@ const row = (
 })
 
 const URGENT: DeskRow[] = [
-  row('u1', 'dm', 'Hallie Pratt', { isUnread: true, isUrgent: true, isSelected: true }),
+  row('u1', 'dm', 'Hallie Pratt', { isUnread: true, isUrgent: true }),
   row('u2', 'dm', 'Alice Johnson', { isUnread: true, isUrgent: true }),
 ]
 
@@ -117,8 +125,9 @@ const meta = {
   title: 'Pages/In the shell',
   parameters: { layout: 'fullscreen' },
   decorators: [
-    (Story) => (
-      <MemoryRouter initialEntries={['/app/people/alice']}>
+    // The rail lights the page at this address: a story on another page names its own in `parameters.route`.
+    (Story, { parameters }) => (
+      <MemoryRouter initialEntries={[(parameters.route as string | undefined) ?? '/app/people/alice']}>
         <DebugProvider>
           <PeekDataProvider>
             <LastSelectionProvider>
@@ -196,6 +205,7 @@ export const PeopleLoading: Story = {
  * work and Starred.
  */
 export const Desk: Story = {
+  parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
       railClosed={false}
@@ -204,6 +214,7 @@ export const Desk: Story = {
       onOpenScreener={noop}
       onDismissScreener={noop}
       onLaterScreener={noop}
+      onReadScreener={noop}
       screenerPreviewFor={screenerPreview}
       urgent={URGENT}
       openWork={OPEN_WORK}
@@ -222,6 +233,7 @@ export const Desk: Story = {
  * meant to fill, so they speak.
  */
 export const DeskEmpty: Story = {
+  parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
       railClosed={false}
@@ -240,6 +252,7 @@ export const DeskEmpty: Story = {
 
 /** The Desk, first read in flight. */
 export const DeskLoading: Story = {
+  parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
       railClosed={false}
