@@ -81,6 +81,8 @@ describe('a member file screens while somebody else’s comment on it is unread 
         fileKind: 30840,
         title: 'The file',
         preview: 'a comment on the file',
+        at: S * 1000,
+        authorPubkey: 'someone',
       },
     ])
   })

@@ -10,6 +10,8 @@ export type ScreenerItem =
       authorName: string
       authorAvatarSrc?: string
       preview: string
+      /** When the message that brought it in was sent, ms. */
+      at?: number
     }
   | {
       id: string
@@ -21,6 +23,12 @@ export type ScreenerItem =
       fileKind: number
       title: string
       preview: string
+      /** When the comment that brought it in was made, ms. */
+      at?: number
+      /** Who made it — a pubkey, never shown: the page names it (`authorName`). */
+      authorPubkey?: string
+      /** Their name, as the page has it; absent while it is not known. */
+      authorName?: string
       /** Archived by someone while still unread here: it stays, marked (PEE-68, Miky 19 Oct). */
       archived?: boolean
     }
@@ -29,6 +37,8 @@ export type ScreenerItem =
 export const SCREENER_ITEMS: Exclude<ScreenerItem, { kind: 'file' }>[] = [
   {
     id: 'sc_2',
+    // Three hours ago, so the demo shows a time.
+    at: Date.now() - 3 * 60 * 60 * 1000,
     kind: 'dm',
     dmId: 'amie',
     authorName: 'Amie Miles',
