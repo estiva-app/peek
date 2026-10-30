@@ -76,12 +76,13 @@ vi.mock('@/components/views/useDmConversationView', () => ({
     threadPanel: undefined,
   }),
 }))
-const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn() }))
+const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn(), addScreener: vi.fn() }))
 /** A second Open work file, for the order test. */
 const SECOND = '30851:aa:issue-2'
 const desk = vi.hoisted(() => ({
   openWork: [] as unknown[],
   urgent: [] as unknown[],
+  screener: [] as unknown[],
   unread: {} as Record<string, boolean>,
 }))
 vi.mock('@/api', async () => ({
@@ -98,10 +99,10 @@ vi.mock('@/api', async () => ({
   }),
   useDeskLoading: () => false,
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
-  useScreenerItems: () => [],
+  useScreenerItems: () => desk.screener,
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
-  usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm }),
+  usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
 }))
 vi.mock('@/layouts/PeekFrame', () => ({
   PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
@@ -157,6 +158,8 @@ beforeEach(() => {
   openWork.removeDm.mockClear()
   desk.openWork = [openWorkFile(ISSUE, 'Issue one')]
   desk.urgent = []
+  desk.screener = []
+  openWork.addScreener.mockClear()
   desk.unread = {}
 })
 
@@ -316,6 +319,34 @@ describe('Desk rows on NavItem', () => {
     mount()
     expect(within(linkFor('Issue one')).getByText('Archived')).toBeTruthy()
     expect(within(linkFor('Issue two')).queryByText('Archived')).toBeNull()
+  })
+
+  it('a file archived while unread is in the Screener with the Archived chip, and its Open adds it to Open work (PEE-68)', () => {
+    desk.openWork = []
+    const row = (address: string, title: string, archived?: boolean) => ({
+      id: `sc_file_${address}`,
+      kind: 'file',
+      address,
+      fileKind: 30851,
+      title,
+      preview: `A comment on ${title}`,
+      ...(archived ? { archived } : {}),
+    })
+    desk.screener = [row(ISSUE, 'Archived issue', true), row(SECOND, 'Live issue')]
+    mount()
+    // A row is the nearest box around its title that holds its own Open.
+    const rowOf = (title: string) => {
+      let el: HTMLElement | null = screen.getByText(title)
+      while (el && !within(el).queryByRole('button', { name: 'Open' })) el = el.parentElement
+      return el as HTMLElement
+    }
+    const archivedRow = rowOf('Archived issue')
+    const liveRow = rowOf('Live issue')
+    expect(within(archivedRow).getByText('Archived')).toBeTruthy()
+    expect(within(liveRow).queryByText('Archived')).toBeNull()
+
+    fireEvent.click(within(archivedRow).getByRole('button', { name: 'Open' }))
+    expect(openWork.addScreener).toHaveBeenCalledWith(`sc_file_${ISSUE}`, { kind: 'file', address: ISSUE })
   })
 
   it('a DM in Open work has the ✕ too, and it takes the DM off by its person', () => {

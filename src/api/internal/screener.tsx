@@ -41,6 +41,7 @@
  * the card reads on hover (`useScreenerPreview`). Nothing is asked of Convex.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { isArchived } from '@estiva-app/interop'
 import { SCREENER_ITEMS } from '@/data/screenerData'
 import { useOpenWork } from '@/api/internal/openWork'
 import { useDmChannels } from '@/api/internal/dms'
@@ -145,6 +146,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
                     kind: object.kind,
                     title: object.slots.title?.value ?? 'File',
                     summary: object.slots.subtitle?.value,
+                    archived: isArchived(object),
                     comments: object.comments,
                   }
                 : null
@@ -173,7 +175,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
             const next = { ...prev }
             for (const address of found) {
               const object = objects[address]!
-              next[address] = { address, kind: object.kind, title: object.slots.title?.value ?? 'File', comments: object.comments }
+              next[address] = { address, kind: object.kind, title: object.slots.title?.value ?? 'File', archived: isArchived(object), comments: object.comments }
             }
             return next
           }),

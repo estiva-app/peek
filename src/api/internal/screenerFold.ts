@@ -43,6 +43,8 @@ export interface ScreenerFile {
   title: string
   /** Its summary (SPEC §6.12), for Desk's Urgent row. */
   summary?: string
+  /** Archived, itself or above it: the row stays while unread, marked (PEE-68). */
+  archived?: boolean
   comments: readonly { id: string; author: string; body: string; createdAt: number }[]
 }
 
@@ -116,6 +118,7 @@ export function foldFileScreenerRows(
         fileKind: file.kind,
         title: file.title,
         preview: screening.body,
+        ...(file.archived ? { archived: true } : {}),
       },
     })
   }

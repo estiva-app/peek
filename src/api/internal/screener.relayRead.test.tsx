@@ -200,6 +200,23 @@ describe('followed files (FOL-34)', () => {
     expect(fileRows(result.current.items)).toEqual([A, B].sort())
   })
 
+  it('a file someone archived stays while its comment is unread, marked archived; the other is not marked (PEE-68)', async () => {
+    followsState = 'present'
+    followed = new Set([A, B])
+    resolveObjects.mockImplementationOnce(async (addresses) =>
+      Object.fromEntries(
+        addresses.map((address) => [
+          address,
+          address === A ? { ...fileObject(address), archived: { by: 'someone', at: 1_787_000_100 } } : fileObject(address),
+        ]),
+      ),
+    )
+    const { result } = await setup()
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
+    const marked = Object.fromEntries(result.current.items.flatMap((i) => (i.kind === 'file' ? [[i.address, i.archived === true]] : [])))
+    expect(marked).toEqual({ [A]: true, [B]: false })
+  })
+
   it('folds the DM half beside the file rows, newest first, from the DM channels', async () => {
     followsState = 'present'
     followed = new Set([A])
