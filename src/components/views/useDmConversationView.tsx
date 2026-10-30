@@ -112,9 +112,10 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
   })
-  // Opening the DM reads its top-level messages, and keeps reading what arrives
-  // while it is open (PEE-44); an open thread reads its replies, inside the view.
-  useMarkDmRead(dmId, dm.newestAt)
+  // The DM is read up to the newest top-level message seen on screen, which had its
+  // dwell already (Katerina, 30 October), and keeps reading what arrives while it
+  // is open (PEE-44); an open thread reads its replies, inside the view.
+  useMarkDmRead(dmId, dm.seenAt, 0)
 
   /*
     A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the

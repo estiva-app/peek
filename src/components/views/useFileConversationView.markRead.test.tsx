@@ -1,12 +1,14 @@
 /**
  * What the conversation view reads — PEE-44, Miky 2026-10-03.
  *
- * The view drives a DM's mark and Peek's own file view's: its `newestAt` is
+ * The view drives a DM's mark and Peek's own file view's: its `seenAt` is
  * what the DM or file is marked up to, and it must be the newest top-level
- * message, never a reply, or opening the conversation reads every thread in it
- * (SPEC §11.3 carries the stream's marker down). The open thread is marked by
- * the view itself, up to its newest reply. The real `useFileConversation` runs
- * over a mocked relay read, as in the SID-1 test beside this one.
+ * message seen, never a reply, or opening the conversation reads every thread
+ * in it (SPEC §11.3 carries the stream's marker down). The open thread is
+ * marked by the view itself, up to its newest reply seen. The real
+ * `useFileConversation` runs over a mocked relay read, as in the SID-1 test
+ * beside this one. jsdom has no IntersectionObserver, so everything drawn is
+ * on screen and the dwell alone decides (`useSeenOnScreen`).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -39,7 +41,18 @@ vi.mock('@/api', async () => ({
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null, ClosedBox: () => null }))
 vi.mock('@/components/ConversationCard', () => ({
-  ConversationCard: ({ body, hasNewReply }: { body: string; hasNewReply?: boolean }) => <article data-new-reply={String(!!hasNewReply)}>{body}</article>,
+  ConversationCard: ({ body, hasNewMessage, hasNewReply, isUrgent }: { body: string; hasNewMessage?: boolean; hasNewReply?: boolean; isUrgent?: boolean }) => (
+    <article data-new-message={String(!!hasNewMessage)} data-new-reply={String(!!hasNewReply)} data-urgent={String(!!isUrgent)}>
+      {body}
+    </article>
+  ),
+}))
+vi.mock('@/components/ReplyCard', () => ({
+  ReplyCard: ({ body, isNew, isUrgent }: { body: string; isNew?: boolean; isUrgent?: boolean }) => (
+    <article data-new={String(!!isNew)} data-urgent={String(!!isUrgent)}>
+      {body}
+    </article>
+  ),
 }))
 // The DM read up to its root, before the reply: the reply's thread is new (PEE-44).
 vi.mock('@/nostr/useReadStateSync', async () => ({
@@ -74,7 +87,7 @@ const conversation: FileConversation = {
 }
 
 function View({ openThreadId }: { openThreadId: string | undefined }) {
-  const { conversation: view, newestAt } = useFileConversationView({
+  const { conversation: view, threadPanel, seenAt } = useFileConversationView({
     container: { kind: 'channel', h: '1c7a1f52-6721-42fe-a348-9efde8565374' },
     rootIds: [],
     openThreadId,
@@ -83,8 +96,9 @@ function View({ openThreadId }: { openThreadId: string | undefined }) {
   })
   return (
     <>
-      <output data-testid="newest">{newestAt}</output>
+      <output data-testid="seen">{seenAt}</output>
       {view}
+      {threadPanel}
     </>
   )
 }
@@ -95,10 +109,12 @@ afterEach(() => {
 })
 
 describe('the conversation view reads top-level messages, and threads only when open (PEE-44)', () => {
-  it('its newestAt is the newest top-level message, not a newer reply', async () => {
+  it('its seenAt is the newest top-level message seen, not a newer reply', async () => {
     relay.read.mockResolvedValue(conversation)
     render(<View openThreadId={undefined} />)
-    await waitFor(() => expect(screen.getByTestId('newest').textContent).toBe(String(T)))
+    await waitFor(() => expect(screen.getByText('Root')).toBeInTheDocument())
+    expect(screen.getByTestId('seen').textContent).toBe('')
+    await waitFor(() => expect(screen.getByTestId('seen').textContent).toBe(String(T)))
     await new Promise((r) => setTimeout(r, 1700))
     expect(marks.thread).not.toHaveBeenCalled()
   })
@@ -109,9 +125,44 @@ describe('the conversation view reads top-level messages, and threads only when 
     await waitFor(() => expect(screen.getByText('Root').getAttribute('data-new-reply')).toBe('true'))
   })
 
-  it('an open thread is marked up to its newest reply', async () => {
+  it('an open thread is marked up to its newest reply seen', async () => {
     relay.read.mockResolvedValue(conversation)
     render(<View openThreadId={root.id} />)
     await waitFor(() => expect(marks.thread).toHaveBeenCalledWith(root.id, T + 120))
+  })
+})
+
+describe('a message keeps the unread look until it has been seen (Katerina, 30 October)', () => {
+  const later = event('3', 'A later message', T + 60)
+  const urgent = event('4', 'Look at this now !@Cath', T + 90)
+  const withNew: FileConversation = { ...conversation, roots: [root, later, urgent] }
+
+  it('a top-level message newer than the marker is drawn new, urgent for you in its urgent tone, until seen', async () => {
+    relay.read.mockResolvedValue(withNew)
+    render(<View openThreadId={undefined} />)
+    await waitFor(() => expect(screen.getByText('A later message').getAttribute('data-new-message')).toBe('true'))
+    expect(screen.getByText('A later message').getAttribute('data-urgent')).toBe('false')
+    expect(screen.getByText('Look at this now !@Cath').getAttribute('data-new-message')).toBe('true')
+    expect(screen.getByText('Look at this now !@Cath').getAttribute('data-urgent')).toBe('true')
+    // Read before: no look.
+    expect(screen.getByText('Root').getAttribute('data-new-message')).toBe('false')
+    // On screen for the dwell: seen, and the look goes.
+    await waitFor(() => expect(screen.getByText('A later message').getAttribute('data-new-message')).toBe('false'))
+    expect(screen.getByText('Look at this now !@Cath').getAttribute('data-new-message')).toBe('false')
+  })
+
+  it('a new reply in the open thread is drawn new until it has been seen there', async () => {
+    relay.read.mockResolvedValue(conversation)
+    render(<View openThreadId={root.id} />)
+    await waitFor(() => expect(screen.getByText('A later reply').getAttribute('data-new')).toBe('true'))
+    await waitFor(() => expect(screen.getByText('A later reply').getAttribute('data-new')).toBe('false'))
+  })
+
+  it('your own new message is never drawn new', async () => {
+    const mine = { ...later, author: 'a'.repeat(64) }
+    relay.read.mockResolvedValue({ ...conversation, roots: [root, mine] })
+    render(<View openThreadId={undefined} />)
+    await waitFor(() => expect(screen.getByText('A later message')).toBeInTheDocument())
+    expect(screen.getByText('A later message').getAttribute('data-new-message')).toBe('false')
   })
 })

@@ -117,13 +117,15 @@ export function useFileView({
     The dwell marks this file's own stream and no container (FOL-16). Passing
     `file?.address` rather than the address asked for is deliberate: an
     address that resolved to nothing was never read, and marking it would clear
-    a dot for a file the person never saw. The newest top-level comment the
-    pane holds re-arms it, so what arrives while the file is open is read too
-    (PEE-44). Replies are read by opening their thread: Peek's own view marks
-    its open thread itself, and the read-only pane's is marked here.
+    a dot for a file the person never saw. Peek's own view marks up to the
+    newest top-level comment seen on screen, which has had its dwell already
+    (Katerina, 30 October); the read-only pane up to the newest it holds. What
+    arrives while the file is open is read too (PEE-44). Replies are read by
+    opening their thread: Peek's own view marks its open thread itself, and the
+    read-only pane's is marked here.
   */
   const replies = threads === 'loading' || 'failed' in threads ? undefined : threads.replies
-  useMarkFileRead(file?.address, ownView ? peek.newestAt : newestMessageAt(comments))
+  useMarkFileRead(file?.address, ownView ? peek.seenAt : newestMessageAt(comments), ownView ? 0 : undefined)
   useMarkThreadRead(ownView ? null : openThreadId, openThreadId && replies ? newestMessageAt(replies[openThreadId] ?? []) : undefined)
   // The read-only pane's "new reply", by the dot's own rule; Peek's own view works out its own (CON-34).
   const readOnlyStream: ReplyStream | null = !ownView && file?.address ? { kind: 'file', address: file.address } : null

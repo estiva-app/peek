@@ -28,8 +28,12 @@ import { READ_DWELL_MS, useReadActions } from '@/api'
  * grow-only marker in the future, and everything others said until then would
  * read as read without being drawn. A message ahead of the clock is read once
  * the clock reaches it, while the pane is still open.
+ *
+ * Peek's own conversation view passes what has been on screen rather than
+ * what is drawn (`useSeenOnScreen`, Katerina, 30 October), and no dwell of its
+ * own: being seen already took one.
  */
-function useDwell(target: string | null | undefined, newestAt: number | undefined, mark: (target: string, newestAt: number) => void) {
+function useDwell(target: string | null | undefined, newestAt: number | undefined, mark: (target: string, newestAt: number) => void, dwellMs: number) {
   useEffect(() => {
     if (!target || newestAt === undefined) return
     let t: ReturnType<typeof setTimeout> | undefined
@@ -41,7 +45,7 @@ function useDwell(target: string | null | undefined, newestAt: number | undefine
     }
     const arm = () => {
       clearTimeout(t)
-      if (!document.hidden) t = setTimeout(fire, READ_DWELL_MS)
+      if (!document.hidden) t = setTimeout(fire, dwellMs)
     }
     arm()
     document.addEventListener('visibilitychange', arm)
@@ -52,7 +56,7 @@ function useDwell(target: string | null | undefined, newestAt: number | undefine
     // `mark` is recreated each render (fresh mutation binding); the dwell
     // should depend only on WHAT is open and what it shows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, newestAt])
+  }, [target, newestAt, dwellMs])
 }
 
 /** The latest `createdAt` (unix seconds) across the lists, or undefined when there are none. */
@@ -68,9 +72,9 @@ export function newestMessageAt(...lists: readonly (readonly { createdAt: number
  * newest top-level message stays unread — and the DM's dot lit — until its
  * thread is opened (Miky, 2026-10-03).
  */
-export function useMarkDmRead(dmId: string | null, newestAt: number | undefined) {
+export function useMarkDmRead(dmId: string | null, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markContainerRead } = useReadActions()
-  useDwell(dmId, newestAt, markContainerRead)
+  useDwell(dmId, newestAt, markContainerRead, dwellMs)
 }
 
 /**
@@ -80,9 +84,9 @@ export function useMarkDmRead(dmId: string | null, newestAt: number | undefined)
  * the person read one file's conversation and not the team's general chat. Its
  * replies are left to their threads, as a DM's are.
  */
-export function useMarkFileRead(address: string | null | undefined, newestAt: number | undefined) {
+export function useMarkFileRead(address: string | null | undefined, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markFileRead } = useReadActions()
-  useDwell(address, newestAt, markFileRead)
+  useDwell(address, newestAt, markFileRead, dwellMs)
 }
 
 /**
@@ -90,7 +94,7 @@ export function useMarkFileRead(address: string | null | undefined, newestAt: nu
  * a reply (Miky, 2026-10-03). Advances the thread and never its DM or file
  * (§11.2). `rootId` is the root's event id.
  */
-export function useMarkThreadRead(rootId: string | null | undefined, newestAt: number | undefined) {
+export function useMarkThreadRead(rootId: string | null | undefined, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markThreadRead } = useReadActions()
-  useDwell(rootId, newestAt, markThreadRead)
+  useDwell(rootId, newestAt, markThreadRead, dwellMs)
 }
