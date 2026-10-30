@@ -284,6 +284,22 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
   })
 })
 
+describe('the tab names what the Desk has open (SFX-2; Miky, 30 October)', () => {
+  it('"Desk" with nothing open, the file once one opens, the person once a DM does', () => {
+    mount()
+    expect(document.title).toBe('Desk – Peek')
+    fireEvent.click(screen.getByText('Issue one'))
+    expect(document.title).toBe('Issue one – Peek')
+    fireEvent.click(screen.getByText('Ana'))
+    expect(document.title).toBe('Ana – Peek')
+  })
+
+  it('a file opened from a Desk link names itself', () => {
+    mount(deskWith(WIDGETS_FILE))
+    expect(document.title).toBe('Widgets – Peek')
+  })
+})
+
 /*
   The Desk's rows are the package's NavItem (Katerina, 14 October): each is a
   link, a plain click still opens it beside the lists, Open work keeps its ✕,

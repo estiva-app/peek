@@ -52,7 +52,6 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
-  useTabTitle('Desk')
   const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -326,6 +325,20 @@ export function DeskPage() {
     onOpenThread: setOpenThread,
     titleHint: openedFrom?.title,
   })
+  /*
+    The tab names what the pane shows, as that page's own tab would (SFX-2;
+    Miky, 2026-10-30): the person, the file, or "Desk" with nothing open. A
+    file still resolving, or one that can't be read, is just "Peek".
+  */
+  useTabTitle(
+    selected
+      ? selected.dmName || undefined
+      : openAddress
+        ? fileView.file
+          ? fileView.file.slots.title?.value || 'Untitled'
+          : undefined
+        : 'Desk',
+  )
   const openSection = openedFrom?.section ?? 'openWork'
   const filePaneParts = useFilePane(fileView, {
     // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file's pane closes, and a new topic opens here.
