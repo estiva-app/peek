@@ -6,6 +6,11 @@ import { useEffect } from 'react'
  * page that is loading or can't be read, or one that sets nothing, is just
  * "Peek" — never the previous page's title, which leaving a page clears.
  */
+/** A file's page name: its title, "Untitled" for none, nothing while it resolves or can't be read. */
+export function fileTabTitle(file: { slots: { title?: { value?: string } } } | null): string | undefined {
+  return file ? file.slots.title?.value || 'Untitled' : undefined
+}
+
 export function useTabTitle(page: string | undefined): void {
   useEffect(() => {
     document.title = page ? `${page} – Peek` : 'Peek'
