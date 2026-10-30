@@ -48,7 +48,7 @@ export function readRemembered(key: string): boolean | null {
   }
 }
 
-function writeRemembered(key: string, open: boolean) {
+export function writeRemembered(key: string, open: boolean) {
   try {
     window.localStorage.setItem(key, open ? OPEN : CLOSED)
   } catch {

@@ -13,6 +13,7 @@ import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
+import { readRemembered, writeRemembered } from '@/lib/rememberedOpen'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
@@ -158,6 +159,7 @@ export function FileTreeView({
           expand={[...(expand ?? []), ...openForChild]}
           onSelect={onSelect}
           onControl={onControl}
+          remember={filter === 'all'}
         />
       ))}
     </div>
@@ -313,6 +315,7 @@ function TreeRow({
   onSelect,
   onControl,
   nested = false,
+  remember = false,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -322,10 +325,19 @@ function TreeRow({
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
   nested?: boolean
+  /**
+   * Keep the row open or closed on this browser, as the person left it: under
+   * All (Katerina, 30 October). The column is drawn again on every page, and
+   * a card in another app opens a new tab. Not under a filter, whose rows open
+   * for what they lead to (FOL-41), as its Folders do.
+   */
+  remember?: boolean
 }) {
   // `expand` decides until the person does — see `FileRow` for why this is
-  // not an initialiser and not an effect.
-  const [toggled, setToggled] = useState<boolean | null>(null)
+  // not an initialiser and not an effect. What they did last, under All, is
+  // read once from this browser.
+  const kept = `peek.tree.row.${file.ref}`
+  const [toggled, setToggled] = useState<boolean | null>(() => (remember ? readRemembered(kept) : null))
   /*
     And once `expand` has opened a row it stays open (SID-2): the selection
     moving to another branch is not the person closing this one, and closing
@@ -434,7 +446,13 @@ function TreeRow({
       }
       menuLabel="More options"
       open={open}
-      onOpenChange={(next) => setToggled(next)}
+      onOpenChange={(next) => {
+        setToggled(next)
+        if (remember) writeRemembered(kept, next)
+      }}
+      // A row above the open file opens for each file opened under it, even one closed by hand (Katerina, 30 October):
+      // the package's `openFor`, once per file, so closed again it stays closed until another opens.
+      openFor={expandable && expanded ? selectedRef : undefined}
       onClick={(event) => {
         // The page navigates: it remembers the address first (SID-2).
         event.preventDefault()
@@ -455,6 +473,7 @@ function TreeRow({
                     expand={expand}
                     onSelect={onSelect}
                     onControl={onControl}
+                    remember={remember}
                   />
                 )}
                 {listedChildren.map((child) => (
@@ -468,6 +487,7 @@ function TreeRow({
                     onSelect={onSelect}
                     onControl={onControl}
                     nested
+                    remember={remember}
                   />
                 ))}
               </div>
@@ -487,6 +507,7 @@ function FetchedRows({
   expand,
   onSelect,
   onControl,
+  remember,
 }: {
   naddr: string
   exclude?: ForeignObject[]
@@ -494,6 +515,7 @@ function FetchedRows({
   expand?: readonly string[]
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
+  remember?: boolean
 }) {
   const { state } = useForeignChildren(naddr)
   const drawn = new Set(exclude.map((file) => file.ref))
@@ -519,6 +541,7 @@ function FetchedRows({
           onSelect={onSelect}
           onControl={onControl}
           nested
+          remember={remember}
         />
       ))}
     </>

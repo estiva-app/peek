@@ -283,6 +283,39 @@ describe('the second level', () => {
 })
 
 /*
+  Katerina, 30 October: a row keeps how the person left it on this browser —
+  the column is drawn again on every page, and another app's card opens a new
+  tab — and a row above the open file opens for each file opened under it.
+*/
+describe('rows kept, and opened for the open file (Katerina, 30 October)', () => {
+  const projectRow = () => (section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement).parentElement!
+  const arrow = (name: RegExp) => within(projectRow()).getByRole('button', { name })
+  const shown = () => section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`) !== null
+
+  it('a row opened by hand is open when the column is drawn again; one closed by hand stays closed', () => {
+    const first = mount({ currentFolder: TEAM })
+    fireEvent.click(arrow(/Show what is under/))
+    first.unmount()
+    const second = mount({ currentFolder: TEAM })
+    expect(shown()).toBe(true)
+    fireEvent.click(arrow(/Hide what is under/))
+    second.unmount()
+    mount({ currentFolder: TEAM })
+    expect(shown()).toBe(false)
+  })
+
+  it('a row above the open file, closed by hand, opens for another file opened under it, and not again for the same one', () => {
+    const view = mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-a' })
+    expect(shown()).toBe(true)
+    fireEvent.click(arrow(/Hide what is under/))
+    view.rerender({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-a' })
+    expect(shown()).toBe(false)
+    view.rerender({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-b' })
+    expect(shown()).toBe(true)
+  })
+})
+
+/*
   Opened before its listing is in, a Folder stays shut with its arrow turned,
   then opens once with every row (OPT-11, Miky 12 October): a skeleton the
   rows replaced moved everything below it twice.

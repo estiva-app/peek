@@ -668,8 +668,8 @@ export function FolderTreeView({
   }
 
   return (
-    // The package's tree, each Folder a section of it that reads its own rows.
-    <NavTree>
+    // The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94).
+    <NavTree selected={selectedRef}>
       {ordered.map((folder) => (
         <FolderSection
           key={folder.id}
