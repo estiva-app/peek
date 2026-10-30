@@ -16,6 +16,7 @@ import { useFileControls } from '@/components/views/useFileControls'
 import { useToast } from '@/lib/toast'
 import { filePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
+import { useTabTitle } from '@/lib/useTabTitle'
 
 /**
  * `/app/folders` and `/app/folders/:id` — the Topics column, with no file open.
@@ -154,6 +155,9 @@ export function FoldersPage() {
   }, [id, stateless, selected?.listedIn?.length, resolveFolderProject, navigate])
   // Still asking which project this is: nothing drawn yet, so the list does not flash before the project opens.
   const findingProject = stateless && !!selected?.listedIn?.length && !(projectCheck?.id === id)
+  // As its heading says; "Folders" with none open, and nothing until the relay has said it is a Folder — nor while a
+  // project's record channel is on its way to the project, whose channel name is a machine id.
+  useTabTitle(isFolder && !findingProject ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Folders')
 
   const { state } = useFolderContents(stateless ? id : null)
   const contentsCount = typeof state === 'object' && 'files' in state ? state.files.length : undefined

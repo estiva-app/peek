@@ -22,6 +22,7 @@ import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { rememberRecent } from '@/lib/recents'
+import { useTabTitle } from '@/lib/useTabTitle'
 
 /**
  * The People page: starred people and everyone in the workspace on the left,
@@ -53,6 +54,8 @@ export function PeoplePage() {
 
   // URL is the source of truth — derive selection from routeId.
   const selectedId: string | null = routeId ?? lastDmId ?? null
+  // The person whose conversation is open, once the roster names them; "People" with none open.
+  useTabTitle(selectedId ? DMS?.find((dm) => dm.id === selectedId)?.name || undefined : 'People')
 
   const handleSelect = (id: string) => {
     navigate(`/app/people/${id}`)

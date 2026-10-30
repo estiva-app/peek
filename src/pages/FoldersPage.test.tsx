@@ -18,7 +18,7 @@
  * The dwell tests that were here went with it, to `FilePage.test.tsx`: this
  * page marks nothing read, because a listing is not a reading.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -288,6 +288,17 @@ describe('FoldersPage opens a file at its own address', () => {
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
   })
 
+  it('names the open Folder in the browser tab, and leaving it does not leave its name behind (SFX-2)', async () => {
+    relay.files = [topic]
+    // A channel drawn as a Folder page with no project (FOL-9): the tab names it as its heading does.
+    mount(`/app/folders/${RECORD_CHANNEL}`)
+    await waitFor(() => expect(document.title).toBe('project-0804b906 – Peek'))
+    cleanup()
+    mount(`/app/folders/${FOLDER}`)
+    await userEvent.click(screen.getByText('FOL-15 test topic 2'))
+    expect(document.title).toBe('Peek')
+  })
+
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
     mount(`/app/folders/${FOLDER}`)
     const listed = [...document.querySelectorAll('[data-nav-group]')].map((node) => (node as HTMLElement).dataset.navGroup)
@@ -377,6 +388,8 @@ describe('a stateless channel’s link (5 October)', () => {
   it('a Ship project’s channel opens the project, to be drawn open under its Folder', async () => {
     projects.resolve.mockResolvedValueOnce({ project: { address: SHIP_PROJECT, slots: { title: { value: 'Launch' } } } })
     mount(`/app/folders/${PROJECT_CHANNEL}`)
+    // On its way there the tab never names the channel's machine id (SFX-2 review).
+    expect(document.title).toBe('Peek')
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(filePath(SHIP_PROJECT, 'Launch')))
     expect(projects.resolve).toHaveBeenCalledWith(PROJECT_CHANNEL)
   })
