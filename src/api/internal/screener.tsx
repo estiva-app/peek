@@ -41,6 +41,7 @@
  * the card reads on hover (`useScreenerPreview`). Nothing is asked of Convex.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { isArchived } from '@estiva-app/interop'
 import { SCREENER_ITEMS } from '@/data/screenerData'
 import { useOpenWork } from '@/api/internal/openWork'
 import { useDmChannels } from '@/api/internal/dms'
@@ -113,6 +114,13 @@ const FILE_REFRESH_MS = 60_000
  * missing file row is the quiet failure, and a Desk held under a skeleton for a
  * relay that is down is the loud one.
  */
+/**
+ * A row marks a file archived with an archived file above it too — an issue in
+ * an archived project — as every app does (PEE-68).
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ */
+const ARCHIVED_WITH = { archivedWith: true }
+
 function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
   const { resolveObjects } = useForeignObjects()
   /*
@@ -133,7 +141,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
   const read = useCallback(
     (asked: readonly string[]) => {
       if (!hasRelay || asked.length === 0) return
-      resolveObjects(asked).then(
+      resolveObjects(asked, 'relay', ARCHIVED_WITH).then(
         (objects) =>
           setHeld((prev) => {
             const next = { ...prev }
@@ -145,6 +153,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
                     kind: object.kind,
                     title: object.slots.title?.value ?? 'File',
                     summary: object.slots.subtitle?.value,
+                    archived: isArchived(object),
                     comments: object.comments,
                   }
                 : null
@@ -165,7 +174,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
     const asked = key ? key.split('\u0000').filter((address) => !(address in heldRef.current)) : []
     // The copy on the device first, for what it holds; the relay's answer replaces it (PEE-2).
     if (hasRelay && asked.length) {
-      resolveObjects(asked, 'copy').then(
+      resolveObjects(asked, 'copy', ARCHIVED_WITH).then(
         (objects) =>
           setHeld((prev) => {
             const found = asked.filter((address) => !(address in prev) && objects[address])
@@ -173,7 +182,7 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
             const next = { ...prev }
             for (const address of found) {
               const object = objects[address]!
-              next[address] = { address, kind: object.kind, title: object.slots.title?.value ?? 'File', comments: object.comments }
+              next[address] = { address, kind: object.kind, title: object.slots.title?.value ?? 'File', archived: isArchived(object), comments: object.comments }
             }
             return next
           }),

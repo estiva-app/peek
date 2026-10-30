@@ -486,10 +486,14 @@ export function useForeignObjects() {
    * answers. Rejects when the relay refuses the read.
    */
   const resolveObjects = useCallback(
-    async (references: readonly string[], source: ReadSource = 'relay'): Promise<Record<string, ForeignObject | null>> => {
+    async (
+      references: readonly string[],
+      source: ReadSource = 'relay',
+      options?: ArchiveReadOptions,
+    ): Promise<Record<string, ForeignObject | null>> => {
       const v = viewer()
       return v
-        ? resolveObjectsAsViewer(references, v.relayUrl, v.token, source)
+        ? resolveObjectsAsViewer(references, v.relayUrl, v.token, source, options)
         : Object.fromEntries(references.map((reference) => [reference, null]))
     },
     [viewer],

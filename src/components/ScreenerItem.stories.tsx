@@ -86,6 +86,26 @@ export const FileItem: Story = {
   },
 }
 
+/**
+ * Someone archived the file while its last comment was still unread here: it
+ * stays until you read, dismiss, snooze or open it, with Open work's
+ * "Archived" chip (PEE-68; Miky, 19 October). Open adds it to Open work as on
+ * any row.
+ */
+export const ArchivedFileItem: Story = {
+  args: {
+    item: {
+      id: 'sc_file_30851:0000:archived',
+      kind: 'file',
+      address: '30851:0000:archived',
+      fileKind: 30851,
+      title: 'Relay refuses the ICC profile',
+      preview: 'Fixed on production — closing this one, thanks all.',
+      archived: true,
+    },
+  },
+}
+
 /** A Ship issue wears Ship's list glyph, as everywhere Peek draws one (7 October). */
 export const ForeignFileItem: Story = {
   args: {

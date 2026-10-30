@@ -598,6 +598,8 @@ export async function resolveObjectsAsViewer(
   relayUrl: string,
   token: StoredToken,
   source: ReadSource = 'relay',
+  /** `archivedWith`: also mark a file archived with an archived file above it — the Screener's rows (PEE-68). */
+  options?: ArchiveReadOptions,
 ): Promise<Record<string, ForeignObject | null>> {
   const single = (reference: string) => /^https?:\/\//i.test(reference) || isEventReference(reference)
   const addresses = references.filter((reference) => !single(reference))
@@ -625,7 +627,7 @@ export async function resolveObjectsAsViewer(
   }
   const query = viewerQuery(relayUrl, token)
   const [pooled, singles] = await Promise.all([
-    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests) : {},
+    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests, options) : {},
     Promise.all(
       references
         .filter(single)
@@ -642,7 +644,7 @@ export async function resolveObjectsAsViewer(
     quiet: boolean,
   ): Promise<Record<string, ForeignObject | null>> {
     try {
-      return await resolveForeignObjects(addresses, fromCopy, people, cache)
+      return await resolveForeignObjects(addresses, fromCopy, people, cache, options)
     } catch (error) {
       if (!(error instanceof RelayReadError)) throw error
       if (addresses.length === 1) {
@@ -658,7 +660,7 @@ export async function resolveObjectsAsViewer(
       */
       const each = await Promise.all(
         addresses.map((address) =>
-          resolveForeignObjects([address], fromCopy, people, cache).catch((missed: unknown) => {
+          resolveForeignObjects([address], fromCopy, people, cache, options).catch((missed: unknown) => {
             if (missed instanceof RelayReadError) return {}
             throw missed
           }),
