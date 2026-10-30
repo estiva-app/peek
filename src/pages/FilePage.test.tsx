@@ -425,7 +425,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
       expect(header().queryByText('Leaf')).toBeNull()
       expect(header().queryByText('Document')).toBeNull()
       const open = header().getByRole('link', { name: 'Open in Leaf' })
-      expect(open.textContent).toBe('Open ↗')
+      expect(open.textContent).toBe('Open')
       expect(open.getAttribute('href')).toBe(LEAF_URL)
       expect(open.getAttribute('target')).toBe('_blank')
       expect(open.getAttribute('rel')).toContain('noopener')
@@ -439,7 +439,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
       expect(header().queryByText('Estiva Ship')).toBeNull()
       expect(header().queryByText('Issue')).toBeNull()
       const open = header().getByRole('link', { name: 'Open in Estiva Ship' })
-      expect(open.textContent).toBe('Open ↗')
+      expect(open.textContent).toBe('Open')
       expect(open.getAttribute('href')).toBe(ISSUE_URL)
     })
 
