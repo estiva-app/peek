@@ -58,3 +58,13 @@ export function laterMenuTime(untilMs: number, now: number): string {
   return sameLocalDay(until, new Date(now)) ? time : `${DAYS[until.getDay()]} ${time}`
 }
 
+/** What the toast after a Later says: "Back at 4:15 PM", "Back tomorrow at 9:00 AM", "Back Mon at 9:00 AM". */
+export function laterToastLabel(untilMs: number, now: number): string {
+  const until = new Date(untilMs)
+  const time = clock(untilMs)
+  if (sameLocalDay(until, new Date(now))) return `Back at ${time}`
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (sameLocalDay(until, tomorrow)) return `Back tomorrow at ${time}`
+  return `Back ${DAYS[until.getDay()]} at ${time}`
+}

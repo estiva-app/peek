@@ -3,10 +3,11 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
+import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
-import { IconSortDescending, IconX } from '@tabler/icons-react'
+import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, ListColumn, NavItem } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, ListColumn, MenuItem, NavItem } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { Divider } from '@/components/ui/Divider'
@@ -30,6 +31,7 @@ import {
   useAvatarSrc,
   useLoadAhead,
   useMentionNames,
+  useOpenWorkActivity,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -141,8 +143,21 @@ export function DeskPage() {
   // by unread: that moved a row the moment it was read, so opening something
   // from the Screener put it first and reading it sent it last. The dot says
   // what is unread. Filter out items dismissed via the row's X.
-  const openWorkItems = (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : [])
-    .filter((i) => !dismissedOpenWorkIds.has(i.id))
+  const [openWorkSort, setOpenWorkSort] = useState<OpenWorkSort>(readOpenWorkSort)
+  const activityOf = useOpenWorkActivity()
+  const openWorkItems = sortOpenWork(
+    (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id)),
+    openWorkSort,
+    activityOf,
+  )
+  const chooseOpenWorkSort = (sort: OpenWorkSort) => {
+    setOpenWorkSort(sort)
+    try {
+      localStorage.setItem(OPEN_WORK_SORT_KEY, sort)
+    } catch {
+      // A browser that keeps nothing still sorts, for this visit.
+    }
+  }
 
   const dismissOpenWork = (id: string) => {
     // Removing the conversation you're looking at clears the stale selection —
@@ -182,32 +197,51 @@ export function DeskPage() {
     })
 
   /*
-    A Screener decision says so in the package's toast, with Undo (Katerina,
-    30 October). Dismiss and Later get theirs once the toast can say it has
-    closed: both are written to the person's decisions blob, whose instants
-    only ever move forward (`internal/screener.tsx`), so their Undo has to be
-    a wait, and the toast owns the timer — it pauses while it is pointed at.
+    Every Screener decision says so in the package's toast, with Undo
+    (Katerina, 30 October). Dismiss and Later are written to the person's
+    decisions blob, whose instants only ever move forward
+    (`internal/screener.tsx`), so their Undo is a wait: the write happens when
+    the toast closes — on its own timer, which pauses while it is pointed at —
+    unless Undo came first. Leaving the Desk closes its toasts, so a decision
+    is written then rather than lost.
   */
   const { showToast, dismissToast } = useToast()
-  /** The "Added to Open work" toasts on screen: their Undo changes the Desk, so they go with it. */
-  const addedToasts = useRef(new Set<string>())
+  const deskToasts = useRef(new Set<string>())
   useEffect(() => {
-    const added = addedToasts.current
+    const open = deskToasts.current
     return () => {
-      for (const toast of added) dismissToast(toast)
-      added.clear()
+      for (const toast of [...open]) dismissToast(toast)
+      open.clear()
     }
   }, [dismissToast])
+  const holdForUndo = (id: string, label: string, write: () => void) => {
+    hideScreenerRow(id)
+    let undone = false
+    const toast = showToast({
+      label,
+      type: 'success',
+      actionLabel: 'Undo',
+      onAction: () => {
+        undone = true
+        showScreenerRow(id)
+      },
+      onClose: () => {
+        deskToasts.current.delete(toast)
+        if (!undone) write()
+      },
+    })
+    deskToasts.current.add(toast)
+  }
 
   const dismissScreener = (id: string) => {
-    hideScreenerRow(id)
-    actions.dismissScreenerItem(id)
+    // The instant of the click, not of the write: a message that lands while Undo is offered is not dismissed with it.
+    const at = Date.now()
+    holdForUndo(id, 'Dismissed', () => actions.dismissScreenerItem(id, at))
   }
 
   /** "Later" hides the item now; it reappears after the chosen reminder time. */
   const laterScreener = (id: string, untilMs: number) => {
-    hideScreenerRow(id)
-    actions.snoozeScreenerItem(id, untilMs)
+    holdForUndo(id, laterToastLabel(untilMs, Date.now()), () => actions.snoozeScreenerItem(id, untilMs))
   }
 
   /**
@@ -233,7 +267,7 @@ export function DeskPage() {
       type: 'success',
       actionLabel: 'Undo',
       onAction: () => {
-        addedToasts.current.delete(toast)
+        deskToasts.current.delete(toast)
         if (item.kind === 'file') {
           openWorkFiles.remove(item.address)
           setSearchParams((prev) => (prev.get('open') === item.address ? new URLSearchParams() : prev), { replace: true })
@@ -245,7 +279,7 @@ export function DeskPage() {
         showScreenerRow(id)
       },
     })
-    addedToasts.current.add(toast)
+    deskToasts.current.add(toast)
   }
 
   /**
@@ -384,6 +418,8 @@ export function DeskPage() {
       onDismissScreener={dismissScreener}
       onLaterScreener={laterScreener}
       onReadScreener={readScreener}
+      openWorkSort={openWorkSort}
+      onOpenWorkSort={chooseOpenWorkSort}
       urgent={urgentItems.map((item) =>
         item.kind === 'file'
           ? {
@@ -490,6 +526,42 @@ export interface DeskRow {
   archived?: boolean
 }
 
+/**
+ * Open work's orders (Katerina, 30 October). "Order added" is the person's
+ * own, new work on the end like a browser tab (Miky, 2026-09-16) — never
+ * unread first, which moved a row the moment it was read. "Recent activity"
+ * moves a row when somebody writes in it, never when it is read.
+ */
+export type OpenWorkSort = 'added' | 'recent' | 'name'
+const OPEN_WORK_SORTS: { sort: OpenWorkSort; label: string }[] = [
+  { sort: 'added', label: 'Order added' },
+  { sort: 'recent', label: 'Recent activity' },
+  { sort: 'name', label: 'Name A–Z' },
+]
+/** The choice is this browser's, like a folded section. */
+const OPEN_WORK_SORT_KEY = 'peek.desk.openWork.sort'
+function readOpenWorkSort(): OpenWorkSort {
+  try {
+    const saved = localStorage.getItem(OPEN_WORK_SORT_KEY)
+    return OPEN_WORK_SORTS.some((s) => s.sort === saved) ? (saved as OpenWorkSort) : 'added'
+  } catch {
+    return 'added'
+  }
+}
+type OpenWorkRow = ReturnType<typeof useDeskItems>['openWork'][number]
+function sortOpenWork(items: OpenWorkRow[], sort: OpenWorkSort, activityOf: (item: OpenWorkRow) => number | undefined): OpenWorkRow[] {
+  if (sort === 'added') return items
+  const nameOf = (item: OpenWorkRow) => (item.kind === 'file' ? item.title : item.name)
+  if (sort === 'name') return [...items].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+  // Newest first; what has said nothing yet keeps its added order, after the rest.
+  return [...items].sort((a, b) => {
+    const x = activityOf(a)
+    const y = activityOf(b)
+    if (x === undefined || y === undefined) return x === y ? 0 : x === undefined ? 1 : -1
+    return y - x
+  })
+}
+
 /** A file open on the Desk: the address `openFile` puts in the URL. */
 const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ open: address })}`
 /** A DM has no Desk address of its own: its link is the person's page. */
@@ -561,6 +633,8 @@ export function DeskPageView({
   onDismissScreener,
   onLaterScreener,
   onReadScreener,
+  openWorkSort = 'added',
+  onOpenWorkSort,
   screenerPreviewFor,
   urgent,
   openWork,
@@ -578,6 +652,9 @@ export function DeskPageView({
   onLaterScreener: ComponentProps<typeof ScreenerSection>['onLater']
   /** A click on a row or its card: the item on its own page. */
   onReadScreener?: ComponentProps<typeof ScreenerSection>['onRead']
+  /** How Open work is ordered, and the Sort menu's choice; without `onOpenWorkSort` there is no Sort button. */
+  openWorkSort?: OpenWorkSort
+  onOpenWorkSort?: (sort: OpenWorkSort) => void
   /** Passed straight to the section; see its note. */
   screenerPreviewFor?: ComponentProps<typeof ScreenerSection>['previewFor']
   urgent: DeskRow[]
@@ -628,10 +705,25 @@ export function DeskPageView({
                   title="Open work"
                   showActions="always"
                   hover="none"
-                  actions={[
-                    // Sort does nothing yet, as before.
-                    { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
-                  ]}
+                  actions={
+                    onOpenWorkSort
+                      ? [
+                          {
+                            icon: <IconSortDescending size={16} stroke={1.5} />,
+                            tooltip: 'Sort by',
+                            // The chosen one carries Select's check (Katerina, 30 October).
+                            menu: OPEN_WORK_SORTS.map(({ sort, label }) => (
+                              <MenuItem
+                                key={sort}
+                                label={label}
+                                trailing={sort === openWorkSort ? <IconCheck size={16} stroke={1.5} className="text-text-secondary" /> : undefined}
+                                onClick={() => onOpenWorkSort(sort)}
+                              />
+                            )),
+                          },
+                        ]
+                      : undefined
+                  }
                 />
                 {openWork.length === 0 ? (
                   <p className="px-2 py-1 text-caption leading-snug text-text-muted">

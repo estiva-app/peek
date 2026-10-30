@@ -121,6 +121,24 @@ export function useOpenWorkDms(): OpenWorkDms | null {
   )
 }
 
+/**
+ * When each Open work item last had something said in it, unix seconds — the
+ * "Recent activity" sort (Katerina, 30 October). A file's newest top-level
+ * comment, from the copy Open work already holds; a DM's newest message, from
+ * the channel store the Screener reads. Undefined while not known.
+ */
+export function useOpenWorkActivity(): (item: OpenWorkItem) => number | undefined {
+  const { dmNewestAt } = useScreener()
+  return useMemo(
+    () => (item: OpenWorkItem) => {
+      if (item.kind === 'dm') return dmNewestAt(item.dmId)
+      const comments = item.object.comments ?? []
+      return comments.length ? Math.max(...comments.map((c) => c.createdAt)) : undefined
+    },
+    [dmNewestAt],
+  )
+}
+
 /** True while any Desk list is still unsettled (drives the sidebar skeleton). */
 export function useDeskLoading(): boolean {
   const openWorkLoading = useOpenWork().isLoading
