@@ -33,7 +33,7 @@ import {
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
-import { useTabTitle } from '@/lib/useTabTitle'
+import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
@@ -330,15 +330,8 @@ export function DeskPage() {
     Miky, 2026-10-30): the person, the file, or "Desk" with nothing open. A
     file still resolving, or one that can't be read, is just "Peek".
   */
-  useTabTitle(
-    selected
-      ? selected.dmName || undefined
-      : openAddress
-        ? fileView.file
-          ? fileView.file.slots.title?.value || 'Untitled'
-          : undefined
-        : 'Desk',
-  )
+  const openName = selected ? selected.dmName || undefined : fileTabTitle(fileView.file)
+  useTabTitle(selected || openAddress ? openName : 'Desk')
   const openSection = openedFrom?.section ?? 'openWork'
   const filePaneParts = useFilePane(fileView, {
     // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file's pane closes, and a new topic opens here.

@@ -11,7 +11,7 @@ import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { KIND_TOPIC } from '@/nostr/foreign'
-import { useTabTitle } from '@/lib/useTabTitle'
+import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
 /**
  * `/<word>/<slug>-<d>` and `/topic/<address>` — one file, in three panes
@@ -124,7 +124,7 @@ export function FilePage() {
   })
   const { conversation, file, previous, rootIds } = view
   // The file's own title, not the one the sidebar keeps showing while the next file resolves.
-  useTabTitle(file ? (file.slots.title?.value || 'Untitled') : undefined)
+  useTabTitle(fileTabTitle(file))
   /*
     What the sidebar draws while the next file resolves (SID-2): the one it
     drew last. A click in the tree changes the address and nothing else is

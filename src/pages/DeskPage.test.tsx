@@ -25,12 +25,12 @@ const WIDGETS_FILE = '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cd
 /** A file in Open work, a Ship issue say. */
 const ISSUE = '30851:aa:issue-1'
 
-const pane = vi.hoisted(() => ({ asked: [] as (string | null)[] }))
+const pane = vi.hoisted(() => ({ asked: [] as (string | null)[], resolving: null as string | null }))
 vi.mock('@/components/views/useFileView', () => ({
   useFileView: ({ address }: { address: string | null }) => {
     pane.asked.push(address)
     return {
-      file: address ? { address, slots: { title: { value: address === ISSUE ? 'Issue one' : 'Widgets' } } } : null,
+      file: address && address !== pane.resolving ? { address, slots: { title: { value: address === ISSUE ? 'Issue one' : 'Widgets' } } } : null,
       // The middle column's parts, for the page's Panel (estiva-ui 0.37.0).
       panel: {
         children: address ? (
@@ -158,6 +158,7 @@ const openWorkFile = (address: string, title: string) => ({
 
 beforeEach(() => {
   pane.asked = []
+  pane.resolving = null
   openWork.remove.mockClear()
   openWork.removeDm.mockClear()
   desk.openWork = [openWorkFile(ISSUE, 'Issue one')]
@@ -297,6 +298,12 @@ describe('the tab names what the Desk has open (SFX-2; Miky, 30 October)', () =>
   it('a file opened from a Desk link names itself', () => {
     mount(deskWith(WIDGETS_FILE))
     expect(document.title).toBe('Widgets – Peek')
+  })
+
+  it('a file still resolving, or one that can’t be read, is just "Peek", not "Desk"', () => {
+    pane.resolving = WIDGETS_FILE
+    mount(deskWith(WIDGETS_FILE))
+    expect(document.title).toBe('Peek')
   })
 })
 
