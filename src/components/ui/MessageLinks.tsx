@@ -91,7 +91,7 @@ export function MessagePart({ children }: { children: ReactNode }) {
  * no kind for. `object` is the body's one lookup (`undefined` while asked), so
  * the same file never draws in two states on one screen.
  */
-export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one. */ preview?: boolean; /** The URL it was written as: a click opens it, on a host an app declares (LTX-6), at its block (WBM-11). */ opensAt?: string }) {
+export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one, and when its card is under the message already. */ preview?: boolean; /** The URL it was written as: a click opens it, on a host an app declares (LTX-6), at its block (WBM-11). */ opensAt?: string }) {
   if (/^nostr:npub1/i.test(uri)) return <Reference uri={uri} urgent={urgent} />
   return (
     <LinkClicks>

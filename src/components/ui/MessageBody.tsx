@@ -272,8 +272,11 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const isHere = (value: string) => !!here && value.toLowerCase() === here.toLowerCase()
   const drawnCards = preview ? [] : cards.filter((card) => !isHere(card.value))
   const placed = preview ? undefined : placeLines(blocks, { cards: drawnCards, parts: shown, resolveLink, stayChip: isHere })
+  // A chip whose file's card is under the message shows no card on hover: it would cover that card (Katerina, 30 Oct).
+  const carded = new Set(drawnCards.filter((card) => card.layout !== 'none').map((card) => card.value))
+  const hasCard = (reference: string) => carded.has(valueOfReference(reference) ?? '')
   // A link to one block opens at the block (`opensAt`, the URL as written); any other where its file opens.
-  const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} opensAt={written} />
+  const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview && !hasCard(reference)} opensAt={written} />
   const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
     // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px).

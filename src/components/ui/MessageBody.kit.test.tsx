@@ -9,7 +9,7 @@
  * chips only, and "Mentioned in" draws no card for the file it is on.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { addrToNaddr, encodeNpub, type Embed } from '@estiva-app/protocol'
 
@@ -148,6 +148,25 @@ describe('the card under the message', () => {
     unread = true
     const member = show(THE_MESSAGE, { embeds: ITS_CARD })
     expect(member.querySelector('[data-card]')?.textContent).toContain('comments, unread')
+  })
+
+  it('shows no card on hover over a chip whose card is already under the message', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const c = show(`Look at ${ref(CARD_ISSUE)} and ${ref(SENTENCE_ISSUE)} today.`, { embeds: ITS_CARD })
+      const sentence = within(c.querySelector('p') as HTMLElement)
+      await user.hover(sentence.getByRole('link', { name: /Cards draw from the kit/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      // The chip and the card under the message; no third in a preview over the card.
+      expect(screen.getAllByText('Cards draw from the kit')).toHaveLength(2)
+      // A chip with no card under the message still shows its card on hover.
+      await user.hover(sentence.getByRole('link', { name: /Fix the sign-in/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(screen.getAllByText('Fix the sign-in')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps a card’s place while it loads, and says "not available." for a file the reader cannot read', () => {

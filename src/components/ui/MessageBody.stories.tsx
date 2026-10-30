@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
-import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNevent, valueOfReference } from '@estiva-app/protocol'
+import { PeekDataProvider } from '@/api'
 import { MessageBody } from './MessageBody'
 import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 
@@ -194,6 +195,23 @@ export const StandaloneReference: Story = {
     body: `Tracked in it for now.\n\nnostr:${recorded.naddr}`,
     resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
   },
+}
+
+/** The recorded issue's card, as its author's `embed` asks for it (SPEC §13.6.2). */
+const RECORDED_CARD = [{ value: valueOfReference(`nostr:${recorded.naddr}`)!, layout: 'detailed' as const }]
+
+/**
+ * The issue named in a sentence, with its card under the message. Hovering the
+ * chip shows no card: its card is right under it already (Katerina, 30 Oct).
+ */
+export const ChipWithItsCard: Story = {
+  args: {
+    body: `Tracked in nostr:${recorded.naddr} for now.`,
+    embeds: RECORDED_CARD,
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
+  // The card under the message reads its comment count through the seam.
+  decorators: [(Story) => <PeekDataProvider><Story /></PeekDataProvider>],
 }
 
 /**
