@@ -31,7 +31,7 @@ function TreeLine({ message }: { message: string }) {
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
  *
  * **Lines, not cards.** `FolderContentsView` (gone since 5 October) drew every file as a
- * `ForeignObjectCard`, which is right at the Folder page's full width and
+ * card, which is right at the Folder page's full width and
  * wrong in a 290px column: a Ship project's card wraps its whole description
  * into a tower and the tree it sits in disappears (Miky, 2026-09-14). This is
  * the same listing drawn the way the Topics list drew its rows, one line each, the glyph on the left and the dot on the right — so a file in

@@ -21,8 +21,7 @@ draw the view, because the read needs a relay.
 
 ## When not
 
-- A link to a whole object → `ForeignObjectWidget`, which draws
-  `ForeignObjectCard`.
+- A link to a whole object → the kit's card under the message, `MessageCard`.
 - A file attached to the message itself → the package's `AttachmentCard`.
 
 ## How
@@ -37,10 +36,11 @@ import { PartCard } from '@/components/ui/PartCard'
 
 ## What it owns
 
-- **Five states.** Shown; this part was deleted; this part can't be shown;
-  deleted; not available to you. Deleted and not available never look alike:
-  the second shows no title and no text, in the package Card's dashed
-  `unreadable` frame. Every state that shows no block is said in italic.
+- **Five states, in the kit's words** (`PartCard`'s `state`, SPEC §13.6.1):
+  shown; "This part was deleted"; "This part can't be shown", which opens the
+  whole file; "A part of this issue deleted", only when a deletion the protocol
+  trusts names the file (`readAbsence`); "A part of this issue not available".
+  The last two show no title and no text.
 - **The cut.** A block taller than 160px goes behind the package's `ShowMore`
   and opens in place. A picture is never cut.
 - **The way into the app.** A small muted `Button`, "Open in Estiva Ship" with an

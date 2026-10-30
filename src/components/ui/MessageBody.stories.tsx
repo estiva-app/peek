@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
-import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNevent, valueOfReference } from '@estiva-app/protocol'
+import { PeekDataProvider } from '@/api'
 import { MessageBody } from './MessageBody'
 import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 
@@ -186,14 +187,42 @@ export const InlineReference: Story = {
 
 /**
  * The same object, the same message, one difference: the pointer is alone on
- * its line. It reads as its chip there too (OPT-18): a card is drawn only when
- * the author chose one (SPEC §13.6.2), never for where the pointer sits.
+ * its line, so it is that file's row (SPEC §13.2): its tile, its title, its key
+ * and kind under it, its status. A card under the message is drawn only when
+ * its author chose one (SPEC §13.6.2), never for where the pointer sits.
  */
 export const StandaloneReference: Story = {
   args: {
     body: `Tracked in it for now.\n\nnostr:${recorded.naddr}`,
     resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
   },
+}
+
+/** The recorded issue's card, as its author's `embed` asks for it (SPEC §13.6.2). */
+const RECORDED_CARD = [{ value: valueOfReference(`nostr:${recorded.naddr}`)!, layout: 'detailed' as const }]
+
+/**
+ * The issue named in a sentence, with its card under the message. Hovering the
+ * chip shows no card: its card is right under it already (Katerina, 30 Oct).
+ */
+export const ChipWithItsCard: Story = {
+  args: {
+    body: `Tracked in nostr:${recorded.naddr} for now.`,
+    embeds: RECORDED_CARD,
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
+  // The card under the message reads its comment count through the seam.
+  decorators: [(Story) => <PeekDataProvider><Story /></PeekDataProvider>],
+}
+
+/**
+ * The same card where the reader cannot act — an archived file's conversation,
+ * a read-only copy: its status and its owner read as words, never pickers
+ * (Katerina, 30 Oct).
+ */
+export const CardWhereNothingCanChange: Story = {
+  args: { ...ChipWithItsCard.args, readOnly: true },
+  decorators: ChipWithItsCard.decorators,
 }
 
 /**
@@ -224,7 +253,7 @@ export const InlineMessageMention: Story = {
   },
 }
 
-/** The same message, alone on its line: its chip, as mid-sentence (OPT-18). */
+/** The same message, alone on its line: its row (SPEC §13.2), the writer's face and name, then their words. */
 export const StandaloneMessageMention: Story = {
   args: {
     body: `This is the one I meant.\n\nnostr:${MESSAGE_NEVENT}`,

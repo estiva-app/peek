@@ -25,7 +25,7 @@ export interface HeldCard {
   gone: boolean
   busy: boolean
   error?: string
-  onAct: (actionId: string, value: string, contentFormat?: string) => Promise<boolean>
+  onAct: (actionId: string, value: string) => Promise<boolean>
   directory: People | undefined
 }
 
@@ -116,7 +116,7 @@ export function useHeldCard(
   const fromCopy = !!object && object !== 'loading' && isFromCopy(object)
 
   const onAct = useCallback(
-    async (actionId: string, value: string, contentFormat?: string) => {
+    async (actionId: string, value: string) => {
       if (fromCopy) {
         setError(undefined)
         setWaiting({ naddr, actionId, value, shown: object.actions.find((action) => action.id === actionId)?.current ?? '' })
@@ -130,7 +130,7 @@ export function useHeldCard(
       try {
         const result = card
           ? await applyCardAction({ naddr, actionId, value })
-          : await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
+          : await applyAction({ naddr, actionId, value })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // widget can never claim a change the shared record does not have.

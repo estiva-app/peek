@@ -10,15 +10,17 @@ vi.mock('@/api', async () => {
   const { useEffect, useState } = await import('react')
   return {
     hasRelay: true,
+    useDeleted: () => false,
+    useLinksIn: () => {},
     isFromCopy: () => false,
     useForeignObjects: () => ({ resolveObject, applyAction: vi.fn() }),
-    // The tab's held answer (OPT-3), reduced to a resolve on mount.
+    // The tab's held answer (OPT-3), reduced to a resolve on mount; a read that fails answers null, not gone.
     useHeldObject: (reference: string | null) => {
-      const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+      const [held, setHeld] = useState<{ object: unknown; failed?: true }>({ object: reference ? 'loading' : null })
       useEffect(() => {
-        if (reference) void resolveObject(reference).then(setObject)
+        if (reference) void resolveObject(reference).then((object: unknown) => setHeld({ object }), () => setHeld({ object: null, failed: true }))
       }, [reference])
-      return { object, reload: async () => {}, gone: !!reference && object === null }
+      return { object: held.object, reload: async () => {}, gone: !!reference && held.object === null && !held.failed }
     },
     useWorkspaceDirectory: () => ({}),
     useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -105,6 +107,14 @@ describe('an issue card under a message keeps its height while it loads', () => 
   })
 })
 
+describe('an issue card whose read failed', () => {
+  it('draws "not available", never a blank where the card was, when this device remembers nothing of it', async () => {
+    resolveObject.mockRejectedValue(new Error('relay busy'))
+    const { container } = render(<MessageCard uri={`nostr:${issueNaddr('issue-5')}`} />)
+    await waitFor(() => expect(container.textContent).toBe('Issue not available'))
+  })
+})
+
 /** A project of nine issues, three Done and one Cancelled; issue 9 changed last, issue 1 first. */
 function project(identifier: string): ForeignObject {
   const statuses = [['Done', 'green'], ['Todo', 'neutral'], ['Done', 'green'], ['Cancelled', 'muted'], ['Todo', 'neutral'], ['In Progress', 'blue'], ['Done', 'green'], ['Todo', 'neutral'], ['Todo', 'neutral']]
@@ -114,6 +124,8 @@ function project(identifier: string): ForeignObject {
     address: `30850:${'a'.repeat(64)}:${identifier}`,
     naddr: encodeNaddr({ kind: 30850, pubkey: 'a'.repeat(64), identifier, relays: [] }),
     kind: 30850,
+    // Its type's word, as Ship's manifest names it; without one the kit names the app (ui 0.92).
+    noun: 'project',
     widget: 'card',
     slots: { title: { value: 'Project one', field: 'title' }, subtitle: { value: 'What the project is for.', field: 'summary' } },
     meta: [{ value: 'ABC', field: 'key' }],

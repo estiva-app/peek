@@ -11,7 +11,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
+import type { ForeignObject } from '@estiva-app/interop'
+import { valueOfReference } from '@estiva-app/protocol'
 import { PeekDataProvider, type ReactionData } from '@/api'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { ConversationCard } from './ConversationCard'
 import { ReplyCard } from './ReplyCard'
 
@@ -86,5 +89,24 @@ describe('a read-only reply card', () => {
     hover(<ReplyCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
     expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
+})
+
+describe('the card under a read-only message', () => {
+  const card = {
+    body: `Tracked in nostr:${recorded.naddr} for now.`,
+    embeds: [{ value: valueOfReference(`nostr:${recorded.naddr}`)!, layout: 'detailed' as const }],
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  }
+
+  it('offers its status picker on a message that is not read-only — the control', () => {
+    hover(<ReplyCard authorName="Katerina" timestamp="10:24" {...card} />)
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
+  })
+
+  it('reads its status as words, where a change could not be made', () => {
+    hover(<ReplyCard authorName="Katerina" timestamp="10:24" {...card} readOnly />)
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(document.querySelector('[data-card="detailed"]')?.textContent).toContain('Todo')
   })
 })

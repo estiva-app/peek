@@ -13,7 +13,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
 import { installWireRelay, ME, signed, tagOf, type WireRelay } from '@/test/wireRelay'
-import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
+import { MessageCard } from '@/components/ui/MessageLinks'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/estivaId', async (importOriginal) => ({
@@ -103,27 +103,27 @@ afterAll(() => vi.unstubAllGlobals())
 /** Open the status picker on the card and choose `label`. */
 async function pickStatus(label: string) {
   const user = userEvent.setup()
-  await user.click(screen.getByLabelText('Change status'))
+  await user.click(screen.getByLabelText('Status'))
   await user.click(await screen.findByRole('option', { name: label }))
 }
 
 describe("a pick on an issue's card drawn from the copy", () => {
   it('the card from the copy has its status and assignee pickers before the relay answers', async () => {
-    render(<ForeignObjectWidget naddr={NADDR} />)
+    render(<MessageCard uri={`nostr:${NADDR}`} />)
 
     expect(await screen.findByText('Card controls at once')).toBeInTheDocument()
-    expect(screen.getByLabelText('Change status')).toHaveTextContent('Todo')
+    expect(screen.getByLabelText('Status')).toHaveTextContent('Todo')
     expect(screen.getByLabelText('Assign')).toBeInTheDocument()
     answer()
   })
 
   it('a pick is shown at once and sent once the relay answers with the status the card showed', async () => {
-    render(<ForeignObjectWidget naddr={NADDR} />)
+    render(<MessageCard uri={`nostr:${NADDR}`} />)
     await screen.findByText('Card controls at once')
 
     await pickStatus('In progress')
 
-    expect(screen.getByLabelText('Change status')).toHaveTextContent('In progress')
+    expect(screen.getByLabelText('Status')).toHaveTextContent('In progress')
     expect(relay.sentOf(1851)).toEqual([])
 
     answer()
@@ -137,14 +137,14 @@ describe("a pick on an issue's card drawn from the copy", () => {
 
   it('a pick on a status somebody changed meanwhile is undone with a note, and nothing is sent', async () => {
     relay.seed(katerinasDone)
-    render(<ForeignObjectWidget naddr={NADDR} />)
+    render(<MessageCard uri={`nostr:${NADDR}`} />)
     await screen.findByText('Card controls at once')
 
     await pickStatus('In progress')
     answer()
 
     expect(await screen.findByText('Not sent: changed meanwhile to Done.')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByLabelText('Change status')).toHaveTextContent('Done'))
+    await waitFor(() => expect(screen.getByLabelText('Status')).toHaveTextContent('Done'))
     expect(relay.sentOf(1851)).toEqual([])
   })
 })

@@ -70,9 +70,10 @@ export const Reply: Story = {
 
 /**
  * Another app's object in the text — an issue the launcher created, a pasted
- * address, a draft coming back (UIG-40): the sent message's chip, its title
- * and its status. The one file it links gets its card under the box, as it
- * will be sent, and ✕ takes it off (4136f999).
+ * address, a draft coming back (UIG-40): the kit's chip a sent message draws,
+ * its key, its title and its status as a mark, with no card on hover and no
+ * way out of the draft on a click. The one file it links gets its card under
+ * the box, as it will be sent, and ✕ takes it off (4136f999).
  */
 export const WithAnIssue: Story = {
   args: {
@@ -82,7 +83,11 @@ export const WithAnIssue: Story = {
   },
 }
 
-/** A line that is only the link draws as its row while it is written, as the sent message will, and its card waits under the box. */
+/**
+ * A line that is only the link: still its chip while it is written, as every
+ * link in the box is (Katerina, 30 Oct), and its card under the box with its ✕.
+ * Once sent the line draws nothing, since the card stands for it.
+ */
 export const AnIssueAloneOnItsLine: Story = {
   args: {
     draftKey: 'story-issue-alone',

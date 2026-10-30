@@ -193,7 +193,7 @@ describe('the Folders, as folds', () => {
     // The first level of the open Folder is drawn, as rows.
     expect(section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`)).not.toBeNull()
     expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
-    expect(document.querySelector('[data-foreign-object]')).toBeNull()
+    expect(document.querySelector('[data-card]')).toBeNull()
     // And it is the only Folder whose contents were asked for.
     expect(contentsAsked()).toEqual([TEAM])
   })

@@ -11,7 +11,8 @@
  * throwing. A reference that cannot be resolved must degrade to plain text; a
  * message is never broken because an attachment failed.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { retryDelayMs } from '@estiva-app/platform'
 import { validToken } from '@/auth/estivaId'
 import { heldToken } from '@/auth/heldSession'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
@@ -51,6 +52,7 @@ import {
   searchFileReferencesAsViewer,
   threadsAsViewer,
   replyToCommentAsViewer,
+  viewerQuery,
   type ActResult,
   type FileComment,
   type FileThreads,
@@ -64,7 +66,7 @@ import type { MessageSearchState } from '@/lib/launcherSearch'
 import { linkTargetOf, rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
 import { KIND_BARE_FILE, type LinkReader } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { KIND, pointerToAddress, readAbsence, referenceToPointer, urlRunsIn, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
@@ -233,6 +235,70 @@ export function useLinkResolver(urls: readonly string[]): (url: string) => strin
   return (url: string) => knownCardValue(url)
 }
 
+/** At most this many of a preview's links are asked about: a preview is a line, and each link is a read. */
+const MAX_PREVIEW_LINKS = 8
+
+const noLinkChanges = () => () => {}
+const noLinkVersion = () => 0
+
+/**
+ * The words a preview draws (a message's row, chip or card, a `[` row) read
+ * an app link as what it names once that has come back, never as the raw URL
+ * (Katerina, 30 Oct): this asks about the bare links in `text` and draws again
+ * as their answers land. Text with no link asks and follows nothing.
+ */
+export function useLinksIn(text: string | undefined): void {
+  const urls = text ? [...new Set(urlRunsIn(text).map((run) => run.url))].slice(0, MAX_PREVIEW_LINKS) : []
+  const key = urls.join(' ')
+  useSyncExternalStore(key ? onLinksChanged : noLinkChanges, key ? linksVersion : noLinkVersion)
+  useEffect(() => {
+    // A URL holds no space, so the key splits back into them.
+    if (key) askLinks(key.split(' ')).catch(() => {})
+  }, [key])
+}
+
+/** Whether a trusted deletion names each address, asked once per viewer for the tab. */
+const absences = new Map<string, Promise<boolean>>()
+
+/**
+ * Whether the file `reference` names was deleted (SPEC §13.6.1: deleted is not
+ * not-permitted), asked only once its read came back with nothing
+ * (`object === null`): protocol's `readAbsence`, which trusts a deletion by
+ * the file's author or the relay-checked shape only. A read that fails says
+ * neither, and the link stays "not available".
+ */
+export function useDeleted(reference: string, object: ForeignObject | null | undefined | 'loading'): boolean {
+  const viewer = useRelayViewer()
+  const [deleted, setDeleted] = useState<{ reference: string; deleted: boolean }>()
+  const address = useMemo(() => {
+    if (!/^nostr:naddr1/i.test(reference) && !/^naddr1/i.test(reference)) return undefined
+    try {
+      return pointerToAddress(referenceToPointer(reference.startsWith('nostr:') ? reference : `nostr:${reference}`))
+    } catch {
+      return undefined
+    }
+  }, [reference])
+  const asks = object === null && !!address && hasRelay
+  useEffect(() => {
+    const v = viewer()
+    if (!asks || !address || !v) return
+    const key = `${v.token.pubkey} ${address}`
+    let asked = absences.get(key)
+    if (!asked) {
+      asked = readAbsence(address, viewerQuery(v.relayUrl, v.token)).then((answer) => answer === 'deleted', () => false)
+      absences.set(key, asked)
+    }
+    let live = true
+    void asked.then((answer) => {
+      if (live) setDeleted({ reference, deleted: answer })
+    })
+    return () => {
+      live = false
+    }
+  }, [asks, address, reference, viewer])
+  return asks && deleted?.reference === reference && deleted.deleted
+}
+
 /**
  * The route words the manifests declare (FOL-39), and the one read that fills
  * them in.
@@ -396,7 +462,8 @@ function pooledResolve(reference: string, relayUrl: string, token: StoredToken):
  * One reference's object for a message's widget, held for the tab: drawn at
  * once when it was resolved before, asked again only once it is older than
  * {@link HELD_OBJECT_FRESH_MS} or when its file changes while it is drawn, and
- * `reload` after an action. `null` asks for nothing and answers null.
+ * `reload` after an action. A read that failed with nothing held is asked again
+ * quietly while it is drawn. `null` asks for nothing and answers null.
  */
 export function useHeldObject(reference: string | null): {
   object: ForeignObject | null | 'loading'
@@ -431,6 +498,28 @@ export function useHeldObject(reference: string | null): {
   const folder = entry?.value && !entry.value.unreachable ? entry.value.folder : undefined
   const address = entry?.value?.address
   useEffect(() => (key ? followHeld(key, folder, address, load) : undefined), [key, folder, address, load])
+
+  /*
+    A read that failed with nothing held (a busy relay, the network) is asked
+    again quietly while something draws it, 5 s after the first failure and
+    twice as long after each next one, up to a minute (`retryDelayMs`), so the
+    card draws as soon as the relay answers (Katerina, 30 Oct). An answer, even
+    one of nothing, is not asked again; reads from the same tick share one
+    request (`pooledResolve`).
+  */
+  const failures = useRef<{ key: string | null; count: number }>({ key: null, count: 0 })
+  const failed = !!key && entry?.value === undefined && entry?.failure !== undefined && !entry.inflight
+  useEffect(() => {
+    if (!key) return
+    if (failures.current.key !== key) failures.current = { key, count: 0 }
+    if (!failed) {
+      if (entry?.value !== undefined) failures.current.count = 0
+      return
+    }
+    failures.current.count += 1
+    const timer = setTimeout(() => void heldObjects.read(key, load), retryDelayMs(failures.current.count, entry?.failure))
+    return () => clearTimeout(timer)
+  }, [failed, entry, key, load])
 
   const reload = useCallback(async () => {
     if (key) await heldObjects.read(key, load)

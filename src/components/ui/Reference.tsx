@@ -10,7 +10,7 @@ import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
 import { InlineChip, KindIcon, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
 import { referenceGlyph } from '@/lib/fileGlyph'
-import { StatusPill } from './ForeignObjectWidget'
+import { StatusPill } from './StatusPill'
 
 /**
  * What a resolved object is called, in a chip's worth of words.
@@ -85,9 +85,7 @@ function shortKey(pubkey: string): string {
  * **It never resolves anything itself.** A body's references are resolved once
  * for the whole body, so the same object cannot appear in two states on one
  * screen and a message costs one round trip per reference rather than one per
- * place it is mentioned. It is also what keeps `ForeignBody` safe: another
- * app's body passes no resolved objects, so a reference inside a widget draws a
- * chip and cannot pull a second object in behind it.
+ * place it is mentioned.
  */
 export function Reference({
   uri,

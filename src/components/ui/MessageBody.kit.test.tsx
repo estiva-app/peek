@@ -9,7 +9,7 @@
  * chips only, and "Mentioned in" draws no card for the file it is on.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { addrToNaddr, encodeNpub, type Embed } from '@estiva-app/protocol'
 
@@ -52,6 +52,9 @@ let unread: boolean | undefined = false
 const applyCardAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
 
 vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],
@@ -79,7 +82,7 @@ vi.mock('@/api/mentions', () => ({
 import { MessageBody } from './MessageBody'
 
 const naddr = (address: string) => ref(address).replace(/^nostr:/, '')
-const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
+const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean; readOnly?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
 // A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
 const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
 
@@ -117,6 +120,12 @@ describe('where a link sits decides how it draws', () => {
     expect(c.querySelectorAll('ul li')[1].textContent).toBe('and Fix the sign-in too')
   })
 
+  it('gives a row its file’s comment count, opening the file’s conversation, as a card has it', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    const row = c.querySelector('[data-link-row]') as HTMLElement
+    expect(within(row).getByRole('link', { name: /comments — open the conversation/ })).toHaveTextContent('3')
+  })
+
   it('keeps a person or a Folder alone on its line a chip', () => {
     const c = show(`${PERSON}\n\n${ref(FOLDER)}`)
     expect(rows(c)).toEqual([])
@@ -136,18 +145,46 @@ describe('the card under the message', () => {
     await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'assign-issue', value: BRUNO }))
   })
 
+  it('reads its status and assignee as words where the reader cannot act: an archived or read-only conversation', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD, readOnly: true })
+    expect(screen.queryByRole('combobox')).toBeNull()
+    const card = c.querySelector('[data-card="detailed"]') as HTMLElement
+    expect(card.textContent).toContain('Todo')
+    expect(card.textContent).toContain('Ada Lovelace')
+  })
+
   it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {
     const quiet = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
+    // The number, and its name for a screen reader, which carries the number too (ui 0.92).
+    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
     quiet.remove()
     // QA-2, a reader who is no member: the badges leave the file out, and the count shows with no dot.
     unread = undefined
     const stranger = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('3comments — open the conversation')
+    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
     stranger.remove()
     unread = true
     const member = show(THE_MESSAGE, { embeds: ITS_CARD })
     expect(member.querySelector('[data-card]')?.textContent).toContain('comments, unread')
+  })
+
+  it('shows no card on hover over a chip whose card is already under the message', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const c = show(`Look at ${ref(CARD_ISSUE)} and ${ref(SENTENCE_ISSUE)} today.`, { embeds: ITS_CARD })
+      const sentence = within(c.querySelector('p') as HTMLElement)
+      await user.hover(sentence.getByRole('link', { name: /Cards draw from the kit/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      // The chip and the card under the message; no third in a preview over the card.
+      expect(screen.getAllByText('Cards draw from the kit')).toHaveLength(2)
+      // A chip with no card under the message still shows its card on hover.
+      await user.hover(sentence.getByRole('link', { name: /Fix the sign-in/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(screen.getAllByText('Fix the sign-in')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps a card’s place while it loads, and says "not available." for a file the reader cannot read', () => {

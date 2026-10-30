@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils'
  *
  * **`text-text-muted`, not `text-text-tertiary`.** The latter is not a token
  * this app defines, so Tailwind emits nothing for it and the text silently
- * inherits whatever colour surrounds it. `ForeignObjectWidget` records the same
+ * inherits whatever colour surrounds it. `StatusPill` records the same
  * mistake being made and found once already — a jsdom test cannot see it,
  * because it never evaluates CSS.
  */

@@ -12,7 +12,8 @@ vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubke
 vi.mock('@/nostr/relayBudget', () => ({ relayBudget: { pausedForMs: () => paused.ms } }))
 vi.mock('@/nostr/foreign', () => ({
   resolveObjectAsViewer: resolve,
-  absenceAsViewer: async () => 'unreadable',
+  // No deletion names it: an empty read is "not available".
+  viewerQuery: () => async () => [],
   blockLinkAsViewer: (...args: unknown[]) => blockLink(...args),
 }))
 const blockLink = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<string | undefined>>(async () => undefined))

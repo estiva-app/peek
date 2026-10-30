@@ -33,7 +33,7 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
-import { clearCardShapes } from '@/lib/cardShapes'
+import { cardShapes } from '@/lib/cardShapes'
 import { clearUnavailableCards } from '@/lib/unavailableCards'
 import { clearRecents } from '@/lib/recents'
 
@@ -103,7 +103,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   if (previous && previous !== scope) {
     clearPagePictures()
     clearUnavailableCards()
-    clearCardShapes()
+    cardShapes.clear()
     clearRecents()
   }
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
@@ -199,7 +199,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   toKeep.length = 0
   clearPagePictures()
   clearUnavailableCards()
-  clearCardShapes()
+  cardShapes.clear()
   // The launcher's Recent holds titles, summaries and projects of files opened (SUM-7).
   clearRecents()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.

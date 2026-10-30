@@ -31,16 +31,23 @@ import { MessageBody } from '@/components/ui/MessageBody'
 
 <MessageBody
   body={message.body}
-  isTopicResolved={isTopicResolved}
+  embeds={message.embeds}
+  parts={message.parts}
   resolvedObjects={resolved}
 />
 ```
 
-- `isTopicResolved` is required, because a topic chip has to show whether that
-  topic is open or resolved, and only the caller can know.
-
 ## What it owns
 
+- **Where each link draws** (SPEC §13.2): its chip in a sentence, its row alone
+  on its line, and nothing where its card is under the message. A chip whose
+  card is under the message shows no card on hover, which would cover that card
+  (Katerina, 30 Oct).
+- **Words where the reader cannot act** (`readOnly`): in an archived or
+  read-only conversation a card's status and owner read as words, never
+  pickers (Katerina, 30 Oct).
+- **The comment count on a row and a card alike**, opening the file's
+  conversation, with the unread dot for a member only (Katerina, 30 Oct).
 - **That marks are parsed before tokens, and that the order is load-bearing.**
   It used to be the other way round, which was fine until the dialect gained a
   way to say *"this text is literal"*. `code` says exactly that (SPEC §13.1: its

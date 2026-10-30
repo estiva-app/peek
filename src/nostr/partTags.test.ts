@@ -3,7 +3,8 @@
  * read tells deleted from not-yours-to-see.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { absenceAsViewer, forgetUrlShapes, linkTagsAsViewer } from './foreign'
+import { readAbsence } from '@estiva-app/protocol'
+import { forgetUrlShapes, linkTagsAsViewer, viewerQuery } from './foreign'
 
 const UUID = 'b4ea696a-d4a2-4833-8f2a-6aa1e2f3c4d5'
 const AUTHOR = 'f'.repeat(64)
@@ -70,6 +71,9 @@ describe('a pasted block link', () => {
     expect(tags).toEqual([])
   })
 })
+
+// The read a part's empty answer takes (`readPart`): protocol's `readAbsence`, asked through Peek's own query.
+const absenceAsViewer = (address: string, relayUrl: string, token: never) => readAbsence(address, viewerQuery(relayUrl, token))
 
 describe('an object that did not come back', () => {
   it('is deleted when its author deleted it by address', async () => {

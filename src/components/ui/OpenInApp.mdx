@@ -8,38 +8,34 @@ import { Meta } from '@storybook/addon-docs/blocks'
 that app's manifest gave for it. The one place an app's name is written
 (PRO-24, Miky 2 October).
 
-`short` draws just "Open ↗", with `Open in {app}` as its accessible name and its
+It says just "Open ↗", with `Open in {app}` as its accessible name and its
 tooltip: *"I would simplify and just say Open. Less words is better. it's more
 clear."* (Miky, 14 October).
 
-**Seen in**: a file's page from another app, `short`, beside the title in the
-header; and a card that could not be read, after "you may not have access to
-this Folder", in full.
+**Seen in**: a file's page from another app, beside the title in the header.
 
 ## When
 
 - A file or object of another app's, where nothing else on screen leads into
   that app: the file page's header (the Overview's card, whose title is the
-  link, starts closed), or a card with no title to click.
+  link, starts closed).
 
 ## When not
 
-- A card that resolved: **ForeignObjectCard**'s title is already the link into
-  the app, and both on one card is the same destination twice (PEEK-18).
+- On a card: the kit's card has its title as the link into the app, and its
+  "not available" row its own way out, so both on one card would be the same
+  destination twice (PEEK-18).
 - A file of Peek's own (a topic): it is already open here.
 
 ## How
 
 ```tsx
-import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
+import { OpenInApp } from '@/components/ui/OpenInApp'
 
 <span className="text-caption text-text-secondary">
-  <OpenInApp object={file} short />
+  <OpenInApp object={file} />
 </span>
 ```
-
-In a sentence that already says what could not be read, leave `short` off: the
-words "Open in Leaf" are the sentence's end.
 
 It takes the size and colour of the text around it, so the caller sets them.
 

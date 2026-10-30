@@ -134,7 +134,7 @@ function dedupeReferences(refs: string[]): string[] {
  * item from another app it names drawn as its chip, and below it the cards its
  * author chose.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true, here, preview = false, onRemoveCard }: { body: string; /** The author's ✕ on a card under it, by its value; shown on hover. Omitted, no ✕. */ onRemoveCard?: (value: string) => void; /** The address of the file this message is shown on ("Mentioned in", a file's conversation): no card for it, its chip stays (WID-3). */ here?: string; /** A preview of the message (the Screener's): its links as chips only — no row, no card, no part (Decided 16 Oct). */ preview?: boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true, here, preview = false, readOnly = false, onRemoveCard }: { body: string; /** The author's ✕ on a card under it, by its value; shown on hover. Omitted, no ✕. */ onRemoveCard?: (value: string) => void; /** The reader cannot act here (an archived or read-only conversation): its cards' values read as words, never pickers (Katerina, 30 Oct). */ readOnly?: boolean; /** The address of the file this message is shown on ("Mentioned in", a file's conversation): no card for it, its chip stays (WID-3). */ here?: string; /** A preview of the message (the Screener's): its links as chips only — no row, no card, no part (Decided 16 Oct). */ preview?: boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   /*
     What the message is about, for its anchor's card: its `a` tags (sync stores
     them in `nostrReferences`) and the addresses its body names, deduplicated by
@@ -272,8 +272,11 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const isHere = (value: string) => !!here && value.toLowerCase() === here.toLowerCase()
   const drawnCards = preview ? [] : cards.filter((card) => !isHere(card.value))
   const placed = preview ? undefined : placeLines(blocks, { cards: drawnCards, parts: shown, resolveLink, stayChip: isHere })
+  // A chip whose file's card is under the message shows no card on hover: it would cover that card (Katerina, 30 Oct).
+  const carded = new Set(drawnCards.filter((card) => card.layout !== 'none').map((card) => card.value))
+  const hasCard = (reference: string) => carded.has(valueOfReference(reference) ?? '')
   // A link to one block opens at the block (`opensAt`, the URL as written); any other where its file opens.
-  const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview} opensAt={written} />
+  const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview && !hasCard(reference)} opensAt={written} />
   const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
     // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px).
@@ -309,6 +312,7 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
             uri={card.reference}
             resolved={supplied(card.reference)}
             compact={card.layout !== 'detailed'}
+            readOnly={readOnly}
             onRemove={onRemoveCard && card.layout === 'detailed' ? () => onRemoveCard(card.value) : undefined}
             opensAt={writtenUrl.get(card.value)}
           />

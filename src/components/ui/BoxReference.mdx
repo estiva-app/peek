@@ -5,38 +5,51 @@ import * as ConversationBoxStories from './ConversationBox.stories'
 
 # BoxReference
 
-A `nostr:` reference or an app link inside the box, drawn as the sent message
-will draw it: a chip in a line of text, its row when it is alone on its line.
+A `nostr:` reference or an app link inside the box, drawn as the kit's chip a
+sent message draws, wherever it sits: in the box every link is a chip while it
+is written, alone on its line too.
 
 <Canvas of={ConversationBoxStories.WithAnIssue} />
 
 **Seen in** — *Writing & text/Composer/ConversationBox* → **With An Issue**
-(the chip) and **An Issue Alone On Its Line** (the row).
+(in a sentence) and **An Issue Alone On Its Line** (alone on its line, still a
+chip).
 
 ## When
 
-- As the `referenceView` the package's `CommentBox` draws a reference with —
-  handed to `keepCommentBoxWarm` once as Peek starts, and used by every
-  **ConversationBox**.
+- As the `referenceView` the package's `CommentBox` draws a reference with, a
+  pasted link and a `[` pick alike (ui 0.92) — handed to `keepCommentBoxWarm`
+  once as Peek starts, and used by every **ConversationBox** and **EditBox**.
+- As the `view` of a description form's `[` pick (`messageMention`, in
+  `ProseField`).
 
 ## When not
 
-- In a sent message → `Reference`, which is a link there; here a click is not
-  a way out of the draft.
-- A line that is only a link, in Peek's own mention nodes → **RowInTheBox**,
-  which this draws for the row.
+- In a sent message → `MessageChip` in a sentence, `MessageRow` alone on its
+  line, both through `MessageBody`; there a click follows the link and hovering
+  shows its card.
 
 ## How
 
 ```tsx
 import { keepCommentBoxWarm } from '@estiva-app/ui/editor'
-import { BOX_EXTENSIONS, BoxReference } from '@/components/ui/ConversationBox'
+import { BOX_EXTENSIONS } from '@/components/ui/ConversationBox'
+import { BoxReference } from '@/components/ui/BoxReference'
 
 keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
 ```
 
 ## What it owns
 
+- **One chip in every box**: the kit's `LinkChip` — its icon, its key, its
+  title cut at 40 characters and its status as a mark — for a pasted link and a
+  `[` pick alike (Katerina, 30 Oct). A person is their name's chip.
 - **Reading the object**: from what a story or a test supplied, else from the
-  relay; an app link not answered yet reads as the URL it was written as.
-- **No navigation while writing**: the chip is drawn with `link={false}`.
+  relay, as the sent message's chip reads it; an app link not answered yet
+  reads as the URL it was written as.
+- **No way out of the draft**: the kit holds a click on the chip while it is
+  written, and hovering it shows no card while `editing`.
+- **What cannot be read**: written as a URL, that URL as written (SPEC §13.1);
+  a file a trusted deletion names, "Issue deleted".
+- **Never a row or a card in the box**: no `LinkPlaces` in `BOX_EXTENSIONS`
+  (the kit's `LinkPlaces` page, When not).

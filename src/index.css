@@ -47,11 +47,10 @@
    in Signal), so a link reads the same while you type and once sent.
    The composer's only: a sent message's widgets carry links of their own,
    and an unlayered rule over them would win over their classes. The same
-   holds for the row a lone link draws in the box (`data-box-row`, the
-   package's LinkRow): its title keeps the row's look, not a typed link's
-   (Katerina, 30 Oct: "we don't need this blue underlined styling in the
-   cards"). */
-.tiptap a:not([data-box-row] a) {
+   holds for a link's chip in the box (a node view, the package's LinkChip):
+   it keeps the chip's look, not a typed link's (Katerina, 30 Oct: "we don't
+   need this blue underlined styling in the cards"; one chip in every box). */
+.tiptap a:not([data-node-view-wrapper] a) {
   color: var(--text-interactive);
   text-decoration: underline;
   text-underline-offset: 2px;

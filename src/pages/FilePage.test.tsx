@@ -107,6 +107,9 @@ const threads = vi.hoisted(() => ({
 }))
 const writes = vi.hoisted(() => ({
   applyAction: vi.fn(async () => ({ ok: true })),
+  // The Overview's card (the kit's, as a message draws it): a pick, and whether its file is archived with its parent.
+  applyCardAction: vi.fn(async () => ({ ok: true })),
+  parentArchiveOf: vi.fn(async () => undefined),
   moveFile: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
   resolveObject: vi.fn(async () => null),
@@ -664,7 +667,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
     const left = screen.getByTestId('left')
     // A card would carry the project's status pill and app name; a row is
     // its title alone, on the Topics list's row.
-    expect(left.querySelector('[data-foreign-object]')).toBeNull()
+    expect(left.querySelector('[data-card]')).toBeNull()
     expect(within(left).getByText('Folders: navigation for the whole suite')).toBeInTheDocument()
     expect(within(left).queryByText('Estiva Ship')).toBeNull()
   })
@@ -878,8 +881,8 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
 
   /*
     A Leaf document (30842): "In Peek you can comment" (Miky, 2026-10-14).
-    Its comments are a kind:1111 at its address, like an issue's. That its
-    text has no editor is the card's test (ForeignObjectWidget.test.tsx).
+    Its comments are a kind:1111 at its address, like an issue's. Peek offers
+    no editor on its text anywhere (the kit's card has none).
   */
   it('…and a Leaf document, identically', () => {
     const DOCUMENT_ADDRESS = `30842:${ISSUE_ADDRESS.split(':')[1]}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`
@@ -1117,6 +1120,8 @@ describe("FilePage puts another app's widget in the third column", () => {
   /** The issue as Ship's manifest resolves it on production: a way into Ship, and a status. */
   const shipIssue = foreign({
     ...issue,
+    // Its type's word, as Ship's manifest names it: without one the kit names the app instead (ui 0.92).
+    noun: 'issue',
     openUrl: 'https://ship.estiva.app/issue/the-file-route',
     slots: { title: { value: 'The file route' }, status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' } },
   })
@@ -1139,9 +1144,9 @@ describe("FilePage puts another app's widget in the third column", () => {
     expect(within(column).queryByText('Estiva Ship')).toBeNull()
     expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
     expect(within(column).getByText('In Progress')).toBeInTheDocument()
-    // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.
-    expect(column.querySelector(`[data-foreign-object="${ISSUE_ADDRESS}"]`)).not.toBeNull()
-    expect(screen.getByTestId('left').querySelector('[data-foreign-object]')).toBeNull()
+    // The card a message draws under it, the kit's (Katerina, 30 Oct); the tree beside it still draws rows.
+    expect(column.querySelector('[data-card="detailed"]')).not.toBeNull()
+    expect(screen.getByTestId('left').querySelector('[data-card]')).toBeNull()
   })
 
   it('…and for a file the viewer may comment on, whose column is otherwise Peek’s', () => {

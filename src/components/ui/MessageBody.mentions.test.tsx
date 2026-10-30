@@ -14,6 +14,9 @@ import { encodeNpub } from '@estiva-app/protocol'
 const ADA = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 
 vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],
@@ -23,7 +26,6 @@ vi.mock('@/api', () => ({
   useResolvedReferences: () => ({}),
   useLinkResolver: () => () => undefined,
 }))
-vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: (pubkey: string) =>
     pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : undefined,
