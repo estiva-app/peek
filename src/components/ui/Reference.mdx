@@ -6,24 +6,29 @@ import { Meta } from '@storybook/addon-docs/blocks'
 
 A `nostr:` pointer drawn where it was written, as a chip: a person's name, or
 another app's object by its title and status, or the pointer's own short form
-when nothing could be looked up.
+when nothing could be looked up. Since the kit's link widgets, a file or a
+message is the kit's `LinkChip`; this draws a person, and an object in another
+app's description.
 
-**Seen in** — *Writing & text/MessageBody* → **Inline Reference**, and
-*Writing & text/Composer/ConversationBox* → **With An Issue**, where the same chip
-sits in the text being written.
+**Seen in** — no story: a person is named from the workspace's directory,
+which a story does not hold; `Reference.test.tsx` draws each case.
 
 ## When
 
-- A pointer in the middle of a sentence, in a sent message: `MessageBody` draws
-  it through this.
-- The same pointer while it is being written, in the composer (UIG-40): the
-  editor's `objectMention` draws it through this with `link={false}`, so what is
-  written looks like what is sent.
+- A person (`nostr:npub…`) in a sent message: `MessageChip` draws them through
+  this, in the urgent tone when the message names them urgently.
+- The same person while they are being written: `BoxReference` draws them
+  through this with `link={false}`, so what is written looks like what is sent.
+- A pointer inside another app's description (`ForeignBody`), and in the
+  `objectMention` node of a description's form (`ProseField`).
 
 ## When not
 
-- A pointer alone on its line in a sent message. That is a card below the text,
-  `ForeignObjectWidget`, and `MessageBody` chooses between the two.
+- A file or a message in a sent message → the kit's `LinkChip` in a sentence,
+  `LinkRow` alone on its line, its card under the message: `MessageBody`
+  chooses (`MessageChip`, `MessageRow`, `MessageCard`).
+- A file or a message in the box being written → `BoxReference`, the kit's
+  `LinkChip` that does not follow a click.
 - A person picked from the `@` menu, or a topic from the `[` menu, while
   writing: those are the editor's own chips (`mention`, `topicMention`), which
   know their label without looking anything up.

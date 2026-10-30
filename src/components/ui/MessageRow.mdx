@@ -7,10 +7,9 @@ import { Meta } from '@storybook/addon-docs/blocks'
 One file's row in place of a line that is only a link to it (SPEC §13.2,
 §13.3): the kit's `LinkRow`, drawn from the object the text already read.
 
-**Seen in** — no story: no sent message or description in Peek's stories has
-a line that is only a link to a file it can read. The composer's row while
-writing is the editor's own (*Writing & text/Composer/ConversationBox* → **An Issue
-Alone On Its Line**), and the row itself is the package's `LinkRow`.
+**Seen in** — *Writing & text/MessageBody* → **Standalone Reference** (a file)
+and **Standalone Message Mention** (a message). In the box being written a lone
+link stays its chip (`BoxReference`); the row comes once it is sent.
 
 ## When
 
@@ -39,6 +38,8 @@ import { MessageRow } from '@/components/ui/MessageLinks'
 
 - **One row for a lone link in every Peek text.** A message and a description
   draw the same row, so they cannot drift apart.
+- **The comment count**, as a card has it, opening the file's conversation,
+  with the unread dot for a member only (Katerina, 30 Oct).
 - **The unreadable row.** A reference that names no file draws "not
   available", never an empty row.
 - **Where it opens.** `opensAt` is the URL as written; the caller passes it only

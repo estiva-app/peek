@@ -55,10 +55,11 @@ export function unregisterComposer(editor: Editor) {
  * the sent message's chip, title and status (Katerina, 28 September) — which
  * `composerText` writes back as exactly that address.
  *
- * **It is drawn in place wherever the cursor was, since OPT-18**: the title and
- * its status, as the whole message or after "Filed it —" alike. A card under the
- * message is the author's choice (SPEC §13.6.2), made from the chip's Card
- * control; this function only writes the pointer.
+ * **It is drawn in place wherever the cursor was, since OPT-18**: the kit's
+ * chip, its key, title and status, as the whole message or after "Filed it —"
+ * alike. The card under the box is the box's own: the one file a message names
+ * gets it, and ✕ takes it off (SPEC §13.6.2); this function only writes the
+ * pointer.
  *
  * Marks are cleared first. The cursor may sit inside a bold or code run, and an
  * inherited mark serialises to marker characters around the reference, which
