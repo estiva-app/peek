@@ -17,7 +17,11 @@ export interface RowHandlers {
 
 interface ConversationRowProps {
   c: ConversationData
+  /** New to you as it was drawn, and not seen yet (Katerina, 30 October). */
+  hasNewMessage: boolean
   hasNewReply: boolean
+  /** What is new in it is urgent for you: the unread look in its urgent tone. */
+  isUrgent: boolean
   isSelected: boolean
   readOnly: boolean
   /** The same object on every render — the view's — so it never re-draws a row by itself. */
@@ -33,7 +37,7 @@ interface ConversationRowProps {
  * identity. Without this, one new message re-drew every card of a long topic.
  */
 export const ConversationRow = memo(
-  function ConversationRow({ c, hasNewReply, isSelected, readOnly, actions, writtenOn }: ConversationRowProps) {
+  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, isSelected, readOnly, actions, writtenOn }: ConversationRowProps) {
     return (
       <ConversationCard
         authorName={c.authorName}
@@ -47,7 +51,9 @@ export const ConversationRow = memo(
         replyCount={c.replyCount}
         replyAuthors={c.replyAuthors}
         lastReplyTime={c.lastReplyTime}
+        hasNewMessage={hasNewMessage}
         hasNewReply={hasNewReply}
+        isUrgent={isUrgent}
         isResolved={c.isResolved}
         resolvedBy={c.resolvedBy}
         resolutionMessage={c.resolutionMessage}
@@ -72,7 +78,9 @@ export const ConversationRow = memo(
     )
   },
   (before, after) =>
+    before.hasNewMessage === after.hasNewMessage &&
     before.hasNewReply === after.hasNewReply &&
+    before.isUrgent === after.isUrgent &&
     before.isSelected === after.isSelected &&
     before.readOnly === after.readOnly &&
     before.actions === after.actions &&

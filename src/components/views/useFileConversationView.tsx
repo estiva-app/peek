@@ -13,6 +13,7 @@ import { registerTopicConversation, unregisterTopicConversation, type Conversati
 import { draftKeys } from '@/lib/drafts'
 import type { Embed } from '@estiva-app/protocol'
 import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
+import { useSeenOnScreen } from '@/lib/useSeenOnScreen'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
@@ -23,8 +24,11 @@ import {
   formatReplyTimestamp,
   useFileConversation,
   useMembership,
+  isUrgentForViewer,
   useNewReplyThreads,
+  useNewWhenDrawn,
   useReplyOnlyThread,
+  useUrgentReplyThreads,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ReplyStream,
@@ -128,8 +132,12 @@ interface ViewSlots {
   conversationParts: ConversationParts
   /** The open thread, or nothing. */
   threadPanel: ReactNode | undefined
-  /** The newest top-level message's `createdAt`, so the read dwell re-arms when one arrives (PEE-44). */
-  newestAt: number | undefined
+  /**
+   * The newest top-level message seen on screen, `createdAt`: what the DM or
+   * file is marked read up to, with no dwell of its own — being seen took one
+   * (Katerina, 30 October). It moves as more is seen, and with it the mark (PEE-44).
+   */
+  seenAt: number | undefined
   /** Who is reading, for the read-only pane's own unread rule (CON-34). */
   viewerPubkey: string | null
   /** The thread to open when only a reply is new (`useReplyOnlyThread`): what a Desk click opens (CON-34). */
@@ -231,18 +239,32 @@ export function useFileConversationView({
   const isLoading = state === 'loading'
   const failed = typeof state === 'object' && 'failed' in state ? state.failed : null
   const conversation: FileConversation | null = typeof state === 'object' && 'roots' in state ? state : null
+  const address = container ? conversationKeyOf(container) : null
   /*
-    The newest top-level message the pane holds: the DM's or file's read dwell
-    re-arms when it moves (PEE-44). Replies are not in it — a reply is read by
-    opening its thread, and that is the open thread's own mark, below.
+    A message is read by being seen (Katerina, 30 October): on screen for a
+    moment, in the stream or in its open thread — not by its conversation
+    being open. The newest top-level message seen is what the DM or file is
+    marked up to, and the newest reply seen in the open thread is what the
+    thread is (PEE-44: a reply is read only in its thread). The marker is a
+    time, so a message older than one seen is read with it. Nothing is seen
+    before what was new has been judged, or it would be judged read.
   */
-  const newestAt = conversation ? newestMessageAt(conversation.roots) : undefined
-  useMarkThreadRead(openThreadId, conversation && openThreadId ? newestMessageAt(conversation.replies[openThreadId] ?? []) : undefined)
-  // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
   const stream: ReplyStream | null =
     container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null
+  const newWhenDrawn = useNewWhenDrawn(stream, conversation?.roots, conversation?.replies, viewerPubkey)
+  const threadRef = useRef<HTMLDivElement>(null)
+  const seenRoots = useSeenOnScreen(scrollRef, 'data-root', newWhenDrawn ? address : null)
+  const seenReplies = useSeenOnScreen(threadRef, 'data-reply-id', newWhenDrawn ? (openThreadId ?? null) : null)
+  const seenAt = conversation ? newestMessageAt(conversation.roots.filter((r) => seenRoots.has(r.id))) : undefined
+  const openReplies = conversation && openThreadId ? conversation.replies[openThreadId] : undefined
+  useMarkThreadRead(openThreadId, openReplies ? newestMessageAt(openReplies.filter((r) => seenReplies.has(r.id))) : undefined, 0)
+  // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
   const newReplies = useNewReplyThreads(stream, conversation?.replies, viewerPubkey)
+  const urgentReplies = useUrgentReplyThreads(stream, conversation?.replies, viewerPubkey)
   const replyOnlyThread = useReplyOnlyThread(stream, conversation?.roots, conversation?.replies, viewerPubkey)
+  // What was new as it was drawn keeps the unread look until it is seen; urgent for you, in its urgent tone.
+  const unseen = (id: string, seen: ReadonlySet<string>) => !!newWhenDrawn?.has(id) && !seen.has(id)
+  const urgentRoots = new Set(conversation?.roots.filter((r) => !r.deleted && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -433,7 +455,6 @@ export function useFileConversationView({
    * only if you were already at the bottom.
    */
   const nearBottom = useRef(true)
-  const address = container ? conversationKeyOf(container) : null
   const handleScroll = () => {
     const el = scrollRef.current
     if (!el) return
@@ -599,7 +620,9 @@ export function useFileConversationView({
                 <div data-root={c.id} className="contents">
                 <ConversationRow
                   c={c}
+                  hasNewMessage={unseen(c.id, seenRoots)}
                   hasNewReply={newReplies.has(c.id)}
+                  isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
                   isSelected={openThreadId === c.id}
                   readOnly={readOnly}
                   actions={rowActions}
@@ -655,11 +678,18 @@ export function useFileConversationView({
     </>
   )
 
+  // Its replies carry the unread look until each is seen, as the stream's messages do.
+  const urgentInThread = new Set(openReplies?.filter((r) => isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
+  const threadReplies = openView?.replies.map((r) =>
+    unseen(r.id, seenReplies) ? { ...r, isNew: true, isUrgent: urgentInThread.has(r.id) } : r,
+  )
   const threadPanel =
     openRoot && openView ? (
+      // No box of its own: it is where the thread's replies are watched from, to see which have been read.
+      <div ref={threadRef} className="contents">
       <ThreadPanel
         conversation={openView.data}
-        replies={openView.replies}
+        replies={threadReplies ?? openView.replies}
         sentReplies={[]}
         resolutionEvents={openView.resolutionEvents}
         isResolved={openView.data.isResolved ?? false}
@@ -684,9 +714,10 @@ export function useFileConversationView({
         onReplyEmbedsChange={(id, e) => editEmbeds(id, e)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}
       />
+      </div>
     ) : undefined
 
-  return { conversation: conversationSlot, conversationParts, threadPanel, newestAt, viewerPubkey, replyOnlyThread }
+  return { conversation: conversationSlot, conversationParts, threadPanel, seenAt, viewerPubkey, replyOnlyThread }
 }
 
 // ── From the relay's events to what the cards take ──

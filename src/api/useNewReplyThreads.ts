@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { REPLY_FLOOR_CONTEXT, channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import { REPLY_FLOOR_CONTEXT, URGENT_TAG, channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import { isUrgentFor } from '@/nostr/channelStreams'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { fileHasUnread, replyOnlyThread } from './fileUnread'
@@ -62,6 +63,76 @@ export function useNewReplyThreads(
     }
     return lit
   }, [judge, replies])
+}
+
+/** A message as it is drawn, with what makes it urgent: its text and its `urgent` keys. */
+type DrawnMessage = Message & { body: string; urgent?: readonly string[] }
+
+/**
+ * Whether a message is urgent for the viewer — `isUrgentFor`'s rule (SPEC
+ * §13.1, CON-17) over what a drawn message keeps of its event: an urgent key
+ * for the viewer on a text that names them, or the old `!@`.
+ */
+export function isUrgentForViewer(message: { body: string; urgent?: readonly string[] }, me: string | null): boolean {
+  return isUrgentFor({ content: message.body, tags: (message.urgent ?? []).map((key) => [URGENT_TAG, key]) }, me ?? undefined)
+}
+
+/**
+ * Which messages of an open DM or file were new to the viewer when each was
+ * first drawn — what keeps the unread look until it has been seen (Katerina,
+ * 30 October). Judged once per message, by the dot's own rule (`fileHasUnread`):
+ * the markers move as the conversation is read, and a message keeps its look
+ * until it has been on screen, not until a marker passes it. One that arrives
+ * while the conversation is open is judged as it arrives. Undefined until the
+ * first merge has landed — an unfetched marker is not an absent one — and
+ * nothing should be read before then, or it is judged against its own read.
+ */
+export function useNewWhenDrawn(
+  stream: ReplyStream | null,
+  roots: readonly Message[] | undefined,
+  replies: Readonly<Record<string, readonly Message[]>> | undefined,
+  me: string | null,
+): ReadonlySet<string> | undefined {
+  const judge = useStreamJudge(stream, me)
+  const key = !stream ? null : stream.kind === 'file' ? stream.address : stream.h
+  const [judged, setJudged] = useState<{ key: string | null; verdicts: ReadonlyMap<string, boolean> } | undefined>()
+  const verdicts = judged?.key === key ? judged.verdicts : undefined
+  // Judged while drawing, React's "adjusting state when a prop changes": the look is there on the first paint.
+  if (judge && roots && replies) {
+    const drawn = [
+      ...roots.map((root) => ({ id: root.id, root: root.id, by: root.author, at: root.createdAt })),
+      ...Object.entries(replies).flatMap(([root, list]) => asReplies(root, list)),
+    ]
+    const fresh = drawn.filter((m) => !verdicts?.has(m.id))
+    if (fresh.length > 0 || !verdicts) {
+      const next = new Map(verdicts)
+      for (const message of fresh) next.set(message.id, fileHasUnread([message], judge))
+      setJudged({ key, verdicts: next })
+    }
+  }
+  return useMemo(() => verdicts && new Set([...verdicts].filter(([, isNew]) => isNew).map(([id]) => id)), [verdicts])
+}
+
+/**
+ * Which threads hold a reply that is new to the viewer and urgent for them —
+ * the "new reply" in its urgent tone. The same live rule as
+ * `useNewReplyThreads`, over the urgent replies alone.
+ */
+export function useUrgentReplyThreads(
+  stream: ReplyStream | null,
+  replies: Readonly<Record<string, readonly DrawnMessage[]>> | undefined,
+  me: string | null,
+): ReadonlySet<string> {
+  const judge = useStreamJudge(stream, me)
+  return useMemo(() => {
+    const lit = new Set<string>()
+    if (!judge || !replies) return lit
+    for (const [root, list] of Object.entries(replies)) {
+      const urgent = list.filter((reply) => isUrgentForViewer(reply, me))
+      if (urgent.length > 0 && fileHasUnread(asReplies(root, urgent), judge)) lit.add(root)
+    }
+    return lit
+  }, [judge, replies, me])
 }
 
 /**
