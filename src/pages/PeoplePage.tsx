@@ -13,6 +13,7 @@ import {
   isPersonKey,
   useDmChannels,
   useDmVisibility,
+  useOpenWorkDms,
   useStarred,
   useUnread,
   useWorkspacePeople,
@@ -119,6 +120,9 @@ export function PeoplePage() {
   const selectedItem = selectedId ? ALL_ITEMS.find((i) => i.id === selectedId) : null
   const isDm = selectedId != null && DM_IDS.has(selectedId)
 
+  // Open work from a person's ⋮, as from their DM's header (Katerina, 30 October).
+  const openWorkDms = useOpenWorkDms()
+
   const dmView = useDmConversationView({
     dmId: isDm ? selectedId : null,
     dmName: isDm ? selectedItem?.name : undefined,
@@ -145,6 +149,8 @@ export function PeoplePage() {
       selectedId={selectedId}
       onSelect={handleSelect}
       onHideDm={hideDm}
+      openWorkActionFor={openWorkDms ? (id) => (openWorkDms.has(id) ? 'remove' : 'add') : undefined}
+      onToggleOpenWork={openWorkDms ? (id) => (openWorkDms.has(id) ? openWorkDms.remove(id) : openWorkDms.add(id)) : undefined}
       rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
       threadPanel={dmView.threadPanel}
     />
@@ -180,6 +186,8 @@ export function PeoplePageView({
   selectedId,
   onSelect,
   onHideDm,
+  openWorkActionFor,
+  onToggleOpenWork,
   rightPanel,
   threadPanel,
 }: {
@@ -192,6 +200,9 @@ export function PeoplePageView({
   selectedId: string | null
   onSelect: (id: string) => void
   onHideDm: (id: string) => void
+  /** A person's Open work item on their ⋮: add or remove; undefined offers none (Katerina, 30 October). */
+  openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
+  onToggleOpenWork?: (id: string) => void
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
@@ -217,7 +228,13 @@ export function PeoplePageView({
             <SkeletonSidebarList rows={8} />
           ) : (
             <>
-              <StarredSection items={starred} selectedId={selectedId} onSelect={onSelect} />
+              <StarredSection
+                items={starred}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                openWorkActionFor={openWorkActionFor}
+                onToggleOpenWork={onToggleOpenWork}
+              />
 
               {/* Divider only when there are people below it — no dangling
                   line when the workspace has no one else yet (issue #2). */}
@@ -234,6 +251,8 @@ export function PeoplePageView({
                   active={selectedId === dm.id}
                   onSelect={onSelect}
                   onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
+                  openWorkAction={openWorkActionFor?.(dm.id)}
+                  onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(dm.id) : undefined}
                 />
               ))}
             </>

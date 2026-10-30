@@ -5,7 +5,8 @@ import { TopicMenuItems } from './TopicMoreMenu'
 
 /**
  * One person on the package's sidebar row: their photo, their name, the dot,
- * and Hide on the ⋮ where hiding can succeed (DMS-6). The link is their page;
+ * and on the ⋮ Open work (Katerina, 30 October) and Hide where hiding can
+ * succeed (DMS-6). The link is their page;
  * `onSelect` goes there.
  */
 export function PersonItem({
@@ -17,6 +18,8 @@ export function PersonItem({
   active,
   onSelect,
   onHide,
+  openWorkAction,
+  onToggleOpenWork,
 }: {
   id: string
   name: string
@@ -26,6 +29,9 @@ export function PersonItem({
   active: boolean
   onSelect?: (id: string) => void
   onHide?: () => void
+  /** Whether the ⋮ adds this DM to Open work or takes it off; absent where adding cannot succeed. */
+  openWorkAction?: 'add' | 'remove'
+  onToggleOpenWork?: () => void
 }) {
   const avatarSrcFor = useAvatarSrc()
   return (
@@ -45,7 +51,11 @@ export function PersonItem({
             }
           : undefined
       }
-      menu={onHide ? <TopicMenuItems onHideDm={onHide} /> : undefined}
+      menu={
+        onHide || (openWorkAction && onToggleOpenWork) ? (
+          <TopicMenuItems onHideDm={onHide} openWorkAction={openWorkAction} onToggleOpenWork={onToggleOpenWork} />
+        ) : undefined
+      }
     />
   )
 }
