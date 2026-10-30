@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { useContext, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import { MAX_LINKS_ASKED, type ForeignObject } from '@estiva-app/interop'
 import {
@@ -13,7 +13,7 @@ import {
   type ComposerLabels,
 } from '@estiva-app/conversation'
 import { referenceOfLink, type EditorDocument, type Embed } from '@estiva-app/protocol'
-import { Kbd, LinkChip } from '@estiva-app/ui'
+import { Kbd } from '@estiva-app/ui'
 import {
   CommentBox,
   commentBoxRows,
@@ -21,7 +21,6 @@ import {
   type BoxFile,
   type BoxSentUnder,
   type BoxUnder,
-  type ReferenceViewProps,
   type SendAnswer,
   type UploadAnswer,
 } from '@estiva-app/ui/editor'
@@ -37,7 +36,6 @@ import {
   subscribeMentions,
   subscribeReferences,
   useCanUpload,
-  useResolvedReferences,
   useUploadActions,
   type FileAttachment,
   type HighlightType,
@@ -45,17 +43,16 @@ import {
 } from '@/api'
 import { registerActiveComposer, unregisterComposer, type ComposerHandle } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
-import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
+import { referenceOfValue } from '@/lib/embedValue'
 import { isWebLink } from '@/lib/referenceLink'
 import type { RefusedEdit } from '@/lib/refusedEdits'
 import { HighlightTag } from '@/extensions/highlight'
 import { extractResolutionFromText, ResolutionBlock, resolutionOfDocument } from '@/extensions/resolution'
-import { referenceRowIcon } from '@/extensions/mention'
-import { linkStateOf } from '@/lib/linked'
 import { mentionDirectory } from './MentionMenu'
 import { MessageCard, MessagePart } from './MessageLinks'
 import { PartCard } from './PartCard'
-import { Reference } from './Reference'
+import { BoxReference } from './BoxReference'
+import { BoxSupplied, suppliedFor } from './boxSupplied'
 import { PEEK_INSERT_ROWS } from './SlashMenu'
 
 /**
@@ -153,33 +150,34 @@ const hasHighlight = (editor: Editor) => {
   return found
 }
 
-/** What a box's seam already holds, for a surface with no relay to ask (a story, a test), by reference or address. */
-const Supplied = createContext<Record<string, ForeignObject> | undefined>(undefined)
-
-function suppliedFor(supplied: Record<string, ForeignObject> | undefined, uri: string): ForeignObject | undefined {
-  if (!supplied) return undefined
-  // By the file, not the spelling: a seam's `naddr` may carry relay hints the box's does not.
-  const value = valueOfReference(uri.startsWith('nostr:') ? uri : `nostr:${uri}`)
-  return Object.entries(supplied).find(([key]) => valueOfReference(key.startsWith('nostr:') ? key : `nostr:${key}`) === value)?.[1]
-}
-
 /** A file's card under the box, drawn as a sent message draws it. */
 function BoxCard({ uri }: { uri: string }) {
-  const resolved = suppliedFor(useContext(Supplied), uri)
+  const resolved = suppliedFor(useContext(BoxSupplied), uri)
   return <MessageCard uri={uri} resolved={resolved} />
 }
 
 const LINK_CONTEXT = { resolveLink: knownCardValue, blockOf: knownBlockOfUrl }
 
-/** What a box's document names, read as it will be sent; `previous` makes it an edit's, where only a file named first gets a card. */
-const linksOfBox = (body: JSONContent, here: string | undefined, previous?: readonly string[]) =>
-  boxReadOf(withoutOwnNodes(body as DocumentNode) as EditorDocument, { ...LINK_CONTEXT, here, previous })
+/** An edit's: what the message named before, and its cards as they stand (its folded `embed` set). */
+interface EditLinks {
+  previous: readonly string[]
+  folded?: readonly Embed[]
+}
+
+/**
+ * What a box's document names, read as it will be sent. `edit` makes it an
+ * edit's: the message's own card shows while the edit names its file, a card
+ * taken off before never comes back, and a file named first gets its card
+ * (conversation's `boxLinksOf`; Katerina, 30 Oct).
+ */
+const linksOfBox = (body: JSONContent, here: string | undefined, edit?: EditLinks) =>
+  boxReadOf(withoutOwnNodes(body as DocumentNode) as EditorDocument, { ...LINK_CONTEXT, here, ...edit })
 
 /** What shows under the box while a message is written, read as it will be sent (why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-on-words-counts-toward-the-card.md). */
-function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUnder {
+function boxUnder(here: string | undefined, edit?: EditLinks): BoxUnder {
   return {
     read: (body) => {
-      const links = linksOfBox(body, here, previous)
+      const links = linksOfBox(body, here, edit)
       askAbout(links.urls)
       const uri = links.card ? referenceOfValue(links.card) : undefined
       return {
@@ -197,34 +195,6 @@ function boxUnder(here: string | undefined, previous?: readonly string[]): BoxUn
     },
     changed: onLinksChanged,
   }
-}
-
-const isPerson = (uri: string) => /^nostr:npub1/i.test(uri)
-
-/** A click on the chip's link while writing is held: it is not a way out of the draft. */
-const holdLink = (event: MouseEvent) => {
-  if ((event.target as Element).closest('a')) event.preventDefault()
-}
-
-/**
- * A `nostr:` reference or an app link the box holds, as the kit's `LinkChip`,
- * from the same lookup the sent message's chip reads (Katerina, 30 Oct: one
- * chip in every box, for a pasted link and a `[` pick alike). A chip wherever it
- * sits. While writing a click does not follow it and hovering shows no card. A
- * person is their name's chip, as in the sent message. An app link not
- * answered yet reads as the URL it was written as.
- */
-export function BoxReference({ uri, href }: ReferenceViewProps) {
-  const supplied = suppliedFor(useContext(Supplied), uri)
-  // Asked for only when nothing was handed in, and never for a person, whom the directory names; the hook is called either way.
-  const fetched = useResolvedReferences(supplied || !uri || isPerson(uri) ? [] : [uri])
-  if (!uri) return <span>{href}</span>
-  if (isPerson(uri)) return <Reference uri={uri} link={false} />
-  return (
-    <span onClickCapture={holdLink} onAuxClickCapture={holdLink}>
-      <LinkChip link={linkStateOf(uri, supplied ?? fetched[uri])} preview={false} />
-    </span>
-  )
 }
 
 export interface ConversationBoxProps {
@@ -339,7 +309,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
   }
 
   return (
-    <Supplied.Provider value={resolvedObjects}>
+    <BoxSupplied.Provider value={resolvedObjects}>
       <CommentBox
         key={draftKey}
         label={contextLabel ?? (kind === 'reply' ? 'Reply' : 'Message')}
@@ -347,7 +317,6 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
         people={people}
         references={referenceSections}
         referencesChanged={subscribeReferences}
-        referenceIcon={(uri) => (uri ? referenceRowIcon(uri) : undefined)}
         referenceView={BoxReference}
         insert={INSERT}
         code="inline"
@@ -363,7 +332,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
         autoFocus
         className={className}
       />
-    </Supplied.Provider>
+    </BoxSupplied.Provider>
   )
 }
 
@@ -376,7 +345,7 @@ export interface EditSaved {
   highlightType?: HighlightType
   /** The whole file list, only when this edit changed it (PEE-16). */
   files?: FileAttachment[]
-  /** The card set, only when this edit names a file first (§13.6.2). */
+  /** The card set, only when this edit changed it: a file named first gets its card, ✕ took the message's own off (§13.6.2). */
   embeds?: Embed[]
 }
 
@@ -424,9 +393,10 @@ function attachmentOf(value: unknown): FileAttachment {
 export function EditBox({ kind = 'conversation', message, refused, here, onSave, onCancel, resolvedObjects, className }: EditBoxProps) {
   const { people, labels } = usePeople()
   const upload = useUpload()
-  // What the message named before, so only a file this edit names first gets a card.
-  const [previous] = useState(() => namedBefore(message.body, LINK_CONTEXT))
-  const under = useMemo(() => boxUnder(here, previous), [here, previous])
+  // What the message named before and its cards, read once as the box opens: its own card shows with its ✕, a card
+  // taken off before stays off, and a file named first gets its card.
+  const [edited] = useState<EditLinks>(() => ({ previous: namedBefore(message.body, LINK_CONTEXT), folded: message.embeds }))
+  const under = useMemo(() => boxUnder(here, edited), [here, edited])
 
   // Read once, as the box opens: a re-read of the message while editing does not reset what is typed.
   const [edit] = useState(() => {
@@ -467,7 +437,7 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
     if (!text && kept.length === 0 && !resolution.hasResolution) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
     // An edit makes nobody urgent (CON-24).
     text = withoutNewUrgency(text, message.body)
-    const links = linksOfBox(body, here, previous)
+    const links = linksOfBox(body, here, edited)
     onSave({
       text: text !== message.body.trim() ? text : undefined,
       resolution,
@@ -479,14 +449,13 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
   }
 
   return (
-    <Supplied.Provider value={resolvedObjects}>
+    <BoxSupplied.Provider value={resolvedObjects}>
       <CommentBox
         label={kind === 'reply' ? 'Edit reply' : 'Edit message'}
         placeholder="Edit message"
         people={people}
         references={referenceSections}
         referencesChanged={subscribeReferences}
-        referenceIcon={(uri) => (uri ? referenceRowIcon(uri) : undefined)}
         referenceView={BoxReference}
         insert={INSERT}
         code="inline"
@@ -498,7 +467,7 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
         marked={hasHighlight}
         className={className}
       />
-    </Supplied.Provider>
+    </BoxSupplied.Provider>
   )
 }
 

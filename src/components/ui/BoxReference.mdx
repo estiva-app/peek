@@ -17,9 +17,11 @@ chip).
 
 ## When
 
-- As the `referenceView` the package's `CommentBox` draws a reference with —
-  handed to `keepCommentBoxWarm` once as Peek starts, and used by every
-  **ConversationBox**.
+- As the `referenceView` the package's `CommentBox` draws a reference with, a
+  pasted link and a `[` pick alike (ui 0.92) — handed to `keepCommentBoxWarm`
+  once as Peek starts, and used by every **ConversationBox** and **EditBox**.
+- As the `view` of a description form's `[` pick (`messageMention`, in
+  `ProseField`).
 
 ## When not
 
@@ -31,7 +33,8 @@ chip).
 
 ```tsx
 import { keepCommentBoxWarm } from '@estiva-app/ui/editor'
-import { BOX_EXTENSIONS, BoxReference } from '@/components/ui/ConversationBox'
+import { BOX_EXTENSIONS } from '@/components/ui/ConversationBox'
+import { BoxReference } from '@/components/ui/BoxReference'
 
 keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
 ```
@@ -44,7 +47,9 @@ keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
 - **Reading the object**: from what a story or a test supplied, else from the
   relay, as the sent message's chip reads it; an app link not answered yet
   reads as the URL it was written as.
-- **No way out of the draft**: a click on the chip does not follow it, and
-  hovering it shows no card (`preview={false}`).
+- **No way out of the draft**: the kit holds a click on the chip while it is
+  written, and hovering it shows no card while `editing`.
+- **What cannot be read**: written as a URL, that URL as written (SPEC §13.1);
+  a file a trusted deletion names, "Issue deleted".
 - **Never a row or a card in the box**: no `LinkPlaces` in `BOX_EXTENSIONS`
   (the kit's `LinkPlaces` page, When not).

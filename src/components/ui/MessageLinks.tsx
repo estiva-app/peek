@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type LinkedConversation, type LinkState, type LoadingShape } from '@estiva-app/ui'
-import { useConversationBadges } from '@/api'
-import { linkedKindOf, linkStateOf } from '@/lib/linked'
+import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type CardShape, type LinkedConversation, type LinkState, type LoadingShape } from '@estiva-app/ui'
+import { useConversationBadges, useDeleted, useLinksIn } from '@/api'
+import { linkedKindOf, linkStateOf, messageWordsOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { filePath } from '@/lib/objectUrl'
 import { writtenLinkOf } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { referenceTypeWord } from '@/lib/textParsing'
-import { cardShapeOf, noteCardShape, type CardShape } from '@/lib/cardShapes'
+import { cardShapes } from '@/lib/cardShapes'
 import { rememberedUnavailable } from '@/lib/unavailableCards'
 import { Reference } from './Reference'
 import { useHeldCard } from './useHeldCard'
@@ -109,10 +109,13 @@ export function MessagePart({ children }: { children: ReactNode }) {
  * the same file never draws in two states on one screen.
  */
 export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { uri: string; object: ForeignObject | null | undefined; urgent?: readonly string[]; /** Hovering shows its card; off in a list of previews, where a card would cover the next one, and when its card is under the message already. */ preview?: boolean; /** The URL it was written as: a click opens it, on a host an app declares (LTX-6), at its block (WBM-11). */ opensAt?: string }) {
+  // Hooks first: a person's chip draws none of what they read.
+  const deleted = useDeleted(uri, object)
+  useLinksIn(messageWordsOf(object))
   if (/^nostr:npub1/i.test(uri)) return <Reference uri={uri} urgent={urgent} />
   return (
     <LinkClicks>
-      <LinkChip link={openingAt(linkStateOf(uri, object), opensAt)} preview={preview} />
+      <LinkChip link={openingAt(linkStateOf(uri, object, { url: opensAt, deleted }), opensAt)} preview={preview} />
     </LinkClicks>
   )
 }
@@ -120,9 +123,11 @@ export function MessageChip({ uri, object, urgent, preview = true, opensAt }: { 
 /** A line that is only a link to a file or a message: that file's row, where the line was. */
 export function MessageRow({ uri, object, unreadable = false, opensAt }: { uri: string; object: ForeignObject | null | undefined; /** A reference that names no address or event id. */ unreadable?: boolean; /** The URL it was written as: a click opens it, on a host an app declares (LTX-6), at its block (WBM-11). */ opensAt?: string }) {
   const conversation = useConversationOf(unreadable ? undefined : object)
+  const deleted = useDeleted(uri, unreadable ? undefined : object)
+  useLinksIn(messageWordsOf(object))
   const link: LinkState = unreadable
     ? { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
-    : openingAt(linkStateOf(uri, object, conversation ? { conversation } : {}), opensAt)
+    : openingAt(linkStateOf(uri, object, { url: opensAt, deleted, ...(conversation ? { conversation } : {}) }), opensAt)
   return (
     <LinkClicks block>
       <div data-link-row>
@@ -146,18 +151,22 @@ export function MessageCard({ uri, resolved, compact = false, readOnly = false, 
   const { object, drawn, busy, error, onAct, directory } = useHeldCard(naddr, resolved, { remember: true, card: !compact })
   const ready = drawn && drawn !== 'loading' && !drawn.unreachable ? drawn : undefined
   const conversation = useConversationOf(ready)
+  // A file that came back as nothing: deleted, when a deletion the protocol trusts names it (SPEC §13.6.1).
+  const deleted = useDeleted(uri, object === 'loading' ? undefined : object)
+  useLinksIn(messageWordsOf(ready))
   const act = useCallback((actionId: string, value: string) => {
     if (!busy) void onAct(actionId, value)
   }, [busy, onAct])
 
   let link: LinkState
   let loadingShape: CardShape | undefined
-  const notAvailable: LinkState = { state: 'unavailable', kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }
+  // Not this reader's to see, or deleted, or, when the body wrote a URL, that URL as written (SPEC §13.1, C21).
+  const notAvailable = linkStateOf(uri, null, { url: opensAt, deleted })
   if (object === 'loading') {
     // Found not available the last time this device asked: its one-line row from the first paint, not a card's height (OPT-10).
     // Otherwise a placeholder of the card's own height, so the conversation does not move as it loads.
     const kind = linkedKindOf(uri)
-    loadingShape = rememberedUnavailable(naddr) || compact ? undefined : cardShapeOf(naddr, kind)
+    loadingShape = rememberedUnavailable(naddr) || compact ? undefined : cardShapes.of(naddr, kind)
     link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: loadingShape }
   } else if (object === null) {
     // An answer of nothing, or a read that failed (a busy relay, the network): "not available", never a blank where the
@@ -183,7 +192,7 @@ export function MessageCard({ uri, resolved, compact = false, readOnly = false, 
     // A card not on screen (a closed panel) measures 0: it keeps the height it last drew at.
     const note = () => {
       const height = Math.round(card.getBoundingClientRect().height)
-      noteCardShape(naddr, height > 0 ? { ...drawn, height } : { ...drawn, height: cardShapeOf(naddr, kindOfCard)?.height })
+      cardShapes.note(naddr, height > 0 ? { ...drawn, height } : { ...drawn, height: cardShapes.of(naddr, kindOfCard)?.height })
     }
     note()
     if (typeof ResizeObserver === 'undefined') return

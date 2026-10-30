@@ -1,11 +1,12 @@
 /**
- * `[` offers Messages, then Files (PEE-21).
+ * `[` offers Files, then Messages (Katerina, 30 Oct).
  *
- * Messages are the thread you are writing in, then the topic around it. Files
- * are the Folder on screen, then what you read recently, then — once you type —
- * the relay's title search. A message row names its author and shows its
- * opening words with every `nostr:` reference spelled as a word, never the raw
- * string production showed before.
+ * Files are the Folder on screen, then what you read recently, then — once you
+ * type — the relay's title search. Messages are the thread you are writing in,
+ * then the topic around it. A message row names its author and shows its
+ * opening words with every `nostr:` reference spelled as a word, and an app
+ * link read as what it names once that has come back — never the raw string —
+ * and it is found by its own words, not by the links in them.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, renderHook, waitFor } from '@testing-library/react'
@@ -24,6 +25,15 @@ vi.mock('@/nostr/foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
   fileCandidatesAsViewer: (files: unknown, tier: number) => relay.files(files, tier),
   searchFileReferencesAsViewer: (text: string) => relay.search(text),
+}))
+/** What app links name, as far as their answers have come back; asked links are noted. */
+const links = vi.hoisted(() => ({ known: {} as Record<string, string>, asked: [] as string[] }))
+vi.mock('./foreign', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('./foreign')),
+  knownCardValue: (url: string) => links.known[url],
+  askLinks: async (urls: readonly string[]) => {
+    links.asked.push(...urls)
+  },
 }))
 vi.mock('@/nostr/useReadStateSync', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/useReadStateSync')),
@@ -70,7 +80,7 @@ describe('referenceSections', () => {
       messages: [message(2, 'Miky', `See ${messageReference(EVENT(1), 9)} please`)],
     })
 
-    const [messages, files] = referenceSections('')
+    const [files, messages] = referenceSections('')
     expect(messages.label).toBe('Messages')
     expect(messages.items.map((i) => i.label)).toEqual(['Miky', 'Katerina'])
     expect(messages.items[0].snippet).toBe('See Message please')
@@ -78,10 +88,31 @@ describe('referenceSections', () => {
     expect(files).toMatchObject({ label: 'Files', items: [] })
   })
 
+  it('reads an app link in a message as what it names once it has come back, and asks about it', () => {
+    const url = 'https://ship.estiva.app/issue/plan-the-launch-b389d20f'
+    links.known = { [url]: address(30851, 'b389d20f') }
+    registerActiveConversation({ references: [], messages: [message(4, 'Miky', `Look at ${url} first`)] })
+
+    const [, messages] = referenceSections('')
+    expect(messages.items[0].snippet).toBe('Look at Issue first')
+    expect(links.asked).toContain(url)
+    links.known = {}
+  })
+
+  it('finds a message by its own words, not by the link it holds', () => {
+    registerActiveConversation({
+      references: [],
+      messages: [message(5, 'Miky', 'see https://ship.estiva.app/issue/onboarding-checklist-b389d20f'), message(6, 'Ada', 'the onboarding checklist is late')],
+    })
+
+    const [, messages] = referenceSections('onboarding')
+    expect(messages.items.map((i) => i.label)).toEqual(['Ada'])
+  })
+
   it('reads a list on one line without its markers, as Ship and Leaf caption the same comment (PEEKM-6)', () => {
     registerActiveConversation({ references: [], messages: [message(3, 'Miky', '## Plan\n- [the guide](https://example.com/guide)\n- **second**')] })
 
-    const [messages] = referenceSections('')
+    const [, messages] = referenceSections('')
     expect(messages.items[0].snippet).toBe('Plan the guide second')
   })
 
@@ -96,16 +127,16 @@ describe('referenceSections', () => {
     // The page's own file is in its Folder and was just read; it is offered from neither.
     const folder = renderHook(() => useReferenceFolder({ files: [] } as never, address(30840, 'open')))
 
-    await waitFor(() => expect(referenceSections('')[1].items).toHaveLength(2))
-    expect(labels('')[1]).toEqual(['Files', ['Ranking for [|', 'Launch notes|']])
-    expect(referenceSections('')[1].items[0].description).toBe('Peek: Feedback & Bugs')
+    await waitFor(() => expect(referenceSections('')[0].items).toHaveLength(2))
+    expect(labels('')[0]).toEqual(['Files', ['Ranking for [|', 'Launch notes|']])
+    expect(referenceSections('')[0].items[0].description).toBe('Peek: Feedback & Bugs')
     // Only read markers that are file addresses, newest first.
     const recent = relay.files.mock.calls.find(([, tier]) => tier === FILE_TIER.recent)?.[0] as { addresses: string[] }
     expect(recent.addresses).toEqual([address(30840, 'new'), address(30851, 'old')])
 
     folder.unmount()
     // Off the page, that file is just one you read recently.
-    expect(labels('')[1]).toEqual(['Files', ['Launch notes|', 'The file you are in|']])
+    expect(labels('')[0]).toEqual(['Files', ['Launch notes|', 'The file you are in|']])
     sync.unmount()
   })
 
@@ -115,11 +146,11 @@ describe('referenceSections', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeReferences(listener)
 
-    expect(referenceSections('')[1].items).toEqual([])
-    expect(referenceSections('ranking')[1].items).toEqual([])
+    expect(referenceSections('')[0].items).toEqual([])
+    expect(referenceSections('ranking')[0].items).toEqual([])
     await waitFor(() => expect(listener).toHaveBeenCalled())
     expect(relay.search).toHaveBeenCalledWith('ranking')
-    expect(labels('ranking')[1]).toEqual(['Files', ['Ranking elsewhere|']])
+    expect(labels('ranking')[0]).toEqual(['Files', ['Ranking elsewhere|']])
 
     unsubscribe()
     sync.unmount()
@@ -131,12 +162,12 @@ describe('referenceSections', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeReferences(listener)
     referenceSections('payroll')
-    await waitFor(() => expect(labels('payroll')[1]).toEqual(['Files', ['Payroll|']]))
+    await waitFor(() => expect(labels('payroll')[0]).toEqual(['Files', ['Payroll|']]))
 
     // Nothing re-renders the sync: the next read notices on its own.
     relay.pubkey = 'w'.repeat(64)
     relay.search.mockResolvedValue([])
-    expect(referenceSections('payroll')[1].items).toEqual([])
+    expect(referenceSections('payroll')[0].items).toEqual([])
 
     unsubscribe()
     sync.unmount()
@@ -149,8 +180,8 @@ describe('referenceSections', () => {
       file(30840, 'without', 'Launch notes', tier),
     ])
     const folder = renderHook(() => useReferenceFolder({ files: [] } as never, null))
-    await waitFor(() => expect(referenceSections('')[1].items).toHaveLength(2))
-    const items = referenceSections('')[1].items
+    await waitFor(() => expect(referenceSections('')[0].items).toHaveLength(2))
+    const items = referenceSections('')[0].items
     const withSummary = items.find((i) => i.label === 'Quarter close')
     const without = items.find((i) => i.label === 'Launch notes')!
     expect(withSummary).toMatchObject({ label: 'Quarter close', summary: 'Check the Q4 numbers before Friday', description: 'Finance' })

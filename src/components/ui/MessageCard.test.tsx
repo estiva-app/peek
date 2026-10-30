@@ -10,6 +10,8 @@ vi.mock('@/api', async () => {
   const { useEffect, useState } = await import('react')
   return {
     hasRelay: true,
+    useDeleted: () => false,
+    useLinksIn: () => {},
     isFromCopy: () => false,
     useForeignObjects: () => ({ resolveObject, applyAction: vi.fn() }),
     // The tab's held answer (OPT-3), reduced to a resolve on mount; a read that fails answers null, not gone.

@@ -32,12 +32,12 @@ export function PartCard({ address, block, anchorTags, quotedBy }: { address: st
  * when it is long, and opened in place (Katerina, 2026-10-08). The way into the
  * app it came from is a Button with an open-out icon, level with Show more.
  *
- * **Five states, and two of them must never look alike.** A block somebody
- * deleted says so; a block the reader may not see says only that it is not
- * available — no title and no text, because either would tell them something
- * about a Folder they are not in, and a different frame so that "gone" and
- * "not yours" cannot be mistaken for each other. Every state that shows no
- * block is said in italic.
+ * **Five states, in the kit's words** (SPEC §13.6.1; ui 0.92): the file
+ * deleted says so ("A part of this issue deleted"), and one the reader may not
+ * see says only "not available", with no title and no text, which would tell
+ * them something about a Folder they are not in. A file still there whose part
+ * was deleted is "This part was deleted"; one whose part can't be addressed is
+ * "This part can't be shown", linking to the whole file.
  */
 export function PartCardView({
   view,
@@ -65,30 +65,29 @@ export function PartCardView({
   }
 
   /*
-    Deleted, or not this reader's to see, read the same (Miky, 15 Oct): the relay
-    answers both alike, and a title or its words would tell a reader something
-    about a Folder they are not in.
+    Not this reader's to see, or deleted by a deletion the protocol trusts
+    (`readAbsence`): neither draws a title or its words, which would tell a
+    reader something about a Folder they are not in.
   */
   if (view.state === 'unreadable' || view.state === 'deleted') {
     return (
       <div data-part={view.state} data-part-address={address} className="mt-1">
-        <KitPartCard state="unavailable" kind={kind} noun={kind[0].toUpperCase() + kind.slice(1)} />
+        <KitPartCard state={view.state === 'deleted' ? 'deleted' : 'unavailable'} kind={kind} noun={kind[0].toUpperCase() + kind.slice(1)} />
+      </div>
+    )
+  }
+
+  // The file is there and its part is not, or can't be one: the kit's words; "can't be shown" opens the whole file.
+  if (view.state !== 'resolved' && view.state !== 'reworded') {
+    return (
+      <div data-part={view.state} data-part-address={address} className="mt-1">
+        <KitPartCard state={view.state} kind={thingKindOf(view.object.kind)} href={openInAppUrl(view.object)} />
       </div>
     )
   }
 
   // The way into the app it came from is a manifest's URL: http(s) only, as every other link to another app.
   const frame = { kind: thingKindOf(view.object.kind), heading: headingOf(view.object), href: openInAppUrl({ openUrl: view.link }) }
-
-  if (view.state !== 'resolved' && view.state !== 'reworded') {
-    return (
-      <div data-part={view.state} data-part-address={address} className="mt-1">
-        <KitPartCard {...frame}>
-          <span className="text-caption italic text-text-muted">{view.state === 'detached' ? 'This part was deleted' : "This part can't be shown"}</span>
-        </KitPartCard>
-      </div>
-    )
-  }
 
   const run = view.run ?? [view.block]
   const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: run }), 'blocks')

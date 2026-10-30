@@ -124,7 +124,7 @@ export const WithoutALink: Story = {
 /** Waiting for the first read: the same placeholder a Ship card has. */
 export const Loading: Story = { args: { view: { state: 'loading' } } }
 
-/** The block was taken out of a description the reader can still read. */
+/** The block was taken out of a description the reader can still read: "This part was deleted". */
 export const PartDeleted: Story = { args: { view: { state: 'detached', object: issue, link: LINK } } }
 
 /** A comment on several paragraphs (§13.6, LEAF-7): the card draws every one of them. */
@@ -159,11 +159,11 @@ export const WordsChanged: Story = {
   },
 }
 
-/** The object's body is not written in blocks, so no block of it can be shown. */
+/** The object's body is not written in blocks, so no block of it can be shown: "This part can't be shown", opening the whole file. */
 export const CantBeShown: Story = { args: { view: { state: 'unaddressable', object: issue, link: LINK } } }
 
-/** The whole object is gone: no title, because there is nothing left to name. */
+/** The whole object was deleted, as a trusted deletion says: "A part of this issue deleted", no title. */
 export const Deleted: Story = { args: { view: { state: 'deleted' } } }
 
-/** The reader is not in the object's Folder: no title, no text, a dashed frame. */
+/** The reader is not in the object's Folder: "A part of this issue not available", no title, no text. */
 export const NotAvailable: Story = { args: { view: { state: 'unreadable' } } }

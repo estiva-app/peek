@@ -12,14 +12,14 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { Editor } from '@tiptap/react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { addrToNaddr, encodeNpub } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNpub, valueOfReference, type Embed } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { DebugProvider } from '@/lib/debug'
 import { createDraftStore, draftKeys } from '@/lib/drafts'
 import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
 import { insertHighlightTag } from '@/extensions/highlight'
-import { ConversationBox, type SendAnswer, type SendPayload } from './ConversationBox'
+import { ConversationBox, EditBox, type EditSaved, type SendAnswer, type SendPayload } from './ConversationBox'
 import { PEEK_INSERT_ROWS } from './SlashMenu'
 
 // jsdom has no rects on text nodes, and ProseMirror asks for them when a draft fills the document.
@@ -166,5 +166,56 @@ nostr:${recorded.naddr}`, undefined, resolved)
     const chip = await within(dom).findByRole('link', { name: /A project description does not resolve/ })
     // `fireEvent` answers false when the click's default was prevented.
     expect(fireEvent.click(chip)).toBe(false)
+  })
+})
+
+describe('EditBox — the message’s card', () => {
+  const resolved = { [recorded.naddr]: recorded.object as unknown as ForeignObject }
+  const value = valueOfReference(`nostr:${recorded.naddr}`)!
+  const body = `Tracked in nostr:${recorded.naddr} for now.`
+
+  async function editing(embeds: Embed[]) {
+    const onSave = vi.fn<(saved: EditSaved) => void>()
+    render(
+      <MemoryRouter>
+        <DebugProvider>
+          <PeekDataProvider>
+            <EditBox message={{ body, embeds }} onSave={onSave} onCancel={() => {}} resolvedObjects={resolved} />
+          </PeekDataProvider>
+        </DebugProvider>
+      </MemoryRouter>,
+    )
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).not.toBeNull())
+    return onSave
+  }
+
+  it('shows the card the message has, and ✕ there saves the message with it taken off', async () => {
+    const user = userEvent.setup()
+    const onSave = await editing([{ value, layout: 'detailed' }])
+    const under = await waitFor(() => {
+      const found = document.querySelector('[data-box-under]')
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    expect(within(under).getByText(/A project description does not resolve/)).toBeInTheDocument()
+    await user.click(within(under).getByRole('button', { name: 'Remove' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0].embeds).toEqual([{ value, layout: 'none' }])
+  })
+
+  it('leaves the message’s card as it is when the edit keeps it', async () => {
+    const user = userEvent.setup()
+    const onSave = await editing([{ value, layout: 'detailed' }])
+    await waitFor(() => expect(document.querySelector('[data-box-under]')).not.toBeNull())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0].embeds).toBeUndefined()
+  })
+
+  it('never shows a card taken off before', async () => {
+    await editing([{ value, layout: 'none' }])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument())
+    expect(document.querySelector('[data-box-under]')).toBeNull()
   })
 })

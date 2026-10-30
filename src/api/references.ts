@@ -1,6 +1,7 @@
 /**
- * What `[` offers in Peek (PEE-21): Messages, then Files, ranked by
- * `@estiva-app/conversation`'s `rankReferences` — the order every app shares.
+ * What `[` offers in Peek (PEE-21): Files, then Messages (Katerina, 30 Oct),
+ * ranked by `@estiva-app/conversation`'s `rankReferences` and put in that
+ * order by its `referenceSectionsOf` — the order every app shares.
  *
  * - **Messages:** the open thread's, then its file's (`referenceConversations`).
  * - **Files:** this Folder's — published by the page that shows it
@@ -16,12 +17,13 @@ import type { CaptionedItem, ReferenceTriggerOptions } from '@estiva-app/ui/edit
 import {
   FILE_TIER,
   MESSAGE_TIER,
-  messageReference,
-  openingWords,
+  messageCandidate,
   rankReferences,
   referenceSearch,
+  referenceSectionsOf,
   type ReferenceCandidate,
 } from '@estiva-app/conversation'
+import { urlRunsIn } from '@estiva-app/protocol'
 import { KIND_BARE_FILE, type FolderContents, type ForeignObject } from '@estiva-app/interop'
 import { referenceConversations, type ConversationMessage } from '@/lib/conversationRegistry'
 import { rememberedFile, rememberRecent } from '@/lib/recents'
@@ -29,13 +31,16 @@ import { MESSAGE_KIND } from '@/nostr/manifest'
 import { personByPubkey } from './mentions'
 import { fileCandidatesAsViewer, searchFileReferencesAsViewer } from '@/nostr/foreign'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
-import { useRelayViewer } from './foreign'
+import { askLinks, knownCardValue, onLinksChanged, useRelayViewer } from './foreign'
 import type { FolderContentsState } from './useFolderContents'
 
 type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections']>>[number]
 
-/** The section headings, Messages above Files; the list's name is FILES_MENU_COPY's. */
-const REFERENCE_COPY = { messages: 'Messages', files: 'Files' }
+/** The section headings, by the package's names for them; the list's name is FILES_MENU_COPY's. */
+const REFERENCE_COPY = { files: 'Files', messages: 'Messages' }
+
+/** At most this many links in the offered messages are asked about: each is a read, and `[` asks on every key. */
+const MAX_OFFERED_LINKS = 24
 
 /** How many recently read files are looked up — a few more than the section shows. */
 const RECENT_LIMIT = 12
@@ -71,35 +76,49 @@ const search = referenceSearch({
   },
 })
 
-/** Called while `[`'s list is open; told when a tier or a search answer changes. */
+/**
+ * Called while `[`'s list is open; told when a tier or a search answer
+ * changes, and when a link in an offered message comes back, so its caption
+ * reads it as what it names.
+ */
 export function subscribeReferences(listener: () => void): () => void {
   listeners.add(listener)
   const unsubscribe = search.subscribe(listener)
+  const unlink = onLinksChanged(listener)
   return () => {
     listeners.delete(listener)
     unsubscribe()
+    unlink()
   }
 }
 
-// Built on each read: the caption names people, and the directory fills in late.
-function messageCandidate(message: ConversationMessage, tier: number, at: number): ReferenceCandidate {
-  return {
-    id: message.eventId as string,
-    uri: messageReference(message.eventId as string, MESSAGE_KIND),
-    type: 'message',
-    kind: MESSAGE_KIND,
-    title: message.author,
-    // A message's opening words, read as Ship and Leaf read them (PEEKM-6).
-    caption: openingWords(message.body, (pubkey) => personByPubkey(pubkey)?.name),
-    search: message.body,
-    tier,
-    at,
-  }
-}
-
+/*
+  The package's row for a message, the same in every app: the author, the
+  opening words with an app link read as what it names once it has come back
+  (never the raw URL), and found by its own words, not the links in them
+  (Katerina, 30 Oct). Built on each read: the caption names people, and the
+  directory and the links' answers fill in late.
+*/
 const messagesOf = (messages: ConversationMessage[], tier: number) =>
   // Oldest first on screen: the position is the recency.
-  messages.flatMap((message, at) => (message.eventId ? [messageCandidate(message, tier, at)] : []))
+  messages.flatMap((message, at) =>
+    message.eventId
+      ? [
+          messageCandidate(
+            { id: message.eventId, kind: MESSAGE_KIND, author: message.author, body: message.body, at },
+            tier,
+            (pubkey) => personByPubkey(pubkey)?.name,
+            { resolveLink: knownCardValue },
+          ),
+        ]
+      : [],
+  )
+
+/** Ask what the app links in the offered messages name; a known one costs nothing, and an answer redraws the list. */
+function askAboutLinksIn(messages: readonly ConversationMessage[]) {
+  const urls = [...new Set(messages.flatMap((message) => urlRunsIn(message.body).map((run) => run.url)))].slice(0, MAX_OFFERED_LINKS)
+  if (urls.length) askLinks(urls).catch(() => {})
+}
 
 function itemOf(candidate: ReferenceCandidate): CaptionedItem {
   if (candidate.type === 'message') {
@@ -121,6 +140,7 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
 export function referenceSections(query: string): ReferenceSection[] {
   forgetIfSomeoneElse()
   const { here, parent } = referenceConversations()
+  askAboutLinksIn([...here, ...parent])
   const ranked = rankReferences({
     messages: [...messagesOf(here, MESSAGE_TIER.here), ...messagesOf(parent, MESSAGE_TIER.parent)],
     files: [...folderFiles, ...recentFiles, ...search.hits(query)],
@@ -128,10 +148,7 @@ export function referenceSections(query: string): ReferenceSection[] {
     ownKinds: [KIND_BARE_FILE],
     exclude: openFile ? [openFile] : [],
   })
-  return [
-    { label: REFERENCE_COPY.messages, items: ranked.messages.map(itemOf) },
-    { label: REFERENCE_COPY.files, items: ranked.files.map(itemOf) },
-  ]
+  return referenceSectionsOf(ranked).map(({ name, items }) => ({ label: REFERENCE_COPY[name], items: items.map(itemOf) }))
 }
 
 /**

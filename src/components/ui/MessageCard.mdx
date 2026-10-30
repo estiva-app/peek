@@ -42,7 +42,9 @@ import { MessageCard } from '@/components/ui/MessageLinks'
   reader who cannot edit the message gets none.
 - **Never a blank.** While it loads, the shape it drew last time on this device;
   a file that cannot be read, or a read that failed (a busy relay, the network),
-  says "not available" in the card's place (Katerina, 30 Oct). A failed read is
+  says "not available" in the card's place (Katerina, 30 Oct); "Issue deleted"
+  when a deletion the protocol trusts names it (`readAbsence`); and the URL as
+  written, when the message wrote one (SPEC §13.1). A failed read is
   asked again quietly, longer apart each time, and the card draws once the relay
   answers; no Try again button.
 - **An old `compact` card.** Drawn as the file's row, as it drew before the

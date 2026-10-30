@@ -18,7 +18,8 @@ import { useEffect, useState } from 'react'
 import { KIND, resolveCommentAnchor, resolvePart, type Block, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { heldToken } from '@/auth/heldSession'
-import { absenceAsViewer, blockLinkAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
+import { readAbsence } from '@estiva-app/protocol'
+import { blockLinkAsViewer, resolveObjectAsViewer, viewerQuery } from '@/nostr/foreign'
 import { relayBudget } from '@/nostr/relayBudget'
 import { RELAY_URL, hasRelay } from './relayUrl'
 
@@ -91,7 +92,9 @@ async function readPart(pointer: PartPointerView): Promise<PartView | null> {
   // `unreachable` is interop's stand-in for an address the read could not see
   // (it carries the noun from the manifest and nothing else): the same empty read.
   if (!object || object.unreachable) {
-    return (await absenceAsViewer(pointer.address, RELAY_URL, token)) === 'deleted' ? { state: 'deleted' } : { state: 'unreadable' }
+    // Deleted only by a deletion the protocol trusts (SPEC §13.6.1); a read that fails says neither.
+    const absence = await readAbsence(pointer.address, viewerQuery(RELAY_URL, token)).catch(() => 'unreadable' as const)
+    return absence === 'deleted' ? { state: 'deleted' } : { state: 'unreadable' }
   }
   const body = object.slots.body
   const format = body?.format === 'blocks' ? 'blocks' : 'marker'

@@ -28,6 +28,7 @@ const issue: ForeignObject = {
   eventId: 'e'.repeat(64),
   naddr: 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz',
   kind: 30851,
+  noun: 'issue',
   widget: 'card',
   appName: 'Estiva Ship',
   parentRef: PROJECT,
@@ -65,6 +66,7 @@ const project: ForeignObject = {
   ref: PROJECT,
   address: PROJECT,
   kind: 30850,
+  noun: 'project',
   parentRef: undefined,
   slots: {
     title: { value: 'Folders: navigation for the whole suite', field: 'title' },

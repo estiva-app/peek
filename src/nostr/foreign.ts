@@ -42,7 +42,6 @@ import {
   referenceToPointer,
   type AddressPointer,
   type UnsignedEvent,
-  absenceOf,
   toRenderTree,
 } from '@estiva-app/protocol'
 import {
@@ -366,25 +365,6 @@ export function linkTagsAsViewer(
   options: { edit?: boolean; waitMs?: number } = {},
 ): Promise<string[][]> {
   return linkReaderAsViewer(relayUrl, token).tagsFor(toRenderTree(body, 'marker'), own, options)
-}
-
-/**
- * Why an object a part points at did not come back (SPEC §13.6.1, COM-2):
- * `deleted` when the relay holds a deletion of it that somebody was entitled
- * to make, otherwise `unreadable` — which also covers an address that never
- * existed, and says nothing about whether it does.
- *
- * Only called after a read by address came back empty: a Folder the viewer is
- * not in is skipped silently, so the empty answer cannot say why and a
- * deletion is the one thing that can.
- */
-export async function absenceAsViewer(
-  address: string,
-  relayUrl: string,
-  token: StoredToken,
-): Promise<'deleted' | 'unreadable'> {
-  const deletions = await viewerQuery(relayUrl, token)([{ kinds: [5], '#a': [address], limit: 20 }])
-  return absenceOf(address, deletions)
 }
 
 /**

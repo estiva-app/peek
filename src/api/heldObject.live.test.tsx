@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { addrToNaddr, type SignedEvent } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
@@ -40,7 +40,7 @@ vi.mock('@/nostr/useLiveFile', () => ({
 }))
 
 import { clearListingCaches } from '@/platform/listingCache'
-import { useHeldObject, useResolvedReferences } from './foreign'
+import { useDeleted, useHeldObject, useResolvedReferences } from './foreign'
 
 const OWNER = 'a'.repeat(64)
 const ISSUE = `30851:${OWNER}:issue-1`
@@ -155,6 +155,49 @@ describe('a widget whose read failed', () => {
       expect(result.current.gone).toBe(true)
       await after(120_000)
       expect(relay.resolves).toEqual([ISSUE])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('a file that came back as nothing', () => {
+  const ref = `nostr:${addrToNaddr(ISSUE, [])}`
+  async function deletionsAre(events: unknown[]) {
+    const nostr = await import('@/nostr/foreign')
+    return vi.spyOn(nostr, 'viewerQuery').mockReturnValue(async () => events as never)
+  }
+
+  it('is deleted when its author deleted it by address', async () => {
+    const spy = await deletionsAre([{ id: 'x', kind: 5, pubkey: OWNER, created_at: 3, content: '', sig: '', tags: [['a', ISSUE]] }])
+    try {
+      const { result } = renderHook(() => useDeleted(ref, null))
+      await settle()
+      expect(result.current).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('is not deleted when only a stranger names it in a second a', async () => {
+    const stranger = 'e'.repeat(64)
+    // Another file than the test above's: the tab holds each answer.
+    const spy = await deletionsAre([{ id: 'x', kind: 5, pubkey: stranger, created_at: 3, content: '', sig: '', tags: [['a', `30851:${stranger}:mine`], ['a', OTHER_ISSUE]] }])
+    try {
+      const { result } = renderHook(() => useDeleted(`nostr:${addrToNaddr(OTHER_ISSUE, [])}`, null))
+      await settle()
+      expect(result.current).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('asks nothing while the file is there or still read', async () => {
+    const spy = await deletionsAre([])
+    try {
+      renderHook(() => [useDeleted(ref, undefined), useDeleted(ref, objectFor(ISSUE))])
+      await settle()
+      expect(spy).not.toHaveBeenCalled()
     } finally {
       spy.mockRestore()
     }

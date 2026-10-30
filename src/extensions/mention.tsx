@@ -11,6 +11,7 @@ import { mentionDirectory } from '@/components/ui/MentionMenu'
 import { KindIcon, inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
+import { BoxReference } from '@/components/ui/BoxReference'
 import { Reference } from '@/components/ui/Reference'
 
 // ─── @ and !@ ───
@@ -132,6 +133,8 @@ export const MessageMention = CaptionedReference.extend({
 }).configure({
   icon: <IconMessage size={14} stroke={1.5} />,
   iconFor: messageMentionIcon,
+  // Drawn as the box draws a `[` pick: the kit's chip, from what it names (Katerina, 30 Oct: one chip in every box).
+  view: BoxReference,
 })
 
 /** Each `[` row with the icon of what it is — the chip it inserts wears the same, from its URI (7 October). */
@@ -141,7 +144,7 @@ export function referenceRowIcon(uri: string) {
 }
 
 /**
- * `[` — Messages, then Files (PEE-21), inserted as a {@link MessageMention}
+ * `[` — Files, then Messages (Katerina, 30 Oct), inserted as a {@link MessageMention}
  * carrying the `nevent` or `naddr` the body is written with. The sections and
  * their order are `referenceSections`'s; `items` is what a list without them
  * would show. The Apps and Documents sections that used to sit here were mock

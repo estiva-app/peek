@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, within } from 'storybook/test'
+import type { ForeignObject } from '@estiva-app/interop'
+import { valueOfReference } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { EditBox } from './ConversationBox'
 
 /**
@@ -50,6 +53,21 @@ export const ResolvedWithAFile: Story = {
       resolution: { message: 'Fixed in the next build' },
       files: [{ name: 'trace.txt', contentType: 'text/plain', size: 2048 }],
     },
+  },
+}
+
+/**
+ * A message with its card, open for editing: the card shows under the box with
+ * its ✕, so it can be taken off here (Katerina, 30 Oct). One taken off before
+ * would not show again.
+ */
+export const WithItsCard: Story = {
+  args: {
+    message: {
+      body: `Tracked in nostr:${recorded.naddr} for now.`,
+      embeds: [{ value: valueOfReference(`nostr:${recorded.naddr}`)!, layout: 'detailed' }],
+    },
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
   },
 }
 

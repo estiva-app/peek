@@ -52,6 +52,9 @@ let unread: boolean | undefined = false
 const applyCardAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
 
 vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],

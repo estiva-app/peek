@@ -27,6 +27,9 @@ const object = () =>
     : { ref: ISSUE, address: ISSUE, eventId: 'e'.repeat(64), kind: 30851, widget: 'row', slots: { title: { value: 'Peek draws the card' } }, meta: [], comments: [], actions: [], ...(answer === 'unreachable' ? { unreachable: true } : {}) }
 
 vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],

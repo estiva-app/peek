@@ -20,6 +20,9 @@ const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 const asked: string[][] = []
 
 vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
   TOPICS: [{ id: '7', title: 'Updates on the new office layout', isResolved: false }],
   APP_FILES: [],
   DOCUMENT_FILES: [],

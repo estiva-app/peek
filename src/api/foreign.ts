@@ -52,6 +52,7 @@ import {
   searchFileReferencesAsViewer,
   threadsAsViewer,
   replyToCommentAsViewer,
+  viewerQuery,
   type ActResult,
   type FileComment,
   type FileThreads,
@@ -65,7 +66,7 @@ import type { MessageSearchState } from '@/lib/launcherSearch'
 import { linkTargetOf, rankReferences, type ReferenceCandidate } from '@estiva-app/conversation'
 import { KIND_BARE_FILE, type LinkReader } from '@estiva-app/interop'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { KIND, pointerToAddress, readAbsence, referenceToPointer, urlRunsIn, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
@@ -232,6 +233,70 @@ export function useLinkResolver(urls: readonly string[]): (url: string) => strin
     if (key) askLinks(key.split('\n')).catch(() => {})
   }, [key, version])
   return (url: string) => knownCardValue(url)
+}
+
+/** At most this many of a preview's links are asked about: a preview is a line, and each link is a read. */
+const MAX_PREVIEW_LINKS = 8
+
+const noLinkChanges = () => () => {}
+const noLinkVersion = () => 0
+
+/**
+ * The words a preview draws (a message's row, chip or card, a `[` row) read
+ * an app link as what it names once that has come back, never as the raw URL
+ * (Katerina, 30 Oct): this asks about the bare links in `text` and draws again
+ * as their answers land. Text with no link asks and follows nothing.
+ */
+export function useLinksIn(text: string | undefined): void {
+  const urls = text ? [...new Set(urlRunsIn(text).map((run) => run.url))].slice(0, MAX_PREVIEW_LINKS) : []
+  const key = urls.join(' ')
+  useSyncExternalStore(key ? onLinksChanged : noLinkChanges, key ? linksVersion : noLinkVersion)
+  useEffect(() => {
+    // A URL holds no space, so the key splits back into them.
+    if (key) askLinks(key.split(' ')).catch(() => {})
+  }, [key])
+}
+
+/** Whether a trusted deletion names each address, asked once per viewer for the tab. */
+const absences = new Map<string, Promise<boolean>>()
+
+/**
+ * Whether the file `reference` names was deleted (SPEC §13.6.1: deleted is not
+ * not-permitted), asked only once its read came back with nothing
+ * (`object === null`): protocol's `readAbsence`, which trusts a deletion by
+ * the file's author or the relay-checked shape only. A read that fails says
+ * neither, and the link stays "not available".
+ */
+export function useDeleted(reference: string, object: ForeignObject | null | undefined | 'loading'): boolean {
+  const viewer = useRelayViewer()
+  const [deleted, setDeleted] = useState<{ reference: string; deleted: boolean }>()
+  const address = useMemo(() => {
+    if (!/^nostr:naddr1/i.test(reference) && !/^naddr1/i.test(reference)) return undefined
+    try {
+      return pointerToAddress(referenceToPointer(reference.startsWith('nostr:') ? reference : `nostr:${reference}`))
+    } catch {
+      return undefined
+    }
+  }, [reference])
+  const asks = object === null && !!address && hasRelay
+  useEffect(() => {
+    const v = viewer()
+    if (!asks || !address || !v) return
+    const key = `${v.token.pubkey} ${address}`
+    let asked = absences.get(key)
+    if (!asked) {
+      asked = readAbsence(address, viewerQuery(v.relayUrl, v.token)).then((answer) => answer === 'deleted', () => false)
+      absences.set(key, asked)
+    }
+    let live = true
+    void asked.then((answer) => {
+      if (live) setDeleted({ reference, deleted: answer })
+    })
+    return () => {
+      live = false
+    }
+  }, [asks, address, reference, viewer])
+  return asks && deleted?.reference === reference && deleted.deleted
 }
 
 /**

@@ -67,22 +67,27 @@ describe('a part is drawn while the body names its object', () => {
   })
 })
 
-describe('deleted and not available read the same (Miky, 15 Oct)', () => {
+describe('deleted and not available, told apart (SPEC §13.6.1; Katerina, 30 Oct)', () => {
+  const words = { deleted: 'A part of this issue deleted', unreadable: 'A part of this issue not available' } as const
   for (const state of ['deleted', 'unreadable'] as const) {
-    it(`${state} says only that a part of the issue is not available: no title, no text`, () => {
+    it(`${state} says "${words[state]}", and neither the title nor the text`, () => {
       const { container } = show({ state })
       expect(card(container)?.dataset.part).toBe(state)
-      expect(card(container)?.textContent).toBe('A part of this issue not available')
+      expect(card(container)?.textContent).toBe(words[state])
       expect(screen.queryByText(/Plan the launch/)).toBeNull()
     })
   }
 
-  it('a deleted block of a readable object names the object it was in', () => {
+  it('a deleted block of a file still there says so in the kit’s words', () => {
     const { container } = show({ state: 'detached', object, link: LINK })
     expect(card(container)?.dataset.part).toBe('detached')
-    expect(screen.getByText('This part was deleted')).toBeTruthy()
-    expect(screen.getByText('Plan the launch')).toBeTruthy()
-    expect(card(container)?.textContent).not.toContain('not available')
+    expect(card(container)?.textContent).toBe('This part was deleted')
+  })
+
+  it('a part that can’t be shown says so, and opens the whole file', () => {
+    const { container } = show({ state: 'unaddressable', object, link: LINK })
+    expect(card(container)?.dataset.part).toBe('unaddressable')
+    expect(screen.getByRole('link', { name: /This part can’t be shown|This part can't be shown/ })).toHaveAttribute('href', 'https://ship.estiva.app/o/x')
   })
 })
 

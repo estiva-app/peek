@@ -1,10 +1,13 @@
 import type { LinkState, LinkedConversation, LinkedFromOptions, LinkedKind } from '@estiva-app/ui'
 import { linkStateFrom } from '@estiva-app/ui'
 import type { ForeignObject, People } from '@estiva-app/interop'
+import { openingWords } from '@estiva-app/conversation'
+import { knownCardValue } from '@/api/foreign'
+import { personByPubkey } from '@/api/mentions'
 import { openInAppUrl } from '@/lib/appName'
-import { referenceGlyphOfUri } from '@/lib/fileGlyph'
+import { referenceGlyph, referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { referenceLink } from '@/lib/referenceLink'
-import { previewText, referenceTypeWord } from '@/lib/textParsing'
+import { referenceTypeWord } from '@/lib/textParsing'
 
 /*
   What a link stands for, as the kit's link widgets draw it (LinkChip, LinkRow,
@@ -31,6 +34,19 @@ export interface LinkedContext {
   onAct?: (actionId: string, value: string) => void
   /** What was said about it, when the caller has read that. */
   conversation?: LinkedConversation
+  /**
+   * The URL it was written as: a file that cannot be read reads as that URL, a
+   * plain link, never "not available" (SPEC §13.1, C21; Katerina, 30 Oct).
+   */
+  url?: string
+  /** A trusted deletion names it (SPEC §13.6.1): "Issue deleted", not "not available". */
+  deleted?: boolean
+}
+
+/** A message's own words, for the caller to ask about the links in them (`useLinksIn`); nothing for a file. */
+export function messageWordsOf(object: ForeignObject | null | undefined | 'loading'): string | undefined {
+  if (!object || object === 'loading' || object.unreachable) return undefined
+  return referenceGlyph(object.kind) === 'message' ? object.slots.body?.value : undefined
 }
 
 /** Where a reference opens: Peek's own page for its own files, the owning app for anyone else's. */
@@ -45,14 +61,20 @@ function hrefOf(uri: string, object: ForeignObject): string {
  * not read, draw alike: "not available." (Miky, 15 Oct).
  */
 export function linkStateOf(uri: string, object: ForeignObject | null | undefined | 'loading', context: LinkedContext = {}): LinkState {
+  const { url, deleted, ...rest } = context
   const options: LinkedFromOptions<ForeignObject> = {
     // A row on its card opens as its own reference would: by its address when it has one.
     hrefOf: (file, top) => {
       if (top) return hrefOf(uri, file)
       return file.naddr ? hrefOf(`nostr:${file.naddr}`, file) : (openInAppUrl(file) ?? '')
     },
-    previewText: (body) => previewText(body),
-    ...context,
+    // A message's words as every app's preview reads them: an app link it holds as what it names, once that has come
+    // back, never the raw URL (Katerina, 30 Oct); the caller asks about them (`useLinksIn`) and draws again.
+    previewText: (body, people) => openingWords(body, (pubkey) => people?.[pubkey]?.displayName ?? personByPubkey(pubkey)?.name, { resolveLink: knownCardValue }),
+    ...rest,
   }
-  return linkStateFrom(object === 'loading' ? undefined : object, { kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link' }, options)
+  // Only a web address is a URL to read as: a reference's own text (`nostr:…`) has nothing to fall back on.
+  const written = url && /^https?:[/][/]/i.test(url) ? { url } : {}
+  const unread = { kind: linkedKindOf(uri), noun: referenceTypeWord(uri) ?? 'Link', ...(deleted ? { deleted } : {}), ...written }
+  return linkStateFrom(object === 'loading' ? undefined : object, unread, options)
 }

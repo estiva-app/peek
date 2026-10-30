@@ -11,8 +11,8 @@ its upload (PEEKM-4). It sits beside `ConversationBox`, in the same file.
 
 <Canvas of={EditBoxStories.Default} />
 
-**Seen in** — its stories: **Default**, **Resolved With A File** and
-**Refused**; in `ConversationCard` and `ReplyCard`, wherever your own message
+**Seen in** — its stories: **Default**, **Resolved With A File**, **With Its
+Card** and **Refused**; in `ConversationCard` and `ReplyCard`, wherever your own message
 is open for editing.
 
 ## When
@@ -59,5 +59,8 @@ it mounts, and a refused edit reopens it as a new box.
   are kept; taking the resolution out reopens the conversation.
 - **No new urgency** (CON-24): an edit carries no tags, so `!@` and `/` offer no
   urgent mention, and a hand-typed `!@Name` is saved as `@Name`.
-- **A card only for a file named first** (§13.6.2): a link to a file the
-  message already named adds no card again.
+- **The message's card** (§13.6.2; Katerina, 30 Oct): the card the message has
+  shows under the box with its ✕, so it can be seen and taken off while
+  editing; a card taken off before never shows again, and a file the edit names
+  first gets its card, as a new message's does. The rule is conversation's
+  `boxLinksOf`, read with the message's cards (`folded`), as in Ship and Leaf.
