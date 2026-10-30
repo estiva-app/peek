@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
+import { filePath } from '@/lib/objectUrl'
+import { useToast } from '@/lib/toast'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
@@ -96,14 +98,21 @@ export function DeskPage() {
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
   // them would silently hide incoming messages.
-  const screenerItems = (hasRelay ? allScreenerItems : allScreenerItems.slice(0, debug.desk.screenerItemsCount))
-    .filter((i) => !dismissedScreenerIds.has(i.id))
-
   const urgentItems = debug.desk.showUrgent
     ? hasRelay
       ? URGENT_ITEMS
       : URGENT_ITEMS.slice(0, debug.desk.urgentItemsCount)
     : []
+
+  /*
+    What Urgent shows is not screened as well (Katerina, 30 October): both
+    lists judge the same unread messages, and an urgent one sat in each. Only
+    what Urgent draws is skipped, so an item is never in neither.
+  */
+  const inUrgent = new Set(urgentItems.map((u) => (u.kind === 'file' ? `file:${u.address}` : `dm:${u.dmId}`)))
+  const screened = allScreenerItems.filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
+  const screenerItems = (hasRelay ? screened : screened.slice(0, debug.desk.screenerItemsCount))
+    .filter((i) => !dismissedScreenerIds.has(i.id))
 
   // Section-level unread visibility (per-page debug toggles). A file's dot
   // follows the topics toggle, as it did when the two shared Open work.
@@ -158,26 +167,91 @@ export function DeskPage() {
   const isSelectedIn = (section: SectionKey, dmId: string) =>
     selectionAnchor === section && selected?.dmId === dmId
 
-  const dismissScreener = (id: string) => {
-    setDismissedScreenerIds((prev) => new Set([...prev, id]))
-    actions.dismissScreenerItem(id)
-  }
+  const hideScreenerRow = (id: string) => setDismissedScreenerIds((prev) => new Set([...prev, id]))
+  const showScreenerRow = (id: string) =>
+    setDismissedScreenerIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
 
-  /** "Open" → move the item into Open work. */
-  const openScreener = (id: string) => {
-    const item = screenerItems.find((i) => i.id === id)
-    if (!item) return
-    setDismissedScreenerIds((prev) => new Set([...prev, id]))
-    actions.addScreenerToOpenWork(
-      id,
-      item.kind === 'file' ? { kind: 'file', address: item.address } : { kind: 'dm', dmId: item.dmId },
-    )
+  /*
+    A Screener decision says so in the package's toast, with Undo (Katerina,
+    30 October). Dismiss and Later get theirs once the toast can say it has
+    closed: both are written to the person's decisions blob, whose instants
+    only ever move forward (`internal/screener.tsx`), so their Undo has to be
+    a wait, and the toast owns the timer — it pauses while it is pointed at.
+  */
+  const { showToast, dismissToast } = useToast()
+  /** The "Added to Open work" toasts on screen: their Undo changes the Desk, so they go with it. */
+  const addedToasts = useRef(new Set<string>())
+  useEffect(() => {
+    const added = addedToasts.current
+    return () => {
+      for (const toast of added) dismissToast(toast)
+      added.clear()
+    }
+  }, [dismissToast])
+
+  const dismissScreener = (id: string) => {
+    hideScreenerRow(id)
+    actions.dismissScreenerItem(id)
   }
 
   /** "Later" hides the item now; it reappears after the chosen reminder time. */
   const laterScreener = (id: string, untilMs: number) => {
-    setDismissedScreenerIds((prev) => new Set([...prev, id]))
+    hideScreenerRow(id)
     actions.snoozeScreenerItem(id, untilMs)
+  }
+
+  /**
+   * "Open work" → the item joins the end of Open work. With nothing open it
+   * opens too, lit there; with something open, that stays (Katerina, 30
+   * October). Written at once, since its row has to appear: Undo takes it off
+   * again, and closes it if it was the one opened.
+   */
+  const openScreener = (id: string) => {
+    const item = screenerItems.find((i) => i.id === id)
+    if (!item) return
+    hideScreenerRow(id)
+    actions.addScreenerToOpenWork(
+      id,
+      item.kind === 'file' ? { kind: 'file', address: item.address } : { kind: 'dm', dmId: item.dmId },
+    )
+    if (!selected && !openAddress) {
+      if (item.kind === 'file') openFile(item.address, item.title, 'openWork')
+      else selectDm(item.dmId, item.authorName, 'openWork')
+    }
+    const toast = showToast({
+      label: 'Added to Open work',
+      type: 'success',
+      actionLabel: 'Undo',
+      onAction: () => {
+        addedToasts.current.delete(toast)
+        if (item.kind === 'file') {
+          openWorkFiles.remove(item.address)
+          setSearchParams((prev) => (prev.get('open') === item.address ? new URLSearchParams() : prev), { replace: true })
+        } else {
+          actions.removeDmFromOpenWork(item.dmId)
+          setSelected((prev) => (prev?.dmId === item.dmId ? null : prev))
+        }
+        // Back in the Screener while it is still unread; read, it has nowhere to come back to.
+        showScreenerRow(id)
+      },
+    })
+    addedToasts.current.add(toast)
+  }
+
+  /**
+   * A click on a Screener row or its card: the item on its own page, where it
+   * lives — a file under Topics, a DM on People (Katerina, 30 October). Open
+   * work is the button's, so the Desk does not open it in place.
+   */
+  const navigate = useNavigate()
+  const readScreener = (id: string) => {
+    const item = screenerItems.find((i) => i.id === id)
+    if (!item) return
+    navigate(item.kind === 'file' ? filePath(item.address, item.title) : personHref(item.dmId))
   }
 
   /*
@@ -303,6 +377,7 @@ export function DeskPage() {
       onOpenScreener={openScreener}
       onDismissScreener={dismissScreener}
       onLaterScreener={laterScreener}
+      onReadScreener={readScreener}
       urgent={urgentItems.map((item) =>
         item.kind === 'file'
           ? {
@@ -479,6 +554,7 @@ export function DeskPageView({
   onOpenScreener,
   onDismissScreener,
   onLaterScreener,
+  onReadScreener,
   screenerPreviewFor,
   urgent,
   openWork,
@@ -494,6 +570,8 @@ export function DeskPageView({
   onOpenScreener: ComponentProps<typeof ScreenerSection>['onOpen']
   onDismissScreener: ComponentProps<typeof ScreenerSection>['onDismiss']
   onLaterScreener: ComponentProps<typeof ScreenerSection>['onLater']
+  /** A click on a row or its card: the item on its own page. */
+  onReadScreener?: ComponentProps<typeof ScreenerSection>['onRead']
   /** Passed straight to the section; see its note. */
   screenerPreviewFor?: ComponentProps<typeof ScreenerSection>['previewFor']
   urgent: DeskRow[]
@@ -517,6 +595,7 @@ export function DeskPageView({
                     onOpen={onOpenScreener}
                     onDismiss={onDismissScreener}
                     onLater={onLaterScreener}
+                    onRead={onReadScreener}
                     previewFor={screenerPreviewFor}
                   />
                   <Divider className="my-2" />

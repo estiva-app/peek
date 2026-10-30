@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import { PeekDataProvider } from '@/api'
 import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerItem } from './ScreenerItem'
@@ -24,6 +24,8 @@ const meta = {
     onOpen: noop,
     onLater: noop,
     onDismiss: noop,
+    // A click on the row or its card opens the item on its own page (Katerina, 30 October).
+    onRead: fn(),
     /*
       On the meta, so hovering *any* of these stories opens the card — not only
       the one written to prove it (Katerina, 23 September). The real card reads
@@ -40,7 +42,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A topic item — topic status icon + title, two-line preview, Open / Later / ✕ Dismiss. */
+/** A topic item — topic status icon + title, two-line preview, Open work / Later / ✕ Dismiss. */
 export const TopicItem: Story = {}
 
 /** A DM item — sender avatar + name. */
@@ -67,6 +69,20 @@ export const HoverPreview: Story = {
     await expect(
       await within(document.body).findByText(/base image moved/, undefined, { timeout: 3000 }),
     ).toBeVisible()
+  },
+}
+
+/**
+ * **A click on the row opens the item**, and its buttons keep their own clicks
+ * (Katerina, 30 October): "Open work" adds it, and opens nothing here.
+ */
+export const ClickToRead: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Open work' }))
+    await expect(args.onRead).not.toHaveBeenCalled()
+    await userEvent.click(canvas.getByText('Updates on the new office layout'))
+    await expect(args.onRead).toHaveBeenCalledWith(args.item.id)
   },
 }
 
