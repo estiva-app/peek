@@ -972,6 +972,28 @@ export async function resolveFolderContentsAsViewer(
 }
 
 /**
+ * The files archived on their own under these live parents — an archived issue
+ * of a live project (PEE-58). No Folder lists an issue, its project does, so
+ * a Folder read with `includeArchived` never finds one: the Archive view asks
+ * here for the parents its Folder holds. Interop's `archivedChildren`, in one
+ * read for the set, on the Folder's own load when it is given one.
+ *
+ * **Throws {@link RelayReadError} when the read failed**, as the Folder read does.
+ */
+export async function archivedChildrenAsViewer(
+  parents: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+  /** The load this read is part of ({@link folderLoadAsViewer}); a load of its own when left out. */
+  read?: QueryFn,
+): Promise<ForeignObject[]> {
+  if (parents.length === 0) return []
+  const query = read ?? folderLoadAsViewer(relayUrl, token, 'relay')
+  const objects = await resolveForeignObjects(parents, query, cachedPeople(query), manifests, { archivedChildren: true })
+  return Object.values(objects).flatMap((parent) => parent?.children?.filter((child) => !!child.archived) ?? [])
+}
+
+/**
  * What each of these files' conversations holds — when, who, which thread.
  *
  * Separate from the folder read on purpose. `resolveFolderContents` is flat in

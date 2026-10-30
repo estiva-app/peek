@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { isArchived, type FolderContents, type FolderSummary, type ForeignObject, type QueryFn } from '@estiva-app/interop'
+import { KIND_BARE_FILE, isArchived, type FolderContents, type FolderSummary, type ForeignObject, type QueryFn } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
 import type { StoredToken } from '@/auth/estivaId'
@@ -53,23 +53,37 @@ const folderContentsCache = createListingCache<FolderContents, RelayFailureKind>
 const archivedContentsCache = createListingCache<FolderContents, RelayFailureKind>()
 
 type ResolveFolderContents = (folder: string, options?: { includeArchived?: boolean }, read?: QueryFn) => Promise<FolderContents>
+type ArchivedChildren = (parents: readonly string[], read?: QueryFn) => Promise<ForeignObject[]>
 
 /**
  * What is archived in a Folder (Katerina, 5 October: the Archive view): its
  * archived files and those hidden with an archived parent, or — for a Folder
  * that is itself archived — everything in it, which went with it.
+ *
+ * And the files archived on their own under a live file it holds (PEE-58): an
+ * archived issue of a live project, which no Folder lists, so the Folder read
+ * never finds it. Drawn as its own row in the Folder, as an archived sub-topic
+ * of a live topic is. One more read, of the live parents whose children
+ * another app declares, only when there are any.
  */
 function loadArchivedContents(
   resolveFolderContents: ResolveFolderContents,
+  archivedChildren: ArchivedChildren,
   folder: string,
   folderArchived: boolean,
   read?: QueryFn,
 ): Promise<ListingLoad<FolderContents, RelayFailureKind>> {
   return withRateLimitRetry(() => resolveFolderContents(folder, { includeArchived: true }, read))
-    .then((contents) => ({
-      ok: true as const,
-      value: folderArchived ? contents : { ...contents, files: contents.files.filter((file) => isArchived(file)) },
-    }))
+    .then(async (contents) => {
+      if (folderArchived) return { ok: true as const, value: contents }
+      const archived = contents.files.filter((file) => isArchived(file))
+      const parents = contents.files.flatMap((file) =>
+        !isArchived(file) && file.address && file.listsChildren && file.kind !== KIND_BARE_FILE ? [file.address] : [],
+      )
+      const under = parents.length ? await withRateLimitRetry(() => archivedChildren(parents, read)) : []
+      const held = new Set(archived.map((file) => file.ref))
+      return { ok: true as const, value: { ...contents, files: [...archived, ...under.filter((file) => !held.has(file.ref))] } }
+    })
     .catch((error: unknown) => {
       const kind = relayFailureKind(error)
       if (isOutage(kind)) recordReadFailure(kind)
@@ -233,13 +247,13 @@ export function useFolderContents(
   state: FolderContentsState
   reload: () => Promise<void>
 } {
-  const { resolveFolderContents, resolveFolderContentsFromDevice } = useForeignObjects()
+  const { resolveFolderContents, resolveFolderContentsFromDevice, archivedChildren } = useForeignObjects()
   const load = useCallback(
     (target: string, read?: QueryFn) =>
       archived
-        ? loadArchivedContents(resolveFolderContents, target, folderArchived, read)
+        ? loadArchivedContents(resolveFolderContents, archivedChildren, target, folderArchived, read)
         : loadFolderContents(resolveFolderContents, target, read),
-    [resolveFolderContents, archived, folderArchived],
+    [resolveFolderContents, archivedChildren, archived, folderArchived],
   )
   const cache = archived ? archivedContentsCache : folderContentsCache
   const screenKey = folder ? (archived ? `${ARCHIVED_KEY}${folder}` : folder) : null
