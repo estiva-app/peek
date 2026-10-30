@@ -94,6 +94,8 @@ export const FileItem: Story = {
     item: {
       id: 'sc_file_30840:0000:story',
       kind: 'file',
+      authorName: 'Priya Nair',
+      at: Date.now() - 26 * 60 * 60 * 1000,
       address: '30840:0000:story',
       fileKind: 30840,
       title: 'Q4 hiring plan',
@@ -113,6 +115,8 @@ export const ArchivedFileItem: Story = {
     item: {
       id: 'sc_file_30851:0000:archived',
       kind: 'file',
+      authorName: 'Priya Nair',
+      at: Date.now() - 26 * 60 * 60 * 1000,
       address: '30851:0000:archived',
       fileKind: 30851,
       title: 'Relay refuses the ICC profile',
@@ -128,6 +132,8 @@ export const ForeignFileItem: Story = {
     item: {
       id: 'sc_file_30851:0000:story',
       kind: 'file',
+      authorName: 'Priya Nair',
+      at: Date.now() - 26 * 60 * 60 * 1000,
       address: '30851:0000:story',
       fileKind: 30851,
       title: 'Relay refuses the ICC profile',

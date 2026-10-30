@@ -1,13 +1,14 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { Avatar, Card, PreviewCard } from '@estiva-app/ui'
+import { Avatar, Card, Chip as PackageChip, PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
 import { Button } from './ui/Button'
 import { Chip } from './ui/Chip'
 import { IconButton } from './ui/IconButton'
-import { hasRelay } from '@/api'
+import { MetaText } from './ui/MetaText'
+import { formatReplyTimestamp, hasRelay, useAvatarSrc } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import { fileGlyph } from '@/lib/fileGlyph'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
@@ -33,11 +34,19 @@ interface ScreenerItemProps {
   preview?: ReactNode
 }
 
-/** A single incoming item in the Desk Screener: who/what it is, a two-line preview,
- *  and the Open work / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
+/**
+ * A single incoming item in the Desk Screener, who first (Katerina, 30 October,
+ * look A4): who wrote and when, what they said, and — for a file — where, as a
+ * chip under the words. Then Open work / Later / ✕ Dismiss. Rendered by
+ * ScreenerSection.
+ */
 export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview }: ScreenerItemProps) {
   // The Later menu opens outside the row, so the row would go dark under its own menu.
   const [menuOpen, setMenuOpen] = useState(false)
+  const avatarSrcFor = useAvatarSrc()
+  // Never a key: a writer the page cannot name yet is a silhouette and an em dash.
+  const who = item.authorName
+  const avatarSrc = item.kind === 'dm' ? item.authorAvatarSrc : who ? avatarSrcFor(who) : undefined
   /*
     The row's buttons keep their own clicks, and so does the Later menu: it is
     a portal, outside the row in the page, but React still hands its clicks up
@@ -61,25 +70,27 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
       onClick={readFromRow}
       className="flex flex-col p-2"
     >
-      {/* Item header */}
+      {/* Who wrote, and when: the name truncates, the time stays. */}
       <div className="flex items-center gap-2">
-        {item.kind === 'file' ? (
-          // The tree's glyph rule (`fileGlyph`): a topic, a Ship project or issue, or a file.
-          <TopicState type={fileGlyph(item.fileKind)} />
-        ) : (
-          <Avatar size={16} src={item.authorAvatarSrc} alt={item.authorName} />
-        )}
-        <span className="text-body-2-strong text-text-primary truncate">
-          {item.kind === 'file' ? item.title : item.authorName}
-        </span>
-        {/* The chip Open work shows on an archived file (peek#515), always in sight here. */}
-        {item.kind === 'file' && item.archived && <Chip type="neutral" label="Archived" className="shrink-0" />}
+        <Avatar size={16} src={avatarSrc} name={who} alt={who ?? ''} />
+        <span className="min-w-0 flex-1 truncate text-body-2-strong text-text-primary">{who ?? '—'}</span>
+        {/* A bare time means today; older names its day (Peek's rule). */}
+        {item.at !== undefined && <MetaText className="shrink-0">{formatReplyTimestamp(item.at)}</MetaText>}
       </div>
 
-      {/* Preview */}
-      <div className="pl-6 pr-2 py-1">
+      {/* What they said */}
+      <div className="pl-6 pr-2 pt-1">
         <p className="text-caption text-text-secondary line-clamp-2">{previewText(item.preview)}</p>
       </div>
+
+      {/* Where: a file, as a chip under the words, its glyph the tree's (`fileGlyph`). A DM is the person. */}
+      {item.kind === 'file' && (
+        <div className="flex min-w-0 items-center gap-1 pl-6 pt-2">
+          <PackageChip type="neutral" leadingIcon={<TopicState type={fileGlyph(item.fileKind)} />} label={item.title} className="min-w-0" />
+          {/* The chip Open work shows on an archived file (peek#515), always in sight here. */}
+          {item.archived && <Chip type="neutral" label="Archived" className="shrink-0" />}
+        </div>
+      )}
 
       {/* Actions */}
       {/* Previous leading icons (dropped for visual calm): Open → IconPlus, Later → IconHistory */}
