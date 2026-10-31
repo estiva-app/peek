@@ -1,7 +1,6 @@
 import { serializeBlockDocument, toRenderTree, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, PartCard as KitPartCard, RichText, thingKindOf } from '@estiva-app/ui'
-import { IconExternalLink } from '@tabler/icons-react'
+import { PartCard as KitPartCard, RichText, thingKindOf } from '@estiva-app/ui'
 import { usePart, type PartView } from '@/api'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { blobObjectUrl } from '@/nostr/media'
@@ -30,7 +29,8 @@ export function PartCard({ address, block, anchorTags, quotedBy }: { address: st
  * Drawn the way an attachment is (Miky, kickoff 2026-10-07): the object's type
  * and title, then the block — whole when it is short; cut behind ShowMore's fade
  * when it is long, and opened in place (Katerina, 2026-10-08). The way into the
- * app it came from is a Button with an open-out icon, level with Show more.
+ * app it came from is its title; there is no "Open in" button beside it, which
+ * said again what the title does (Katerina, 31 Oct).
  *
  * **Five states, in the kit's words** (SPEC §13.6.1; ui 0.92): the file
  * deleted says so ("A part of this issue deleted"), and one the reader may not
@@ -92,22 +92,12 @@ export function PartCardView({
   const run = view.run ?? [view.block]
   const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: run }), 'blocks')
   const content = <RichText blocks={blocks} size="small" renderBlock={(b) => (b.type === 'attachment' ? <DocumentFile attrs={b.attrs} fetchImage={fetchImage} /> : undefined)} />
-  const link = frame.href
-  // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
-  // reads as an action, level with Show more at the right of its row.
-  const openIn = link ? (
-    <Button size="small" leadingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')}>
-      Open in {view.object.appName ?? 'app'}
-    </Button>
-  ) : undefined
   return (
     <div data-part={view.state} data-part-address={address} data-part-block={block} className="mt-1">
-      {/* The kit's PartCard draws Show more and Open in on one row under the
-          blocks, outside its quote bar (ui 0.91.1; Katerina, 30 Oct). An
-          attachment is never cut (no height reaches Infinity): its card is
+      {/* An attachment is never cut (no height reaches Infinity): its card is
           already the thumbnail, and a click on it opens the full picture as it
           does on a message's own. */}
-      <KitPartCard {...frame} action={openIn} maxHeight={run.length === 1 && view.block.type === 'attachment' ? Infinity : CUT_AT}>
+      <KitPartCard {...frame} maxHeight={run.length === 1 && view.block.type === 'attachment' ? Infinity : CUT_AT}>
         {content}
         {/* The words a comment quoted, once they are no longer in its blocks
             (§13.6 `reworded`): said as what the commenter quoted, never as what

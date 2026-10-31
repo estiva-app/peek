@@ -194,7 +194,9 @@ describe('the card under the message', () => {
     loading.remove()
     objects[naddr(CARD_ISSUE)] = { ...cardIssue(), unreachable: true, noun: 'Issue' }
     const unreadable = show(THE_MESSAGE, { embeds: ITS_CARD })
-    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe('Issue not availableOpen in Ship ↗')
+    // Its way out is the kit's Button "Open", the app in its name (ui 0.95; Katerina, 31 Oct).
+    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe('Issue not availableOpen')
+    expect(unreadable.querySelector('[data-card="detailed"] a')?.getAttribute('aria-label')).toBe('Open in Ship')
   })
 })
 
