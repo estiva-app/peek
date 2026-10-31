@@ -6,7 +6,7 @@
  * `usePart`'s and is tested in `src/nostr/partTags.test.ts`; here it is a seam.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { markerTextToBlockDocument } from '@estiva-app/protocol'
 import type { PartView } from '@/api'
 import { MessageBody } from './MessageBody'
@@ -130,7 +130,7 @@ describe("a comment's anchor on a selection", () => {
   })
 })
 
-describe('a long block opens in place, and the way into its app is a button', () => {
+describe('a long block opens in place, and the way into its app is its title', () => {
   it('draws the block once, with no dialog: ShowMore cuts and opens it where it is', () => {
     const long = 'word '.repeat(80).trim()
     show({ state: 'resolved', block: blockOf(long), object, link: LINK })
@@ -138,16 +138,15 @@ describe('a long block opens in place, and the way into its app is a button', ()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('opens the block in its app from the button at the foot of the card', () => {
-    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  it('opens the block in its app from its title, with no "Open in" button beside it (Katerina, 31 Oct)', () => {
     show({ state: 'resolved', block: blockOf('Short'), object, link: LINK })
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Ship' }))
-    expect(open).toHaveBeenCalledWith(LINK, '_blank', 'noopener,noreferrer')
-    open.mockRestore()
+    expect(screen.getByRole('link', { name: 'Plan the launch' }).getAttribute('href')).toBe(LINK)
+    expect(screen.queryByRole('button', { name: /Open/ })).toBeNull()
   })
 
-  it('offers no way in when the app gave no link', () => {
+  it('offers no way in when the app gave no link: the title is words', () => {
     show({ state: 'resolved', block: blockOf('Short'), object })
-    expect(screen.queryByRole('button', { name: /Open in/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Plan the launch' })).toBeNull()
+    expect(screen.getByText('Plan the launch')).toBeTruthy()
   })
 })
