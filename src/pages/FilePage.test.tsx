@@ -333,7 +333,16 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
   thread" with the count spelled out, because nobody reading the page could tell
   the icon meant a thread. So the tests match what a person reads.
 */
-const THREAD_CONTROL = /^(Reply|\d+ repl(y|ies))$/
+// The kit's card (1 November): the replies row says "2 replies, open the thread"; Reply waits on the hover strip.
+const THREAD_CONTROL = /^(Reply|\d+ repl(y|ies))(,|$)/
+
+/** Each comment's way into its thread: point at the comment, as a person does, and take its control. One per comment. */
+function threadControls(pane: HTMLElement): HTMLElement[] {
+  return [...pane.querySelectorAll<HTMLElement>('[data-comment]')].flatMap((comment) => {
+    fireEvent.mouseEnter(comment.firstElementChild as Element)
+    return within(comment).queryAllByRole('button', { name: THREAD_CONTROL }).slice(0, 1)
+  })
+}
 
 /** What one mounted page looks like, reduced to what must not differ between apps. */
 function shape() {
@@ -344,7 +353,7 @@ function shape() {
     folderRows: within(left).getAllByRole('button').length > 0,
     listingOpen: left.querySelector(`[data-folder="${FOLDER}"]`) !== null,
     comments: middle.querySelectorAll('[data-comment]').length,
-    threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
+    threadButtons: threadControls(middle).length,
     composer: within(middle).queryByRole('textbox') !== null,
     // No Open folder since 5 October: the Folder is the column beside, its row open.
     openFolder: within(middle).queryByRole('link', { name: 'Open folder' }) !== null,
@@ -806,13 +815,13 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     const middle = screen.getByTestId('middle')
-    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
+    fireEvent.click(threadControls(middle)[0])
     const thread = screen.getByTestId('thread')
     expect(thread.querySelector(`[data-thread="${rootId}"]`)).not.toBeNull()
     expect(within(thread).getByText('First on the issue')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     // The comment whose thread is open is marked in the middle pane.
-    expect(within(middle).getByRole('button', { name: THREAD_CONTROL, current: true })).toBeInTheDocument()
+    expect(middle.querySelector('[data-comment][aria-current="true"]')).not.toBeNull()
   })
 
   it('opens from a pasted ?thread= link', () => {
@@ -832,9 +841,9 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).getByText('A reply from Ship')).toBeInTheDocument()
     const middle = screen.getByTestId('middle')
-    expect(within(middle).getByRole('button', { name: '1 reply' })).toBeInTheDocument()
+    expect(within(middle).getByRole('button', { name: /^1 reply,/ })).toBeInTheDocument()
     // No count on the comment nobody replied to: absent, not "0".
-    expect(middle.querySelectorAll('[data-replies]')).toHaveLength(1)
+    expect(within(middle).getAllByRole('button', { name: /^\d+ repl(y|ies),/ })).toHaveLength(1)
   })
 
   it('offers no composer at all: the manifest declared no comment', () => {
@@ -1173,7 +1182,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     fireEvent.click(within(middle).getByRole('button', { name: 'Show side panel' }))
-    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
+    fireEvent.click(threadControls(middle)[0])
     const column = screen.getByTestId('thread')
     expect(within(column).getByText('Thread')).toBeInTheDocument()
     expect(widget()).toBeNull()

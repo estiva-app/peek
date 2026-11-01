@@ -7,7 +7,7 @@ import type { MouseEvent } from 'react'
  * new tab" is the browser's and opens it there. A plain left click (Enter on a
  * focused link is one too) is the app's: the default is prevented and `go`
  * routes in place, because a bare anchor would reload the app. The same rule
- * `RouterLink` and `NavItem` follow.
+ * `NavItem` follows.
  */
 export function followInApp(event: MouseEvent<HTMLElement>, go: () => void) {
   if (event.defaultPrevented) return
