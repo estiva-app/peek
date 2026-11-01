@@ -3,7 +3,7 @@ import { EmptyState, NavItem } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
+import { rememberFileAddress, useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
@@ -51,7 +51,6 @@ export function FileTreeView({
   filter = 'all',
   selectedRef,
   expand,
-  onSelect,
   onControl,
   holdsJoined,
 }: {
@@ -69,7 +68,6 @@ export function FileTreeView({
    * a person who collapses a row keeps it collapsed.
    */
   expand?: readonly string[]
-  onSelect: (file: ForeignObject) => void
   /**
    * A row's more-menu asked for its details, a rename or a deletion (FOL-33).
    * The menu is drawn only on a row whose manifest declares the control —
@@ -157,7 +155,6 @@ export function FileTreeView({
           unread={unread}
           selectedRef={selectedRef}
           expand={[...(expand ?? []), ...openForChild]}
-          onSelect={onSelect}
           onControl={onControl}
           remember={filter === 'all'}
         />
@@ -189,7 +186,6 @@ export function JoinedFileRows({
   joinedUnder = {},
   selectedRef,
   selectedParent,
-  onSelect,
   onControl,
 }: {
   state: FolderContentsState
@@ -200,7 +196,6 @@ export function JoinedFileRows({
   selectedRef?: string
   /** The open file's parent: the open file is read with the rest when this listing holds its parent. */
   selectedParent?: string | null
-  onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const listed = useMemo(() => (typeof state === 'object' && 'files' in state ? state.files : []), [state])
@@ -240,7 +235,6 @@ export function JoinedFileRows({
       isMember={membership.isMember}
       unread={unread}
       selectedRef={selectedRef}
-      onSelect={onSelect}
       onControl={onControl}
     />
   )
@@ -255,7 +249,6 @@ export function JoinedFileRowsView({
   isMember,
   unread,
   selectedRef,
-  onSelect,
   onControl,
 }: {
   state: FolderContentsState
@@ -267,7 +260,6 @@ export function JoinedFileRowsView({
   isMember: (address: string) => boolean
   unread: Record<string, boolean>
   selectedRef?: string
-  onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   if (state === 'loading') {
@@ -294,7 +286,7 @@ export function JoinedFileRowsView({
     <div className="flex flex-col gap-0.5" data-folder={(state as FolderContents).id} data-flat>
       {rows.map((file) => (
         // `nested`: a row of its own, never one that opens onto others.
-        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} onSelect={onSelect} onControl={onControl} nested />
+        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} onControl={onControl} nested />
       ))}
     </div>
   )
@@ -312,7 +304,6 @@ function TreeRow({
   unread,
   selectedRef,
   expand,
-  onSelect,
   onControl,
   nested = false,
   remember = false,
@@ -322,7 +313,6 @@ function TreeRow({
   unread?: Record<string, boolean>
   selectedRef?: string
   expand?: readonly string[]
-  onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
   nested?: boolean
   /**
@@ -405,7 +395,8 @@ function TreeRow({
   return (
     <NavItem
       data-file={file.ref}
-      href={file.address ? filePath(file.address, title) : '#'}
+      // The address the row's click opens, as the page writes it (FOL-37): Cmd-click opens the same in a new tab.
+      href={file.address ? filePath(file.address, file.slots.title?.value) : '#'}
       label={title}
       icon={
         <TopicState
@@ -454,9 +445,14 @@ function TreeRow({
       // the package's `openFor`, once per file, so closed again it stays closed until another opens.
       openFor={expandable && expanded ? selectedRef : undefined}
       onClick={(event) => {
-        // The page navigates: it remembers the address first (SID-2).
-        event.preventDefault()
-        onSelect(file)
+        // A file with no address leads nowhere, as it never did.
+        if (!file.address) return event.preventDefault()
+        /*
+          The row has the author the short link drops, so the page needs no `#d` read to recover it (SID-2), and it
+          selects the clicked row before the file resolves. The page change is the kit's: a plain click through
+          Peek's router (`AppProvider`), and Cmd-, Ctrl- or Shift-click the browser's, for a new tab or window.
+        */
+        rememberFileAddress(file.address)
       }}
     >
       {expandable
@@ -471,7 +467,6 @@ function TreeRow({
                     exclude={listedChildren}
                     selectedRef={selectedRef}
                     expand={expand}
-                    onSelect={onSelect}
                     onControl={onControl}
                     remember={remember}
                   />
@@ -484,7 +479,6 @@ function TreeRow({
                     unread={unread}
                     selectedRef={selectedRef}
                     expand={expand}
-                    onSelect={onSelect}
                     onControl={onControl}
                     nested
                     remember={remember}
@@ -505,7 +499,6 @@ function FetchedRows({
   exclude = [],
   selectedRef,
   expand,
-  onSelect,
   onControl,
   remember,
 }: {
@@ -513,7 +506,6 @@ function FetchedRows({
   exclude?: ForeignObject[]
   selectedRef?: string
   expand?: readonly string[]
-  onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
   remember?: boolean
 }) {
@@ -538,7 +530,6 @@ function FetchedRows({
           unread={unread}
           selectedRef={selectedRef}
           expand={expand}
-          onSelect={onSelect}
           onControl={onControl}
           nested
           remember={remember}

@@ -288,7 +288,6 @@ function Column({ view = 'mine', show = 'all', signedOut = false, folders = FOLD
         view={view}
         filter={treeFilterOf(view, show)}
         currentFolder={currentFolder}
-        onSelect={noop}
         menuFor={() => null}
       />
     </FolderColumn>

@@ -61,7 +61,6 @@ const meta = {
     isMember: (address: string) => MINE.has(address),
     unread: { [CRASH]: true, [ISSUE]: true },
     selectedRef: RELEASE,
-    onSelect: () => {},
   },
   decorators: [
     (Story) => (

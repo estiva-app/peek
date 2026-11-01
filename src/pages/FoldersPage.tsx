@@ -6,9 +6,8 @@ import { IconTrash } from '@tabler/icons-react'
 import { EmptyState, Panel, Toolbar, ToolbarButton, ArchivedNotice } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
-import type { ForeignObject } from '@estiva-app/interop'
 import { FileTreeView } from '@/components/views/FileTreeView'
-import { rememberFileAddress, reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { kindNoun } from '@/lib/archiveWords'
 import { useFileControls } from '@/components/views/useFileControls'
@@ -67,13 +66,6 @@ export function FoldersPage() {
     onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
     onStarted: (created) => navigate(filePath(created.address, created.title)),
   })
-
-  // A row of a no-state Folder's list opens its file, as the column's rows do.
-  const openRow = (file: ForeignObject) => {
-    if (!file.address) return
-    rememberFileAddress(file.address)
-    navigate(filePath(file.address, file.slots.title?.value))
-  }
 
   /*
     A channel that was one of Peek's old topics holds that topic's
@@ -240,7 +232,7 @@ export function FoldersPage() {
                 place it is seen. It used to say only that.
               */}
               <div className="px-2 py-2">
-                <FileTreeView state={state} onSelect={openRow} onControl={fileControls.open} />
+                <FileTreeView state={state} onControl={fileControls.open} />
               </div>
             </Panel>
           ) : (

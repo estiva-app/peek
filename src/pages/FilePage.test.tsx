@@ -23,6 +23,7 @@ import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } fro
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
 import { FilePage } from './FilePage'
+import { PeekSetup } from '@/lib/PeekSetup'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
 const OTHER_FOLDER = '3789d2ca-103c-40e5-906f-0490782db5fd'
@@ -311,6 +312,8 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
         <LastSelectionProvider>
           <MemoryRouter initialEntries={[url]}>
             {opts?.pending && <Seed pending={opts.pending} />}
+            {/* Peek's router handed to every kit link, as main.tsx does: a tree row's click changes page through it. */}
+            <PeekSetup>
             <Routes>
               {/* The one file route `App` mounts (FOL-39); the word is the page's to read.
                   Peek's own pages rank ahead of it there, and so here. */}
@@ -319,6 +322,7 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
               <Route path="/:word/:ref" element={<><FilePage /><Probe /></>} />
               <Route path="*" element={<Probe />} />
             </Routes>
+            </PeekSetup>
             <Remembered />
           </MemoryRouter>
         </LastSelectionProvider>

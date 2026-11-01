@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { FolderTree, PENDING_MS } from './FolderTree'
 import { ToastProvider } from '@/lib/toast'
+import { PeekSetup } from '@/lib/PeekSetup'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -147,7 +148,8 @@ function page(props: Parameters<typeof FolderTree>[0]) {
   return (
     <MemoryRouter initialEntries={['/topics']}>
       <Routes>
-        <Route path="*" element={<><FolderTree {...props} /><Probe /></>} />
+        {/* Peek's router given to every kit link, as main.tsx does: a row's plain click changes page through it. */}
+        <Route path="*" element={<PeekSetup><FolderTree {...props} /><Probe /></PeekSetup>} />
       </Routes>
     </MemoryRouter>
   )
@@ -393,6 +395,15 @@ describe('where things lead', () => {
     fireEvent.click(within(section(TEAM)).getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
+  })
+
+  it('a Cmd- or Ctrl-click on a row is the browser’s, for a new tab: this page stays where it is', () => {
+    mount({ currentFolder: TEAM })
+    const link = within(section(TEAM)).getByText('FOL-15 test topic 2').closest('a')!
+    // `fireEvent` answers false when the click was stopped: then the browser opens no tab.
+    expect(fireEvent.click(link, { metaKey: true })).toBe(true)
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   it('a click on a Folder only folds it, and leads nowhere — the Folders page and its Open folder are gone (5 October)', () => {

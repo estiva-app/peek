@@ -7,7 +7,6 @@ import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
 import {
   prefetchFolderContents,
-  rememberFileAddress,
   topLevelFolders,
   useFolderContents,
   useFolders,
@@ -287,16 +286,6 @@ export function FolderTree({
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           expandSelected={expandSelected}
-          onSelect={(file) => {
-            if (!file.address) return
-            /*
-              The row has the author the short link drops, so the page needs no
-              `#d` read to recover it (SID-2) — and with the address known at
-              once, it selects the clicked row before the file resolves.
-            */
-            rememberFileAddress(file.address)
-            navigate(filePath(file.address, file.slots.title?.value))
-          }}
           menuFor={signedOut ? undefined : menuFor}
           onControl={onControl}
           currentContents={section === currentFolder ? currentContents : undefined}
@@ -591,7 +580,6 @@ export function FolderTreeView({
   selectedRef,
   selectedParent,
   expandSelected = false,
-  onSelect,
   menuFor,
   onControl,
   currentContents,
@@ -624,7 +612,6 @@ export function FolderTreeView({
   selectedParent?: string | null
   /** Open the selected row too — see `FolderTree`. */
   expandSelected?: boolean
-  onSelect: (file: ForeignObject) => void
   /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
   menuFor?: (folder: FolderSummary) => ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
@@ -679,7 +666,6 @@ export function FolderTreeView({
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           expandSelected={expandSelected}
-          onSelect={onSelect}
           linked={linkedFolder === folder.id}
           // In Archive only an archived Folder has a menu: its Unarchive.
           menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
@@ -701,7 +687,6 @@ function FolderSection({
   selectedRef,
   selectedParent,
   expandSelected,
-  onSelect,
   linked,
   menu,
   onControl,
@@ -715,7 +700,6 @@ function FolderSection({
   selectedRef?: string
   selectedParent?: string | null
   expandSelected?: boolean
-  onSelect: (file: ForeignObject) => void
   /** A link opened this Folder: open it, whatever was remembered, and bring it into view. */
   linked: boolean
   /** The heading's ⋮: the Folder's own actions. */
@@ -913,7 +897,6 @@ function FolderSection({
           joinedUnder={joinedUnder}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
-          onSelect={onSelect}
           onControl={onControl}
         />
       )}
@@ -929,7 +912,6 @@ function FolderSection({
             mounted while open, and their badge read was keyed only on the
             listing, so a comment reached them on collapse and expand.
           */
-          onSelect={onSelect}
           onControl={onControl}
           holdsJoined={holdsJoined}
         />
