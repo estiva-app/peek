@@ -89,6 +89,10 @@ import {
   planRenameFolder,
   planUnlistFile,
   planArchiveFolder,
+  planListInTopic,
+  planRemoveFromTopic,
+  topicList,
+  type ListedFile,
   archiveImpact,
   createLoadQuery,
   type ArchiveImpact,
@@ -814,6 +818,47 @@ export async function renameFolderAsViewer(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const result = await publishInOrder(planRenameFolder(token.pubkey, Date.now(), { folder, name }), relayUrl, token)
   return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
+}
+
+/**
+ * A topic's list of files (TOP-3) — interop's `topicList`, SPEC §6.14: its
+ * entries filed in the topic's own Folder, each id resolved over the file
+ * kinds. Only the resolved ones are returned, in the order they were added:
+ * an id nobody the viewer can read holds, or two hold, is not drawn and not
+ * counted (§3.2).
+ *
+ * **Throws {@link RelayReadError} when the read failed**, so a refused read is
+ * never drawn as a topic that lists nothing.
+ */
+export async function topicFilesAsViewer(
+  topic: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Array<ListedFile & { address: string }>> {
+  const listed = await topicList(viewerQuery(relayUrl, token), topic)
+  return listed.filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+}
+
+/**
+ * Put a file on a topic's list, or take it off (TOP-3): one `kind:1851` entry
+ * on the topic, signed by the viewer, in the topic's Folder — `folder` is read
+ * from the topic's root, never the Folder it was opened from (§6.2). The relay
+ * takes it from anyone who may write in that Folder, and its refusal is what
+ * the person reads.
+ */
+export async function setTopicFileAsViewer(
+  args: { topic: string; folder: string; file: string; listed: boolean },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const plan = args.listed ? planListInTopic : planRemoveFromTopic
+  const result = await publishInOrder(
+    plan(token.pubkey, Date.now(), { topic: { address: args.topic, folder: args.folder }, file: args.file }),
+    relayUrl,
+    token,
+  )
+  if (result.ok) return { ok: true }
+  return { ok: false, reason: result.reason ?? (args.listed ? 'The relay refused to add the file.' : 'The relay refused to remove the file.') }
 }
 
 /** {@link folderDeletableOf} as the viewer — whether Delete may be offered (FOL-9). */

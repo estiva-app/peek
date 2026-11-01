@@ -47,7 +47,7 @@ import {
   unregisterTopicConversation,
 } from '@/lib/conversationRegistry'
 import { resetRecentsForTests } from '@/lib/recents'
-import { ReferenceSourcesSync, referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
+import { ReferenceSourcesSync, fileChoices, referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
 
 const AUTHOR = 'a'.repeat(64)
 const EVENT = (n: number) => String(n).repeat(64).slice(0, 64)
@@ -231,5 +231,29 @@ describe('useRememberFile — the launcher’s Recent (SUM-7)', () => {
     await waitFor(() => expect(relay.files).toHaveBeenCalledTimes(1))
     hook.rerender({ f: opened('Check the Q4 numbers') })
     await waitFor(() => expect(stored()).toMatchObject({ summary: 'Check the Q4 numbers', caption: 'Finance' }))
+  })
+})
+
+describe('fileChoices — what a topic’s Add file offers (TOP-3)', () => {
+  it('offers projects, issues and documents found by search, never a topic, and none the topic lists already', async () => {
+    relay.search.mockResolvedValue([
+      file(30850, 'proj', 'Widgets 2: build 1', FILE_TIER.search),
+      file(30851, 'iss', 'Widgets card', FILE_TIER.search),
+      { ...file(30842, 'doc', 'Testing Widgets', FILE_TIER.search), type: 'document' },
+      file(30840, 'top', 'Widgets', FILE_TIER.search),
+      file(30850, 'listed', 'Widgets 2: build 2', FILE_TIER.search),
+    ])
+    const sync = render(<ReferenceSourcesSync />)
+    const listener = vi.fn()
+    const unsubscribe = subscribeReferences(listener)
+
+    fileChoices('widgets', [])
+    await waitFor(() => expect(listener).toHaveBeenCalled())
+    const titles = fileChoices('widgets', [address(30850, 'listed')]).map((c) => c.title)
+    expect(titles).toHaveLength(3)
+    expect(titles).toEqual(expect.arrayContaining(['Widgets 2: build 1', 'Widgets card', 'Testing Widgets']))
+
+    unsubscribe()
+    sync.unmount()
   })
 })

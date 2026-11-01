@@ -7,7 +7,8 @@ import { FileThreadView } from '@/components/views/FileThreadView'
 import { conversationPlaceholder, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { OverviewPanel } from '@/components/OverviewPanel'
-import { isArchived } from '@estiva-app/interop'
+import { TopicFiles } from '@/components/TopicFiles'
+import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
 import {
   listedFile,
   useFileThreads,
@@ -160,9 +161,18 @@ export function useFileView({
   const cardFile = file && home?.place === 'app' && (file.naddr ?? file.address) ? file : undefined
   const sidePanel = useSidePanel(file?.address)
   const canShow = !!cardFile || ownView
+  /*
+    A topic's files (TOP-3), above Activity: a topic keeps its own list, and
+    only topics' lists are read in this stage (Miky, 30 Oct). Filed in the
+    topic's own Folder, the one its root names.
+  */
+  const topicFiles =
+    file?.address?.startsWith(`${KIND_BARE_FILE}:`) && file.folder ? (
+      <TopicFiles key={file.address} topic={file.address} folder={file.folder} title={title} readOnly={!!file.archived} />
+    ) : undefined
   const aside =
     sidePanel.open && canShow ? (
-      <OverviewPanel file={cardFile} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
+      <OverviewPanel file={cardFile} files={topicFiles} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
     ) : undefined
   const replyCounts =
     threads === 'loading' || 'failed' in threads
