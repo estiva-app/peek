@@ -90,7 +90,8 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
   const author = people?.[m.author]
   const conv: ConversationData = {
     id: m.id,
-    authorName: author?.displayName ?? `${m.author.slice(0, 8)}…`,
+    // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+    authorName: author?.displayName ?? '—',
     authorAvatarSrc: author?.picture,
     authorBot: author?.bot === true,
     timestamp: formatTimestamp(m.createdAt * 1000),

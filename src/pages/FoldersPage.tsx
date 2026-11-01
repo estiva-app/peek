@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconTrash } from '@tabler/icons-react'
-import { EmptyState, Panel, Toolbar, ToolbarButton, ArchivedNotice } from '@estiva-app/ui'
+import { EmptyState, IconButton, Panel, ArchivedNotice } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import { FileTreeView } from '@/components/views/FileTreeView'
@@ -195,7 +195,8 @@ export function FoldersPage() {
   const folderNotice =
     folderArchive && isFolder && selected?.channel ? (
       <ArchivedNotice
-        by={people?.[folderArchive.by]?.displayName ?? `${folderArchive.by.slice(0, 8)}…`}
+        // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+        by={people?.[folderArchive.by]?.displayName ?? '—'}
         when={formatDateLabel(folderArchive.at * 1000)}
         resolution={folderArchive.resolution}
         withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
@@ -219,12 +220,11 @@ export function FoldersPage() {
               // The rows' 8px inset and their 2px apart, as the column's Folders set them, on the Panel's own body.
               bodyClassName="flex flex-col gap-0.5 p-2"
               actions={
+                // One button: an IconButton of its own, not a strip of one.
                 canDelete && (
-                  <Toolbar aria-label="Folder actions" surface={false}>
-                    <ToolbarButton tooltip="Delete folder" aria-label="Delete folder" onClick={() => setConfirmingDelete(true)}>
-                      <IconTrash size={16} stroke={1.5} />
-                    </ToolbarButton>
-                  </Toolbar>
+                  <IconButton tooltip="Delete folder" aria-label="Delete folder" onClick={() => setConfirmingDelete(true)}>
+                    <IconTrash size={16} stroke={1.5} />
+                  </IconButton>
                 )
               }
             >
@@ -259,9 +259,7 @@ export function FoldersPage() {
           }}
         >
           {/* What a `kind:9008` does, and only that (FOL-9): Delete is offered only on a Folder with nothing filed in it. */}
-          <p className="text-body-2 text-text-secondary">
-            The folder and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.
-          </p>
+          <p>The folder and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.</p>
         </ConfirmDialog>
       )}
     </>

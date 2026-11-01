@@ -34,10 +34,11 @@ const TONE: Record<Freshness['kind'], string> = {
   // amber rather than red on purpose: it is how Peek worked for its whole life
   // before M3, and colouring a healthy fallback as a fault trains people to
   // ignore the indicator entirely.
-  live: 'bg-emerald-500',
-  catching_up: 'bg-sky-500',
-  polling: 'bg-amber-500',
-  session_ended: 'bg-red-500',
+  // The theme's own status colours (Katerina, 2 November): they were Tailwind's emerald, sky, amber and red.
+  live: 'bg-success-default',
+  catching_up: 'bg-info-default',
+  polling: 'bg-warning-default',
+  session_ended: 'bg-error-default',
 }
 
 export function FreshnessIndicator() {

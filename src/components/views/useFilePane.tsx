@@ -183,7 +183,8 @@ export function useFilePane(
   const notice =
     file && archive ? (
       <ArchivedNotice
-        by={people?.[archive.by]?.displayName ?? `${archive.by.slice(0, 8)}…`}
+        // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+        by={people?.[archive.by]?.displayName ?? '—'}
         when={formatDateLabel(archive.at * 1000)}
         resolution={archive.resolution}
         withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
