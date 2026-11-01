@@ -1,13 +1,10 @@
 import { useCallback, useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconDotsVertical } from '@tabler/icons-react'
-import { ToolbarButton } from '@estiva-app/ui'
 import { PEOPLE, PeekDataProvider } from '@/api'
 import { SuggestionMenu } from '@estiva-app/ui'
 import type { SuggestionPopupOptions } from '@estiva-app/ui/editor'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
-import { ConversationMoreMenu } from './ConversationMoreMenu'
-import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { NavItem } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
@@ -113,95 +110,6 @@ export const TopicMoreDm: Story = {
       onDeleteTopic: undefined,
       onHideDm: noop,
     }),
-}
-
-/* ── Conversation more menu ─────────────────────────────────────────────── */
-
-/* The menu owns its ⋯ button now, so a canvas would otherwise be one button.
-   Held open, which is what these canvases are for; in the app it opens on a
-   press and closes on Escape or an outside press. */
-function conversationMore(props: Partial<ComponentProps<typeof ConversationMoreMenu>>) {
-  return (
-    <ConversationMoreMenu
-      open
-      isResolved={false}
-      onHighlight={noop}
-      onResolve={noop}
-      onReopen={noop}
-      onOpenWork={noop}
-      onEditMessage={noop}
-      onViewDetails={noop}
-      onDelete={noop}
-      {...props}
-    />
-  )
-}
-
-/**
- * Somebody else's DM message: Resolve · Open work · Mark as Highlight, then
- * View details — no Edit, no Delete. Hover "Mark as Highlight" to open the
- * 5-type submenu. "Start topic" went with the Convex topics (FOL-23).
- */
-export const ConversationMoreDmMessage: Story = { render: () => conversationMore({}) }
-
-/**
- * Your own message adds Edit message above View details and Delete below the
- * rule. PEE-32 put the authorship gate back that CON-3 and CON-8 had removed:
- * the relay refuses a non-author anyway, so the control everyone saw could not
- * succeed on anybody else's message.
- */
-export const ConversationMoreOwnMessage: Story = { render: () => conversationMore({ isOwnMessage: true }) }
-
-/** When resolved, "Resolve →" becomes "Reopen". */
-export const ConversationMoreResolved: Story = { render: () => conversationMore({ isResolved: true }) }
-
-/** With a highlight set, the row reads "Change highlight" and the submenu gains Remove. */
-export const ConversationMoreWithHighlight: Story = {
-  render: () => conversationMore({ currentHighlight: 'insight' }),
-}
-
-/* ── Conversation quick menu ────────────────────────────────────────────── */
-
-/* The ⋯ menu owns its own button, so the strip takes the menu rather than a
-   callback and the button arrives with it. Press it. */
-const more = (
-  <ConversationMoreMenu
-    trigger={
-      <ToolbarButton tooltip="More actions" aria-label="More actions">
-        <IconDotsVertical size={16} stroke={1.5} />
-      </ToolbarButton>
-    }
-    onDelete={noop}
-  />
-)
-
-function quick(isResolved: boolean) {
-  return (
-    <ConversationQuickMenu
-      isResolved={isResolved}
-      onReact={noop}
-      onReply={noop}
-      onResolve={noop}
-      onReopen={noop}
-      more={more}
-    />
-  )
-}
-
-/** The hover toolbar on an open conversation card: React · Reply · Resolve · More. */
-export const ConversationQuickUnresolved: Story = { render: () => quick(false) }
-
-/** Once resolved, the middle action flips to Reopen (dashed circle). */
-export const ConversationQuickResolved: Story = { render: () => quick(true) }
-
-/** The two side by side. */
-export const ConversationQuickBothStates: Story = {
-  render: () => (
-    <div className="flex items-center gap-6">
-      {quick(false)}
-      {quick(true)}
-    </div>
-  ),
 }
 
 /* ── Screener "Later" menu ──────────────────────────────────────────────── */

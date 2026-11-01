@@ -1,5 +1,10 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { CURRENT_USER_NAME, type ReactionData } from '@/api'
+import { REACTION_EMOJI } from '@estiva-app/conversation'
+
+/** The five every app offers, each with the word for it (`@estiva-app/conversation`,
+ *  SPEC §6.6), as the package's `ReactionPicker` and `ReactionRow` take them. */
+export const REACTION_OPTIONS = REACTION_EMOJI.map(({ emoji, name }) => ({ emoji, label: name }))
 
 /** Your reaction with `emoji` on or off, drawn at once (OPT-8): your name added to it, or taken off, and an emptied pill dropped. */
 export function toggledReaction(reactions: readonly ReactionData[], emoji: string): ReactionData[] {

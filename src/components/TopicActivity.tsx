@@ -162,7 +162,6 @@ export function TopicActivity({
             embeds={conv.embeds}
             here={here}
             nostrBlockId={conv.nostrBlockId}
-            subdued={words.muted}
             isSelected={selectedId === conv.id}
             readOnly={mention}
             onClick={open}
