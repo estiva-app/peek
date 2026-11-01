@@ -918,9 +918,6 @@ function FolderSection({
   )
 }
 
-/** How long the pointer rests on a closed Folder before it is read ahead (SID-2). */
-export const PREFETCH_INTENT_MS = 150
-
 /** How long an opened Folder waits shut for its listing before it opens on the skeleton (OPT-11): a cold read is ~0.9 s. */
 export const PENDING_MS = 2000
 

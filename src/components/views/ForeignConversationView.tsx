@@ -106,11 +106,9 @@ export function ForeignConversationView({
 
   const object = state as ForeignObject
   /*
-    Oldest first, because this is a conversation and not a history.
-
-    `ActivityTimeline` orders a change log newest-first — the last thing that
-    happened is the thing you want. A conversation is read the other way, and
-    the resolved order is the relay's, which is neither.
+    Oldest first, because this is a conversation and not a history: a change
+    log reads newest-first, a conversation the other way, and the resolved
+    order is the relay's, which is neither.
   */
   const live = new Set(object.comments.map((c) => c.id))
   const standIns: DrawableComment[] = (deletedRoots ?? [])

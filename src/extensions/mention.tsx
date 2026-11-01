@@ -1,6 +1,6 @@
 import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
-import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
+import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
@@ -22,16 +22,8 @@ import { Reference } from '@/components/ui/Reference'
 
 export const PeekMention = PersonMention.configure({ people: mentionDirectory })
 
-/** `!@`. Its text is an ordinary mention; the urgency is a tag (CON-17), from {@link extractUrgent}. */
+/** `!@`. Its text is an ordinary mention; the urgency is a tag (CON-17). */
 export const UrgentMention = UrgentPersonMention.configure({ people: mentionDirectory })
-
-
-/**
- * The pubkeys the document's urgent mentions name (CON-17) — what the write
- * turns into `["urgent", <pubkey>]`. A chip with no key is still `!@Name` in
- * the text.
- */
-export const extractUrgent = urgentPubkeys
 
 // ─── [ ───
 

@@ -1,7 +1,7 @@
 import type { People } from '@estiva-app/interop'
 import { ConversationCard, ReplyCard, WithTooltip } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
-import { whenLabel } from '@/components/ui/ActivityTimeline'
+import { whenLabel } from '@/lib/whenLabel'
 
 /** The part of a comment this row draws. Both panes' shapes satisfy it. */
 export interface DrawableComment {

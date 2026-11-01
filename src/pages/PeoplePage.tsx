@@ -122,7 +122,6 @@ export function PeoplePage() {
   const dmView = useDmConversationView({
     dmId: isDm ? selectedId : null,
     dmName: isDm ? selectedItem?.name : undefined,
-    showUnreads,
     onHideDm: isDm && canHideDm(selectedId) ? () => hideDm(selectedId) : undefined,
   })
 

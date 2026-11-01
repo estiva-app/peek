@@ -15,11 +15,6 @@ interface UseDmConversationViewArgs {
   /** Override the default toggleDm-and-stay behavior (e.g. Desk wants to clear selection on unstar) */
   onToggleStarred?: () => void
   /**
-   * Unused since REM-1. It gated each message's "new" marker, which came from
-   * Convex rows; the relay read has none until read state is the blob (REM-5).
-   */
-  showUnreads?: boolean
-  /**
    * Hide this DM from the viewer's sidebar (DMS-6). The page owns it because
    * hiding what you are looking at is followed by leaving it, and only the
    * page knows where to go. Absent on pages whose list this does not affect.
@@ -110,7 +105,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     title: dmName ? `DM · ${dmName}` : '',
     noteName: dmName ? `your conversation with ${dmName}` : 'this conversation',
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
-    empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
+    empty: dmName ? <NewTopicBanner name={dmName} /> : undefined,
   })
   // The DM is read up to the newest top-level message seen on screen, which had its
   // dwell already (Katerina, 30 October), and keeps reading what arrives while it

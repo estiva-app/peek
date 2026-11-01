@@ -349,7 +349,6 @@ export function DeskPage() {
     dmId: selected?.dmId ?? null,
     dmName: selected?.dmName,
     onToggleStarred: selected ? handleToggleStarredOnDesk : undefined,
-    showUnreads: showPeopleUnreads,
   })
   /*
     The open file, as its own page draws it (OPT-12, Miky 7 October: "It
