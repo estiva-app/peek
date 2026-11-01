@@ -1,11 +1,11 @@
 import type { LinkState, LinkedConversation, LinkedFromOptions, LinkedKind } from '@estiva-app/ui'
-import { linkStateFrom } from '@estiva-app/ui'
+import { linkStateFrom, thingKindOf } from '@estiva-app/ui'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import { openingWords } from '@estiva-app/conversation'
 import { knownCardValue } from '@/api/foreign'
 import { personByPubkey } from '@/api/mentions'
 import { openInAppUrl } from '@/lib/appName'
-import { referenceGlyph, referenceGlyphOfUri } from '@/lib/fileGlyph'
+import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { referenceLink } from '@/lib/referenceLink'
 import { referenceTypeWord } from '@/lib/textParsing'
 
@@ -46,7 +46,7 @@ export interface LinkedContext {
 /** A message's own words, for the caller to ask about the links in them (`useLinksIn`); nothing for a file. */
 export function messageWordsOf(object: ForeignObject | null | undefined | 'loading'): string | undefined {
   if (!object || object === 'loading' || object.unreachable) return undefined
-  return referenceGlyph(object.kind) === 'message' ? object.slots.body?.value : undefined
+  return thingKindOf(object.kind) === 'message' ? object.slots.body?.value : undefined
 }
 
 /** Where a reference opens: Peek's own page for its own files, the owning app for anyone else's. */
