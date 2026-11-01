@@ -9,7 +9,7 @@ import { isObjectAddress } from '@/lib/textParsing'
 import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
 import { InlineChip, KindIcon, inlineChipClassName } from '@estiva-app/ui'
-import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
+import { FILES_MENU_COPY, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
 import { BoxReference } from '@/components/ui/BoxReference'
 import { Reference } from '@/components/ui/Reference'
@@ -157,7 +157,8 @@ export const PeekReferenceTrigger = ReferenceTrigger.configure({
   subscribe: subscribeReferences,
   nodeName: 'messageMention',
   ...FILES_MENU_COPY,
-  icon: FILES_MENU_ICON,
+  // A row whose URI names nothing the kit knows: a message's icon, the kit's.
+  icon: <KindIcon kind="message" />,
 })
 
 // ─── File mention (apps & documents) ───
