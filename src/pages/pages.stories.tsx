@@ -16,9 +16,8 @@ import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
-import { ArchivedNotice, EmptyState, Panel } from '@estiva-app/ui'
+import { ArchivedNotice, Divider, EmptyState, Panel } from '@estiva-app/ui'
 import { ClosedBox } from '@/components/ui/ConversationBox'
-import { DateDivider } from '@/components/ui/DateDivider'
 import { formatDateLabel } from '@/api'
 
 const noop = () => {}
@@ -396,7 +395,7 @@ export const FileArchived: Story = {
           </div>
           {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
             <div key={day} className="flex flex-col">
-              <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
+              <Divider look="section" label={day} sticky />
               {Array.from({ length: 6 }, (_, i) => (
                 <p key={i} className="px-4 py-2 text-body-2 text-text-secondary">
                   A message from {day.toLowerCase()}, number {i + 1}.
