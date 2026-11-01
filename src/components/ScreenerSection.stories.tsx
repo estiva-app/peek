@@ -45,5 +45,5 @@ export const Default: Story = {}
 
 /** Single incoming item. */
 export const OneItem: Story = {
-  args: { items: [SCREENER_ITEMS[1]] },
+  args: { items: [SCREENER_ITEMS[0]] },
 }
