@@ -16,9 +16,6 @@ export function LegacyTopicRedirect() {
   const { id, ref } = useParams<{ id?: string; ref?: string }>()
   const destination = legacyTopicDestination(ref ?? id ?? '')
   if (destination) return <Navigate to={destination} replace />
-  return (
-    <div className="flex min-h-screen flex-col">
-      <EmptyState message="That link does not point at anything Peek can open." />
-    </div>
-  )
+  // The window's height, so the line sits in its middle (D46).
+  return <EmptyState className="min-h-screen" message="That link does not point at anything Peek can open." />
 }

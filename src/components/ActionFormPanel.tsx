@@ -117,7 +117,6 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
                   : `Choose ${article(field.parentNoun ?? 'parent')}…`
             }
             ariaLabel={field.label}
-            className="w-full"
           />
         )
       case 'pubkey':

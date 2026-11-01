@@ -730,9 +730,14 @@ export function DeskPageView({
                   }
                 />
                 {openWork.length === 0 ? (
-                  <p className="px-2 py-1 text-caption leading-snug text-text-muted">
-                    Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
-                  </p>
+                  // Level with the rows, as Starred's line below (Katerina, 2026-09-14); its lines a little closer, as they were.
+                  <div className="px-2 py-1">
+                    <EmptyState
+                      scope="section"
+                      className="leading-snug"
+                      message="Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it."
+                    />
+                  </div>
                 ) : (
                   <DeskRows rows={openWork} />
                 )}

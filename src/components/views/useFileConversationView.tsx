@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Divider, EmptyState, ReactionHorizon, SkeletonConversation, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
+import { Divider, EmptyState, MetaText, ReactionHorizon, SkeletonConversation, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { anchorIn, useSteadyScroll } from './useSteadyScroll'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
@@ -662,8 +662,8 @@ export function useFileConversationView({
         writtenOn={container?.kind === 'file' ? container.address : undefined}
         readOnly={readOnly}
         readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
-        // A sentence, not a time: the caption's words, which wrap in the narrow column (MetaText is one line, and the kit's).
-        composerNotice={openView.data.isDeleted ? <p className="text-caption text-text-muted">The comment was deleted, so this thread takes no new replies.</p> : undefined}
+        // MetaText, as before the adoption (in Signal the mono micro-type); it is one line, and a sentence in a narrow panel has to wrap.
+        composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
         onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}

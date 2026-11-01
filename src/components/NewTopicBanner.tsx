@@ -22,7 +22,7 @@ export function NewTopicBanner({ title, kind = 'topic', onInviteMembers }: NewTo
       action={kind === 'topic' ? { label: 'Invite members', onClick: onInviteMembers } : undefined}
     >
       {kind === 'dm' ? 'This is the beginning of your conversation with' : 'This is the beginning of your conversations in'}{' '}
-      <span className="font-medium">{title}</span>
+      <span className="text-body-2-strong">{title}</span>
     </Banner>
   )
 }

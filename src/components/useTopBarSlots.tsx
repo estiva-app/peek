@@ -42,7 +42,7 @@ export function useTopBarSlots(): TopBarSlots {
         be null by the time it is wanted, and a ref read during render is
         what the hooks lint forbids by name.
       */
-      <div ref={setCluster} className="flex items-center gap-[6px]">
+      <div ref={setCluster} className="flex items-center">
         {/* The shared IdentityMenu (2026-09-01), Ship's anatomy, her ruling:
             identity section, workspace line naming the relay, and the actions
             — Edit your profile in Estiva ID (the ProfileDialog this used to

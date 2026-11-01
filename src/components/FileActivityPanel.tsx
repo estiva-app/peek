@@ -150,10 +150,8 @@ export function FileActivityPanelView({
 }) {
   return (
     <div className="flex flex-col">
-      {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge. The count beside the title (7 October). */}
-      <div className="px-2 pt-4">
-        <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} />
-      </div>
+      {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge, on the heading itself. The count beside the title (7 October). */}
+      <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} className="mx-2 mt-4" />
       {/*
         Every row has an `href` — its thread is on another file's page — so
         nothing here is ever selected and the thread opener is never reached;

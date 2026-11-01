@@ -131,7 +131,6 @@ export function StartTopicDialog({
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="What is it about?"
-            aria-label="Topic title"
             autoFocus
           />
         </Field>

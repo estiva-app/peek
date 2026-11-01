@@ -309,7 +309,6 @@ export function ConversationCard({
             here={writtenOn}
             onSave={handleEditSave}
             onCancel={done}
-            className="flex-1 min-w-0"
           />
         )
       }

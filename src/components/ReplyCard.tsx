@@ -221,7 +221,6 @@ export function ReplyCard({
             onSave={handleEditSave}
             onCancel={done}
             resolvedObjects={resolvedObjects}
-            className="flex-1 min-w-0"
           />
         )
       }

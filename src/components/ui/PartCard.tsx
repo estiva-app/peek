@@ -1,6 +1,7 @@
-import { serializeBlockDocument, toRenderTree, type Quote } from '@estiva-app/protocol'
+import { serializeBlockDocument, toRenderTree } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { PartCard as KitPartCard, RichText, thingKindOf } from '@estiva-app/ui'
+import { quoteText } from '@estiva-app/ui/editor'
 import { usePart, type PartView } from '@/api'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { blobObjectUrl } from '@/nostr/media'
@@ -111,11 +112,6 @@ export function PartCardView({
       </KitPartCard>
     </div>
   )
-}
-
-/** A quote as the commenter selected it: its words, or the words at each end of a long or cross-block one. */
-function quoteText(quote: Quote): string {
-  return quote.end ? `${quote.start} … ${quote.end}` : quote.start
 }
 
 /** Which one it is part of: its title, after the icon that says what it is (a file is labelled by its type). */

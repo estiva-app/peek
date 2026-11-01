@@ -12,6 +12,7 @@ import {
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
+import { cn } from '@/lib/utils'
 import { linksIn, type ForeignObject } from '@estiva-app/interop'
 import { PartCard } from './PartCard'
 import { isWebLink } from '@/lib/referenceLink'
@@ -279,8 +280,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview && !hasCard(reference)} opensAt={written} />
   const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
-    // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px).
-    <div data-message-body className="flex flex-col gap-2 text-body-2 text-text-secondary break-words">
+    // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px). The words'
+    // size, colour and wrapping are the kit card's around it; a preview has no card, so it sets them itself.
+    <div data-message-body className={cn('flex flex-col gap-2', preview && 'text-body-2 text-text-secondary break-words')}>
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}

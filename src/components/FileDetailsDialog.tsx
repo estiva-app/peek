@@ -5,7 +5,7 @@ import { useWorkspaceDirectory, type RenameOutcome } from '@/api'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { IconButton } from './ui/IconButton'
-import { FieldLine, Form, Person } from '@estiva-app/ui'
+import { EmptyState, FieldLine, Form, Person } from '@estiva-app/ui'
 import { SectionLabel } from './ui/SectionHeader'
 import { TextInput } from './ui/TextInput'
 import { Textarea } from './ui/Textarea'
@@ -119,12 +119,11 @@ export function FileDetailsDialog({
       onClose={onClose}
       width={560}
       bodyClassName="flex flex-col gap-6"
+      // The shell's footer is the row that sets its buttons at the right.
       footer={
-        <div className="flex justify-end">
-          <Button variant="outlined" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+        <Button variant="outlined" onClick={onClose}>
+          Close
+        </Button>
       }
     >
       <Section label="Name">
@@ -321,7 +320,8 @@ function SummarySection({
             {summary ? (
               <p className="min-w-0 flex-1 break-words text-body-2 text-text-primary">{summary}</p>
             ) : (
-              <p className="min-w-0 flex-1 text-body-2 text-text-muted">No summary yet.</p>
+              // The kit's empty line for one part of the dialog (Katerina, 2 November).
+              <EmptyState scope="section" message="No summary yet." className="min-w-0 flex-1" />
             )}
             {onSummarize && (
               <Button
