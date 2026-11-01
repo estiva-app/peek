@@ -1,7 +1,6 @@
 import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
-import { EmptyState } from '@estiva-app/ui'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
+import { EmptyState, SkeletonList } from '@estiva-app/ui'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /** The box the comments live in, written once: the comments, or the line that says why there are none. */
@@ -73,7 +72,7 @@ export function ForeignConversationView({
   if (state === 'loading') {
     return (
       <div className="p-4" data-loading="foreign-conversation">
-        <SkeletonSidebarList />
+        <SkeletonList />
       </div>
     )
   }

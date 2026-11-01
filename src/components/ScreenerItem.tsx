@@ -1,11 +1,10 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { Avatar, Card, Chip as PackageChip, PreviewCard, MetaText } from '@estiva-app/ui'
+import { Card, Chip, PreviewCard, MetaText, Person } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
 import { Button } from './ui/Button'
-import { Chip } from './ui/Chip'
 import { IconButton } from './ui/IconButton'
 import { formatReplyTimestamp, hasRelay, useAvatarSrc } from '@/api'
 import { previewText } from '@/lib/textParsing'
@@ -71,8 +70,8 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
     >
       {/* Who wrote, and when: the name truncates, the time stays. */}
       <div className="flex items-center gap-2">
-        <Avatar size={16} src={avatarSrc} name={who} alt={who ?? ''} bot={item.kind === 'file' ? item.authorBot : undefined} />
-        <span className="min-w-0 flex-1 truncate text-body-2-strong text-text-primary">{who ?? '—'}</span>
+        {/* The kit's face beside a name, cut short, a dash for no name. */}
+        <Person size={16} name={who} picture={avatarSrc} bot={item.kind === 'file' ? item.authorBot : undefined} className="flex-1 text-body-2-strong text-text-primary" />
         {/* A bare time means today; older names its day (Peek's rule). */}
         {item.at !== undefined && <MetaText className="shrink-0">{formatReplyTimestamp(item.at)}</MetaText>}
       </div>
@@ -85,7 +84,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
       {/* Where: a file, as a chip under the words, its glyph the tree's (`fileGlyph`). A DM is the person. */}
       {item.kind === 'file' && (
         <div className="flex min-w-0 items-center gap-1 pl-6 pt-2">
-          <PackageChip type="neutral" leadingIcon={<TopicState type={fileGlyph(item.fileKind)} />} label={item.title} className="min-w-0" />
+          <Chip type="neutral" leadingIcon={<TopicState type={fileGlyph(item.fileKind)} />} label={item.title} className="min-w-0" />
           {/* The chip Open work shows on an archived file (peek#515), always in sight here. */}
           {item.archived && <Chip type="neutral" label="Archived" className="shrink-0" />}
         </div>

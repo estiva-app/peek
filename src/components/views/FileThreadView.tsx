@@ -1,8 +1,7 @@
-import { Divider, EmptyState } from '@estiva-app/ui'
+import { Divider, EmptyState, SkeletonList } from '@estiva-app/ui'
 import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentReply, CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /**
@@ -50,7 +49,7 @@ export function FileThreadView({
       <div className="pt-3">
         {state === 'loading' ? (
           <div data-loading="thread">
-            <SkeletonSidebarList />
+            <SkeletonList />
           </div>
         ) : 'failed' in state ? (
           /*

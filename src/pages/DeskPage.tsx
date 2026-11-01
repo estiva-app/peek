@@ -7,7 +7,7 @@ import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
@@ -34,7 +34,6 @@ import {
   useOpenWorkActivity,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
@@ -673,7 +672,7 @@ export function DeskPageView({
       leftPanel={
         <RailListColumn title="Desk">
           {loading ? (
-            <SkeletonSidebarList rows={8} />
+            <SkeletonList rows={8} />
           ) : (
             <>
               {screener.length > 0 && (

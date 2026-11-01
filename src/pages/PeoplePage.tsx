@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ConversationLayout } from '@estiva-app/ui'
+import { ConversationLayout, SkeletonList } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { PersonItem } from '@/components/ui/PersonItem'
@@ -17,7 +17,6 @@ import {
   useUnread,
   useWorkspacePeople,
 } from '@/api'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { rememberRecent } from '@/lib/recents'
@@ -210,7 +209,7 @@ export function PeoplePageView({
         /* No Sort by and no New conversation until they do something: only what can succeed is offered (Katerina, 2 November). */
         <RailListColumn title="People">
           {loading ? (
-            <SkeletonSidebarList rows={8} />
+            <SkeletonList rows={8} />
           ) : (
             <>
               <StarredSection

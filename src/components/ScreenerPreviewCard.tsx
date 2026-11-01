@@ -1,7 +1,6 @@
 import { useScreenerPreview, type ScreenerPreviewRow } from '@/api'
-import { Avatar, MetaText } from '@estiva-app/ui'
+import { MetaText, Person, SkeletonBar } from '@estiva-app/ui'
 import { MessageBody } from './ui/MessageBody'
-import { SkeletonBar } from './ui/Skeleton'
 
 /**
  * The rows of the preview — the triggering message plus its recent replies, or
@@ -24,17 +23,18 @@ export function ScreenerPreviewCardView({
   return (
     <>
       {rows === undefined ? (
+        // SkeletonBar draws nothing of its own: each bar takes a height, a line of words' (they were 0px, so the card showed nothing).
         <div className="flex flex-col gap-2">
-          <SkeletonBar className="w-32" />
-          <SkeletonBar className="w-full" />
-          <SkeletonBar className="w-3/4" />
+          <SkeletonBar className="h-3 w-32" />
+          <SkeletonBar className="h-3 w-full" />
+          <SkeletonBar className="h-3 w-3/4" />
         </div>
       ) : (
         rows.map((r, i) => (
           <div key={i} className={r.kind === 'reply' ? 'flex flex-col gap-1 pl-3 border-l border-border-subtle' : 'flex flex-col gap-1'}>
             <div className="flex items-center gap-2">
-              <Avatar size={16} name={r.authorName} alt={r.authorName} bot={r.authorBot} />
-              <span className="text-h5 leading-tight text-text-primary">{r.authorName}</span>
+              {/* The kit's face beside a name, the size the card's words take. */}
+              <Person size={16} name={r.authorName} bot={r.authorBot} className="text-h5 leading-tight text-text-primary" />
               <MetaText size="chip">{r.timestamp}</MetaText>
             </div>
             <div className="text-caption leading-normal text-text-secondary line-clamp-4">

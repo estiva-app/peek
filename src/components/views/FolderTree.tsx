@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -13,7 +13,6 @@ import {
   useForeignObjects,
   useTeamUnread,
 } from '@/api'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
@@ -623,7 +622,7 @@ export function FolderTreeView({
     genuinely none" are different sentences — the Folders page's lesson.
   */
   if (signedOut) return <EmptyState scope="section" message="Sign in to see folders." />
-  if (folders === null) return <SkeletonSidebarList />
+  if (folders === null) return <SkeletonList />
   if (folders.length === 0) return <EmptyState scope="section" message="No folders yet." />
   /*
     Still loading, not empty: Topics before the relay has said what the person
@@ -631,7 +630,7 @@ export function FolderTreeView({
     a sentence about a question nobody had answered (5 October).
   */
   const waitsFor = filter === 'mine' ? ready.member : filter === 'all' ? true : ready.unread
-  if (!waitsFor) return <SkeletonSidebarList />
+  if (!waitsFor) return <SkeletonList />
 
   // Alphabetical, as the topic list was. The relay's order is arrival order,
   // which tells the person nothing.

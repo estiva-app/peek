@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react'
-import { EmptyState, NavItem } from '@estiva-app/ui'
+import { EmptyState, NavItem, SkeletonList, SkeletonRow } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
 import { rememberFileAddress, useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
-import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
@@ -94,7 +93,7 @@ export function FileTreeView({
   if (state === 'loading') {
     return (
       <div className="py-1" data-loading="file-tree">
-        <SkeletonSidebarList />
+        <SkeletonList />
       </div>
     )
   }
@@ -266,7 +265,7 @@ export function JoinedFileRowsView({
   if (state === 'loading') {
     return (
       <div className="py-1" data-loading="file-tree">
-        <SkeletonSidebarList />
+        <SkeletonList />
       </div>
     )
   }

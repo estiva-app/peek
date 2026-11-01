@@ -134,7 +134,7 @@ export function isPersonKey(id: string): boolean {
  * never the viewer (`mentionablePeopleOf`). Ids are pubkeys, as on People.
  *
  * `undefined` while the first read is in flight — callers guard or render a
- * skeleton (see SkeletonSidebarList).
+ * skeleton (the kit's `SkeletonList`).
  */
 export function usePeople(): Person[] | undefined {
   const events = useWorkspaceEvents()
