@@ -236,8 +236,9 @@ export function ThreadPanel({
   /*
     Identity as well as prose since INT-3: an answer has to say which messages
     it came from, and a citation has to reach the message in the thread behind
-    the modal. `id` is the same one the reply wrapper renders as
-    `data-reply-id`, which is what a citation scrolls to.
+    the modal. `id` is the same one a reply's wrapper renders as
+    `data-reply-id`, and the pinned first message as `data-thread-start`,
+    which is what a citation scrolls to.
   */
   // The event id rides along since RIC-11: a mention of a message is written
   // as its `nevent`, and the `[` menu reads it off this snapshot.

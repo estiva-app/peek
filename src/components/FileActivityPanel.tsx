@@ -20,11 +20,12 @@ const LIVE = { live: true }
  * ## Drawn the way the topic panel draws one
  *
  * The row is `TopicActivity`'s mention row: the chip says *Mentioned in*, the
- * file it was said on is named beside it, and the card is `subdued` — the
- * hairline alone, as Ship draws a mention — because a mention is anyone
- * typing your address, retroactive and unwithdrawable (SPEC §5.2), while the
- * conversation beside it is your own. Nothing on the row acts on the message
- * (PEE-48): opening it opens the message where it was said, with its thread.
+ * file it was said on is named beside it, and the card is the kit's, as every
+ * message is since the one conversation (its quieter `subdued` look went with
+ * it, ui 0.96.0). A mention is anyone typing your address, retroactive and
+ * unwithdrawable (SPEC §5.2), while the conversation beside it is your own, so
+ * nothing on the row acts on the message (PEE-48): opening it opens the
+ * message where it was said, with its thread.
  *
  * ## The column it lives in
  *

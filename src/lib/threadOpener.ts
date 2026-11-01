@@ -8,8 +8,8 @@
  *
  * The need is INT-8's citations. A topic-wide answer cites messages across
  * several conversations, and `scrollToMessage` can only find one that is
- * already mounted — `data-reply-id` exists inside the open panel and nowhere
- * else. So a citation into a closed conversation has to open it first.
+ * already mounted — its anchors (`messageAnchorSelector`) exist inside the
+ * open panel and nowhere else. So a citation into a closed conversation has to open it first.
  *
  * **INT-6 needs the same capability** ("when searching and the keyword is in
  * replies, open the replies panel"), which is why this is its own module with
