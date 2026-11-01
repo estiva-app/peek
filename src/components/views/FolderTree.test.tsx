@@ -164,6 +164,11 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
 const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
 const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
 const fold = (name: string) => screen.getByRole('button', { name })
+/** The rows under a row while it is open: the panel its arrow opens (`aria-controls`), as a screen reader is told; null while shut. */
+const rowsUnder = (ref: string) => {
+  const arrow = document.querySelector(`[data-file="${CSS.escape(ref)}"]`)?.parentElement?.querySelector('[aria-controls][aria-label*="what is under"]')
+  return arrow?.getAttribute('aria-expanded') === 'true' ? document.getElementById(arrow.getAttribute('aria-controls')!) : null
+}
 
 /** Folder ids `useFolderContents` was asked to read — `null` is "nothing". */
 const contentsAsked = () => [...new Set(reads.contents.mock.calls.map(([folder]) => folder).filter(Boolean))]
@@ -274,12 +279,12 @@ describe('the second level', () => {
     const row = section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement
     fireEvent.click(within((row).parentElement!).getByRole('button', { name: /Show what is under/ }))
     expect(childrenAsked()).toEqual([project.naddr])
-    expect(document.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
   })
 
   it("expands the open file's parent row so the file is where the tree says it is", () => {
     mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS })
-    expect(section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(section(TEAM).contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
     expect(childrenAsked()).toEqual([project.naddr])
   })
 })
@@ -292,7 +297,7 @@ describe('the second level', () => {
 describe('rows kept, and opened for the open file (Katerina, 30 October)', () => {
   const projectRow = () => (section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement).parentElement!
   const arrow = (name: RegExp) => within(projectRow()).getByRole('button', { name })
-  const shown = () => section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`) !== null
+  const shown = () => rowsUnder(PROJECT_ADDRESS) !== null
 
   it('a row opened by hand is open when the column is drawn again; one closed by hand stays closed', () => {
     const first = mount({ currentFolder: TEAM })
@@ -602,13 +607,13 @@ describe('a project reached by its channel’s link (5 October)', () => {
   it('is selected and open, what is under it drawn', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS, expandSelected: true })
-    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).not.toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
   })
 
   it('stays closed when opened any other way', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS })
-    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
   })
 })
 

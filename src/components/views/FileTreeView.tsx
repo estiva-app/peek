@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { EmptyState, NavItem } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -145,8 +145,9 @@ export function FileTreeView({
     return <TreeLine message="Nothing here matches — the match is deeper in." />
   }
 
+  // The rows straight into the Folder's section, which sets them 2px apart (`NavTreeSection`), or the Panel's body.
   return (
-    <div className="flex flex-col gap-0.5" data-folder={folder.id} data-source={folder.source}>
+    <>
       {kept.map((file) => (
         <TreeRow
           key={file.ref}
@@ -159,7 +160,7 @@ export function FileTreeView({
           remember={filter === 'all'}
         />
       ))}
-    </div>
+    </>
   )
 }
 
@@ -283,12 +284,12 @@ export function JoinedFileRowsView({
     return <TreeLine message={filter === 'mine-unread' ? 'Nothing unread here.' : 'Nothing of yours here.'} />
   }
   return (
-    <div className="flex flex-col gap-0.5" data-folder={(state as FolderContents).id} data-flat>
+    <>
       {rows.map((file) => (
         // `nested`: a row of its own, never one that opens onto others.
         <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} onControl={onControl} nested />
       ))}
-    </div>
+    </>
   )
 }
 
@@ -376,11 +377,8 @@ function TreeRow({
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
+  // The open file's row is brought into view by the package's `NavTree` around the Folders (ui 0.94): a long Folder can hold it below the fold (5 October).
   const selected = file.ref === selectedRef
-  // The open file's row is brought into view when it is drawn: a long Folder can hold it below the fold (5 October).
-  useEffect(() => {
-    if (selected) document.querySelector(`[data-file="${CSS.escape(file.ref)}"]`)?.scrollIntoView?.({ block: 'nearest' })
-  }, [selected, file.ref])
   const isUnread = unread?.[file.ref] === true
   const type = fileGlyph(file.kind)
   /*
@@ -458,9 +456,8 @@ function TreeRow({
       {expandable
         ? open
           ? (
-              // Peek's 2px between rows, as the first level has them, and the
-              // marker its tests find a row's children by.
-              <div className="flex flex-col gap-0.5" data-children-of={file.ref}>
+              // Straight into NavItem's own column, which sets them 2px apart, as the first level is.
+              <>
                 {fetches && file.naddr && (
                   <FetchedRows
                     naddr={file.naddr}
@@ -484,7 +481,7 @@ function TreeRow({
                     remember={remember}
                   />
                 ))}
-              </div>
+              </>
             )
           : // Closed: nothing is read or drawn, and the row still has its arrow.
             <></>

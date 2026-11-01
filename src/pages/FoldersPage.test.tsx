@@ -604,7 +604,8 @@ describe('FoldersPage filters the column', () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     try {
       const { container } = mount('/app/folders')
-      const rows = container.querySelector(`[data-nav-group="${FOLDER}"] [data-flat]`)!
+      // The Folder's section: its rows are straight under its heading.
+      const rows = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
       const drawn = [...rows.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
       expect(drawn).toEqual([parent.ref, child.ref])
       expect(rows.querySelector('[aria-label^="Show what is under"]')).toBeNull()

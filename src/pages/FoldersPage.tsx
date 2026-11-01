@@ -216,6 +216,8 @@ export function FoldersPage() {
           ) : stateless && selected ? (
             <Panel
               title={selected.name ?? 'Untitled folder'}
+              // The rows' 8px inset and their 2px apart, as the column's Folders set them, on the Panel's own body.
+              bodyClassName="flex flex-col gap-0.5 p-2"
               actions={
                 canDelete && (
                   <Toolbar aria-label="Folder actions" surface={false}>
@@ -231,9 +233,7 @@ export function FoldersPage() {
                 Folder with no state is in no list, so its link is the one
                 place it is seen. It used to say only that.
               */}
-              <div className="px-2 py-2">
-                <FileTreeView state={state} onControl={fileControls.open} />
-              </div>
+              <FileTreeView state={state} onControl={fileControls.open} />
             </Panel>
           ) : (
             <EmptyState message={notAFolder ? 'This is not a folder.' : 'No file selected'} />

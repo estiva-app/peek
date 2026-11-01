@@ -348,6 +348,15 @@ function threadControls(pane: HTMLElement): HTMLElement[] {
   })
 }
 
+/** The rows under a row while it is open: the panel its arrow opens (`aria-controls`), as a screen reader is told; null while shut. */
+function rowsUnder(ref: string): HTMLElement | null {
+  const arrow = document.querySelector(`[data-file="${CSS.escape(ref)}"]`)?.parentElement?.querySelector('[aria-controls][aria-label*="what is under"]')
+  return arrow?.getAttribute('aria-expanded') === 'true' ? document.getElementById(arrow.getAttribute('aria-controls')!) : null
+}
+
+/** A Folder's listing is drawn: its rows are in its section, not a skeleton, a line or a shut fold. */
+const listed = (box: HTMLElement, folder: string) => box.querySelector(`[data-nav-group="${CSS.escape(folder)}"] [data-file]`) !== null
+
 /** What one mounted page looks like, reduced to what must not differ between apps. */
 function shape() {
   const left = screen.getByTestId('left')
@@ -355,7 +364,7 @@ function shape() {
   return {
     foldersHeading: within(left).queryAllByText('Folders').length > 0,
     folderRows: within(left).getAllByRole('button').length > 0,
-    listingOpen: left.querySelector(`[data-folder="${FOLDER}"]`) !== null,
+    listingOpen: listed(left, FOLDER),
     comments: middle.querySelectorAll('[data-comment]').length,
     threadButtons: threadControls(middle).length,
     composer: within(middle).queryByRole('textbox') !== null,
@@ -656,19 +665,19 @@ describe('FilePage draws every app’s file in the same panes', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const left = screen.getByTestId('left')
     // Only this file's Folder is expanded — one read, not eighty-one.
-    expect(left.querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
-    expect(left.querySelector(`[data-folder="${OTHER_FOLDER}"]`)).toBeNull()
+    expect(listed(left, FOLDER)).toBe(true)
+    expect(listed(left, OTHER_FOLDER)).toBe(false)
     // The project row is open, so the issue's place in the tree is visible.
     const projectRow = left.querySelector(`[data-file="${PROJECT_ADDRESS}"]`)
     expect(projectRow).not.toBeNull()
     expect(within((projectRow as HTMLElement).parentElement!).getByRole('button', { name: /Hide what is under/ })).toBeInTheDocument()
-    expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(left.contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
   })
 
   it('a Peek file at the top of the Folder expands nothing, since it has no parent', () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
     const left = screen.getByTestId('left')
-    expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
   })
 
   it("clicking another file's row leads to that file's address", () => {
@@ -716,7 +725,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
     expect(screen.getByTestId('url').textContent).toBe(`/topic/another-topic-${OTHER_D}`)
     // The listing, not a skeleton and not a shut fold: nothing was thrown away.
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(OTHER_ADDRESS)).toBe(true)
     expect(selected(TOPIC_ADDRESS)).toBe(false)
     // The row carried the author, so the short link cost no `#d` read.
@@ -726,28 +735,28 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
       objects.pending.delete(OTHER_ADDRESS)
       objects.wake?.()
     })
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(OTHER_ADDRESS)).toBe(true)
   })
 
   it('a row opened for the last selection stays open when the next one is elsewhere', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(screen.getByTestId('left').contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
     fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
     expect(selected(TOPIC_ADDRESS)).toBe(true)
     // The topic has no parent, so nothing asks for the project open — and nobody closed it.
-    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(screen.getByTestId('left').contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
   })
 
   it('a click from a topic to a Ship project whose Folder is its own channel keeps the team open', () => {
     objects.byAddress[PROJECT_ADDRESS] = { ...project, folder: 'record-channel' }
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(PROJECT_ADDRESS)!).getByText('Folders: navigation for the whole suite'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(PROJECT_ADDRESS)).toBe(true)
     // And back again.
     fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(TOPIC_ADDRESS)).toBe(true)
   })
 
@@ -808,7 +817,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     delete objects.byAddress[OTHER_ADDRESS]
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(false)
   })
 })
 
@@ -1811,7 +1820,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     const left = screen.getByTestId('left')
     const row = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`)
     expect(row).not.toBeNull()
-    expect(left.querySelector(`[data-children-of="${notes.ref}"]`)?.contains(row)).toBe(true)
+    expect(rowsUnder(notes.ref)?.contains(row)).toBe(true)
   })
 
   it('moves through the manifest’s action, offering only the team and never below itself', async () => {

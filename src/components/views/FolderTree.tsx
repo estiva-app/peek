@@ -758,10 +758,8 @@ function FolderSection({
     person can close it again — and it is remembered open, as a click would.
   */
   const openNow = useRef(setOpen)
-  const openWas = useRef(open)
   useEffect(() => {
     openNow.current = setOpen
-    openWas.current = open
   })
   useEffect(() => {
     if (!linked) return
@@ -774,11 +772,11 @@ function FolderSection({
     view. A selected row inside a shut Folder is a selection nobody can see.
     Once per arrival or turn — the person can still close it — and only when
     it is shut: an open default is left alone, not written down as the
-    person's choice, so the Folder still closes when the file goes.
+    person's choice, so the Folder still closes when the file goes. The
+    package's `openFor`, as the rows have it; the view is in its key, so a
+    turn to another view opens it again.
   */
-  useEffect(() => {
-    if (current && selectedRef && !openWas.current) openNow.current(true)
-  }, [current, selectedRef, filter])
+  const openFor = current && selectedRef ? `${filter}:${selectedRef}` : undefined
   /*
     The read is the fold. `null` while closed is the hook's "nothing to read"
     — no request, no refresh trigger, no socket subscription — so a Folder
@@ -864,6 +862,7 @@ function FolderSection({
       open={open}
       pending={pending}
       onOpenChange={setOpen}
+      openFor={openFor}
       /*
         No dot on a Folder, open or collapsed (Miky, 2026-10-03): read state
         is the file's, and only a file row carries one. What is new inside a
