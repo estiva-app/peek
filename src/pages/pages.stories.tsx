@@ -150,7 +150,6 @@ export const People: Story = {
       starred={STARRED}
       people={PEOPLE}
       selectedId="alice"
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<EmptyState message="No conversation selected" />}
     />
@@ -171,7 +170,6 @@ export const PeopleEmpty: Story = {
       starred={[]}
       people={[]}
       selectedId={null}
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<EmptyState message="No conversation selected" />}
     />
@@ -189,7 +187,6 @@ export const PeopleLoading: Story = {
       starred={[]}
       people={[]}
       selectedId={null}
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<div className="flex-1 h-full" />}
     />

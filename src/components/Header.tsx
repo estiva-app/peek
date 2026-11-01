@@ -39,10 +39,9 @@ export function Header({
 }: HeaderProps) {
   const hasMoreMenu = !!onHideDm || !!(openWorkAction && onToggleOpenWork)
 
-  /* The menu owns this button since `@estiva-app/ui` 0.10.0. When a DM has no
-     menu actions the button is still drawn and still does nothing, exactly as
-     before — an inert control, COMPONENTS-PEEK F3, not something to change
-     while porting. */
+  /* The menu owns this button since `@estiva-app/ui` 0.10.0. A DM with nothing
+     for the menu has no button: it would open nothing (COMPONENTS-PEEK F3;
+     Katerina, 2 November: only offer what can succeed). */
   const moreButton = (
     <ToolbarButton tooltip="More actions" aria-label="More actions">
       <IconDotsVertical size={16} stroke={1.5} />
@@ -70,11 +69,7 @@ export function Header({
               >
                 {isStarred ? <IconStarFilled size={16} className="text-warning-default" /> : <IconStar size={16} stroke={1.5} />}
               </ToolbarButton>
-              {hasMoreMenu ? (
-                <TopicMoreMenu trigger={moreButton} openWorkAction={openWorkAction} onToggleOpenWork={onToggleOpenWork} onHideDm={onHideDm} />
-              ) : (
-                moreButton
-              )}
+              {hasMoreMenu && <TopicMoreMenu trigger={moreButton} openWorkAction={openWorkAction} onToggleOpenWork={onToggleOpenWork} onHideDm={onHideDm} />}
             </Toolbar>
           }
         />

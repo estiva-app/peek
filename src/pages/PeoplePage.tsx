@@ -1,7 +1,6 @@
-import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ConversationLayout } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { PersonItem } from '@/components/ui/PersonItem'
@@ -55,10 +54,6 @@ export function PeoplePage() {
   const selectedId: string | null = routeId ?? lastDmId ?? null
   // The person whose conversation is open, once the roster names them; "People" with none open.
   useTabTitle(selectedId ? DMS?.find((dm) => dm.id === selectedId)?.name || undefined : 'People')
-
-  const handleSelect = (id: string) => {
-    navigate(`/app/people/${id}`)
-  }
 
   const starredDmItems: StarredItem[] = starredEntries
     .filter((e) => e.kind === 'dm')
@@ -148,11 +143,17 @@ export function PeoplePage() {
         }
       })}
       selectedId={selectedId}
-      onSelect={handleSelect}
       onHideDm={hideDm}
       openWorkActionFor={openWorkDms ? (id) => (openWorkDms.has(id) ? 'remove' : 'add') : undefined}
       onToggleOpenWork={openWorkDms ? (id) => (openWorkDms.has(id) ? openWorkDms.remove(id) : openWorkDms.add(id)) : undefined}
-      rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
+      rightPanel={
+        DMS === undefined
+          ? // The roster is still in: the conversation that is coming, as the kit draws it loading (Katerina, 2 November).
+            selectedId
+            ? <ConversationLayout threads="beside" items={[]} loading />
+            : <div className="flex-1 h-full" />
+          : dmView.rightPanel
+      }
       threadPanel={dmView.threadPanel}
     />
   )
@@ -184,7 +185,6 @@ export function PeoplePageView({
   starred,
   people,
   selectedId,
-  onSelect,
   onHideDm,
   openWorkActionFor,
   onToggleOpenWork,
@@ -197,7 +197,6 @@ export function PeoplePageView({
   /** Already sorted, already filtered of starred and hidden. */
   people: PeopleListItem[]
   selectedId: string | null
-  onSelect: (id: string) => void
   onHideDm: (id: string) => void
   /** A person's Open work item on their ⋮: add or remove; undefined offers none (Katerina, 30 October). */
   openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
@@ -208,20 +207,8 @@ export function PeoplePageView({
   return (
     <PeekFrame
       leftPanel={
-        <RailListColumn
-          title="People"
-          actions={
-            // One strip: one Tab stop, arrows along it (UIG-14).
-            <Toolbar aria-label="People actions" surface={false}>
-              <ToolbarButton tooltip="Sort by" aria-label="Sort by">
-                <IconSortDescending size={16} stroke={1.5} />
-              </ToolbarButton>
-              <ToolbarButton tooltip="New conversation" aria-label="New conversation">
-                <IconEdit size={16} stroke={1.5} />
-              </ToolbarButton>
-            </Toolbar>
-          }
-        >
+        /* No Sort by and no New conversation until they do something: only what can succeed is offered (Katerina, 2 November). */
+        <RailListColumn title="People">
           {loading ? (
             <SkeletonSidebarList rows={8} />
           ) : (
@@ -229,7 +216,6 @@ export function PeoplePageView({
               <StarredSection
                 items={starred}
                 selectedId={selectedId}
-                onSelect={onSelect}
                 openWorkActionFor={openWorkActionFor}
                 onToggleOpenWork={onToggleOpenWork}
               />
@@ -247,7 +233,6 @@ export function PeoplePageView({
                   unread={dm.isUnread}
                   urgent={dm.isUrgent}
                   active={selectedId === dm.id}
-                  onSelect={onSelect}
                   onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
                   openWorkAction={openWorkActionFor?.(dm.id)}
                   onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(dm.id) : undefined}

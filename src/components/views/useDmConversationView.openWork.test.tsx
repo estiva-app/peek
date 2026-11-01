@@ -75,10 +75,10 @@ describe('Open work on a DM’s header (Katerina, 30 October)', () => {
     expect(list.remove).toHaveBeenCalledWith('dm-1')
   })
 
-  it('where adding cannot succeed, the header offers no Open work', () => {
+  it('where adding cannot succeed and nothing else is on the ⋮, the header draws no ⋮ that would open nothing', () => {
     list.mounted = false
     mount()
-    openMenu()
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: /Open work/ })).toBeNull()
   })
 })
