@@ -29,9 +29,11 @@ import { referenceOfValue } from '@/lib/embedValue'
  * The card and Activity scroll together in one body (Katerina, 27 September):
  * two scrolls in one column were two cramped boxes.
  */
-export function OverviewPanel({ file, activity }: {
+export function OverviewPanel({ file, files, activity }: {
   /** Another app's file, for its card. Absent for a file Peek owns. */
   file?: ForeignObject
+  /** A topic's files, `TopicFiles` (TOP-3), above Activity. Absent on any other file. */
+  files?: ReactNode
   /** The Activity section, `FileActivityPanel`. Absent where mentions are not read. */
   activity?: ReactNode
 }) {
@@ -47,6 +49,7 @@ export function OverviewPanel({ file, activity }: {
           <MessageCard key={reference} uri={reference} resolved={file} />
         </div>
       )}
+      {files}
       {activity}
     </Panel>
   )

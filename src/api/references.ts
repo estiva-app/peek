@@ -152,6 +152,24 @@ export function referenceSections(query: string): ReferenceSection[] {
 }
 
 /**
+ * What a topic's Add file offers (TOP-3): `[`'s Files, ranked the same way
+ * from the same tiers, with no Messages and never a topic — a topic lists
+ * Ship projects, issues and Leaf documents, not other topics (Miky,
+ * 2026-11-01, TOP-3's kickoff). `exclude` is the addresses already listed.
+ */
+export function fileChoices(query: string, exclude: readonly string[]): ReferenceCandidate[] {
+  forgetIfSomeoneElse()
+  const ranked = rankReferences({
+    messages: [],
+    files: [...folderFiles, ...recentFiles, ...search.hits(query)].filter((candidate) => candidate.kind !== KIND_BARE_FILE),
+    query,
+    ownKinds: [KIND_BARE_FILE],
+    exclude: [...exclude, ...(openFile ? [openFile] : [])],
+  })
+  return ranked.files
+}
+
+/**
  * Publishes the Folder on screen as `[`'s first Files tier, and takes it back
  * when the page goes — a DM has no Folder, so its Files start at recently read.
  * `address`, the file open on the page, is never offered under Files: its
