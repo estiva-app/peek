@@ -5,7 +5,7 @@ import { HighlightPill, HighlightSwatch } from './HighlightPill'
 const HIGHLIGHT_TYPES = Object.keys(HIGHLIGHT_META) as HighlightType[]
 
 const meta = {
-  title: 'Topics/HighlightPill',
+  title: 'Deprecated/HighlightPill',
   component: HighlightPill,
   args: {
     type: 'insight',
