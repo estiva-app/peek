@@ -85,7 +85,7 @@ async function openEditor(props: Partial<React.ComponentProps<typeof Conversatio
   const card = container.firstElementChild as Element
   fireEvent.mouseEnter(card)
   await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
-  await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit message' }))
   await waitFor(() => expect(container.querySelector('.ProseMirror')).not.toBeNull())
   return { editor: container.querySelector('.ProseMirror') as Element, container, onFilesChange }
 }

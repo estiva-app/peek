@@ -53,7 +53,7 @@ async function openEditor(props: Partial<React.ComponentProps<typeof Conversatio
   )
   fireEvent.mouseEnter(container.firstElementChild as Element)
   await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
-  await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit message' }))
   const dom = await waitFor(() => {
     const el = container.querySelector('.ProseMirror') as (HTMLElement & { editor?: Editor }) | null
     if (!el?.editor) throw new Error('no editor yet')

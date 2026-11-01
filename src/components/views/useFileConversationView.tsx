@@ -624,7 +624,6 @@ export function useFileConversationView({
                   readOnly={readOnly}
                   actions={rowActions}
                   writtenOn={container?.kind === 'file' ? container.address : undefined}
-                  noun={container?.kind === 'channel' ? 'message' : undefined}
                 />
                 </div>
                 </Fragment>

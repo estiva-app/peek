@@ -47,7 +47,7 @@ async function openMore(node: React.ReactElement) {
   return container
 }
 
-const edit = () => screen.queryByRole('menuitem', { name: 'Edit' })
+const edit = () => screen.queryByRole('menuitem', { name: 'Edit message' })
 const remove = () => screen.queryByRole('menuitem', { name: 'Delete' })
 
 describe('a message card', () => {

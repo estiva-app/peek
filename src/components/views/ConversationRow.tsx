@@ -28,8 +28,6 @@ interface ConversationRowProps {
   actions: RowHandlers
   /** The file whose conversation this is: an edit linking it adds no card (§13.6.2). */
   writtenOn?: string
-  /** What the delete question calls it: a DM's is a message (Katerina, 1 November); a file's, the kit's comment. */
-  noun?: string
 }
 
 /**
@@ -39,10 +37,9 @@ interface ConversationRowProps {
  * identity. Without this, one new message re-drew every card of a long topic.
  */
 export const ConversationRow = memo(
-  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, isSelected, readOnly, actions, writtenOn, noun }: ConversationRowProps) {
+  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, isSelected, readOnly, actions, writtenOn }: ConversationRowProps) {
     return (
       <ConversationCard
-        noun={noun}
         authorName={c.authorName}
         authorAvatarSrc={c.authorAvatarSrc}
         timestamp={c.timestamp}

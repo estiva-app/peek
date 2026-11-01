@@ -185,6 +185,7 @@ export function ReplyCard({
       author={{ name: authorName, picture: authorAvatarSrc }}
       time={timestamp}
       timeHref={messageLink ?? undefined}
+      timeLabel="Link to this message"
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}
       files={
         files && files.length > 0
@@ -223,6 +224,8 @@ export function ReplyCard({
       }
       onDelete={onDelete}
       deleteNote={DELETE_NOTE}
+      // Peek's words, as its reply menu said them.
+      editLabel="Edit message"
       className={className}
     >
       <MessageBody

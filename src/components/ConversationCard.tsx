@@ -12,8 +12,18 @@ import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { formatReplyTimestamp } from '@/api/format'
 
-/** What the delete question says Peek does, under the kit's question. */
+/** What the delete question says Peek does, under the kit's question: Peek's words, as its own dialog said them. */
 export const DELETE_NOTE = 'Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.'
+
+/** Under a message's delete question: what Peek does, then how many replies stay, in Peek's words (ConfirmDelete's). */
+function deleteNote(replies: number) {
+  return (
+    <>
+      <p>{DELETE_NOTE}</p>
+      {replies > 0 && <p>Its {replies} {replies === 1 ? 'reply is a separate event and stays' : 'replies are separate events and stay'}.</p>}
+    </>
+  )
+}
 
 interface ConversationCardProps {
   authorName: string
@@ -78,7 +88,7 @@ interface ConversationCardProps {
   /** It was deleted and its replies stay (PER-24): said in place of the author
    *  and body, read-only, and still opens its thread. */
   deleted?: boolean
-  /** What the delete question calls it: `message` in a DM (Katerina, 1 November); a file's says the kit's "comment". */
+  /** What the delete question calls it: Peek's "message", everywhere, as it always said (Katerina, 1 November: keep Peek's words). */
   noun?: string
   className?: string
 }
@@ -129,7 +139,7 @@ export function ConversationCard({
   onClick,
   readOnly: readOnlyProp = false,
   deleted = false,
-  noun,
+  noun = 'message',
   className,
 }: ConversationCardProps) {
   const readOnly = readOnlyProp || deleted
@@ -301,8 +311,13 @@ export function ConversationCard({
         )
       }
       onDelete={onDelete}
-      deleteNote={DELETE_NOTE}
+      deleteNote={deleteNote(replyCount ?? 0)}
       noun={noun}
+      // Peek's ⋯ menu as it read (Katerina, 1 November): its heading, the key that resolves from its box, "Edit message".
+      // Not the highlights; not Open work and View details, which no Peek page ever gave an action (her call, the same day).
+      menuLabel="Utilities"
+      resolveHint="->"
+      editLabel="Edit message"
       replies={replyCount ? { count: replyCount, faces: replyAuthors?.map((who) => ({ name: who.name, picture: who.avatarSrc })), last: lastReplyTime, isNew: hasNewReply } : undefined}
       onReply={onReply}
       resolved={resolved ? { by: resolvedBy || 'Someone', note: resolutionMsg || undefined } : undefined}
