@@ -7,11 +7,18 @@ import { findMessageByEventId } from './conversationRegistry'
  * that a claim is **checkable in one click** — so the click has to land on the
  * message, in the thread, where its author and its neighbours are visible.
  *
- * `data-reply-id` is rendered by `ThreadPanel` around every reply and, since
- * INT-3, around the message that opened the thread too. That attribute is the
- * contract; it existed before this and is now depended on, which is why
- * `ThreadPanel`'s test asserts it.
+ * `data-reply-id` is rendered by `ThreadPanel` around every reply, and the
+ * message that opened the thread carries its id too (INT-3) — as the kit's
+ * `data-thread-start`, since the column is the kit's `Thread`. Those two are the
+ * contract, which is why `ThreadPanel`'s test asserts them through
+ * {@link messageAnchorSelector}.
  */
+
+/** Where a message of the open thread is: a reply's `data-reply-id`, or the pinned first message's `data-thread-start`. */
+export function messageAnchorSelector(id: string): string {
+  const quoted = CSS.escape(id)
+  return `[data-reply-id="${quoted}"], [data-thread-start="${quoted}"]`
+}
 
 /** How long the arrival stays marked. Matches `cited-flash` in index.css. */
 const FLASH_MS = 1800
@@ -35,7 +42,7 @@ const pending = new WeakMap<HTMLElement, number>()
  * row.
  */
 export function scrollToMessage(id: string): boolean {
-  const el = document.querySelector<HTMLElement>(`[data-reply-id="${CSS.escape(id)}"]`)
+  const el = document.querySelector<HTMLElement>(messageAnchorSelector(id))
   if (!el) return false
   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
 

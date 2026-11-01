@@ -1,18 +1,15 @@
-import { useRef, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
-import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, MembersPill, Panel, MetaText, SkeletonConversation } from '@estiva-app/ui'
-import { IconButton } from './ui/IconButton'
+import { useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from 'react'
+import { IconArrowNarrowRight } from '@tabler/icons-react'
+import { MetaText, Thread } from '@estiva-app/ui'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
 import { ConversationBox, type SendAnswer, type SendPayload } from './ui/ConversationBox'
-import { DateDivider } from './ui/DateDivider'
 import { formatReplyTimestamp } from '@/api'
 import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
-import { PinnedMessage } from './ui/PinnedMessage'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
-import { followInApp } from '@/lib/followInApp'
+import { previewText } from '@/lib/textParsing'
 import { useSteadyScroll } from '@/components/views/useSteadyScroll'
 
 /** A thread is placed as it opens, at its bottom: the keeper may act from the first resize. */
@@ -134,20 +131,7 @@ interface ThreadPanelProps {
   /** Merged replies (body/highlight/reactions already applied by the seam). */
   replies: ThreadReply[]
   sentReplies: ThreadReply[]
-  /** True while the replies query is loading — renders skeleton reply cards. */
-  isLoadingReplies?: boolean
   isResolved?: boolean
-  /** When set, shows member avatars in the header (for Huddle threads) */
-  huddleMemberCount?: number
-  /** Member names for the huddle - drives the avatar lookups in the header pill */
-  huddleMembers?: string[]
-  /** Reactions on the initial (pinned) message — needed when the panel renders the initial as a
-   *  ReplyCard (huddle case) so reactions added on this side persist & mirror to the DM side. */
-  initialReactions?: ReactionData[]
-  onInitialReactionsChange?: (reactions: ReactionData[], emoji: string) => void
-  /** Highlight on the initial message — same purpose as reactions: mirror across DM and huddle. */
-  initialHighlightType?: HighlightType
-  onInitialHighlightChange?: (highlightType: HighlightType | undefined) => void
   /** Id of the reply (if any) that triggered the parent's resolution. The matching ReplyCard
    *  surfaces the resolution inline in edit mode so the user can update or remove it from the reply. */
   resolvedByReplyId?: string
@@ -158,14 +142,6 @@ interface ThreadPanelProps {
   /** Called when the resolution-owning reply card edits the resolution. The parent updates the
    *  parent conv's resolution override accordingly (or reopens it when removed). */
   onResolutionChange?: (resolved: boolean, message?: string) => void
-  /** When set, renders a header button that jumps to the matching DM thread. Used from the huddle side only. */
-  onOpenInDm?: () => void
-  /**
-   * Where that button leads — the DM — so it is a real link (UIG-14, 4.13): a
-   * modified click opens the DM in a new tab, a plain one runs `onOpenInDm`,
-   * which also lands on the thread.
-   */
-  openInDmHref?: string
   onClose: () => void
   /** Send the reply; answers whether the relay took it, and a refusal is said under the box (OPT-7). */
   onSendReply: (payload: SendPayload, away: () => boolean) => Promise<SendAnswer>
@@ -186,11 +162,6 @@ interface ThreadPanelProps {
    */
   composerNotice?: ReactNode
   onDeleteReply?: (id: string) => void
-  onInitialBodyChange?: (newBody: string) => void
-  /** The root message's files after an edit — PEE-16. */
-  onInitialFilesChange?: (files: FileAttachment[]) => void
-  /** The root message's card set after an edit, when it changed — OPT-17. */
-  onInitialEmbedsChange?: (embeds: Embed[]) => void
   onReplyBodyChange?: (replyId: string, body: string) => void
   /** A reply's files after an edit — PEE-16. */
   onReplyFilesChange?: (replyId: string, files: FileAttachment[]) => void
@@ -215,67 +186,33 @@ interface ThreadPanelProps {
 }
 
 /**
- * Loading stand-in that keeps the panel column mounted while the switched-to
- * thread's conversation is still in flight. Remote-only messages (anything
- * created in the app rather than seeded into the mock pools — i.e. all real
- * data on the deployed builds) have no local copy, so the conversation query
- * returns undefined for a beat on every switch; rendering null there tears
- * down the whole panel and reads as close-and-reopen. Same chrome as the
- * real panel, same 200ms-delayed skeleton as the replies area.
- */
-export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
-  const [showSkeleton, setShowSkeleton] = useState(false)
-  useEffect(() => {
-    const t = setTimeout(() => setShowSkeleton(true), 200)
-    return () => clearTimeout(t)
-  }, [])
-  return (
-    <Panel
-      title="Replies"
-      actions={
-        <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
-          <IconX size={16} stroke={1.5} />
-        </IconButton>
-      }
-      bodyClassName="px-4 pt-4"
-    >
-      {showSkeleton && <SkeletonConversation />}
-    </Panel>
-  )
-}
-
-/**
- * The replies panel beside a conversation: the first message at the top, the
- * replies and resolve history below it, and a box to write a reply.
+ * The replies column beside a conversation, drawn by the kit's `Thread`: the
+ * first message pinned at the top, the replies and resolve history below it,
+ * and a box to write a reply.
+ *
+ * Peek's half is what the kit cannot know: the replies interleaved with the
+ * "Name resolved → note" lines (Katerina kept them, 1 November), what the
+ * thread publishes for Cmd+K, and where it scrolls. The column reads as it did:
+ * an empty thread says nothing, Close is "Close thread" to a screen reader, and
+ * the first message is still reachable by its id (`data-thread-start`, which
+ * `scrollToMessage` reads with `data-reply-id`).
  */
 export function ThreadPanel({
   conversation,
   writtenOn,
   replies,
   sentReplies,
-  isLoadingReplies = false,
   isResolved = false,
-  huddleMemberCount,
-  huddleMembers = [],
-  initialReactions,
-  onInitialReactionsChange,
-  initialHighlightType,
-  onInitialHighlightChange,
   resolvedByReplyId,
   resolutionMsg,
   resolutionEvents = [],
   onResolutionChange,
-  onOpenInDm,
-  openInDmHref,
   onClose,
   onSendReply,
   readOnlyNotice,
   readOnly: readOnlyProp = false,
   composerNotice,
   onDeleteReply,
-  onInitialBodyChange,
-  onInitialFilesChange,
-  onInitialEmbedsChange,
   onReplyBodyChange,
   onReplyFilesChange,
   onReplyEmbedsChange,
@@ -329,20 +266,6 @@ export function ThreadPanel({
     return unregisterActiveConversation
   }, [referenceKey, snapshot])
 
-  // Delayed skeleton: switching threads keeps the panel mounted, but the
-  // replies query reloads and a full skeleton flash reads as the panel
-  // closing and reopening. Only show the skeleton when loading genuinely
-  // takes a beat — fast switches swap content in place with no flash.
-  const [showSkeleton, setShowSkeleton] = useState(false)
-  useEffect(() => {
-    if (!isLoadingReplies) {
-      setShowSkeleton(false)
-      return
-    }
-    const t = setTimeout(() => setShowSkeleton(true), 200)
-    return () => clearTimeout(t)
-  }, [isLoadingReplies])
-
   // The root message shows here with no date divider above it, so it carries
   // its own day — unlike the same message in the list, where the divider
   // supplies it. Static mocks have no createdAtMs; fall back to their string.
@@ -368,148 +291,106 @@ export function ThreadPanel({
   useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${allReplies.length}`)
 
   return (
-    // The package's Panel (0.37.0): the replies scroll, the compose box stays under them.
-    <Panel
+    <Thread
       bodyRef={scrollRef}
-      bodyClassName="flex flex-col"
-      footer={
-        readOnlyProp && readOnlyNotice == null ? undefined : (
-          <div className="p-3">
-            {readOnlyNotice ?? composerNotice ?? (
-              <ConversationBox kind="reply" onSend={onSendReply} here={writtenOn} contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
-            )}
-          </div>
+      resolved={isResolved}
+      onClose={onClose}
+      closeLabel="Close thread"
+      empty={null}
+      start={{
+        // Anchored like a reply (INT-3): a citation has to be able to reach the message that opened the thread too.
+        id: conversation.id,
+        author: { name: conversation.authorName, picture: conversation.authorAvatarSrc, bot: conversation.authorBot },
+        time: rootTimestamp,
+        words: previewText(conversation.body).replace(/\n/g, ' '),
+        deleted: conversation.isDeleted,
+      }}
+      // An archived thread with no notice has nothing under it; a deleted first message says why instead of the box.
+      notice={readOnlyNotice ?? (readOnlyProp ? undefined : composerNotice)}
+      box={
+        readOnly ? undefined : (
+          <ConversationBox kind="reply" onSend={onSendReply} here={writtenOn} contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
         )
       }
-        title={
-            <div className="flex items-center gap-2">
-              {huddleMemberCount != null && <IconLock size={16} stroke={1.5} className="text-text-secondary" />}
-              <span className="text-body-2-strong text-text-primary">Replies</span>
-            </div>
-          }
-        actions={
-          <>
-          {/* The package's Chip, success: it was a hand-made pill under Signal
-              and bare green words elsewhere (UIG-14). */}
-          {isResolved && <Chip type="success" label="Resolved" />}
-          {(() => {
-            // Huddle threads only (Katerina, 8 October): a DM's pill only ever
-            // showed the same two people the page already names.
-            const members = huddleMembers
-            const total = members.length || huddleMemberCount || 0
-            if (total === 0) return null
-            // The header's pill, not a third copy of it (F12). It was the
-            // same chrome re-typed around a stack that clipped its own faces.
-            return <MembersPill members={members.map((name) => ({ name }))} count={total} />
-          })()}
-          {onOpenInDm && (
-            <IconButton
-              tooltip="Open original"
-              aria-label="Open original"
-              href={openInDmHref}
-              onClick={(event) => followInApp(event, onOpenInDm)}
-            >
-              <IconExternalLink size={16} stroke={1.5} />
-            </IconButton>
-          )}
-          <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
-            <IconX size={16} stroke={1.5} />
-          </IconButton>
-          </>
-        }
     >
-        {/* Initial message. Anchored like a reply (INT-3): a citation has to be
-            able to reach the message that opened the thread too. */}
-        <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
-          {huddleMemberCount != null ? (
-            /* Huddle: show full message like a reply */
-            <ReplyCard
-              authorName={conversation.authorName}
-              authorAvatarSrc={conversation.authorAvatarSrc}
-              timestamp={rootTimestamp}
-              body={conversation.body}
-              editedAt={conversation.editedAt}
-              canEditAndDelete={conversation.canEditAndDelete}
-              files={conversation.files}
-              reactions={initialReactions}
-              highlightType={initialHighlightType}
-              nostrReferences={conversation.nostrReferences}
-              urgentMentions={conversation.urgentMentions}
-              parts={conversation.parts}
-              embeds={conversation.embeds}
-              onBodyChange={onInitialBodyChange}
-              messageId={conversation.id}
-              onFilesChange={onInitialFilesChange}
-              onEmbedsChange={onInitialEmbedsChange}
+      {/* Replies and the resolve history, chronological top to bottom. */}
+      {threadRows.map((row, i) =>
+        row.t === 'events' ? (
+          <ResolutionTimeline key={row.events[0]?.key ?? `events-${i}`} events={row.events} />
+        ) : (
+          <div key={row.reply.id} data-reply-id={row.reply.id}>
+            <ThreadReplyCard
+              reply={row.reply}
               writtenOn={writtenOn}
-              onReactionsChange={onInitialReactionsChange}
-              onHighlightChange={onInitialHighlightChange}
               readOnly={readOnly}
+              ownsResolution={resolvedByReplyId === row.reply.id}
+              resolutionMsg={resolutionMsg}
+              onResolutionChange={onResolutionChange}
+              onDeleteReply={onDeleteReply}
+              onReplyBodyChange={onReplyBodyChange}
+              onReplyFilesChange={onReplyFilesChange}
+              onReplyEmbedsChange={onReplyEmbedsChange}
+              onReplyHighlightChange={onReplyHighlightChange}
+              onReplyReactionsChange={onReplyReactionsChange}
             />
-          ) : (
-            <PinnedMessage
-              authorName={conversation.authorName}
-              authorAvatarSrc={conversation.authorAvatarSrc}
-              authorBot={conversation.authorBot}
-              timestamp={rootTimestamp}
-              body={conversation.body}
-              highlightType={conversation.highlightType}
-              deleted={conversation.isDeleted}
-            />
-          )}
-        </div>
+          </div>
+        ),
+      )}
+    </Thread>
+  )
+}
 
-        {/* Replies divider */}
-        <DateDivider label="Replies" className="px-4 py-2" />
+type ReplyHandlers = Pick<
+  ThreadPanelProps,
+  'onResolutionChange' | 'onDeleteReply' | 'onReplyBodyChange' | 'onReplyFilesChange' | 'onReplyEmbedsChange' | 'onReplyHighlightChange' | 'onReplyReactionsChange'
+>
 
-        {/* Reply list - chronological top to bottom. */}
-        <div className="flex flex-col px-4 pb-4 gap-2">
-          {isLoadingReplies && showSkeleton && <SkeletonConversation />}
-          {threadRows.map((row, i) => {
-            if (row.t === 'events') {
-              return <ResolutionTimeline key={row.events[0]?.key ?? `events-${i}`} events={row.events} />
-            }
-            if (row.t === 'reply') {
-              const reply = row.reply
-              return (
-                <div key={reply.id} data-reply-id={reply.id}>
-                  <ReplyCard
-                    authorName={reply.authorName}
-                    authorAvatarSrc={reply.authorAvatarSrc}
-                    authorBot={reply.authorBot}
-                    timestamp={reply.timestamp}
-                    body={reply.body}
-                    editedAt={reply.editedAt}
-                    canEditAndDelete={reply.canEditAndDelete}
-                    files={reply.files}
-                    highlightType={reply.highlightType}
-                    reactions={reply.reactions}
-                    isNew={reply.isNew}
-                    isUrgent={reply.isUrgent}
-                    ownsResolution={resolvedByReplyId === reply.id}
-                    resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
-                    nostrReferences={reply.nostrReferences}
-                    urgentMentions={reply.urgentMentions}
-                    parts={reply.parts}
-                    embeds={reply.embeds}
-                    nostrEventId={reply.nostrEventId}
-                    onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
-                    onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
-                    onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
-                    messageId={reply.id}
-                    onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
-                    onEmbedsChange={onReplyEmbedsChange ? (e) => onReplyEmbedsChange(reply.id, e) : undefined}
-                    writtenOn={writtenOn}
-                    onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
-                    onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
-                    readOnly={readOnly}
-                  />
-                </div>
-              )
-            }
-            return null
-          })}
-        </div>
-    </Panel>
+/** One reply in the column, its handlers bound to its id. */
+function ThreadReplyCard({
+  reply,
+  writtenOn,
+  readOnly,
+  ownsResolution,
+  resolutionMsg,
+  onResolutionChange,
+  onDeleteReply,
+  onReplyBodyChange,
+  onReplyFilesChange,
+  onReplyEmbedsChange,
+  onReplyHighlightChange,
+  onReplyReactionsChange,
+}: ReplyHandlers & { reply: ThreadReply; writtenOn?: string; readOnly: boolean; ownsResolution: boolean; resolutionMsg?: string }) {
+  return (
+    <ReplyCard
+      authorName={reply.authorName}
+      authorAvatarSrc={reply.authorAvatarSrc}
+      authorBot={reply.authorBot}
+      timestamp={reply.timestamp}
+      body={reply.body}
+      editedAt={reply.editedAt}
+      canEditAndDelete={reply.canEditAndDelete}
+      files={reply.files}
+      highlightType={reply.highlightType}
+      reactions={reply.reactions}
+      isNew={reply.isNew}
+      isUrgent={reply.isUrgent}
+      ownsResolution={ownsResolution}
+      resolutionMsg={ownsResolution ? resolutionMsg : undefined}
+      nostrReferences={reply.nostrReferences}
+      urgentMentions={reply.urgentMentions}
+      parts={reply.parts}
+      embeds={reply.embeds}
+      nostrEventId={reply.nostrEventId}
+      onResolutionChange={ownsResolution ? onResolutionChange : undefined}
+      onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
+      onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
+      messageId={reply.id}
+      onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
+      onEmbedsChange={onReplyEmbedsChange ? (e) => onReplyEmbedsChange(reply.id, e) : undefined}
+      writtenOn={writtenOn}
+      onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
+      onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
+      readOnly={readOnly}
+    />
   )
 }

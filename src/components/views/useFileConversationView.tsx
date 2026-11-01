@@ -692,11 +692,6 @@ export function useFileConversationView({
         isResolved={openView.data.isResolved ?? false}
         resolvedByReplyId={openView.resolvedByReplyId}
         resolutionMsg={openView.data.resolutionMessage}
-        initialReactions={openView.data.reactions}
-        onInitialReactionsChange={(_next, emoji) => toggleReaction(openRoot.id, emoji)}
-        onInitialBodyChange={(b) => editBody(openRoot.id, b)}
-        onInitialFilesChange={(f) => editFiles(openRoot.id, f)}
-        onInitialEmbedsChange={(e) => editEmbeds(openRoot.id, e)}
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}

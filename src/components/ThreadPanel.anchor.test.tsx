@@ -19,6 +19,7 @@ import { REPLIES } from '@/api/fixtures'
 import type { ConversationData } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { getActiveConversation } from '@/lib/conversationRegistry'
+import { messageAnchorSelector } from '@/lib/messageAnchor'
 import { ThreadPanel } from './ThreadPanel'
 
 Element.prototype.scrollIntoView = vi.fn()
@@ -55,7 +56,7 @@ describe('every message the launcher can cite is reachable in the DOM', () => {
     open()
     await screen.findByText(conversation.body)
 
-    expect(document.querySelector(`[data-reply-id="${conversation.id}"]`)).not.toBeNull()
+    expect(document.querySelector(messageAnchorSelector(conversation.id))).not.toBeNull()
   })
 
   it('anchors every message it publishes to the launcher', async () => {
@@ -65,7 +66,7 @@ describe('every message the launcher can cite is reachable in the DOM', () => {
     const published = getActiveConversation()?.messages ?? []
     expect(published.length).toBeGreaterThan(1)
     for (const message of published) {
-      expect(document.querySelector(`[data-reply-id="${message.id}"]`)).not.toBeNull()
+      expect(document.querySelector(messageAnchorSelector(message.id))).not.toBeNull()
     }
   })
 
