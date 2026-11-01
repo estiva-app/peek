@@ -80,6 +80,7 @@ vi.mock('@/api/mentions', () => ({
 }))
 
 import { MessageBody } from './MessageBody'
+import { AppProvider } from '@estiva-app/ui'
 
 const naddr = (address: string) => ref(address).replace(/^nostr:/, '')
 const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean; readOnly?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
@@ -229,17 +230,33 @@ describe('another app’s address, from a manifest anyone may publish', () => {
 })
 
 describe('a click on a link', () => {
+  // Inside the kit's `AppProvider`, as `PeekSetup` gives it in the app: a kit link to another site opens a new tab.
+  const inApp = (children: React.ReactNode) => <AppProvider navigate={() => {}}>{children}</AppProvider>
+
   it('is the link’s, not the message’s, and another app’s link opens in a new tab', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     const onCard = vi.fn()
     const { container } = render(
-      <div onClick={onCard}>
-        <MessageBody body={`Look at ${ref(SENTENCE_ISSUE)} today.`} />
-      </div>,
+      inApp(
+        <div onClick={onCard}>
+          <MessageBody body={`Look at ${ref(SENTENCE_ISSUE)} today.`} />
+        </div>,
+      ),
     )
     fireEvent.click(container.querySelector('a') as HTMLAnchorElement)
     expect(onCard).not.toHaveBeenCalled()
     expect(open).toHaveBeenCalledWith(`https://ship.estiva.app/o/${SENTENCE_ISSUE}`, '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledTimes(1)
+    open.mockRestore()
+  })
+
+  it('with Cmd or Ctrl is the browser’s: no tab opened by the page, and nothing stops the click', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const { container } = render(inApp(<MessageBody body={`Look at ${ref(SENTENCE_ISSUE)} today.`} />))
+    const link = container.querySelector('a') as HTMLAnchorElement
+    expect(fireEvent.click(link, { metaKey: true })).toBe(true)
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(open).not.toHaveBeenCalled()
     open.mockRestore()
   })
 })

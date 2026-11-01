@@ -32,10 +32,11 @@ const isModified = (event: MouseEvent) => event.button !== 0 || event.metaKey ||
  *   on click (`data-interactive` is the card's contract for "not mine").
  * - A message lands on itself: scrolled to when its thread is open, its thread
  *   opened when its topic is, and only otherwise `/message/<id>` (INT-3).
- * - Another app's address opens in a new tab: a stranger published it into a
- *   shared relay, hence `noopener`.
  *
- * Everything else is the kit's: an address in Peek goes through its router.
+ * Everything else is the kit's: every link inside is a kit part, which sends
+ * an address in Peek through its router and opens another site's in a new tab
+ * that cannot reach back (`AppProvider`); a click with a modifier is the
+ * browser's.
  */
 function LinkClicks({ block = false, children }: { block?: boolean; children: ReactNode }) {
   const onClickCapture = (event: MouseEvent<HTMLElement>) => {
@@ -48,11 +49,7 @@ function LinkClicks({ block = false, children }: { block?: boolean; children: Re
     } catch {
       return
     }
-    if (url.origin !== window.location.origin) {
-      event.preventDefault()
-      window.open(url.href, '_blank', 'noopener,noreferrer')
-      return
-    }
+    if (url.origin !== window.location.origin) return
     const eventId = /^\/message\/([0-9a-f]{64})$/i.exec(url.pathname)?.[1]
     const here = eventId ? findMessageByEventId(eventId.toLowerCase()) : undefined
     if (!here) return
