@@ -651,7 +651,6 @@ export function useFileConversationView({
       <ThreadPanel
         conversation={openView.data}
         replies={threadReplies ?? openView.replies}
-        sentReplies={[]}
         resolutionEvents={openView.resolutionEvents}
         isResolved={openView.data.isResolved ?? false}
         resolvedByReplyId={openView.resolvedByReplyId}

@@ -5,7 +5,7 @@ import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
 import { ConversationBox, type SendAnswer, type SendPayload } from './ui/ConversationBox'
 import { formatReplyTimestamp } from '@/api'
-import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
+import type { ConversationData, FileAttachment, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
@@ -80,19 +80,14 @@ type ThreadRow =
 /**
  * Interleave the resolution events into the reply sequence by time: an event
  * renders after every reply that predates it. Two clock domains are never
- * mixed: PERSISTED replies interleave with SETTLED events (both server
- * clocks), then this session's optimistic replies + pending events form the
- * tail, ordered among themselves by the client clock. Mixing domains made a
- * fresh optimistic reply (client clock) flash between settled bullets
- * (server clock) until its server copy arrived. Replies without a timestamp
- * (static mocks) sort before all events; events without a timestamp sort
- * after everything. Adjacent events merge into one timeline block.
+ * mixed: the replies interleave with SETTLED events (both server clocks), and
+ * this session's pending events form the tail, ordered among themselves by the
+ * client clock. Replies without a timestamp (static mocks) sort before all
+ * events; events without a timestamp sort after everything. Adjacent events
+ * merge into one timeline block. (Optimistic replies had a tail of their own
+ * here; nothing has sent one since the conversation is the kit's — audit D3.)
  */
-function buildThreadRows(
-  persisted: ThreadReply[],
-  sent: ThreadReply[],
-  events: ResolutionEvent[]
-): ThreadRow[] {
+function buildThreadRows(replies: ThreadReply[], events: ResolutionEvent[]): ThreadRow[] {
   const byAt = (a: ResolutionEvent, b: ResolutionEvent) => (a.atMs ?? Infinity) - (b.atMs ?? Infinity)
   const rows: ThreadRow[] = []
   const append = (e: ResolutionEvent) => {
@@ -116,11 +111,11 @@ function buildThreadRows(
   const settled = events.filter((e) => !e.pending).sort(byAt)
   const pending = events.filter((e) => e.pending).sort(byAt)
 
-  // Persisted section (server clock), settled leftovers before the tail.
-  interleave(persisted, settled).forEach(append)
+  // The replies (server clock), settled leftovers before the tail.
+  interleave(replies, settled).forEach(append)
 
-  // Optimistic tail (client clock).
-  interleave(sent, pending).forEach(append)
+  // Pending events (client clock).
+  pending.forEach(append)
   return rows
 }
 
@@ -130,7 +125,6 @@ interface ThreadPanelProps {
   writtenOn?: string
   /** Merged replies (body/highlight/reactions already applied by the seam). */
   replies: ThreadReply[]
-  sentReplies: ThreadReply[]
   isResolved?: boolean
   /** Id of the reply (if any) that triggered the parent's resolution. The matching ReplyCard
    *  surfaces the resolution inline in edit mode so the user can update or remove it from the reply. */
@@ -167,7 +161,6 @@ interface ThreadPanelProps {
   onReplyFilesChange?: (replyId: string, files: FileAttachment[]) => void
   /** A reply's card set after an edit, when it changed — OPT-17. */
   onReplyEmbedsChange?: (replyId: string, embeds: Embed[]) => void
-  onReplyHighlightChange?: (replyId: string, type: HighlightType | undefined) => void
   /**
    * A reaction on a reply — the emoji and the aggregate it replaces, both.
    *
@@ -201,7 +194,6 @@ export function ThreadPanel({
   conversation,
   writtenOn,
   replies,
-  sentReplies,
   isResolved = false,
   resolvedByReplyId,
   resolutionMsg,
@@ -216,7 +208,6 @@ export function ThreadPanel({
   onReplyBodyChange,
   onReplyFilesChange,
   onReplyEmbedsChange,
-  onReplyHighlightChange,
   onReplyReactionsChange,
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -230,7 +221,7 @@ export function ThreadPanel({
     carries a plain address on an `a` tag. Newest first, because the thing just
     discussed is the likeliest target.
   */
-  const messages = [conversation, ...replies, ...sentReplies]
+  const messages = [conversation, ...replies]
   const references = messages.flatMap((m) => [...(m.nostrReferences ?? []), ...findNaddrs(m.body ?? '')])
   const referenceKey = references.join('|')
   /*
@@ -275,10 +266,8 @@ export function ThreadPanel({
       ? formatReplyTimestamp(conversation.createdAtMs)
       : conversation.timestamp
 
-  const allReplies = [...replies, ...sentReplies]
-
   // Replies + resolution events interleaved by time into one render sequence.
-  const threadRows = buildThreadRows(replies, sentReplies, resolutionEvents)
+  const threadRows = buildThreadRows(replies, resolutionEvents)
 
   // Scroll to bottom when new replies are added — before the paint, so a thread
   // never shows its top for a frame and then jumps (OPT-9).
@@ -286,10 +275,10 @@ export function ThreadPanel({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [allReplies.length])
+  }, [replies.length])
   // And stays there while the replies' cards, chips and images fill in (OPT-10).
   // Keyed on the replies too: the panel's rows are the scroller's children, and a new one is observed only from then.
-  useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${allReplies.length}`)
+  useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${replies.length}`)
 
   return (
     <Thread
@@ -331,7 +320,6 @@ export function ThreadPanel({
               onReplyBodyChange={onReplyBodyChange}
               onReplyFilesChange={onReplyFilesChange}
               onReplyEmbedsChange={onReplyEmbedsChange}
-              onReplyHighlightChange={onReplyHighlightChange}
               onReplyReactionsChange={onReplyReactionsChange}
             />
           </div>
@@ -343,7 +331,7 @@ export function ThreadPanel({
 
 type ReplyHandlers = Pick<
   ThreadPanelProps,
-  'onResolutionChange' | 'onDeleteReply' | 'onReplyBodyChange' | 'onReplyFilesChange' | 'onReplyEmbedsChange' | 'onReplyHighlightChange' | 'onReplyReactionsChange'
+  'onResolutionChange' | 'onDeleteReply' | 'onReplyBodyChange' | 'onReplyFilesChange' | 'onReplyEmbedsChange' | 'onReplyReactionsChange'
 >
 
 /** One reply in the column, its handlers bound to its id. */
@@ -358,7 +346,6 @@ function ThreadReplyCard({
   onReplyBodyChange,
   onReplyFilesChange,
   onReplyEmbedsChange,
-  onReplyHighlightChange,
   onReplyReactionsChange,
 }: ReplyHandlers & { reply: ThreadReply; writtenOn?: string; readOnly: boolean; ownsResolution: boolean; resolutionMsg?: string }) {
   return (
@@ -389,7 +376,6 @@ function ThreadReplyCard({
       onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
       onEmbedsChange={onReplyEmbedsChange ? (e) => onReplyEmbedsChange(reply.id, e) : undefined}
       writtenOn={writtenOn}
-      onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
       onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
       readOnly={readOnly}
     />

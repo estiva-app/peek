@@ -61,13 +61,13 @@ describe('ArchiveDialog', () => {
 describe('ConfirmDelete', () => {
   it('offers Archive instead for a topic that can be archived', async () => {
     const onArchiveInstead = vi.fn()
-    render(<ConfirmDelete what="topic" onArchiveInstead={onArchiveInstead} onConfirm={() => {}} onClose={() => {}} />)
+    render(<ConfirmDelete onArchiveInstead={onArchiveInstead} onConfirm={() => {}} onClose={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Archive instead' }))
     expect(onArchiveInstead).toHaveBeenCalled()
   })
 
   it('offers nothing more where there is no archive', () => {
-    render(<ConfirmDelete what="topic" onConfirm={() => {}} onClose={() => {}} />)
+    render(<ConfirmDelete onConfirm={() => {}} onClose={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
   })
 

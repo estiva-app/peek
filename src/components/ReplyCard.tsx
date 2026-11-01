@@ -11,7 +11,6 @@ import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refused
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import type { HighlightType } from '@/api'
-import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { formatReplyTimestamp } from '@/api/format'
 import { DELETE_NOTE } from './ConversationCard'
@@ -34,8 +33,6 @@ interface ReplyCardProps {
   files?: FileAttachment[]
   isNew?: boolean
   isUrgent?: boolean
-  /** An edit changed the highlight it carries (the edit box keeps one; nothing here sets one). */
-  onHighlightChange?: (type: HighlightType | undefined) => void
   onDelete?: () => void
   onBodyChange?: (newBody: string) => void
   /** The message's id: an edit of it the relay refused reopens this card's edit box with the saved text (OPT-8). */
@@ -67,10 +64,6 @@ interface ReplyCardProps {
   embeds?: readonly Embed[]
   /** The published event's id. When present the time is the message's permalink (PEE-17). */
   nostrEventId?: string
-  /** Which block of the referenced object this is about — SPEC §13.6. */
-  nostrBlockId?: string
-  /** Already-resolved reference objects, keyed by naddr (stories/tests — no relay). */
-  resolvedObjects?: Record<string, ForeignObject>
   /** Show it with no way to change it: no hover menu, reactions not toggleable. An archived file's replies. */
   readOnly?: boolean
   className?: string
@@ -96,7 +89,6 @@ export function ReplyCard({
   files,
   isNew = false,
   isUrgent = false,
-  onHighlightChange,
   onDelete,
   onBodyChange,
   messageId,
@@ -112,8 +104,6 @@ export function ReplyCard({
   parts,
   embeds,
   nostrEventId,
-  nostrBlockId,
-  resolvedObjects,
   readOnly = false,
   className,
 }: ReplyCardProps) {
@@ -162,7 +152,6 @@ export function ReplyCard({
     else if (!hasResolution && ownsResolution) onResolutionChange?.(false, undefined)
     if (saved.highlightType !== highlightState) {
       setHighlightState(saved.highlightType)
-      onHighlightChange?.(saved.highlightType)
     }
     if (saved.files) onFilesChange?.(saved.files)
     if (saved.embeds) onEmbedsChange?.(saved.embeds)
@@ -220,7 +209,6 @@ export function ReplyCard({
             here={writtenOn}
             onSave={handleEditSave}
             onCancel={done}
-            resolvedObjects={resolvedObjects}
           />
         )
       }
@@ -233,8 +221,6 @@ export function ReplyCard({
       <MessageBody
         body={bodyState}
         nostrReferences={nostrReferences}
-        nostrBlockId={nostrBlockId}
-        resolvedObjects={resolvedObjects}
         urgentMentions={urgentMentions}
         parts={parts}
         embeds={embeds}

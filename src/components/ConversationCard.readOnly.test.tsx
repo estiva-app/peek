@@ -17,6 +17,7 @@ import { PeekDataProvider, type ReactionData } from '@/api'
 import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { ConversationCard } from './ConversationCard'
 import { ReplyCard } from './ReplyCard'
+import { MessageBody } from './ui/MessageBody'
 
 function hover(node: React.ReactElement) {
   const { container } = render(
@@ -92,6 +93,10 @@ describe('a read-only reply card', () => {
   })
 })
 
+/*
+  The message's words, handed the file the relay would answer with (`resolvedObjects`, the body's seam for a
+  surface with no relay): a reply card hands its `readOnly` on to them, and the card under them follows it.
+*/
 describe('the card under a read-only message', () => {
   const card = {
     body: `Tracked in nostr:${recorded.naddr} for now.`,
@@ -100,12 +105,12 @@ describe('the card under a read-only message', () => {
   }
 
   it('offers its status picker on a message that is not read-only — the control', () => {
-    hover(<ReplyCard authorName="Katerina" timestamp="10:24" {...card} />)
+    hover(<MessageBody {...card} />)
     expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
   })
 
   it('reads its status as words, where a change could not be made', () => {
-    hover(<ReplyCard authorName="Katerina" timestamp="10:24" {...card} readOnly />)
+    hover(<MessageBody {...card} readOnly />)
     expect(screen.queryByRole('combobox')).toBeNull()
     expect(document.querySelector('[data-card="detailed"]')?.textContent).toContain('Todo')
   })

@@ -66,8 +66,6 @@ interface ConversationCardProps {
   here?: string
   /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
   writtenOn?: string
-  /** Which block of the referenced object this is about — SPEC §13.6. */
-  nostrBlockId?: string
   /** An edit changed the highlight it carries (the edit box keeps one; nothing here sets one). */
   onHighlightChange?: (type: HighlightType | undefined) => void
   onBodyChange?: (body: string) => void
@@ -127,7 +125,6 @@ export function ConversationCard({
   embeds,
   here,
   writtenOn,
-  nostrBlockId,
   highlightType,
   onHighlightChange,
   onBodyChange,
@@ -332,7 +329,6 @@ export function ConversationCard({
       <MessageBody
         body={bodyState}
         nostrReferences={nostrReferences}
-        nostrBlockId={nostrBlockId}
         urgentMentions={urgentMentions}
         parts={parts}
         embeds={embeds}

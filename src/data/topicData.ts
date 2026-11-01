@@ -157,14 +157,6 @@ export interface ConversationData {
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string
-  /**
-   * Which block of the referenced object this comment is about — SPEC §13.6.
-   *
-   * `nostrReferences` says which object; this says which part. Absent means a
-   * comment about the whole object, which §13.6 requires a reader to keep
-   * distinct from an anchor that no longer resolves.
-   */
-  nostrBlockId?: string
   /** It was deleted and its replies stay (PER-24): drawn as a placeholder, with nothing to act on. */
   isDeleted?: boolean
 }

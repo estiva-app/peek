@@ -54,7 +54,6 @@ function open(onReplyReactionsChange: (...args: unknown[]) => void) {
           <ThreadPanel
             conversation={conversation}
             replies={[reply]}
-            sentReplies={[]}
             onClose={() => {}}
             onSendReply={async () => ({ accepted: true })}
             onReplyReactionsChange={onReplyReactionsChange as never}

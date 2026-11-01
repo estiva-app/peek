@@ -500,7 +500,6 @@ export function useFileControls({
   const dialogs = dialog ? (
     dialog.kind === 'confirm' ? (
       <ConfirmDelete
-        what="topic"
         onArchiveInstead={
           fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
         }

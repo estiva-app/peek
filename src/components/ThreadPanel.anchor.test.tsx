@@ -39,7 +39,6 @@ function open() {
         <ThreadPanel
           conversation={conversation}
           replies={REPLIES['t1_c1']}
-          sentReplies={[]}
           onClose={() => {}}
           onSendReply={async () => ({ accepted: true })}
         />
