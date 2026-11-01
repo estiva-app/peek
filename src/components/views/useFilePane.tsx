@@ -230,54 +230,52 @@ export function useFilePane(
               </WithTooltip>
             ) : undefined
           }
+          // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
+          // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
+          members={file?.folder || view.sidePanel ? members : undefined}
           actions={
             file?.folder || view.sidePanel ? (
-              // The pill and the strip 8px apart, in the actions, as this bar has them: PageHeader's `members` stands 12px off.
-              <div className="flex shrink-0 items-center gap-2">
-                {/* The pill before the strip, as Ship's header has it: it opens a dialog, not an action. */}
-                {members}
-                {/* One strip: one Tab stop, arrows along it (UIG-14). */}
-                <Toolbar aria-label="File actions" surface={false}>
-                  {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
-                  {showToggle && (
-                    <ToolbarButton
-                      tooltip={member ? 'Leave' : 'Join'}
-                      aria-label={member ? 'Leave' : 'Join'}
-                      pressed={member}
-                      onClick={toggleMember}
-                    >
-                      {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
-                    </ToolbarButton>
-                  )}
-                  {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
-                  {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
-                  {/*
-                    The topic's menu, when the manifest offers anything for it
-                    to hold (FOL-33) — and absent, not inert, when it does not:
-                    a Ship issue's header has nothing to put here, and a button
-                    that opens nothing would say otherwise.
-                  */}
-                  {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
-                    <TopicMoreMenu
-                      trigger={
-                        <ToolbarButton tooltip="More actions" aria-label="More actions">
-                          <IconDotsVertical size={16} stroke={1.5} />
-                        </ToolbarButton>
-                      }
-                      onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
-                      onCopyLink={hasTopicControls ? copyLink : undefined}
-                      archiveAction={archiveAction}
-                      onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
-                      openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
-                      onToggleOpenWork={toggleOpenWork}
-                      onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
-                      onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
-                      onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
-                      onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
-                    />
-                  )}
-                </Toolbar>
-              </div>
+              /* One strip: one Tab stop, arrows along it (UIG-14). */
+              <Toolbar aria-label="File actions" surface={false}>
+                {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
+                {showToggle && (
+                  <ToolbarButton
+                    tooltip={member ? 'Leave' : 'Join'}
+                    aria-label={member ? 'Leave' : 'Join'}
+                    pressed={member}
+                    onClick={toggleMember}
+                  >
+                    {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
+                  </ToolbarButton>
+                )}
+                {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
+                {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
+                {/*
+                  The topic's menu, when the manifest offers anything for it
+                  to hold (FOL-33) — and absent, not inert, when it does not:
+                  a Ship issue's header has nothing to put here, and a button
+                  that opens nothing would say otherwise.
+                */}
+                {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
+                  <TopicMoreMenu
+                    trigger={
+                      <ToolbarButton tooltip="More actions" aria-label="More actions">
+                        <IconDotsVertical size={16} stroke={1.5} />
+                      </ToolbarButton>
+                    }
+                    onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
+                    onCopyLink={hasTopicControls ? copyLink : undefined}
+                    archiveAction={archiveAction}
+                    onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
+                    openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
+                    onToggleOpenWork={toggleOpenWork}
+                    onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
+                    onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
+                    onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
+                    onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                  />
+                )}
+              </Toolbar>
             ) : undefined
           }
         />
