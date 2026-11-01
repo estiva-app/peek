@@ -147,7 +147,6 @@ type Story = StoryObj<typeof meta>
 export const People: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading={false}
       starred={STARRED}
       people={PEOPLE}
@@ -169,7 +168,6 @@ export const People: Story = {
 export const PeopleEmpty: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading={false}
       starred={[]}
       people={[]}
@@ -188,7 +186,6 @@ export const PeopleEmpty: Story = {
 export const PeopleLoading: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading
       starred={[]}
       people={[]}
@@ -208,7 +205,6 @@ export const Desk: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading={false}
       screener={SCREENER_ITEMS.slice(0, 2)}
       onOpenScreener={noop}
@@ -236,7 +232,6 @@ export const DeskEmpty: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading={false}
       screener={[]}
       onOpenScreener={noop}
@@ -255,7 +250,6 @@ export const DeskLoading: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading
       screener={[]}
       onOpenScreener={noop}

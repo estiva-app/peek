@@ -7,9 +7,9 @@ import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, ListColumn, MenuItem, NavItem } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { useRailClosed } from '@/layouts/railClosed'
+import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TopicState } from '@/components/ui/TopicState'
@@ -55,7 +55,6 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
-  const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()
   const { state: debug } = useDebug()
@@ -419,7 +418,6 @@ export function DeskPage() {
     <>
     {filePaneParts.dialogs}
     <DeskPageView
-      railClosed={railClosed}
       loading={deskLoading || starredLoading}
       screener={debug.desk.showScreener ? screenerItems : []}
       onOpenScreener={openScreener}
@@ -634,7 +632,6 @@ function DeskRows({ rows }: { rows: DeskRow[] }) {
  * to fill.
  */
 export function DeskPageView({
-  railClosed,
   loading,
   screener,
   onOpenScreener,
@@ -650,7 +647,6 @@ export function DeskPageView({
   rightPanel,
   threadPanel,
 }: {
-  railClosed: boolean
   /** The first read, still in flight. Not the same as an empty Desk. */
   loading: boolean
   /** Empty hides the section entirely. */
@@ -674,7 +670,7 @@ export function DeskPageView({
   return (
     <PeekFrame
       leftPanel={
-        <ListColumn title="Desk" collapsed={railClosed}>
+        <RailListColumn title="Desk">
           {loading ? (
             <SkeletonSidebarList rows={8} />
           ) : (
@@ -763,7 +759,7 @@ export function DeskPageView({
               <Divider className="my-2" />
             </>
           )}
-        </ListColumn>
+        </RailListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}

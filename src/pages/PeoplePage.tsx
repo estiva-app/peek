@@ -1,9 +1,9 @@
 import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { useRailClosed } from '@/layouts/railClosed'
+import { RailListColumn } from '@/layouts/RailListColumn'
 import { PersonItem } from '@/components/ui/PersonItem'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
@@ -29,7 +29,6 @@ import { useTabTitle } from '@/lib/useTabTitle'
  * and the direct message with the chosen person beside them.
  */
 export function PeoplePage() {
-  const railClosed = useRailClosed()
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
@@ -135,7 +134,6 @@ export function PeoplePage() {
 
   return (
     <PeoplePageView
-      railClosed={railClosed}
       loading={DMS === undefined || starredLoading}
       starred={starredDmItems}
       people={visibleDms.map((dm) => {
@@ -182,7 +180,6 @@ export interface PeopleListItem {
  * ever be made to show.
  */
 export function PeoplePageView({
-  railClosed,
   loading,
   starred,
   people,
@@ -194,7 +191,6 @@ export function PeoplePageView({
   rightPanel,
   threadPanel,
 }: {
-  railClosed: boolean
   /** The first read, still in flight. Not the same as an empty workspace. */
   loading: boolean
   starred: StarredItem[]
@@ -212,9 +208,8 @@ export function PeoplePageView({
   return (
     <PeekFrame
       leftPanel={
-        <ListColumn
+        <RailListColumn
           title="People"
-          collapsed={railClosed}
           actions={
             // One strip: one Tab stop, arrows along it (UIG-14).
             <Toolbar aria-label="People actions" surface={false}>
@@ -260,7 +255,7 @@ export function PeoplePageView({
               ))}
             </>
           )}
-        </ListColumn>
+        </RailListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}

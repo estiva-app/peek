@@ -14,7 +14,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { LastSelectionProvider } from '@/lib/lastSelection'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DebugProvider } from '@/lib/debug'
 import { ToastProvider } from '@/lib/toast'
 import { DeskPage } from './DeskPage'
@@ -107,15 +107,22 @@ vi.mock('@/api', async () => ({
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
 }))
-vi.mock('@/layouts/PeekFrame', () => ({
-  PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
-    <div>
-      <section data-testid="left">{leftPanel}</section>
-      <section data-testid="middle">{rightPanel}</section>
-      <section data-testid="thread">{threadPanel}</section>
-    </div>
-  ),
-}))
+/** Whether the frame's rail is folded: the frame provides it around the list column, as `PeekFrame` does. */
+const frame = vi.hoisted(() => ({ railClosed: false }))
+vi.mock('@/layouts/PeekFrame', async () => {
+  const { RailClosed } = await import('@/layouts/railClosed')
+  return {
+    PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
+      <div>
+        <section data-testid="left">
+          <RailClosed value={frame.railClosed}>{leftPanel}</RailClosed>
+        </section>
+        <section data-testid="middle">{rightPanel}</section>
+        <section data-testid="thread">{threadPanel}</section>
+      </div>
+    ),
+  }
+})
 
 function Probe() {
   const location = useLocation()
@@ -167,6 +174,19 @@ beforeEach(() => {
   desk.screener = []
   openWork.addScreener.mockClear()
   desk.unread = {}
+})
+
+/** Katerina, 31 October: the fold hides the rail and the page's list column together, on Desk as in Folders. */
+describe('the sidebar fold on Desk', () => {
+  afterEach(() => {
+    frame.railClosed = false
+  })
+
+  it('closes the Desk column when the frame folds the rail', () => {
+    frame.railClosed = true
+    mount()
+    expect(within(screen.getByTestId('left')).getAllByText('Desk')[0].closest('[data-collapsed]')).not.toBeNull()
+  })
 })
 
 describe('Open work keeps the person’s order', () => {

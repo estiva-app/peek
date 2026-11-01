@@ -38,7 +38,6 @@ function mount({
     <DebugProvider>
       <MemoryRouter>
         <PeoplePageView
-          railClosed={false}
           loading={false}
           starred={starred}
           people={people}
