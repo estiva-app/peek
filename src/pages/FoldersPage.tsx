@@ -207,7 +207,8 @@ export function FoldersPage() {
         when={formatDateLabel(folderArchive.at * 1000)}
         resolution={folderArchive.resolution}
         withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
-        onUnarchive={archivedWith || !canUnarchive ? undefined : () => void unarchive()}
+        // The write itself, not a fire-and-forget: the card's Unarchive stays greyed until it lands, so a second click sends nothing.
+        onUnarchive={archivedWith || !canUnarchive ? undefined : unarchive}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
       />
     ) : undefined
