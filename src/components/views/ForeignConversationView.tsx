@@ -1,8 +1,5 @@
-import { IconMessage } from '@tabler/icons-react'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
-import { Button } from '@/components/ui/Button'
-import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@estiva-app/ui'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
@@ -145,58 +142,15 @@ export function ForeignConversationView({
             comment={comment}
             people={people}
             /*
-              The open thread is marked on the row it belongs to, so the middle
-              pane says which of its comments the right pane is showing. Without
-              it the thread panel is a box with no visible origin — the same
-              objection that gives the folder listing its `aria-current`.
+              Its replies, spelled out under the body (FOL-25: an unlabelled count at the far right read as a timestamp,
+              and readers took nine conversations for flat). A count only when we have one, and never a nought: an
+              absence means the replies were not asked for. With none, Reply on hover opens the thread, the only way to
+              start one. The open thread marks its comment, so the pane on the right has a visible origin.
             */
-            className={
-              openThreadId === comment.id
-                ? 'rounded-md bg-bg-inset px-2 py-1.5 -mx-2'
-                : 'px-2 py-1.5 -mx-2'
-            }
-            below={
-              onOpenThread && (
-                /*
-                  **A labelled control, under the message, saying how many.**
-
-                  This was an unlabelled 16px icon at the far right of the
-                  header with a bare number beside it, and FOL-25 is what that
-                  cost: nine migrated conversations went up whose replies were
-                  real, correctly threaded and counted — and every reader
-                  reported the page as flat with most of its messages missing.
-                  Thirty-one of one file's fifty messages sat behind seven of
-                  those icons. The count was never the problem; nothing on the
-                  row said the word "replies", and a number floated against the
-                  opposite margin from its message reads as a timestamp.
-
-                  So the count is spelled out, next to the body it belongs to.
-                  A row with no replies still offers the control, because the
-                  only way to start a thread is to open one — but it says
-                  "Reply", which is the true offer, rather than showing a
-                  count nobody has.
-                */
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="muted"
-                    size="small"
-                    leadingIcon={<IconMessage size={14} stroke={1.5} />}
-                    aria-current={openThreadId === comment.id ? true : undefined}
-                    onClick={() => onOpenThread(comment.id)}
-                    data-replies={replies ?? undefined}
-                  >
-                    {/*
-                      A count only when we have one, and never a nought: an
-                      absence here means the replies were not asked for, and a
-                      "0" would be an assertion nobody made — `ConversationCount`
-                      takes the same line one pane to the left.
-                    */}
-                    {replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply'}
-                  </Button>
-                  {newReplies?.has(comment.id) && <Chip type="brand" label="1 new" />}
-                </div>
-              )
-            }
+            replies={replies}
+            isNew={newReplies?.has(comment.id)}
+            selected={openThreadId === comment.id}
+            onOpen={onOpenThread && (() => onOpenThread(comment.id))}
           />
         )
       })}

@@ -3,7 +3,7 @@ import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
+import { CommentReply, CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /**
  * One comment and what was said under it — Peek's thread pane, pointed at
@@ -68,7 +68,7 @@ export function FileThreadView({
         ) : (
           <div className="flex flex-col gap-3">
             {replies.map((reply) => (
-              <CommentRow key={reply.id} comment={reply} people={people} />
+              <CommentReply key={reply.id} comment={reply} people={people} />
             ))}
           </div>
         )}
