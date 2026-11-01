@@ -60,7 +60,7 @@ export function TopicFiles({ topic, folder, title, readOnly }: {
         {state === 'loading' ? null : 'failed' in state ? (
           <EmptyState scope="section" message="Couldn’t load the files. Reload to try again." />
         ) : files.length === 0 ? (
-          <EmptyState scope="section" message="None yet." />
+          <EmptyState scope="section" message="None yet. A topic can be only a conversation." />
         ) : (
           files.map(({ file, address }) => {
             const uri = referenceOfValue(address)

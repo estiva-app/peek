@@ -13,11 +13,12 @@ import { fireEvent, render, screen } from '@testing-library/react'
 const hook = vi.hoisted(() => ({
   state: { files: [] as Array<{ file: string; address: string }> } as unknown,
   setListed: vi.fn(async () => ({ ok: true as const })),
+  choices: [] as Array<{ id: string; title: string; kind: number }>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useTopicFiles: () => ({ state: hook.state, busy: new Set<string>(), setListed: hook.setListed }),
-  fileChoices: () => [],
+  fileChoices: () => hook.choices,
 }))
 vi.mock('@/components/ui/MessageLinks', () => ({
   MessageCard: ({ uri, onRemove }: { uri: string; onRemove?: () => void }) => (
@@ -47,6 +48,7 @@ const PROJECT = `30850:${AUTHOR}:proj`
 beforeEach(() => {
   hook.state = { files: [{ file: 'proj', address: PROJECT }] }
   hook.setListed.mockClear()
+  hook.choices = []
 })
 
 describe('TopicFiles', () => {
@@ -57,6 +59,15 @@ describe('TopicFiles', () => {
     expect(screen.getByRole('button', { name: 'Add file' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
     expect(hook.setListed).toHaveBeenCalledWith('proj', false)
+  })
+
+  it('Add file lists the picked file by its id, not its whole address — what the entry names', async () => {
+    hook.choices = [{ id: `30851:${AUTHOR}:issue-d`, title: 'Live widget', kind: 30851 }]
+    render(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add file' }))
+    fireEvent.click(await screen.findByText('Live widget'))
+    expect(hook.setListed).toHaveBeenCalledWith('issue-d', true)
   })
 
   it('shows the cards with no Add file and no Remove on an archived topic', () => {
@@ -70,11 +81,11 @@ describe('TopicFiles', () => {
   it('says so when the topic lists nothing, and when the read failed — never an empty list for a refused read', () => {
     hook.state = { files: [] }
     const { rerender } = render(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)
-    expect(screen.getByText('None yet.')).toBeTruthy()
+    expect(screen.getByText(/^None yet\./)).toBeTruthy()
 
     hook.state = { failed: true }
     rerender(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)
-    expect(screen.queryByText('None yet.')).toBeNull()
+    expect(screen.queryByText(/^None yet\./)).toBeNull()
     expect(screen.getByText(/Couldn’t load the files/)).toBeTruthy()
   })
 })
