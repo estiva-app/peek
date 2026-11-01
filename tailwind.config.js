@@ -12,16 +12,13 @@ export default {
   /**
    * The shared tokens come from @estiva-app/ui (SHA-5, 2026-08-28): the type
    * ramp, radii, shadows, the skeleton animation and every colour name. What
-   * stays here is Peek's alone — the huddle register and the wordmark — and
+   * stays here is Peek's alone — the wordmark and the summary highlight — and
    * merges over the preset.
    */
   presets: [estiva],
   theme: {
     extend: {
       colors: {
-        // private (huddle register) — distinct from accent, signals "private side-space"
-        'bg-private':     'var(--bg-private)',
-        'border-private': 'var(--border-private)',
         // brand wordmark (PeekLogo renders in currentColor)
         logo: 'var(--logo)',
         // the Summary highlight's colour (src/index.css), so a highlight paints

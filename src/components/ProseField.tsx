@@ -47,6 +47,16 @@ export interface ProseFieldProps {
 
 const EMPTY = { type: 'doc', content: [{ type: 'paragraph' }] }
 
+/*
+  A link typed here, Peek's own look (PEE-19): the interactive colour,
+  underlined 2px below, broken anywhere. It was a global `.tiptap a` rule that
+  reached into the kit's comment box too and drew a second line under its link
+  mark; the box's links are the kit's now, and this editor, Peek's own, keeps
+  the look it had. A link's chip (a node view) keeps the chip's look.
+*/
+const PROSE_LINK_CLASSES =
+  '[&_a:not([data-node-view-wrapper]_a)]:text-text-interactive [&_a:not([data-node-view-wrapper]_a)]:underline [&_a:not([data-node-view-wrapper]_a)]:underline-offset-2 [&_a:not([data-node-view-wrapper]_a)]:break-all'
+
 const contentFor = (value: string) => (value ? textToTiptapContent(value) : EMPTY)
 
 /** A form field written in Peek's editor and sent as a block document. */
@@ -70,7 +80,7 @@ export function ProseField({ value, onChange, label, placeholder }: ProseFieldPr
     content: initial,
     editorProps: {
       attributes: {
-        class: cn(PEEK_EDITOR_CLASSES, 'min-h-12'),
+        class: cn(PEEK_EDITOR_CLASSES, PROSE_LINK_CLASSES, 'min-h-12'),
         style: 'caret-color: var(--text-primary)',
         role: 'textbox',
         'aria-multiline': 'true',

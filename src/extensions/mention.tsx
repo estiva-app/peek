@@ -8,7 +8,7 @@ import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
 import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
-import { KindIcon, inlineChipClassName } from '@estiva-app/ui'
+import { InlineChip, KindIcon, inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
 import { BoxReference } from '@/components/ui/BoxReference'
@@ -45,15 +45,13 @@ export const extractUrgent = urgentPubkeys
 function TopicMentionView({ node }: NodeViewProps) {
   const { label, isResolved } = node.attrs
   return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')}>
-      <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
-        {isResolved ? (
-          <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
-        ) : (
-          <IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />
-        )}
-      </span>
-      <span>{label}</span>
+    <NodeViewWrapper as="span">
+      <InlineChip
+        className="cursor-default"
+        icon={isResolved ? <IconCircleCheck size={16} stroke={1.5} className="text-success-default" /> : <IconCircleDashed size={16} stroke={1.5} />}
+      >
+        <span>{label}</span>
+      </InlineChip>
     </NodeViewWrapper>
   )
 }
@@ -176,11 +174,10 @@ function FileMentionView({ node }: NodeViewProps) {
   const { label, app } = node.attrs
   const TablerIcon = FILE_TABLER_ICONS[app] ?? IconFile
   return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')}>
-      <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
-        <TablerIcon size={14} stroke={1.5} />
-      </span>
-      <span>{label}</span>
+    <NodeViewWrapper as="span">
+      <InlineChip className="cursor-default" icon={<TablerIcon size={14} stroke={1.5} />}>
+        <span>{label}</span>
+      </InlineChip>
     </NodeViewWrapper>
   )
 }

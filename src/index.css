@@ -1,61 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
 
 @import '@estiva-app/ui/tokens.css';
+/* The scrollbar every Estiva app shares (Katerina, 2026-09-01): Peek kept a copy of it here, character for character. */
+@import '@estiva-app/ui/base.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Tiptap editor */
-.tiptap p {
-  margin: 0;
-}
-/* Resolution block — green rule so it can't be mistaken for a quote's
-   neutral border while typing. */
-.tiptap div[data-resolution] {
-  border-left: 3px solid var(--success-default);
-  padding-left: 8px;
-  margin: 0;
-}
-
 /* ─── Formatted text — ONE look for the composer (.tiptap) and sent
    messages, and it is the package's: RichText draws a sent message and the
    composers wear `richTextClassName()` (UIG-30, Katerina, 28 September), so
-   what you type is exactly what the sent card shows. What stays here is
-   Peek's alone. The highlights card keeps its own lists. ─── */
-[data-highlights-card] ul,
-[data-highlights-card] ol {
-  margin: 0 !important;
-  padding: 0 0 0 1.25rem !important;
-  list-style-position: outside;
-}
-[data-highlights-card] ul { list-style-type: disc !important; }
-[data-highlights-card] ol { list-style-type: decimal !important; }
-[data-highlights-card] li {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-[data-highlights-card] li + li {
-  margin-top: 4px;
-}
-[data-highlights-card] li::marker {
-  color: var(--text-muted);
-}
-/* Links — PEE-19. Values mirror the package Link's `text` look, which
-   RichText draws a sent link with (text-text-interactive underline
-   underline-offset-2; the info colour until estiva-ui 0.64.0, the same value
-   in Signal), so a link reads the same while you type and once sent.
-   The composer's only: a sent message's widgets carry links of their own,
-   and an unlayered rule over them would win over their classes. The same
-   holds for a link's chip in the box (a node view, the package's LinkChip):
-   it keeps the chip's look, not a typed link's (Katerina, 30 Oct: "we don't
-   need this blue underlined styling in the cards"; one chip in every box). */
-.tiptap a:not([data-node-view-wrapper] a) {
-  color: var(--text-interactive);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  word-break: break-all;
-}
+   what you type is exactly what the sent card shows. A paragraph's margin is
+   the reset's, a resolution block's green line its own node's, and a link the
+   kit's link mark (the comment box) or `ProseField`'s own look. What stays
+   here is Peek's alone. ─── */
 /* Selected words in the composer — PEE-19. The same colour the selection
    toolbar's kept selection paints while its address field has the focus
    (`bg-bg-selected`, drawn by estiva-ui's KeptSelection since UIG-31): the
@@ -76,14 +35,9 @@
  * first paint rather than by a provider (UIG-17, 2026-09-22). `light` is the
  * base every other theme overrides and
  * the palette the Estiva ID theme uses in Storybook. What remains in this
- * block is Peek's alone: the huddle register, the summary highlight, the
- * wordmark.
+ * block is Peek's alone: the summary highlight and the wordmark.
  */
 :root {
-  /* private (huddle register) — distinct from accent, signals "private side-space" */
-  --bg-private:     #F1F2F7;
-  --border-private: #C9CDD8;
-
   /* Summary-highlight swatch. Follows the accent in the violet themes; signal
      overrides it (its accent is cyan, which would collide with Question). */
   --highlight-summary: var(--accent-primary);
@@ -102,10 +56,6 @@
  * Storybook's theme toolbar.
  */
 .dark {
-  /* private (huddle register) — distinct from accent, signals "private side-space" */
-  --bg-private:     #181A1F;
-  --border-private: #3D414C;
-
   /* brand mark/wordmark (purple on light, white on dark) */
   --logo: #FFFFFF;
 }
@@ -118,10 +68,6 @@
 .signal {
   /* The shared tokens for Signal come from @estiva-app/ui (tokens.css `.signal`,
      value for value, 2026-08-28). What follows is Peek's alone. */
-  --bg-private:  #131720;
-
-  --border-private: rgba(255, 255, 255, 0.14);
-
   /* Summary highlight stays violet here — the accent is cyan, which would be
      indistinguishable from Question's info-blue. Violet is the one hue the
      signal palette doesn't already assign a meaning. */
@@ -141,11 +87,9 @@
      SignalTheme story. --text-interactive was Peek's copy of the package's
      value, character for character.
 
-     What the package has no name for stays: the private register and the
-     summary highlight above, the wordmark, and the mono face below. */
-
-  /* mono for metadata (timestamps, kbd, hints) — additive, sans stays default */
-  --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
+     What the package has no name for stays: the summary highlight above and
+     the wordmark. The mono face is the package's (its Tailwind preset's
+     `font-mono`); the private register went with the huddles. */
 }
 
 /* The keyboard chip lives in @estiva-app/ui as `Kbd` (2026-09-05). The rule
@@ -174,36 +118,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .signal .animate-pulse::after { animation: none; }
-}
-
-/* ─── Scrollbar ─── */
-
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-/* Chrome / Safari / Edge */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-::-webkit-scrollbar-button {
-  display: none;
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 /* ─── Base styles ─── */
