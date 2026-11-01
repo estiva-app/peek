@@ -12,9 +12,9 @@ export function anchorIn(el: HTMLElement): { id: string; top: number } | undefin
   const box = el.getBoundingClientRect()
   // A gap between cards, or a date line, is passed over a few pixels at a time.
   for (let y = box.top + 1; y < box.top + 96; y += 8) {
-    const marker = document.elementFromPoint(box.left + box.width / 2, y)?.closest<HTMLElement>('[data-root]')
+    const marker = document.elementFromPoint(box.left + box.width / 2, y)?.closest<HTMLElement>('[data-conversation-item]')
     const card = marker?.firstElementChild
-    if (marker?.dataset.root && card) return { id: marker.dataset.root, top: card.getBoundingClientRect().top - box.top }
+    if (marker?.dataset.conversationItem && card) return { id: marker.dataset.conversationItem, top: card.getBoundingClientRect().top - box.top }
   }
   return undefined
 }
@@ -72,7 +72,7 @@ export function useSteadyScroll(
         const top = el.scrollHeight - el.clientHeight - Math.max(0, keepAt)
         if (Math.abs(el.scrollTop - top) >= 1) el.scrollTop = top
       } else if (anchor) {
-        const card = el.querySelector(`[data-root="${CSS.escape(anchor.id)}"]`)?.firstElementChild
+        const card = el.querySelector(`[data-conversation-item="${CSS.escape(anchor.id)}"]`)?.firstElementChild
         if (card) {
           const moved = card.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.top
           if (Math.abs(moved) >= 1) el.scrollTop += moved

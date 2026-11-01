@@ -1,11 +1,9 @@
 import { IconStar, IconStarFilled, IconDotsVertical } from '@tabler/icons-react'
-import { Avatar, PageHeader, Panel, type PanelProps, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Avatar, ConversationLayout, PageHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
-import type { ReactNode } from 'react'
+import type { ConversationParts } from './views/useFileConversationView'
 
-interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'onBodyScroll' | 'bodyClassName'>> {
-  /** The conversation under the bar: the body of the column's `Panel`, which scrolls. */
-  children?: ReactNode
+interface HeaderProps extends Partial<ConversationParts> {
   /** Who the DM is with. Their face is found by this name (the kit's `AppProvider`). */
   name?: string
   isStarred?: boolean
@@ -22,7 +20,8 @@ interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'o
 /**
  * The column of an open direct message: the kit's `PageHeader` — the person's
  * face and name, a star and a more-actions menu — over the conversation, in
- * the kit's `Panel`.
+ * the kit's `ConversationLayout` (two columns; the thread stands in the frame's
+ * column beside).
  *
  * It drew a topic's and a huddle's bar too, with counts and a members pill,
  * until topics became files with a page of their own: a DM is all it draws.
@@ -35,11 +34,8 @@ export function Header({
   onToggleOpenWork,
   onHideDm,
   className,
-  children,
-  footer,
-  bodyRef,
-  onBodyScroll,
-  bodyClassName,
+  items = [],
+  ...conversation
 }: HeaderProps) {
   const hasMoreMenu = !!onHideDm || !!(openWorkAction && onToggleOpenWork)
 
@@ -54,12 +50,11 @@ export function Header({
   )
 
   return (
-    <Panel
+    <ConversationLayout
+      threads="beside"
       className={className}
-      footer={footer}
-      bodyRef={bodyRef}
-      onBodyScroll={onBodyScroll}
-      bodyClassName={bodyClassName}
+      items={items}
+      {...conversation}
       title={name ?? ''}
       header={
         <PageHeader
@@ -84,8 +79,6 @@ export function Header({
           }
         />
       }
-    >
-      {children}
-    </Panel>
+    />
   )
 }

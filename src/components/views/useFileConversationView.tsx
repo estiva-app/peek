@@ -1,10 +1,9 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
-import { Divider, EmptyState, ScrollArea, ReactionHorizon, SkeletonConversation } from '@estiva-app/ui'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Divider, EmptyState, ReactionHorizon, SkeletonConversation, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { anchorIn, useSteadyScroll } from './useSteadyScroll'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ThreadPanel } from '@/components/ThreadPanel'
-import { DateDivider } from '@/components/ui/DateDivider'
 import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
@@ -87,45 +86,21 @@ interface UseFileConversationViewArgs {
   closed?: string
 }
 
-/** The stream and its composer as a `Panel` takes them: spread them onto one. */
-export interface ConversationParts {
-  children: ReactNode
-  footer: ReactNode
-  bodyRef: RefObject<HTMLDivElement | null>
-  onBodyScroll: UIEventHandler<HTMLDivElement>
-  bodyClassName: string
-}
-
-/** The space above a short conversation, so its messages sit on the composer. */
-const STREAM_SPACER = 'flex-1 min-h-0'
-/** The messages themselves. */
-const STREAM = 'shrink-0 flex flex-col px-4 py-4 gap-2'
-/** The body's own layout: the spacer and the stream, at least as tall as the pane. */
-const BODY = 'flex min-h-full flex-col'
+/**
+ * The messages and the composer as the kit's `ConversationLayout` takes them, two columns: spread them onto one,
+ * with the page's own `header`. The thread is not among them: it stands in `PeekFrame`'s column beside, 380px.
+ */
+export type ConversationParts = Pick<ConversationLayoutProps, 'items' | 'box' | 'above' | 'below' | 'loading' | 'empty' | 'bodyRef' | 'onBodyScroll'>
 
 /**
- * A conversation not known yet, as a `Panel`'s body (OPT-9): the same one
- * placeholder, in the same place, that the conversation draws while it reads,
- * so a file whose resolve answers with Peek's own view goes on to its messages
- * with nothing swapped in between. No composer: what may be written here is
- * not known until the file is.
+ * A conversation not known yet (OPT-9): the layout reading, its one placeholder sitting on the box, as the
+ * conversation draws while it reads, so a file whose resolve answers with Peek's own view goes on to its messages
+ * with nothing swapped in between. No composer: what may be written here is not known until the file is.
  */
-export const conversationPlaceholder: Pick<ConversationParts, 'children' | 'bodyClassName'> = {
-  children: (
-    <>
-      <div className={STREAM_SPACER} />
-      <div className={STREAM}>
-        <SkeletonConversation />
-      </div>
-    </>
-  ),
-  bodyClassName: BODY,
-}
+export const conversationPlaceholder: ConversationParts = { items: [], loading: true }
 
 interface ViewSlots {
-  /** The stream and its composer — under the page's own header. */
-  conversation: ReactNode
-  /** The same two, for a `Panel` whose header is the page's. */
+  /** The messages and the composer, for the kit's `ConversationLayout` under the page's own header. */
   conversationParts: ConversationParts
   /** The open thread, or nothing. */
   threadPanel: ReactNode | undefined
@@ -250,7 +225,7 @@ export function useFileConversationView({
     container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null
   const newWhenDrawn = useNewWhenDrawn(stream, conversation?.roots, conversation?.replies, viewerPubkey)
   const threadRef = useRef<HTMLDivElement>(null)
-  const seenRoots = useSeenOnScreen(scrollRef, 'data-root', newWhenDrawn ? address : null)
+  const seenRoots = useSeenOnScreen(scrollRef, 'data-conversation-item', newWhenDrawn ? address : null)
   const seenReplies = useSeenOnScreen(threadRef, 'data-reply-id', newWhenDrawn ? (openThreadId ?? null) : null)
   const seenAt = conversation ? newestMessageAt(conversation.roots.filter((r) => seenRoots.has(r.id))) : undefined
   const openReplies = conversation && openThreadId ? conversation.replies[openThreadId] : undefined
@@ -491,7 +466,7 @@ export function useFileConversationView({
         reply" mark cleared once read, a reaction row past the horizon).
       */
       el.scrollTop = left.offset
-      const card = left.anchor && el.querySelector(`[data-root="${CSS.escape(left.anchor.id)}"]`)?.firstElementChild
+      const card = left.anchor && el.querySelector(`[data-conversation-item="${CSS.escape(left.anchor.id)}"]`)?.firstElementChild
       if (card) el.scrollTop += card.getBoundingClientRect().top - el.getBoundingClientRect().top - left.anchor!.top
       nearBottom.current = false
     } else {
@@ -582,98 +557,86 @@ export function useFileConversationView({
     lastAddress.current = address
   }, [address, onOpenThread, openThreadId])
 
-  // The stream and its composer, as a Panel's body and footer (estiva-ui 0.37.0): the
-  // Panel scrolls the stream and keeps the composer under it. A page with a header of
-  // its own (a DM) draws the same two in `conversation`, around a ScrollArea of its own.
-  const conversationBody = (
-    <>
-        <div className={STREAM_SPACER} />
-        <div className={STREAM}>
-          {/* Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above. */}
-          {(isLoading || conversation?.earlier) && <SkeletonConversation />}
-          {failed && (
-            <EmptyState
-              scope="section"
-              message={
-                failed === 'not_a_member'
-                  ? container?.kind === 'channel'
-                    ? 'You are not a member of this conversation.'
-                    : 'You are not a member of the folder this file is in.'
-                  : failed === 'refused'
-                    ? 'The relay refused to show this conversation.'
-                    : 'The relay could not be reached.'
-              }
-            />
-          )}
-          {view && groups.length === 0 && (empty ?? <EmptyState scope="section" message="Nobody has commented yet." />)}
-          {groups.map((group) => (
-            <div key={group.dateLabel} className="flex flex-col gap-2">
-              <DateDivider label={group.dateLabel} className="sticky top-0 z-10 bg-bg-surface" />
-              {group.convs.map((c) => (
-                <Fragment key={c.id}>
-                {/* Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct). */}
-                {c.id === firstNew && <Divider label="New" tone="warning" />}
-                {/* No box of its own: it names the card, so a return can find the message it left at the top. */}
-                <div data-root={c.id} className="contents">
-                <ConversationRow
-                  c={c}
-                  hasNewMessage={unseen(c.id, seenRoots)}
-                  hasNewReply={newReplies.has(c.id)}
-                  isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
-                  isSelected={openThreadId === c.id}
-                  readOnly={readOnly}
-                  actions={rowActions}
-                  writtenOn={container?.kind === 'file' ? container.address : undefined}
-                />
-                </div>
-                </Fragment>
-              ))}
-            </div>
-          ))}
-          {/*
-            The reaction horizon, said out loud — SPEC §6.6, CON-1. Reactions
-            were asked for the newest hundred comments and replies; an older
-            one drawn with none may well have some, and the reader is told
-            rather than left to conclude nobody reacted.
-          */}
-          {view && <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} />}
-          {/*
-            The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
-            messages are here, so they do not move up when the rest lands under a reader at the bottom.
-          */}
-          {view && !view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
-            <div className="invisible" aria-hidden>
-              <ReactionHorizon limit={REACTION_HORIZON} omitted={1} />
-            </div>
-          )}
-        </div>
-    </>
-  )
-  const composer = readOnly ? (
-    closed ? (
-      <div className="p-3">
-        <ClosedBox reason={closed} />
-      </div>
-    ) : undefined
-  ) : (
-      <div className="p-3">
-        <ConversationBox
-          onSend={handleSend}
-          contextLabel={title}
-          draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
-          here={container?.kind === 'file' ? container.address : undefined}
+  /*
+    The messages and the composer, as the kit's ConversationLayout takes them (two columns): it scrolls the messages,
+    sits a short conversation on the composer, draws each day's line over its stretch and keeps the composer under
+    them. Where the reader is in the scroll stays Peek's: `bodyRef` and `onBodyScroll` are the box this view keeps.
+  */
+  const items: ConversationItem[] = groups.flatMap((group) =>
+    group.convs.map((c) => ({
+      id: c.id,
+      day: group.dateLabel,
+      // Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct).
+      before: c.id === firstNew ? <Divider label="New" tone="warning" /> : undefined,
+      card: (
+        <ConversationRow
+          c={c}
+          hasNewMessage={unseen(c.id, seenRoots)}
+          hasNewReply={newReplies.has(c.id)}
+          isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
+          isSelected={openThreadId === c.id}
+          readOnly={readOnly}
+          actions={rowActions}
+          writtenOn={container?.kind === 'file' ? container.address : undefined}
         />
-      </div>
+      ),
+    })),
   )
-  const conversationParts: ConversationParts = { children: conversationBody, footer: composer, bodyRef: scrollRef, onBodyScroll: handleScroll, bodyClassName: BODY }
-  const conversationSlot = (
-    <>
-      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName={BODY}>
-        {conversationBody}
-      </ScrollArea>
-      {composer}
-    </>
+  const failedLine = failed && (
+    <EmptyState
+      scope="section"
+      message={
+        failed === 'not_a_member'
+          ? container?.kind === 'channel'
+            ? 'You are not a member of this conversation.'
+            : 'You are not a member of the folder this file is in.'
+          : failed === 'refused'
+            ? 'The relay refused to show this conversation.'
+            : 'The relay could not be reached.'
+      }
+    />
   )
+  const conversationParts: ConversationParts = {
+    items,
+    loading: isLoading,
+    // Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above.
+    above: conversation?.earlier ? <SkeletonConversation /> : undefined,
+    empty: failedLine || (view ? (empty ?? <EmptyState scope="section" message="Nobody has commented yet." />) : null),
+    below: view && (
+      <>
+        {/*
+          The reaction horizon, said out loud — SPEC §6.6, CON-1. Reactions
+          were asked for the newest hundred comments and replies; an older
+          one drawn with none may well have some, and the reader is told
+          rather than left to conclude nobody reacted.
+        */}
+        <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} />
+        {/*
+          The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
+          messages are here, so they do not move up when the rest lands under a reader at the bottom.
+        */}
+        {!view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
+          <div className="invisible" aria-hidden>
+            <ReactionHorizon limit={REACTION_HORIZON} omitted={1} />
+          </div>
+        )}
+      </>
+    ),
+    box: readOnly ? (
+      closed ? (
+        <ClosedBox reason={closed} />
+      ) : undefined
+    ) : (
+      <ConversationBox
+        onSend={handleSend}
+        contextLabel={title}
+        draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
+        here={container?.kind === 'file' ? container.address : undefined}
+      />
+    ),
+    bodyRef: scrollRef,
+    onBodyScroll: handleScroll,
+  }
 
   // Its replies carry the unread look until each is seen, as the stream's messages do.
   const urgentInThread = new Set(openReplies?.filter((r) => isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
@@ -709,7 +672,7 @@ export function useFileConversationView({
       </div>
     ) : undefined
 
-  return { conversation: conversationSlot, conversationParts, threadPanel, seenAt, viewerPubkey, replyOnlyThread }
+  return { conversationParts, threadPanel, seenAt, viewerPubkey, replyOnlyThread }
 }
 
 // ── From the relay's events to what the cards take ──

@@ -140,8 +140,9 @@ vi.mock('@/components/views/useFileConversationView', async () => ({
   // The real fold: Activity's mention rows draw each message as it is now with it (PEE-48).
   project: (await vi.importActual<typeof import('@/components/views/useFileConversationView')>('@/components/views/useFileConversationView')).project,
   // A getter: JSX here would run while the mock is hoisted, before the runtime is imported.
+  // As the kit's ConversationLayout takes it: no messages, so the stand-in is what the layout draws in their place.
   get conversationPlaceholder() {
-    return { children: <div data-testid="conversation-placeholder" /> }
+    return { items: [], empty: <div data-testid="conversation-placeholder" /> }
   },
   useFileConversationView: (args: Record<string, unknown>) => {
     peekView.args.push(args)
@@ -152,9 +153,8 @@ vi.mock('@/components/views/useFileConversationView', async () => ({
       </div>
     ) : null
     return {
-      conversation: view,
-      // The same, as the page's Panel takes it (estiva-ui 0.37.0).
-      conversationParts: { children: view },
+      // As the kit's ConversationLayout takes it: no messages, so the stand-in view is drawn in their place.
+      conversationParts: { items: [], empty: view },
       threadPanel: container && args.openThreadId ? <div data-testid="peek-thread">{String(args.openThreadId)}</div> : undefined,
     }
   },

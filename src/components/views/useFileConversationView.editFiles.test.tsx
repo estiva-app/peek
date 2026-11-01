@@ -70,6 +70,7 @@ vi.mock('@/components/ReplyCard', () => ({
 }))
 
 import { useFileConversationView } from './useFileConversationView'
+import { ConversationLayout } from '@estiva-app/ui'
 
 const ME = 'a'.repeat(64)
 const people: People = { [ME]: { displayName: 'Me' } } as unknown as People
@@ -83,7 +84,7 @@ const conversationOf = (r: ReturnType<typeof root>, byId: FileConversation['deco
 })
 
 function View({ openThreadId }: { openThreadId?: string }) {
-  const { conversation, threadPanel } = useFileConversationView({
+  const { conversationParts, threadPanel } = useFileConversationView({
     container: { kind: 'file', address: `30840:${ME}:d`, h: 'team' },
     rootIds: ['1'.repeat(64)],
     openThreadId,
@@ -93,7 +94,7 @@ function View({ openThreadId }: { openThreadId?: string }) {
   })
   return (
     <>
-      {conversation}
+      <ConversationLayout threads="beside" {...conversationParts} />
       {threadPanel}
     </>
   )

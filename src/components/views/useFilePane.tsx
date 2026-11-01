@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
+import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
@@ -192,37 +192,7 @@ export function useFilePane(
       />
     ) : undefined
 
-  const pane = (
-    // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
-    <Panel
-      {...view.panel}
-      /*
-        An archived file is read-only (Katerina, 7 October). Its card goes
-        above the messages, where Ship's issue page puts it, and the comment
-        box's own line takes the composer's place, as every app says it
-        (Miky, 25 October, PEEKM-3).
-      */
-      footer={
-        notice ? (
-          <div className="p-3">
-            <ClosedBox reason={archivedLineOf(archive) ?? ''} />
-          </div>
-        ) : (
-          view.panel.footer
-        )
-      }
-      children={
-        notice ? (
-          <>
-            <div className="shrink-0 px-4 pt-4">{notice}</div>
-            {view.panel.children}
-          </>
-        ) : (
-          view.panel.children
-        )
-      }
-      title={title}
-      header={
+  const header = (
         /*
           The kit's PageHeader. One row: the file's name, and whose file it is
           (Katerina, 5 October). No trail over it: on the page the column beside
@@ -310,9 +280,29 @@ export function useFilePane(
             ) : undefined
           }
         />
-      }
-    />
   )
+
+  /*
+    An archived file is read-only (Katerina, 7 October). Its card goes above the messages, where Ship's issue page
+    puts it, and the comment box's own line takes the composer's place, as every app says it (Miky, 25 October,
+    PEEKM-3).
+  */
+  const closedLine = notice && <ClosedBox reason={archivedLineOf(archive) ?? ''} />
+  const pane =
+    'layout' in view.list ? (
+      // Peek's own file: the kit's ConversationLayout, two columns, under the page's bar. It scrolls the messages and keeps the composer under them.
+      <ConversationLayout threads="beside" title={title} header={header} top={notice} {...view.list.layout} box={closedLine || view.list.layout.box} />
+    ) : (
+      // Another app's file: its list as it was, in the kit's Panel under the same bar.
+      <Panel
+        title={title}
+        header={header}
+        footer={closedLine && <div className="p-3">{closedLine}</div>}
+      >
+        {notice && <div className="shrink-0 px-4 pt-4">{notice}</div>}
+        {view.list.panel.children}
+      </Panel>
+    )
 
   return {
     pane,

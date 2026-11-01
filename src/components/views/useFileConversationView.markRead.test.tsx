@@ -65,6 +65,7 @@ vi.mock('@/nostr/useReadStateSync', async () => ({
 }))
 
 import { useFileConversationView } from './useFileConversationView'
+import { ConversationLayout } from '@estiva-app/ui'
 
 const CATH = 'b'.repeat(64)
 const people: People = { [CATH]: { displayName: 'Cath' } } as unknown as People
@@ -87,7 +88,7 @@ const conversation: FileConversation = {
 }
 
 function View({ openThreadId }: { openThreadId: string | undefined }) {
-  const { conversation: view, threadPanel, seenAt } = useFileConversationView({
+  const { conversationParts, threadPanel, seenAt } = useFileConversationView({
     container: { kind: 'channel', h: '1c7a1f52-6721-42fe-a348-9efde8565374' },
     rootIds: [],
     openThreadId,
@@ -97,7 +98,7 @@ function View({ openThreadId }: { openThreadId: string | undefined }) {
   return (
     <>
       <output data-testid="seen">{seenAt}</output>
-      {view}
+      <ConversationLayout threads="beside" {...conversationParts} />
       {threadPanel}
     </>
   )

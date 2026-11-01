@@ -68,6 +68,7 @@ vi.mock('@/components/ConversationCard', async () => {
 })
 
 import { useFileConversationView } from './useFileConversationView'
+import { ConversationLayout } from '@estiva-app/ui'
 
 const CATH = 'b'.repeat(64)
 const people: People = { [CATH]: { displayName: 'Cath' } } as unknown as People
@@ -91,7 +92,7 @@ const conversationOf = (...roots: ReturnType<typeof event>[]): FileConversation 
 
 type Props = { address: string; rootIds: string[] }
 function View({ address, rootIds }: Props) {
-  const { conversation } = useFileConversationView({
+  const { conversationParts } = useFileConversationView({
     container: { kind: 'file', address, h: 'team' },
     rootIds,
     openThreadId: undefined,
@@ -99,7 +100,7 @@ function View({ address, rootIds }: Props) {
     title: 'A file',
     onCommented: async () => {},
   })
-  return <>{conversation}</>
+  return <ConversationLayout threads="beside" {...conversationParts} />
 }
 
 const ADDRESS = `30840:${CATH}:d`
