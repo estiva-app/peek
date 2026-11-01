@@ -1,10 +1,9 @@
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
-import { Avatar, MembersPill, Panel, type PanelProps, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Avatar, MembersPill, Panel, type PanelProps, Toolbar, ToolbarButton, MetaText } from '@estiva-app/ui'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { IconButton } from './ui/IconButton'
 import type { ReactNode } from 'react'
-import { MetaText } from '@/components/ui/MetaText'
 
 interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'onBodyScroll' | 'bodyClassName'>> {
   /** The conversation under the bar: the body of the column's `Panel`, which scrolls. */

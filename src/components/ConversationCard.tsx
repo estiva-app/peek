@@ -6,19 +6,16 @@ import {
   IconArrowNarrowRight,
   IconDotsVertical,
 } from '@tabler/icons-react'
-import { AttachmentCard, Avatar, Card, ToolbarButton } from '@estiva-app/ui'
-import { RepliesRow } from './ui/RepliesRow'
+import { AttachmentCard, Avatar, Card, ToolbarButton, MetaText, EditedMarker, RepliesRow, ResolveDialog } from '@estiva-app/ui'
 import { MessageReactions } from './ui/MessageReactions'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
-import { ResolveDialog } from './ResolveDialog'
 import { ConfirmDelete } from './ConfirmDelete'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard } from '@estiva-app/conversation'
 import { HighlightPill } from './ui/HighlightPill'
-import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
@@ -26,7 +23,7 @@ import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refused
 import { toggledReaction, useRefusedReaction } from '@/lib/reactions'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
-import { MetaText } from '@/components/ui/MetaText'
+import { formatReplyTimestamp } from '@/api/format'
 
 interface ConversationCardProps {
   authorName: string
@@ -374,7 +371,7 @@ export function ConversationCard({
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
               <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
               <MetaText>{timestamp}</MetaText>
-              <EditedMarker editedAt={editedAt} />
+              <EditedMarker edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined} />
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
             {hasNewMessage && !isUrgent && <UnreadDot />}
@@ -425,7 +422,7 @@ export function ConversationCard({
 
           {/* Replies */}
           {!isEditing && replyCount != null && replyCount > 0 && (
-            <RepliesRow replyCount={replyCount} replyAuthors={replyAuthors} lastReplyTime={lastReplyTime} hasNewReply={hasNewReply} isUrgent={isUrgent} />
+            <RepliesRow count={replyCount} faces={replyAuthors?.map((who) => ({ name: who.name, picture: who.avatarSrc }))} last={lastReplyTime} isNew={hasNewReply} urgent={isUrgent} />
           )}
         </div>
         )}

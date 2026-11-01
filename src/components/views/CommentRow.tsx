@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react'
 import type { People } from '@estiva-app/interop'
-import { Avatar, WithTooltip } from '@estiva-app/ui'
+import { Avatar, WithTooltip, MetaText } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
-import { MetaText } from '@/components/ui/MetaText'
 import { whenLabel } from '@/components/ui/ActivityTimeline'
 
 /** The part of a comment this row draws. Both panes' shapes satisfy it. */

@@ -16,10 +16,10 @@ import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
-import { EmptyState, Panel } from '@estiva-app/ui'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { ArchivedNotice, EmptyState, Panel } from '@estiva-app/ui'
 import { ClosedBox } from '@/components/ui/ConversationBox'
 import { DateDivider } from '@/components/ui/DateDivider'
+import { formatDateLabel } from '@/api'
 
 const noop = () => {}
 
@@ -388,10 +388,10 @@ export const FileArchived: Story = {
         >
           <div className="shrink-0 px-4 pt-4">
             <ArchivedNotice
-              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
               by="Miky"
+              when={formatDateLabel(Date.now() - 86_400_000 * 2)}
+              resolution="Shipped in 0.37. What was left moved to the 0.38 topic."
               onUnarchive={noop}
-              look="card"
             />
           </div>
           {['Monday', 'Tuesday', 'Yesterday'].map((day) => (

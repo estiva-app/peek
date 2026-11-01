@@ -1,19 +1,19 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, Panel, Toolbar, ToolbarButton, WithTooltip } from '@estiva-app/ui'
+import { Button, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
+import { formatDateLabel } from '@/api'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -183,12 +183,12 @@ export function useFilePane(
   const notice =
     file && archive ? (
       <ArchivedNotice
-        archive={archive}
         by={people?.[archive.by]?.displayName ?? `${archive.by.slice(0, 8)}…`}
-        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
+        when={formatDateLabel(archive.at * 1000)}
+        resolution={archive.resolution}
+        withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
         onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
-        look="card"
       />
     ) : undefined
 

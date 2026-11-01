@@ -1,5 +1,4 @@
 import { SkeletonBar, SkeletonList, SkeletonRow } from '@estiva-app/ui'
-import { cn } from '@/lib/utils'
 
 /**
  * The generic skeleton parts — bar, row, list — are the shared ones
@@ -13,38 +12,3 @@ export { SkeletonBar, SkeletonRow }
  * its topics, people or folders are still loading.
  */
 export const SkeletonSidebarList = SkeletonList
-
-/**
- * A grey placeholder in the shape of a message card, with a photo, a name, a
- * time and two lines, shown while messages load.
- */
-export function SkeletonConversationCard({ secondLineWidth = 380 }: { secondLineWidth?: number }) {
-  return (
-    <div className="rounded-lg pt-2 px-2">
-      <div className="flex items-center gap-2 w-full">
-        <SkeletonBar className="w-6 h-6 shrink-0" />
-        <SkeletonBar className="h-3.5 w-[110px]" />
-        <SkeletonBar className="h-3 w-10" />
-      </div>
-      <div className="pl-8 pr-2 pt-2 pb-2 flex flex-col gap-2">
-        <SkeletonBar className="h-3.5 w-full" />
-        {/* Never wider than its row: in the 380px thread column it ran past the panel's edge. */}
-        <SkeletonBar className="h-3.5 max-w-full" style={{ width: secondLineWidth }} />
-      </div>
-    </div>
-  )
-}
-
-/**
- * Conversation-area placeholder: a few cards, revealed after the delay.
- * @registry reusable: stays in Peek until it is removed (Katerina, 18 September): the loading shape of Peek's conversation cards
- */
-export function SkeletonConversationList({ className }: { className?: string }) {
-  return (
-    <div className={cn('flex flex-col gap-2 animate-skeleton-in', className)} aria-hidden>
-      <SkeletonConversationCard secondLineWidth={420} />
-      <SkeletonConversationCard secondLineWidth={300} />
-      <SkeletonConversationCard secondLineWidth={500} />
-    </div>
-  )
-}

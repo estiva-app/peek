@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Menu, MenuItem, MenuSection } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSection, MetaText } from '@estiva-app/ui'
 import { Button } from './ui/Button'
-import { MetaText } from './ui/MetaText'
 import { laterMenuTime, laterOptions } from '@/lib/laterTimes'
 
 /**

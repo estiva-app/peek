@@ -1,14 +1,11 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
-import { Divider, EmptyState, ScrollArea } from '@estiva-app/ui'
+import { Divider, EmptyState, ScrollArea, ReactionHorizon, SkeletonConversation } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { anchorIn, useSteadyScroll } from './useSteadyScroll'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
-import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
-import { MetaText } from '@/components/ui/MetaText'
 import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
-import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
 import type { Embed } from '@estiva-app/protocol'
@@ -118,7 +115,7 @@ export const conversationPlaceholder: Pick<ConversationParts, 'children' | 'body
     <>
       <div className={STREAM_SPACER} />
       <div className={STREAM}>
-        <SkeletonConversationList />
+        <SkeletonConversation />
       </div>
     </>
   ),
@@ -593,7 +590,7 @@ export function useFileConversationView({
         <div className={STREAM_SPACER} />
         <div className={STREAM}>
           {/* Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above. */}
-          {(isLoading || conversation?.earlier) && <SkeletonConversationList />}
+          {(isLoading || conversation?.earlier) && <SkeletonConversation />}
           {failed && (
             <EmptyState
               scope="section"
@@ -639,14 +636,14 @@ export function useFileConversationView({
             one drawn with none may well have some, and the reader is told
             rather than left to conclude nobody reacted.
           */}
-          {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} container="conversation" />}
+          {view && <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} />}
           {/*
             The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
             messages are here, so they do not move up when the rest lands under a reader at the bottom.
           */}
           {view && !view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
             <div className="invisible" aria-hidden>
-              <ReactionHorizon omitted={1} container="conversation" />
+              <ReactionHorizon limit={REACTION_HORIZON} omitted={1} />
             </div>
           )}
         </div>
@@ -706,8 +703,8 @@ export function useFileConversationView({
         writtenOn={container?.kind === 'file' ? container.address : undefined}
         readOnly={readOnly}
         readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
-        // MetaText is a single line; a sentence in a narrow panel has to wrap.
-        composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
+        // A sentence, not a time: the caption's words, which wrap in the narrow column (MetaText is one line, and the kit's).
+        composerNotice={openView.data.isDeleted ? <p className="text-caption text-text-muted">The comment was deleted, so this thread takes no new replies.</p> : undefined}
         onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}

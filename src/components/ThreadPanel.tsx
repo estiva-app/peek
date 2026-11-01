@@ -1,6 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, MembersPill, Panel } from '@estiva-app/ui'
+import { Chip, MembersPill, Panel, MetaText, SkeletonConversation } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
@@ -9,12 +9,10 @@ import { DateDivider } from './ui/DateDivider'
 import { formatReplyTimestamp } from '@/api'
 import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { PinnedMessage } from './ui/PinnedMessage'
-import { SkeletonConversationList } from './ui/Skeleton'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { followInApp } from '@/lib/followInApp'
-import { MetaText } from '@/components/ui/MetaText'
 import { useSteadyScroll } from '@/components/views/useSteadyScroll'
 
 /** A thread is placed as it opens, at its bottom: the keeper may act from the first resize. */
@@ -241,7 +239,7 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
       }
       bodyClassName="px-4 pt-4"
     >
-      {showSkeleton && <SkeletonConversationList />}
+      {showSkeleton && <SkeletonConversation />}
     </Panel>
   )
 }
@@ -465,7 +463,7 @@ export function ThreadPanel({
 
         {/* Reply list - chronological top to bottom. */}
         <div className="flex flex-col px-4 pb-4 gap-2">
-          {isLoadingReplies && showSkeleton && <SkeletonConversationList />}
+          {isLoadingReplies && showSkeleton && <SkeletonConversation />}
           {threadRows.map((row, i) => {
             if (row.t === 'events') {
               return <ResolutionTimeline key={row.events[0]?.key ?? `events-${i}`} events={row.events} />

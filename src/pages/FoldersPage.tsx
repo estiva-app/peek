@@ -3,20 +3,20 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconTrash } from '@tabler/icons-react'
-import { EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { EmptyState, Panel, Toolbar, ToolbarButton, ArchivedNotice } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import type { ForeignObject } from '@estiva-app/interop'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import { rememberFileAddress, reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { kindNoun } from '@/lib/archiveWords'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useToast } from '@/lib/toast'
 import { filePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useTabTitle } from '@/lib/useTabTitle'
+import { formatDateLabel } from '@/api'
 
 /**
  * `/app/folders` and `/app/folders/:id` — the Topics column, with no file open.
@@ -203,9 +203,10 @@ export function FoldersPage() {
   const folderNotice =
     folderArchive && isFolder && selected?.channel ? (
       <ArchivedNotice
-        archive={folderArchive}
         by={people?.[folderArchive.by]?.displayName ?? `${folderArchive.by.slice(0, 8)}…`}
-        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
+        when={formatDateLabel(folderArchive.at * 1000)}
+        resolution={folderArchive.resolution}
+        withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
         onUnarchive={archivedWith || !canUnarchive ? undefined : () => void unarchive()}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
       />

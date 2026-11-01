@@ -1,8 +1,7 @@
-import { Avatar, Card } from '@estiva-app/ui'
+import { Avatar, Card, MetaText } from '@estiva-app/ui'
 import { HighlightPill } from './HighlightPill'
 import { previewText } from '@/lib/textParsing'
 import type { HighlightType } from '@/api'
-import { MetaText } from '@/components/ui/MetaText'
 
 // ── Pinned Initial Message (compact) ──
 //

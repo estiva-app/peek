@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactElement } from 'react'
-import { AttachmentCard, Avatar, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, Avatar, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, ToolbarButton, MetaText, EditedMarker } from '@estiva-app/ui'
 import type { Embed } from '@estiva-app/protocol'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import {
@@ -21,12 +21,11 @@ import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refused
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
-import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
-import { MetaText } from '@/components/ui/MetaText'
+import { formatReplyTimestamp } from '@/api/format'
 
 // ── Reply More Menu ──
 
@@ -345,7 +344,7 @@ export function ReplyCard({
                 ) : (
                   <MetaText className="shrink-0">{timestamp}</MetaText>
                 )}
-                <EditedMarker editedAt={editedAt} />
+                <EditedMarker edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined} />
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>
               {isNew && !isUrgent && <UnreadDot />}
