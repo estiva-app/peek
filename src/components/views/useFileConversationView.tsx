@@ -610,14 +610,15 @@ export function useFileConversationView({
           one drawn with none may well have some, and the reader is told
           rather than left to conclude nobody reacted.
         */}
-        <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} />
+        {/* Peek calls them messages, as it always did (Katerina, 1 November: keep Peek's words). */}
+        <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} noun="messages" />
         {/*
           The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
           messages are here, so they do not move up when the rest lands under a reader at the bottom.
         */}
         {!view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
           <div className="invisible" aria-hidden>
-            <ReactionHorizon limit={REACTION_HORIZON} omitted={1} />
+            <ReactionHorizon limit={REACTION_HORIZON} omitted={1} noun="messages" />
           </div>
         )}
       </>

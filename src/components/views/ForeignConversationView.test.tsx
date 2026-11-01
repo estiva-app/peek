@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import { ForeignConversationView } from './ForeignConversationView'
 
@@ -235,5 +236,27 @@ describe('ForeignConversationView', () => {
 
     expect(screen.getByText(`${SHIP.slice(0, 8)}…`)).toBeInTheDocument()
     expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('ForeignConversationView, by the keyboard', () => {
+  it('a comment with no replies is still reached by Tab and opened with Enter (it had a Reply button before the kit card)', async () => {
+    const opened = vi.fn()
+    render(
+      <ForeignConversationView
+        people={PEOPLE}
+        onOpenThread={opened}
+        state={object({ comments: [{ id: 'c1', author: CATH, body: 'Nobody answered this yet.', createdAt: at(60) }] })}
+      />,
+    )
+    const card = screen.getByText('Nobody answered this yet.').closest('[tabindex="0"]') as HTMLElement
+    expect(card).not.toBeNull()
+    // The way a person gets there: Tab, until the card is the one focused.
+    const user = userEvent.setup()
+    for (let i = 0; i < 10 && document.activeElement !== card; i++) await user.tab()
+    expect(document.activeElement).toBe(card)
+    expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(opened).toHaveBeenCalledWith('c1')
   })
 })
