@@ -768,7 +768,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     id: `person-${p.id}`,
     label: p.name,
     description: p.role,
-    leading: <Avatar src={p.avatarSrc} name={p.name} size={24} />,
+    leading: <Avatar src={p.avatarSrc} name={p.name} bot={p.bot} size={24} />,
     onSelect: close(() => navigate(`/app/people/${encodeURIComponent(p.id)}`)),
     onForget: forget,
   })
@@ -942,7 +942,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         // Words, never markdown; the match in context, not the first 80 characters.
         label: snippetAround(asWords(hit.content), typed),
         description: [who?.displayName, hit.fileTitle ?? topic?.title, formatDateLabel(hit.createdAt * 1000)].filter(Boolean).join(' · '),
-        leading: <Avatar src={who?.picture} name={who?.displayName} size={24} />,
+        leading: <Avatar src={who?.picture} name={who?.displayName} bot={who?.bot === true} size={24} />,
         // The topic, at that message (R13) — the one-shot `ObjectPage` already uses;
         // or the file, with the thread open from the URL and the same one-shot for the scroll.
         onSelect: close(() => {

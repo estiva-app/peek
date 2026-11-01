@@ -71,7 +71,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
     >
       {/* Who wrote, and when: the name truncates, the time stays. */}
       <div className="flex items-center gap-2">
-        <Avatar size={16} src={avatarSrc} name={who} alt={who ?? ''} />
+        <Avatar size={16} src={avatarSrc} name={who} alt={who ?? ''} bot={item.kind === 'file' ? item.authorBot : undefined} />
         <span className="min-w-0 flex-1 truncate text-body-2-strong text-text-primary">{who ?? '—'}</span>
         {/* A bare time means today; older names its day (Peek's rule). */}
         {item.at !== undefined && <MetaText className="shrink-0">{formatReplyTimestamp(item.at)}</MetaText>}

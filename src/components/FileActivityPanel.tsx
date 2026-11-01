@@ -91,6 +91,7 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     id: m.id,
     authorName: author?.displayName ?? `${m.author.slice(0, 8)}…`,
     authorAvatarSrc: author?.picture,
+    authorBot: author?.bot === true,
     timestamp: formatTimestamp(m.createdAt * 1000),
     body: now?.body ?? m.body,
     editedAt: now?.editedAt,

@@ -17,7 +17,8 @@ export function toMentionPerson(person: Person): MentionPerson {
     name: person.name,
     description: person.role,
     pubkey: person.pubkey ?? null,
-    avatar: <Avatar size={32} alt={person.name} />,
+    bot: person.bot,
+    avatar: <Avatar size={32} alt={person.name} bot={person.bot} />,
   }
 }
 

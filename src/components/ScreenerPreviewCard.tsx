@@ -33,7 +33,7 @@ export function ScreenerPreviewCardView({
         rows.map((r, i) => (
           <div key={i} className={r.kind === 'reply' ? 'flex flex-col gap-1 pl-3 border-l border-border-subtle' : 'flex flex-col gap-1'}>
             <div className="flex items-center gap-2">
-              <Avatar size={16} name={r.authorName} alt={r.authorName} />
+              <Avatar size={16} name={r.authorName} alt={r.authorName} bot={r.authorBot} />
               <span className="text-h5 leading-tight text-text-primary">{r.authorName}</span>
               <MetaText size="chip">{r.timestamp}</MetaText>
             </div>

@@ -20,7 +20,7 @@ export interface DrawableComment {
  */
 function authorOf(comment: DrawableComment, people?: People) {
   const profile = people?.[comment.author]
-  return { name: profile?.displayName ?? `${comment.author.slice(0, 8)}…`, picture: profile?.picture }
+  return { name: profile?.displayName ?? `${comment.author.slice(0, 8)}…`, picture: profile?.picture, bot: profile?.bot === true }
 }
 
 /** Its time, short, with the whole date and time in the package's tooltip (§4.9), as the row always said it. */

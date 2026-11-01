@@ -752,6 +752,8 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     return name && name.trim().toLowerCase() !== CURRENT_USER_NAME.toLowerCase() ? name : `${pubkey.slice(0, 8)}…`
   }
   const avatarOf = (pubkey: string) => people?.[pubkey]?.picture
+  // The profile says it is an agent (NIP-24 `bot`), never its name: its face is the kit's robot.
+  const botOf = (pubkey: string) => people?.[pubkey]?.bot === true
 
   const byId: Record<string, RootView> = {}
   const reactionsById: Record<string, ReactionEvent[]> = {}
@@ -783,6 +785,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       id: reply.id,
       authorName: nameOf(reply.author),
       authorAvatarSrc: avatarOf(reply.author),
+      authorBot: botOf(reply.author),
       timestamp: formatReplyTimestamp(reply.createdAt * 1000),
       body: d.body,
       editedAt: d.editedAt,
@@ -806,12 +809,13 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     const seen = new Set<string>()
     const replyAuthors = (conversation.replies[root.id] ?? [])
       .filter((r) => !seen.has(r.author) && seen.add(r.author))
-      .map((r) => ({ name: nameOf(r.author), avatarSrc: avatarOf(r.author) }))
+      .map((r) => ({ name: nameOf(r.author), avatarSrc: avatarOf(r.author), bot: botOf(r.author) }))
     const lastReply = replies[replies.length - 1]
     const data: ConversationData = {
       id: root.id,
       authorName: root.deleted ? '' : nameOf(root.author),
       authorAvatarSrc: root.deleted ? undefined : avatarOf(root.author),
+      authorBot: root.deleted ? undefined : botOf(root.author),
       isDeleted: root.deleted,
       timestamp: formatTimestamp(root.createdAt * 1000),
       body: d.body,

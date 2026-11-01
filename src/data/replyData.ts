@@ -6,6 +6,8 @@ export interface ReplyData {
   authorName: string
   /** The author's face, resolved server-side — see ConversationData (PEEK-43). */
   authorAvatarSrc?: string
+  /** An agent wrote it (NIP-24 `bot` in its profile): its face is the kit's robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   isNew?: boolean

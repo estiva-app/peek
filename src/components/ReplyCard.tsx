@@ -19,6 +19,8 @@ import { DELETE_NOTE } from './ConversationCard'
 interface ReplyCardProps {
   authorName: string
   authorAvatarSrc?: string
+  /** An agent wrote it: the kit draws its face as the robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
@@ -84,6 +86,7 @@ interface ReplyCardProps {
 export function ReplyCard({
   authorName,
   authorAvatarSrc,
+  authorBot,
   timestamp,
   body,
   editedAt,
@@ -182,7 +185,7 @@ export function ReplyCard({
 
   return (
     <KitReplyCard
-      author={{ name: authorName, picture: authorAvatarSrc }}
+      author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
       time={timestamp}
       timeHref={messageLink ?? undefined}
       timeLabel="Link to this message"

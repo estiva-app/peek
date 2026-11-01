@@ -28,6 +28,8 @@ function deleteNote(replies: number) {
 interface ConversationCardProps {
   authorName: string
   authorAvatarSrc?: string
+  /** An agent wrote it: the kit draws its face as the robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
@@ -37,7 +39,7 @@ interface ConversationCardProps {
   reactions?: ReactionData[]
   replyCount?: number
   /** Who replied: the replies row's faces. */
-  replyAuthors?: { name: string; avatarSrc?: string }[]
+  replyAuthors?: { name: string; avatarSrc?: string; bot?: boolean }[]
   /** Time of the last reply, in the replies row. */
   lastReplyTime?: string
   /** Real uploaded files (rendered as file chips / image thumbnails). */
@@ -103,6 +105,7 @@ interface ConversationCardProps {
 export function ConversationCard({
   authorName,
   authorAvatarSrc,
+  authorBot,
   timestamp,
   body,
   editedAt,
@@ -273,7 +276,7 @@ export function ConversationCard({
 
   return (
     <KitConversationCard
-      author={{ name: authorName, picture: authorAvatarSrc }}
+      author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
       time={timestamp}
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}
       files={
@@ -318,7 +321,7 @@ export function ConversationCard({
       menuLabel="Utilities"
       resolveHint="->"
       editLabel="Edit message"
-      replies={replyCount ? { count: replyCount, faces: replyAuthors?.map((who) => ({ name: who.name, picture: who.avatarSrc })), last: lastReplyTime, isNew: hasNewReply } : undefined}
+      replies={replyCount ? { count: replyCount, faces: replyAuthors?.map((who) => ({ name: who.name, picture: who.avatarSrc, bot: who.bot })), last: lastReplyTime, isNew: hasNewReply } : undefined}
       onReply={onReply}
       resolved={resolved ? { by: resolvedBy || 'Someone', note: resolutionMsg || undefined } : undefined}
       onResolve={handleResolve}

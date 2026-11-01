@@ -103,6 +103,8 @@ export interface ConversationData {
    *  author with no Peek account is absent from the people directory the
    *  name lookup reads, so that lookup could never find them. */
   authorAvatarSrc?: string
+  /** An agent wrote it (NIP-24 `bot` in its profile): its face is the kit's robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   reactions?: ReactionData[]
@@ -135,7 +137,7 @@ export interface ConversationData {
   canEditAndDelete?: boolean
   /** Distinct reply authors in first-reply order — the reply row's facepile
    *  (signal theme). Server rows carry it; mock rows derive it from REPLIES. */
-  replyAuthors?: { name: string; avatarSrc?: string }[]
+  replyAuthors?: { name: string; avatarSrc?: string; bot?: boolean }[]
   /** Formatted time of the newest reply, shown next to the reply count. */
   lastReplyTime?: string
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */

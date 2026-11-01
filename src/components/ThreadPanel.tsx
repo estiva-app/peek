@@ -450,6 +450,7 @@ export function ThreadPanel({
             <PinnedMessage
               authorName={conversation.authorName}
               authorAvatarSrc={conversation.authorAvatarSrc}
+              authorBot={conversation.authorBot}
               timestamp={rootTimestamp}
               body={conversation.body}
               highlightType={conversation.highlightType}
@@ -475,6 +476,7 @@ export function ThreadPanel({
                   <ReplyCard
                     authorName={reply.authorName}
                     authorAvatarSrc={reply.authorAvatarSrc}
+                    authorBot={reply.authorBot}
                     timestamp={reply.timestamp}
                     body={reply.body}
                     editedAt={reply.editedAt}

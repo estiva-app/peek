@@ -42,6 +42,7 @@ export const ConversationRow = memo(
       <ConversationCard
         authorName={c.authorName}
         authorAvatarSrc={c.authorAvatarSrc}
+        authorBot={c.authorBot}
         timestamp={c.timestamp}
         body={c.body}
         editedAt={c.editedAt}

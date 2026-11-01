@@ -116,8 +116,9 @@ export function DeskPage() {
   // A file row's writer, named once for the whole list rather than asked for by every row.
   const names = useMentionNames()
   const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
+  const bots = new Set((names ?? []).flatMap((n) => (n.bot ? [n.pubkey] : [])))
   const screened = allScreenerItems
-    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey) } : i))
+    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey), authorBot: bots.has(i.authorPubkey) } : i))
     .filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
   const screenerItems = (hasRelay ? screened : screened.slice(0, debug.desk.screenerItemsCount))
     .filter((i) => !dismissedScreenerIds.has(i.id))

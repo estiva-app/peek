@@ -11,6 +11,8 @@ import type { HighlightType } from '@/api'
 export interface PinnedMessageProps {
   authorName: string
   authorAvatarSrc?: string
+  /** An agent wrote it: its face is the kit's robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   highlightType?: HighlightType
@@ -22,7 +24,7 @@ export interface PinnedMessageProps {
  * The first message of a conversation pinned at the top of the replies panel:
  * its author, time and one shortened line of text.
  */
-export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, highlightType, deleted = false }: PinnedMessageProps) {
+export function PinnedMessage({ authorName, authorAvatarSrc, authorBot, timestamp, body, highlightType, deleted = false }: PinnedMessageProps) {
   if (deleted) {
     return (
       <Card fill="elevated" clip>
@@ -42,7 +44,7 @@ export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, hi
       <div className="flex flex-col p-2">
         {/* Header */}
         <div className="flex items-center gap-2">
-          <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
+          <Avatar size={24} src={authorAvatarSrc} alt={authorName} bot={authorBot} />
           <span className="text-body-2-strong text-text-primary min-w-0 truncate">{authorName}</span>
           <MetaText className="shrink-0">{timestamp}</MetaText>
           {highlightType && <HighlightPill type={highlightType} />}

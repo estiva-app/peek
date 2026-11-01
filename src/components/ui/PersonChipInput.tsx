@@ -36,8 +36,8 @@ export function PersonChipInput({ value, onChange, placeholder = 'Search people.
       placeholder={placeholder}
       autoFocus={autoFocus}
       excludeIds={excludeIds}
-      chipLeading={(o) => <Avatar size={16} name={o.label} alt={o.label} />}
-      rowLeading={(o) => <Avatar size={32} name={o.label} alt={o.label} />}
+      chipLeading={(o) => <Avatar size={16} name={o.label} alt={o.label} bot={byId.get(o.id)?.bot} />}
+      rowLeading={(o) => <Avatar size={32} name={o.label} alt={o.label} bot={byId.get(o.id)?.bot} />}
     />
   )
 }

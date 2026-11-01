@@ -49,6 +49,20 @@ const decorations = (byId: FileConversation['decorations']['byId'], over: Partia
 })
 
 describe('project', () => {
+  it("marks an agent's message, reply and reply face from its profile (NIP-24 `bot`), never from its name", () => {
+    const AGENT = 'd'.repeat(64)
+    const withAgent = { ...people, [AGENT]: { displayName: 'Claude (steered by Cath)', bot: true }, [STRANGER]: { displayName: 'Claude (steered by Miky)' } } as unknown as People
+    const agentReply = event('4', AGENT, 'On it', T + 180)
+    const agentRoot = event('5', AGENT, 'Started', T + 240)
+    const view = project(conversation({ roots: [rootB, rootA, agentRoot], replies: { [rootA.id]: [reply, agentReply] } }), ME, withAgent)
+    const [cath, stranger, agent] = view.roots
+    expect(agent.authorBot).toBe(true)
+    expect(cath.authorBot).toBe(false)
+    expect(stranger.authorBot).toBe(false)
+    expect(view.byId[rootA.id].replies.map((r) => r.authorBot)).toEqual([false, true])
+    expect(cath.replyAuthors?.map((a) => a.bot)).toEqual([false, true])
+  })
+
   it('orders roots oldest first, names people from the directory and the viewer as You', () => {
     const view = project(conversation(), ME, people)
     expect(view.roots.map((r) => r.authorName)).toEqual(['Cath', `${STRANGER.slice(0, 8)}…`])

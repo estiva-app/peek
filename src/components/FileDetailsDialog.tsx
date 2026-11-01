@@ -188,7 +188,7 @@ export function FileDetailsDialog({
       />
       {author && (
         <Section label="Created by">
-          <Person name={people?.[author]?.displayName} picture={people?.[author]?.picture} size={24} />
+          <Person name={people?.[author]?.displayName} picture={people?.[author]?.picture} bot={people?.[author]?.bot === true} size={24} />
         </Section>
       )}
 

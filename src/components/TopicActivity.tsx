@@ -144,6 +144,7 @@ export function TopicActivity({
           <ConversationCard
             authorName={conv.authorName}
             authorAvatarSrc={conv.authorAvatarSrc}
+            authorBot={conv.authorBot}
             timestamp={conv.timestamp}
             body={conv.body}
             editedAt={conv.editedAt}
