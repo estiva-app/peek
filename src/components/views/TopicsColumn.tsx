@@ -65,14 +65,23 @@ export function TopicsColumnView({
   selectedRef?: string
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
-  // The topic whose archived files are open in the dialog — held here, outside the rows: a click in a portal still bubbles through its React parents.
-  const [archivedOf, setArchivedOf] = useState<TopicWithFiles | null>(null)
-  const close = () => setArchivedOf(null)
+  /*
+    The topic whose archived files are open in the dialog — held here, outside
+    the rows: a click in a portal still bubbles through its React parents. By
+    ref, and its files read from the state on each render, so an Unarchive from
+    a row in the dialog leaves it at once; with none left, it closes.
+  */
+  const [archivedRef, setArchivedRef] = useState<string | null>(null)
+  const archivedOf =
+    archivedRef && typeof state === 'object' && 'mine' in state
+      ? state.mine.find(({ topic, archivedFiles }) => topic.ref === archivedRef && archivedFiles.length > 0)
+      : undefined
+  const close = () => setArchivedRef(null)
   return (
     <ListColumn title="Topics" collapsed={railClosed}>
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
-        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} onControl={onControl} onArchived={setArchivedOf} />
+        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} onControl={onControl} onArchived={(entry) => setArchivedRef(entry.topic.ref)} />
         {archivedOf && (
           <DialogShell
             title={`Archived in ${archivedOf.topic.slots.title?.value ?? 'Untitled'}`}
@@ -85,8 +94,12 @@ export function TopicsColumnView({
               </Button>
             }
           >
-            {/* A file opened from the list closes it: the page beside the column is where it opens. */}
-            <div onClickCapture={(event) => (event.target as Element).closest('a[data-file]') && close()}>
+            {/* A file opened here closes it, as the page beside the column opens; one sent to a new tab leaves it open. */}
+            <div
+              onClickCapture={(event) =>
+                event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && (event.target as Element).closest('a[data-file]') && close()
+              }
+            >
               <NavTree selected={selectedRef}>
                 {archivedOf.archivedFiles.map((file) => (
                   <TreeRow key={file.ref} file={file} selectedRef={selectedRef} onControl={onControl} nested />

@@ -177,6 +177,24 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], archived: ['Old'] })
   })
 
+  it('Archive then Undo at once: the later re-read is drawn even when the earlier one answers last (b1ace226)', async () => {
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    const nostr = await import('@/nostr/foreign')
+    let answerArchive: (value: unknown) => void = () => {}
+    const resolve = vi.spyOn(nostr, 'resolveObjectAsViewer')
+    resolve.mockImplementationOnce(() => new Promise((done) => (answerArchive = done)) as never)
+    resolve.mockImplementationOnce(async () => object(WIDGETS, 'Widgets') as never)
+    const archiving = fileArchiveChanged(WIDGETS)
+    await act(() => fileArchiveChanged(WIDGETS))
+    await act(async () => {
+      answerArchive(object(WIDGETS, 'Widgets', { archived: { by: VIEWER, at: 2 } }))
+      await archiving
+    })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], archived: ['Old'] })
+    resolve.mockRestore()
+  })
+
   it('a file two of your topics list is under both', async () => {
     list(WIDGETS, TESTING)
     list(ALPHA, TESTING)

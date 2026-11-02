@@ -51,6 +51,8 @@ const EMPTY: Held = { pubkey: undefined, topics: null, topicsAt: 0, failed: fals
 let held: Held = EMPTY
 /** Who the column last read as, so an archive made elsewhere in the tab can be read again for it. */
 let lastViewer: Viewer | null = null
+/** How many re-reads `fileArchiveChanged` has asked for each file. */
+const rearchiveAsked = new Map<string, number>()
 const listeners = new Set<() => void>()
 let topicsReading = false
 const listsReading = new Set<string>()
@@ -134,8 +136,11 @@ export function topicListChanged(topic: string): void {
 export async function fileArchiveChanged(address: string): Promise<void> {
   const viewer = lastViewer
   if (!hasRelay || !viewer || held.pubkey !== viewer.token.pubkey) return
+  // Archive then Undo at once: only the last re-read is drawn, whichever answers first.
+  const asked = (rearchiveAsked.get(address) ?? 0) + 1
+  rearchiveAsked.set(address, asked)
   const object = await resolveObjectAsViewer(address, viewer.relayUrl, viewer.token, { archivedWith: true }).catch(() => undefined)
-  if (object === undefined || held.pubkey !== viewer.token.pubkey) return
+  if (object === undefined || held.pubkey !== viewer.token.pubkey || rearchiveAsked.get(address) !== asked) return
   put({ ...held, rearchived: new Map(held.rearchived).set(address, object) })
 }
 
@@ -144,6 +149,7 @@ export function resetTopicsColumn(): void {
   topicsReading = false
   listsReading.clear()
   lastViewer = null
+  rearchiveAsked.clear()
   put(EMPTY)
 }
 

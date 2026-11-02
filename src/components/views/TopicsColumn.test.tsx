@@ -124,6 +124,34 @@ describe('the Topics column (TOP-4)', () => {
     expect(openedFrom(BUILD_1.address!)).toBe('topics')
   })
 
+  it('a file unarchived while the dialog is open leaves it, and the dialog closes once none is left (b1ace226)', async () => {
+    const view = mount({ mine: [yours(WIDGETS, [], [BUILD_1, BUILD_2])], others: [], archived: [] })
+    await userEvent.click(within(panelOf(WIDGETS)).getByRole('link', { name: /Archived/ }))
+    const again = (state: TopicsColumnState) =>
+      view.rerender(
+        <MemoryRouter>
+          <TopicsColumnView state={state} />
+        </MemoryRouter>,
+      )
+    again({ mine: [yours(WIDGETS, [BUILD_1], [BUILD_2])], others: [], archived: [] })
+    expect(within(screen.getByRole('dialog')).getAllByRole('link').map((link) => link.textContent)).toEqual(['Widgets 2: build 2'])
+    again({ mine: [yours(WIDGETS, [BUILD_1, BUILD_2])], others: [], archived: [] })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('a file sent to a new tab from the dialog leaves it open (b1ace226)', async () => {
+    mount({ mine: [yours(WIDGETS, [], [BUILD_1, BUILD_2])], others: [], archived: [] })
+    await userEvent.click(within(panelOf(WIDGETS)).getByRole('link', { name: /Archived/ }))
+    const link = within(screen.getByRole('dialog')).getAllByRole('link')[0]!
+    link.addEventListener('click', (event) => event.preventDefault())
+    // One session, so Control is still held for the click.
+    const user = userEvent.setup()
+    await user.keyboard('{Control>}')
+    await user.click(link)
+    await user.keyboard('{/Control}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   it('a topic whose files are all archived still opens onto its “Archived” line (b1ace226)', () => {
     mount({ mine: [yours(WIDGETS, [], [BUILD_1])], others: [], archived: [] })
     expect(within(panelOf(WIDGETS)).getByRole('link', { name: /Archived/ })).toBeVisible()
