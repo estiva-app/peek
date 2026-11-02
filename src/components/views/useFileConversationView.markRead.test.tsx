@@ -150,7 +150,8 @@ describe('a message keeps the unread look until it has been seen (Katerina, 30 O
     expect(screen.getByText('Root').getAttribute('data-new-message')).toBe('false')
     // On screen for the dwell: seen, and the look goes.
     await waitFor(() => expect(screen.getByText('A later message').getAttribute('data-new-message')).toBe('false'))
-    expect(screen.getByText('Look at this now !@Cath').getAttribute('data-new-message')).toBe('false')
+    // Each message has its own dwell, so the second can end a tick after the first.
+    await waitFor(() => expect(screen.getByText('Look at this now !@Cath').getAttribute('data-new-message')).toBe('false'))
   })
 
   it('a new reply in the open thread is drawn new until it has been seen there', async () => {
