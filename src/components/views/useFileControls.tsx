@@ -3,7 +3,7 @@ import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
+import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
@@ -226,6 +226,7 @@ export function useFileControls({
       archivedCallback.current?.(file, archived)
       // Whatever is drawn re-reads, whichever page asked: an Undo pressed after its page closed has no page to ask.
       void reloadFoldersOnScreen()
+      if (file.address) void fileArchiveChanged(file.address)
       /*
         Said, and Archive undone from the toast (Katerina, 5 October): the row
         leaves its list, and Undo — or Unarchive in the Archive view — brings

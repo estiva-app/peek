@@ -29,6 +29,6 @@ import { TopicsColumn } from '@/components/views/TopicsColumn'
 
 ## What it owns
 
-- **The sections:** your topics first with their files, then "Other topics", shut until opened (`peek.topics.others.open`), and open when the open file is one of them.
+- **The sections:** your topics first with their files, then "Other topics", shut until opened (`peek.topics.others.open`), and open when the open file is one of them. Last "Archived" (b1ace226), the same way (`peek.topics.archived.open`): only active topics and files are above it, and an archived topic opens read-only from here.
 - **Its rows:** the Folder tree's `TreeRow`, so a topic has the same menu and dot; a click tells the file's page to show this column beside it.
 - **Its empty, loading and failed lines.**

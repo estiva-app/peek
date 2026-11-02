@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import type { ForeignObject } from '@estiva-app/interop'
-import { topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
+import { isArchived, type ForeignObject } from '@estiva-app/interop'
+import { resolveObjectAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
@@ -10,8 +10,10 @@ import { hasRelay } from './relayUrl'
 /** One of your topics on the Topics screen, with the files its list holds. */
 export interface TopicWithFiles {
   topic: ForeignObject
-  /** In the order they were added, as the topic's right column draws them (TOP-3). */
+  /** In the order they were added, as the topic's right column draws them (TOP-3). Only what is not archived. */
   files: ForeignObject[]
+  /** The files it lists that are archived, on their own or with a file above them, in the same order: behind its "Archived" line. */
+  archivedFiles: ForeignObject[]
 }
 
 export type TopicsColumnState =
@@ -22,6 +24,8 @@ export type TopicsColumnState =
       mine: TopicWithFiles[]
       /** Every other topic you can read, A–Z, title only: to open and join. */
       others: ForeignObject[]
+      /** Every archived topic you can read, on its own or with a file above it, A–Z: the closed "Archived" section. */
+      archived: ForeignObject[]
     }
 
 /*
@@ -38,11 +42,17 @@ interface Held {
   lists: ReadonlyMap<string, readonly string[]>
   /** Lists to read again: an Add file or Remove on the topic, or an old answer. */
   stale: ReadonlySet<string>
+  /** Files read again after an Archive or Unarchive in this tab, drawn over the column's first answer. */
+  rearchived: ReadonlyMap<string, ForeignObject | null>
 }
 
 const FRESH_MS = 60_000
-const EMPTY: Held = { pubkey: undefined, topics: null, topicsAt: 0, failed: false, lists: new Map(), stale: new Set() }
+const EMPTY: Held = { pubkey: undefined, topics: null, topicsAt: 0, failed: false, lists: new Map(), stale: new Set(), rearchived: new Map() }
 let held: Held = EMPTY
+/** Who the column last read as, so an archive made elsewhere in the tab can be read again for it. */
+let lastViewer: Viewer | null = null
+/** How many re-reads `fileArchiveChanged` has asked for each file. */
+const rearchiveAsked = new Map<string, number>()
 const listeners = new Set<() => void>()
 let topicsReading = false
 const listsReading = new Set<string>()
@@ -116,12 +126,34 @@ export function topicListChanged(topic: string): void {
   put({ ...held, stale: new Set(held.stale).add(topic) })
 }
 
+/**
+ * A file was archived or unarchived in this tab — from a row's menu, its page
+ * or a toast's Undo (b1ace226): the column reads it again, archived-with
+ * included, so a topic moves to or from "Archived", and a listed file leaves or
+ * rejoins its topic, without a reload. Archiving a topic's parent moves the
+ * topic on the next read.
+ */
+export async function fileArchiveChanged(address: string): Promise<void> {
+  const viewer = lastViewer
+  if (!hasRelay || !viewer || held.pubkey !== viewer.token.pubkey) return
+  // Archive then Undo at once: only the last re-read is drawn, whichever answers first.
+  const asked = (rearchiveAsked.get(address) ?? 0) + 1
+  rearchiveAsked.set(address, asked)
+  const object = await resolveObjectAsViewer(address, viewer.relayUrl, viewer.token, { archivedWith: true }).catch(() => undefined)
+  if (object === undefined || held.pubkey !== viewer.token.pubkey || rearchiveAsked.get(address) !== asked) return
+  put({ ...held, rearchived: new Map(held.rearchived).set(address, object) })
+}
+
 /** For tests: forget what this tab has read. */
 export function resetTopicsColumn(): void {
   topicsReading = false
   listsReading.clear()
+  lastViewer = null
+  rearchiveAsked.clear()
   put(EMPTY)
 }
+
+const ARCHIVED_WITH = { archivedWith: true }
 
 const byTitle = (a: ForeignObject, b: ForeignObject) =>
   (a.slots.title?.value ?? '').localeCompare(b.slots.title?.value ?? '', undefined, { sensitivity: 'base' })
@@ -131,7 +163,13 @@ const byTitle = (a: ForeignObject, b: ForeignObject) =>
  * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-keeps-its-own-list-of-files.md):
  * the topics you are a member of, each with the files its list holds, one
  * level deep and from any Folder; then every other topic you can read, to
- * open and join. Archived topics are left out (Folders' Archive has them).
+ * open and join. Only what is active (Miky, 2 Nov, b1ace226): a topic or a
+ * listed file archived on its own or with a file above it (why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md)
+ * is left out of the list: the archived topics are the closed "Archived"
+ * section at the end, and a topic's archived files are behind one "Archived"
+ * line under it, which opens them in a dialog (Miky, 2 Nov: "it should not
+ * distract you, you should have options to access it").
  *
  * Reads: every topic you can read (one request), then all your topics' lists
  * at once (`topicLists`, three requests), then the titles of both in one
@@ -156,20 +194,29 @@ export function useTopicsColumn(): {
   useEffect(() => {
     const v = viewer()
     if (!hasRelay || !v) return
+    lastViewer = v
     if (held.pubkey !== v.token.pubkey) put({ ...EMPTY, pubkey: v.token.pubkey })
     if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)
   }, [viewer, pubkey])
 
-  const topicObjects = useResolvedReferences(mineHeld.topics ?? [])
+  // `archivedWith`: a topic under an archived project is archived with it, and its own `archived` does not say so.
+  const topicObjects = useResolvedReferences(mineHeld.topics ?? [], ARCHIVED_WITH)
+  const { rearchived } = mineHeld
+  const objectOf = useCallback(
+    (address: string, objects: Record<string, ForeignObject | null>) => (rearchived.has(address) ? rearchived.get(address) : objects[address]),
+    [rearchived],
+  )
   const membership = useMembership()
-  const live = useMemo(
+  const readable = useMemo(
     () =>
       (mineHeld.topics ?? [])
-        .map((address) => topicObjects[address])
-        .filter((topic): topic is ForeignObject => !!topic && !topic.archived && !!topic.address)
+        .map((address) => objectOf(address, topicObjects))
+        .filter((topic): topic is ForeignObject => !!topic && !!topic.address)
         .sort(byTitle),
-    [mineHeld.topics, topicObjects],
+    [mineHeld.topics, topicObjects, objectOf],
   )
+  const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
+  const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
   const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
   const { isMember } = membership
   const mine = useMemo(() => live.filter((topic) => isMember(topic.address!)), [live, isMember])
@@ -184,7 +231,8 @@ export function useTopicsColumn(): {
   }, [viewer, mineKey, lists, stale])
 
   const listed = useMemo(() => [...new Set(mine.flatMap((topic) => lists.get(topic.address!) ?? []))], [mine, lists])
-  const fileObjects = useResolvedReferences(listed)
+  // An issue of an archived project is archived with it: left out under its topic, as an archived topic is.
+  const fileObjects = useResolvedReferences(listed, ARCHIVED_WITH)
 
   const state = useMemo<TopicsColumnState>(() => {
     if (mineHeld.failed && mineHeld.topics === null) return { failed: true }
@@ -197,18 +245,22 @@ export function useTopicsColumn(): {
     if (mine.length && mine.every((topic) => !lists.has(topic.address!))) return mineHeld.failed ? { failed: true } : 'loading'
     if (listed.length && listed.every((address) => !(address in fileObjects))) return 'loading'
     return {
-      mine: mine.map((topic) => ({
-        topic,
-        files: (lists.get(topic.address!) ?? []).flatMap((address) => (fileObjects[address] ? [fileObjects[address]!] : [])),
-      })),
+      mine: mine.map((topic) => {
+        const listedFiles = (lists.get(topic.address!) ?? []).flatMap((address) => {
+          const file = objectOf(address, fileObjects)
+          return file ? [file] : []
+        })
+        return { topic, files: listedFiles.filter((file) => !isArchived(file)), archivedFiles: listedFiles.filter((file) => isArchived(file)) }
+      }),
       others: live.filter((topic) => !isMember(topic.address!)),
+      archived,
     }
-  }, [mineHeld.failed, mineHeld.topics, membership.state, topicsResolved, mine, lists, listed, fileObjects, live, isMember])
+  }, [mineHeld.failed, mineHeld.topics, membership.state, topicsResolved, mine, lists, listed, fileObjects, objectOf, live, archived, isMember])
 
   // Unknown while loading; a failed read cannot say, and Folders draws every file.
   const yours = useMemo(
     () =>
-      typeof state !== 'object' ? null : 'failed' in state ? new Set<string>() : new Set(state.mine.flatMap(({ topic, files }) => [topic.address, ...files.map((file) => file.address)])),
+      typeof state !== 'object' ? null : 'failed' in state ? new Set<string>() : new Set(state.mine.flatMap(({ topic, files, archivedFiles }) => [topic.address, ...[...files, ...archivedFiles].map((file) => file.address)])),
     [state],
   )
   const column = useCallback(
