@@ -1,7 +1,8 @@
 import {
   IconNote,
+  IconTarget,
+  IconUser,
   IconUsers,
-  IconMessage2,
   // IconBrackets,
   // IconFiles,
 } from '@tabler/icons-react'
@@ -12,57 +13,67 @@ import { useLastSelection } from '@/lib/lastSelection'
 import { fileRouteFromPath } from '@/lib/objectUrl'
 
 /**
- * The narrow bar down the left edge that moves between Desk, Topics and
- * People, with a small dot saying whether what is shown is current.
+ * The narrow bar down the left edge that moves between Desk, Topics, Folders
+ * and People, with a small dot saying whether what is shown is current.
  */
 export function NavRail() {
-  const { dmId, topicsPath, desk } = useLastSelection()
+  const { dmId, topicsPath, foldersPath, fileColumn, desk } = useLastSelection()
   const { pathname } = useLocation()
-  // A file's page, at whatever word its manifest declared (FOL-39), is read
-  // under Topics — where `/topic/<address>` always was.
-  const openFile = fileRouteFromPath(pathname)
+  /*
+    A file's page, at `/topic/…` or whatever word its manifest declared
+    (FOL-39), is read under Topics or under Folders: the column it shows, which
+    is the one it was opened from (TOP-4). Neither is lit until that is known.
+  */
+  const openFile = pathname.startsWith('/topic/') || !!fileRouteFromPath(pathname)
+  const fileIn = (column: 'topics' | 'folders') => openFile && fileColumn === column
 
   const navItems = [
     // Back to what Desk had open: a file beside the lists is in its query; a DM the page restores (Katerina, 5 October).
-    { to: `/app/desk${desk?.search ?? ''}`, icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/app/desk' },
+    { to: `/app/desk${desk?.search ?? ''}`, icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', active: isAt(pathname, '/app/desk') },
     {
-      // Back to where Topics was — a file, or none open — as People goes back to the last DM (Katerina, 5 October).
-      to: topicsPath ?? '/app/folders',
-      // Topics' own speech bubble again, as before FOL-26 (Katerina, 5 October): the column is topics, organised by Folder.
-      icon: <IconMessage2 size={16} stroke={1.5} />,
-      /*
-        "Topics", not "Folders" (Miky, FOL-41). The route, the page and the
-        tree are unchanged: this rail item is what a person is told the section
-        *is*, and what it is is the topic list — a Folder is how it is
-        organised, not what it holds. It was "Topics (new)" beside the Convex
-        Topics view until FOL-26 retired that one.
-      */
+      // Your topics with their files under them (TOP-4), the Per app prototype's target icon.
+      // Back to where it was — a file, or none open — as People goes back to the last DM (Katerina, 5 October).
+      to: topicsPath ?? '/app/topics',
+      icon: <IconTarget size={16} stroke={1.5} />,
       label: 'Topics',
-      // `/app/folders` is the list and `/app/folders/<uuid>` one of them; a
-      // file opens at `/topic/` or at the word its app declared (FOL-39). The
-      // memory is the open file's, never a Folder's: a remembered Folder would
-      // be a guess about which of several containers somebody meant.
-      match: ['/app/folders', '/topic', ...(openFile ? [`/${openFile.word}`] : [])],
+      active: isAt(pathname, '/app/topics') || fileIn('topics'),
+    },
+    {
+      /*
+        What "Topics" was until TOP-4, as it was: every file you joined, by
+        Folder, and every Folder (Miky, 30 October: "Folders" until the Teams
+        stage). The prototype's Teams icon, which it stands in for. The memory
+        is the open file's, never a Folder's: a remembered Folder would be a
+        guess about which of several containers somebody meant.
+      */
+      to: foldersPath ?? '/app/folders',
+      icon: <IconUsers size={16} stroke={1.5} />,
+      label: 'Folders',
+      active: isAt(pathname, '/app/folders') || fileIn('folders'),
     },
     {
       to: dmId != null ? `/app/people/${dmId}` : '/app/people',
-      icon: <IconUsers size={16} stroke={1.5} />,
+      // One person, as the prototype draws People beside a team's icon.
+      icon: <IconUser size={16} stroke={1.5} />,
       label: 'People',
-      match: '/app/people',
+      active: isAt(pathname, '/app/people'),
     },
   ]
 
-  // Lit on its own pages. The click goes through Peek's router by itself (`AppProvider`, PeekSetup).
-  const isAt = (match: string | string[]) => (Array.isArray(match) ? match : [match]).some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-
   return (
     <Rail>
-      {navItems.map(({ to, icon, label, match }) => (
-        <RailItem key={label} href={to} icon={icon} label={label} active={isAt(match)} />
+      {navItems.map(({ to, icon, label, active }) => (
+        // The click goes through Peek's router by itself (`AppProvider`, PeekSetup).
+        <RailItem key={label} href={to} icon={icon} label={label} active={active} />
       ))}
       {/* Once, in the persistent chrome — see FreshnessIndicator's header for
           why this is not a badge per panel and not part of AuthGate. */}
       <FreshnessIndicator />
     </Rail>
   )
+}
+
+/** Lit on its own pages. */
+function isAt(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`)
 }

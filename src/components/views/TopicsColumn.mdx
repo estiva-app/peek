@@ -1,0 +1,34 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/TopicsColumn docs" />
+
+# TopicsColumn
+
+Peek's Topics column: your topics with the files their lists hold, and the other topics to join.
+
+**Seen in** — `/app/topics`, and beside a file opened from Topics. Drawn by *Folders/TopicsColumn*.
+
+## When
+
+- The list column of the rail's Topics (TOP-4): each topic you are a member of, A–Z, open onto its listed files one level deep, then "Other topics", collapsed and remembered on this browser.
+
+## When not
+
+- For every file you joined, by Folder. Use **FolderTree** (the rail's Folders).
+- For one topic's files at full width. Use **TopicFiles** in the topic's Overview.
+
+## How
+
+```tsx
+import { TopicsColumn } from '@/components/views/TopicsColumn'
+
+<TopicsColumn selectedRef={file?.ref} onControl={openControl} />
+```
+
+- `TopicsColumnView` takes the state `useTopicsColumn` reads, for a story or a test.
+
+## What it owns
+
+- **The sections:** your topics first with their files, then "Other topics", shut until opened (`peek.topics.others.open`), and open when the open file is one of them.
+- **Its rows:** the Folder tree's `TreeRow`, so a topic has the same menu and dot; a click tells the file's page to show this column beside it.
+- **Its empty, loading and failed lines.**

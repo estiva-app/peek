@@ -1,6 +1,7 @@
 /**
- * The rail's Topics and Desk go back to what was open there, as People goes
- * back to the last DM (Katerina, 5 October).
+ * The rail's Topics, Folders and Desk go back to what was open there, as
+ * People goes back to the last DM (Katerina, 5 October); a file's page lights
+ * the one whose column it shows (TOP-4).
  */
 import { useEffect } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -9,41 +10,62 @@ import { MemoryRouter } from 'react-router-dom'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 import { NavRail } from './NavRail'
 
-function Opened({ path, desk }: { path: string | null; desk?: string }) {
-  const { setLastTopicsPath, setLastDesk } = useLastSelection()
-  useEffect(() => setLastTopicsPath(path), [path, setLastTopicsPath])
+function Opened({ topics, folders, desk, column }: { topics?: string; folders?: string; desk?: string; column?: 'topics' | 'folders' }) {
+  const { setLastTopicsPath, setLastFoldersPath, setLastDesk, setFileColumn } = useLastSelection()
+  useEffect(() => setLastTopicsPath(topics ?? null), [topics, setLastTopicsPath])
+  useEffect(() => setLastFoldersPath(folders ?? null), [folders, setLastFoldersPath])
   useEffect(() => setLastDesk(desk === undefined ? null : { search: desk }), [desk, setLastDesk])
+  useEffect(() => setFileColumn(column ?? null), [column, setFileColumn])
   return null
 }
 
-function mount(path: string | null, desk?: string, link = 'Topics') {
+function mount(opened: Parameters<typeof Opened>[0], at = '/app/people') {
   render(
-    <MemoryRouter initialEntries={['/app/people']}>
+    <MemoryRouter initialEntries={[at]}>
       <LastSelectionProvider>
-        <Opened path={path} desk={desk} />
+        <Opened {...opened} />
         <NavRail />
       </LastSelectionProvider>
     </MemoryRouter>,
   )
-  return screen.getByRole('link', { name: link }).getAttribute('href')
 }
+const hrefOf = (name: string) => screen.getByRole('link', { name }).getAttribute('href')
+const lit = (name: string) => screen.getByRole('link', { name }).getAttribute('aria-current') === 'page'
 
-describe('the rail’s Topics', () => {
-  it('leads to the column when no file was open', () => {
-    expect(mount(null)).toBe('/app/folders')
+describe('the rail’s Topics and Folders', () => {
+  it('lead to their own screens when no file was open there', () => {
+    mount({})
+    expect(hrefOf('Topics')).toBe('/app/topics')
+    expect(hrefOf('Folders')).toBe('/app/folders')
   })
 
-  it('leads back to the file last open', () => {
-    expect(mount('/topic/release-notes-abc')).toBe('/topic/release-notes-abc')
+  it('each lead back to the file last open under it', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/issue/fix-the-rail-def' })
+    expect(hrefOf('Topics')).toBe('/topic/release-notes-abc')
+    expect(hrefOf('Folders')).toBe('/issue/fix-the-rail-def')
+  })
+
+  it('a file’s page lights the one whose column it shows, and only that one', () => {
+    mount({ column: 'topics' }, '/issue/fix-the-rail-def')
+    expect(lit('Topics')).toBe(true)
+    expect(lit('Folders')).toBe(false)
+  })
+
+  it('a file’s page opened from Folders lights Folders', () => {
+    mount({ column: 'folders' }, '/topic/release-notes-abc')
+    expect(lit('Folders')).toBe(true)
+    expect(lit('Topics')).toBe(false)
   })
 })
 
 describe('the rail’s Desk', () => {
   it('leads back to the file Desk had open beside its lists', () => {
-    expect(mount(null, '?open=30851%3Aabc%3Arelease', 'Desk')).toBe('/app/desk?open=30851%3Aabc%3Arelease')
+    mount({ desk: '?open=30851%3Aabc%3Arelease' })
+    expect(hrefOf('Desk')).toBe('/app/desk?open=30851%3Aabc%3Arelease')
   })
 
   it('leads to Desk when nothing was open there', () => {
-    expect(mount(null, undefined, 'Desk')).toBe('/app/desk')
+    mount({})
+    expect(hrefOf('Desk')).toBe('/app/desk')
   })
 })

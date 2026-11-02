@@ -368,7 +368,7 @@ function HeaderDialog({
           return false
         }
         // Into the topic: under a filter the tree may not be showing it.
-        navigate(filePath(result.address, title))
+        navigate(filePath(result.address, title), { state: { column: 'folders' } })
         return true
       }}
     />
@@ -515,7 +515,7 @@ export function FolderColumn({
 }) {
   return (
     <ListColumn
-      title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Topics'}
+      title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Folders'}
       titleMenu={TREE_VIEWS.map((option) => (
         <MenuItem key={option.value} label={option.label} selected={view === option.value} onClick={() => onViewChange(option.value)} />
       ))}

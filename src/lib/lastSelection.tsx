@@ -29,6 +29,14 @@ interface LastSelectionState {
    * person closed is never brought back.
    */
   topicsPath: string | null
+  /** Where Folders last was, the same way (TOP-4): the Folder tree, or a file opened from it. */
+  foldersPath: string | null
+  /**
+   * Which column the open file's page shows, and so which rail item is lit
+   * (TOP-4): the one it was opened from; opened by link, Topics when a topic
+   * of yours lists it, else Folders. Null until that is known.
+   */
+  fileColumn: 'topics' | 'folders' | null
   /** What Desk had open: the rail's Desk returns to it. */
   desk: DeskMemory | null
   /** One-shot: when set, the topic view for this Folder should open the conversation
@@ -45,6 +53,8 @@ interface LastSelectionState {
 interface LastSelectionValue extends LastSelectionState {
   setLastDmId: (id: string | null) => void
   setLastTopicsPath: (path: string | null) => void
+  setLastFoldersPath: (path: string | null) => void
+  setFileColumn: (column: 'topics' | 'folders' | null) => void
   setLastDesk: (desk: DeskMemory | null) => void
   setPendingTopicMessage: (v: PendingTopicMessage | null) => void
 }
@@ -54,6 +64,8 @@ const LastSelectionContext = createContext<LastSelectionValue | null>(null)
 export function LastSelectionProvider({ children }: { children: ReactNode }) {
   const [dmId, setLastDmId] = useState<string | null>(null)
   const [topicsPath, setLastTopicsPath] = useState<string | null>(null)
+  const [foldersPath, setLastFoldersPath] = useState<string | null>(null)
+  const [fileColumn, setFileColumn] = useState<'topics' | 'folders' | null>(null)
   const [desk, setLastDesk] = useState<DeskMemory | null>(null)
   const [pendingTopicMessage, setPendingTopicMessage] = useState<PendingTopicMessage | null>(null)
 
@@ -61,14 +73,18 @@ export function LastSelectionProvider({ children }: { children: ReactNode }) {
     () => ({
       dmId,
       topicsPath,
+      foldersPath,
+      fileColumn,
       desk,
       pendingTopicMessage,
       setLastDmId,
       setLastTopicsPath,
+      setLastFoldersPath,
+      setFileColumn,
       setLastDesk,
       setPendingTopicMessage,
     }),
-    [dmId, topicsPath, desk, pendingTopicMessage],
+    [dmId, topicsPath, foldersPath, fileColumn, desk, pendingTopicMessage],
   )
 
   return <LastSelectionContext.Provider value={value}>{children}</LastSelectionContext.Provider>

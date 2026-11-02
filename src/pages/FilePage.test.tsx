@@ -20,6 +20,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { PeekDataProvider, READ_DWELL_MS } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
+import { rememberOpenedFrom } from '@/lib/openedFrom'
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
 import { FilePage } from './FilePage'
@@ -254,7 +255,14 @@ vi.mock('@/api', async () => ({
   // The Activity column names the file a mention was said on by resolving it.
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
+  // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
+  useTopicsColumn: () => ({
+    state: { mine: topicsColumn.mine, others: [] },
+    column: (address: string) => (topicsColumn.mine.some(({ topic, files }) => [topic, ...files].some((file) => file.address === address)) ? 'topics' : 'folders'),
+    signedOut: false,
+  }),
 }))
+const topicsColumn = vi.hoisted(() => ({ mine: [] as { topic: { address: string | null }; files: { address: string | null }[] }[] }))
 /** What has been done to those mentions where they were said (PEE-48): nothing read, unless a test says otherwise. */
 const mentionNow = vi.hoisted(() => ({ current: null as unknown }))
 /** The comments elsewhere that name the open file (CON-11), per address asked. */
@@ -306,8 +314,14 @@ function Seed({ pending }: { pending: PendingTopicMessage }) {
 
 /** Where the rail's Topics would lead now. */
 function Remembered() {
-  const { topicsPath } = useLastSelection()
-  return <output data-testid="topics-path">{topicsPath ?? ''}</output>
+  const { topicsPath, foldersPath, fileColumn } = useLastSelection()
+  return (
+    <>
+      <output data-testid="topics-path">{topicsPath ?? ''}</output>
+      <output data-testid="folders-path">{foldersPath ?? ''}</output>
+      <output data-testid="file-column">{fileColumn ?? ''}</output>
+    </>
+  )
 }
 
 function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
@@ -388,6 +402,7 @@ beforeEach(() => {
   follows.state = 'known'
   follows.keys = new Set()
   follows.setMember.mockClear()
+  topicsColumn.mine = []
   roster.members = new Map()
   roster.reload.mockClear()
   roster.directory = undefined
@@ -631,9 +646,28 @@ describe('FilePage serves every declared shape', () => {
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 
-  it('is where the rail’s Topics comes back to: its settled address, with its open thread (5 October)', () => {
+  it('opened by link and listed in no topic of yours, it is shown under Folders, which comes back to it with its open thread', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(screen.getByTestId('topics-path').textContent).toBe('')
+  })
+
+  it('opened by link and listed in a topic of yours, it is shown under Topics, which comes back to it (TOP-4)', () => {
+    topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
+    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('file-column').textContent).toBe('topics')
+    expect(within(screen.getByTestId('left')).getByText('Topics')).toBeInTheDocument()
     expect(screen.getByTestId('topics-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(screen.getByTestId('folders-path').textContent).toBe('')
+  })
+
+  it('clicked in Folders, it is shown under Folders though a topic of yours lists it (TOP-4)', () => {
+    topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
+    rememberOpenedFrom(ISSUE_ADDRESS, 'folders')
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(ISSUE_SHORT)
   })
 })
 

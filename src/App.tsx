@@ -3,6 +3,7 @@ import { DeskPage } from './pages/DeskPage'
 import { LegacyTopicRedirect } from './pages/LegacyTopicRedirect'
 import { PeoplePage } from './pages/PeoplePage'
 import { FoldersPage } from '@/pages/FoldersPage'
+import { TopicsPage } from '@/pages/TopicsPage'
 import { FilePage } from '@/pages/FilePage'
 import { ObjectPage } from './pages/ObjectPage'
 import { useRouteWords } from '@/api'
@@ -40,6 +41,8 @@ function App() {
       <Route path="/" element={<Navigate to="/app/desk" replace />} />
       <Route path="/app" element={<Navigate to="/app/desk" replace />} />
       <Route path="/app/desk" element={<DeskPage />} />
+      {/* Your topics with their files (TOP-4); what was Topics until then is Folders, below. */}
+      <Route path="/app/topics" element={<TopicsPage />} />
       {/* Navigation by Folder (RFC 0.4 §4) — added beside the topic routes,
           not over them. §11.1's topic→file migration is a separate change. */}
       <Route path="/app/folders" element={<FoldersPage />} />
@@ -56,8 +59,9 @@ function App() {
           one topic is the file its conversation moved to — `/topic-old/<slug>-
           <channel-uuid>` since FOL-37, and the Peek-private `/topics/<id>`
           before it. These links are in the wild and in every browser history
-          that ever opened a topic, so they redirect rather than 404. */}
-      <Route path="/topics" element={<Navigate to="/app/folders" replace />} />
+          that ever opened a topic, so they redirect rather than 404. The list
+          is Topics again since TOP-4. */}
+      <Route path="/topics" element={<Navigate to="/app/topics" replace />} />
       <Route path="/topic-old/:ref" element={<LegacyTopicRedirect />} />
       <Route path="/topics/:id" element={<LegacyTopicRedirect />} />
       {/* What the NIP-89 manifest advertises: any consumer holding one of

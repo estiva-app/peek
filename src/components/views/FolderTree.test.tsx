@@ -430,7 +430,7 @@ describe('the two views (Katerina, 5 October)', () => {
     window.localStorage.removeItem('peek.tree.view')
     dots.member = { [TEAM]: true }
     mount({ currentFolder: OTHER })
-    expect(title('Topics')).not.toBeNull()
+    expect(title('Joined')).not.toBeNull()
     expect(section(TEAM)).not.toBeNull()
     // Not yours, but the open file is in it: where the tree says it is.
     expect(section(OTHER)).not.toBeNull()
@@ -476,7 +476,7 @@ describe('the two views (Katerina, 5 October)', () => {
   it('the title opens a menu of the views, and the choice is remembered in this browser', async () => {
     window.localStorage.removeItem('peek.tree.view')
     mount()
-    await userEvent.click(title('Topics'))
+    await userEvent.click(title('Joined'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
     expect(title('Folders')).not.toBeNull()
     expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
@@ -488,7 +488,7 @@ describe('the two views (Katerina, 5 October)', () => {
     mount()
     expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
     expect(screen.getByRole('button', { name: 'New topic' })).not.toBeNull()
-    await userEvent.click(title('Topics'))
+    await userEvent.click(title('Joined'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
     expect(screen.getByRole('button', { name: 'New folder' })).not.toBeNull()
   })
@@ -521,7 +521,7 @@ describe('the two views (Katerina, 5 October)', () => {
     mount()
     expect(section(OTHER).querySelector('.tabler-icon-folder')).not.toBeNull()
     await userEvent.click(title('Folders'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
     dots.member = {}
     expect(document.querySelector('.tabler-icon-folder')).toBeNull()
   })
@@ -588,7 +588,7 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
   it('a file not joined, opened from a link, is shown in Topics where it is', () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     mount({ ...LIVE, selectedMine: false })
-    expect(title('Topics')).not.toBeNull()
+    expect(title('Joined')).not.toBeNull()
     expect(section(TEAM)).not.toBeNull()
     expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
@@ -660,7 +660,7 @@ describe('the Archive view (Katerina, 5 October)', () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
     await userEvent.click(title('Archive'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
   })
 
@@ -668,7 +668,7 @@ describe('the Archive view (Katerina, 5 October)', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     await userEvent.click(title('Folders'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
     expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 

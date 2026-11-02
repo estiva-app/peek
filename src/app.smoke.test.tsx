@@ -79,7 +79,7 @@ describe('app smoke (seam wiring)', () => {
       ['the pre-FOL-37 /topic/<slug>-<uuid>', `/topic/folders-${CHANNEL}`, FILE],
       ['a topic whose conversation is a Ship project', '/topic-old/feedback-on-peek-2303e8c1-c866-43b8-9b4c-e263f313a683', PROJECT],
       ['For testing, discarded, to its team', '/topics/t_1788464201556_1', '/app/folders/fd03975a-eb00-49d6-a4b7-33ead1854672'],
-      ['/topics, the directory, to the Folder tree', '/topics', '/app/folders'],
+      ['/topics, the directory, to the Topics screen (TOP-4)', '/topics', '/app/topics'],
     ])('%s', (_label, from, to) => {
       renderApp(from)
       expect(currentUrl()).toBe(to)
