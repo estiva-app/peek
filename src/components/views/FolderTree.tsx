@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
+import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
 import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton, useRememberedOpen } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
@@ -17,7 +17,7 @@ import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
-import { StartTopicDialog } from '@/components/StartTopicDialog'
+import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { useFolderActions } from '@/components/views/useFolderActions'
 import {
@@ -30,7 +30,6 @@ import {
   type TreeView,
 } from '@/components/views/treeFilter'
 import { useRailClosed } from '@/layouts/railClosed'
-import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -293,82 +292,33 @@ export function FolderTree({
       {action && (
         <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reload} onClose={close} />
       )}
-      {making && (
-        <HeaderDialog
-          making={making}
-          folders={folders}
-          topLevel={topLevel}
-          section={section ?? undefined}
-          reload={reload}
-          onClose={() => setMaking(null)}
-        />
-      )}
+      {making === 'folder' && <NewFolderDialog reload={reload} onClose={() => setMaking(null)} />}
+      {making === 'topic' && <HeaderStartTopic column="folders" defaultFolder={section ?? undefined} onClose={() => setMaking(null)} />}
     </>
   )
 }
 
-/** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
-function HeaderDialog({
-  making,
-  folders,
-  topLevel,
-  section,
-  reload,
-  onClose,
-}: {
-  making: 'folder' | 'topic'
-  folders: FolderSummary[] | null
-  topLevel: FolderSummary[] | null
-  section?: string
-  reload: () => Promise<unknown>
-  onClose: () => void
-}) {
+/** The header's New folder. */
+function NewFolderDialog({ reload, onClose }: { reload: () => Promise<unknown>; onClose: () => void }) {
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const { createFolder, createTopic } = useForeignObjects()
-  if (making === 'folder') {
-    return (
-      <CreateFolderDialog
-        onClose={onClose}
-        onCreate={async (name) => {
-          const result = await createFolder(name)
-          if (!result.ok) {
-            showToast({ label: result.reason, type: 'error' })
-            return false
-          }
-          /*
-            Re-read before navigating: the relay emits the `kind:39000` this
-            list reads as a side effect of accepting the create, but the list in
-            hand does not have it yet. The new Folder's link opens it, in Folders.
-          */
-          await reload()
-          navigate(`/app/folders/${result.id}`)
-          return true
-        }}
-      />
-    )
-  }
+  const { createFolder } = useForeignObjects()
   return (
-    <StartTopicDialog
-      /*
-        Started from the header there is no Folder in hand, so the dialog asks —
-        the Folders the tree draws, every one of which has state.
-      */
-      folders={topLevel ?? []}
-      defaultFolder={section}
+    <CreateFolderDialog
       onClose={onClose}
-      onCreate={async (title, chosen, summary) => {
-        const folder = chosen ?? section
-        if (!folder) return false
-        // `hasState` from the listing `listFolders` answered, never guessed: a `kind:1852` against a Folder with no state empties it.
-        const listed = folders?.find((candidate) => candidate.id === folder)
-        const result = await createTopic({ folder, title, summary, hasState: listed?.hasState ?? false, folderName: listed?.name })
+      onCreate={async (name) => {
+        const result = await createFolder(name)
         if (!result.ok) {
           showToast({ label: result.reason, type: 'error' })
           return false
         }
-        // Into the topic: under a filter the tree may not be showing it.
-        navigate(filePath(result.address, title), { state: { column: 'folders' } })
+        /*
+          Re-read before navigating: the relay emits the `kind:39000` this
+          list reads as a side effect of accepting the create, but the list in
+          hand does not have it yet. The new Folder's link opens it, in Folders.
+        */
+        await reload()
+        navigate(`/app/folders/${result.id}`)
         return true
       }}
     />
@@ -529,9 +479,7 @@ export function FolderColumn({
                 <IconFolderPlus size={16} stroke={1.5} />
               </ToolbarButton>
             )}
-            <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-              <IconEdit size={16} stroke={1.5} />
-            </ToolbarButton>
+            <NewTopicButton onClick={onNewTopic} />
             <Menu
               align="right"
               trigger={

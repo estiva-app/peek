@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { IconArchive } from '@tabler/icons-react'
-import { EmptyState, ListColumn, NavItem, NavTree, NavTreeSection, SkeletonList } from '@estiva-app/ui'
+import { EmptyState, ListColumn, NavItem, NavTree, NavTreeSection, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { useConversationBadges, useTopicsColumn, type TopicWithFiles, type TopicsColumnState } from '@/api'
+import { useConversationBadges, useFolders, useTopicsColumn, type TopicWithFiles, type TopicsColumnState } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { DialogShell } from '@/components/ui/DialogShell'
 import { TreeRow } from '@/components/views/FileTreeView'
+import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { filePath } from '@/lib/objectUrl'
 import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
@@ -23,7 +24,8 @@ export const ARCHIVED_TOPICS_KEY = 'peek.topics.archived.open'
  * "Other topics", collapsed until opened, title only: open one to join it.
  * Last "Archived", collapsed too: only active topics and files are on the
  * list (Miky, 2 Nov, b1ace226), and a topic's archived files are one
- * "Archived" line under it that opens them in a dialog.
+ * "Archived" line under it that opens them in a dialog. Its header has New
+ * topic, as Folders' has (Miky, 2 Nov, TOP-9).
  * Built from the Per app prototype (estiva-ui `concept/cross-app-navigation`,
  * `PerApp.tsx` PeekFrame), whose Topics lists topics flat; the files under
  * each are the agent's lean, for Katerina to polish (Miky, 1 November).
@@ -44,8 +46,27 @@ export function TopicsColumn({ selectedRef, onControl }: {
     [state],
   )
   const { unread } = useConversationBadges(drawn)
+  const [starting, setStarting] = useState(false)
+  // The Folder list New topic chooses from, read with the column (one shared read per tab), so its dialog opens on the press.
+  useFolders()
+  // The open file's Folder is chosen first, as the open Folder is in Folders.
+  const openFolder =
+    typeof state === 'object' && 'mine' in state
+      ? [...state.mine.flatMap(({ topic, files }) => [topic, ...files]), ...state.others].find((file) => file.ref === selectedRef)?.folder
+      : undefined
   return (
-    <TopicsColumnView state={state} signedOut={signedOut} railClosed={railClosed} unread={unread} selectedRef={selectedRef} onControl={onControl} />
+    <>
+      <TopicsColumnView
+        state={state}
+        signedOut={signedOut}
+        railClosed={railClosed}
+        unread={unread}
+        selectedRef={selectedRef}
+        onControl={onControl}
+        onNewTopic={() => setStarting(true)}
+      />
+      {starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
+    </>
   )
 }
 
@@ -57,6 +78,7 @@ export function TopicsColumnView({
   unread = {},
   selectedRef,
   onControl,
+  onNewTopic,
 }: {
   state: TopicsColumnState
   signedOut?: boolean
@@ -64,6 +86,8 @@ export function TopicsColumnView({
   unread?: Record<string, boolean>
   selectedRef?: string
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** The header's New topic (TOP-9), as Folders' header has; none signed out, since starting one acts as somebody. */
+  onNewTopic?: () => void
 }) {
   /*
     The topic whose archived files are open in the dialog — held here, outside
@@ -78,7 +102,18 @@ export function TopicsColumnView({
       : undefined
   const close = () => setArchivedRef(null)
   return (
-    <ListColumn title="Topics" collapsed={railClosed}>
+    <ListColumn
+      title="Topics"
+      collapsed={railClosed}
+      actions={
+        !signedOut &&
+        onNewTopic && (
+          <Toolbar aria-label="Topic list actions" surface={false}>
+            <NewTopicButton onClick={onNewTopic} />
+          </Toolbar>
+        )
+      }
+    >
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
         <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} onControl={onControl} onArchived={(entry) => setArchivedRef(entry.topic.ref)} />
