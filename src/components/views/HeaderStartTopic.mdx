@@ -1,0 +1,32 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/HeaderStartTopic" />
+
+# HeaderStartTopic
+
+A column header's New topic: Start a topic, with its Folder to choose.
+
+**Seen in** — No story: it reads the Folder list and writes through the relay. The dialog it opens is `StartTopicDialog`, whose stories show the Folder choice.
+
+## When
+
+- New topic in a list column's header, where there is no Folder in hand: Folders (FOL-41) and Topics (TOP-9).
+
+## When not
+
+- Started from a Folder or a file's row. The Folder is known there, so `StartTopicDialog` only names it (`FolderActionDialog`, "New topic inside").
+
+## How
+
+```tsx
+import { HeaderStartTopic } from '@/components/views/HeaderStartTopic'
+
+{starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
+```
+
+- `column` is the rail entry that stays lit once the new topic opens. `defaultFolder` is chosen first when the list holds it; otherwise the first Folder is.
+
+## What it owns
+
+- The Folders offered: the top-level ones from the shared listing (`useFolders`, `topLevelFolders`). It mounts nothing until that list is in, because the dialog picks its Folder when it mounts.
+- The write: `createTopic`, with `hasState` read from the listing and never guessed, then the move into the new topic. A refusal is a toast.

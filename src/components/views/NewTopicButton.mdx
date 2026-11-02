@@ -1,0 +1,31 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/NewTopicButton" />
+
+# NewTopicButton
+
+The New topic button in a list column's header strip.
+
+**Seen in** — the Folders and Topics column stories (`FolderTree`, `TopicsColumn`), in their headers.
+
+## When
+
+- One item in a column header's `Toolbar`, beside its other actions (New folder, Filter).
+
+## When not
+
+- A menu item ("Start a topic" in a Folder's menu, "New topic inside" in a file's menu). Those are `MenuItem`s.
+
+## How
+
+```tsx
+import { NewTopicButton } from '@/components/views/HeaderStartTopic'
+
+<Toolbar aria-label="Topic list actions" surface={false}>
+  <NewTopicButton onClick={() => setStarting(true)} />
+</Toolbar>
+```
+
+## What it owns
+
+- Its icon, tooltip and name ("New topic"), the same in every header. The kit's `ToolbarButton` draws it.
