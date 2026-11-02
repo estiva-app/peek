@@ -1,8 +1,6 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { EmptyState, Form } from '@estiva-app/ui'
-import { DialogShell } from './ui/DialogShell'
-import { Button } from './ui/Button'
+import { EmptyState, FormDialog } from '@estiva-app/ui'
 import { Field } from './ui/Field'
 import { Select } from './ui/Select'
 import { TextInput } from './ui/TextInput'
@@ -79,8 +77,6 @@ export function StartTopicDialog({
   const [folder, setFolder] = useState(
     () => (defaultFolder && folders?.some((f) => f.id === defaultFolder) ? defaultFolder : folders?.[0]?.id) ?? '',
   )
-  const [creating, setCreating] = useState(false)
-  const formId = useId()
   const parentTitle = parent?.slots.title?.value ?? 'this file'
   const trimmed = title.trim()
   const choosing = folders !== undefined
@@ -93,63 +89,51 @@ export function StartTopicDialog({
   const where = choosing ? (chosen?.name ?? chosen?.id ?? 'the folder') : (folderName ?? 'this folder')
   const ready = !!trimmed && (!choosing || !!folder)
 
-  async function create() {
-    if (!ready || creating) return
-    setCreating(true)
-    const ok = await onCreate(trimmed, choosing ? folder : undefined, summaryText(summary))
-    setCreating(false)
-    if (ok) onClose()
-  }
-
   return (
-    <DialogShell
+    // The kit's FormDialog (C10): Enter in the title and the footer's Start send it the same way, and it closes once that went through.
+    <FormDialog
       title={parent ? `Start a topic under ${parentTitle}` : 'Start a topic'}
+      submitLabel="Start"
+      busyLabel="Starting…"
+      ready={ready}
+      onSubmit={() => onCreate(trimmed, choosing ? folder : undefined, summaryText(summary))}
       onClose={onClose}
-      footer={
-        <>
-          <Button variant="muted" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" form={formId} disabled={!ready || creating}>
-            {creating ? 'Starting…' : 'Start'}
-          </Button>
-        </>
-      }
     >
       {choosing && folders.length === 0 ? (
         <EmptyState scope="section" message="There is nowhere to start one yet — make a folder first." />
       ) : (
-      /* The package Form (UIG-7): Enter in the title and the footer's Start send it the same way. */
-      <Form id={formId} busy={creating} onSubmit={create}>
-        <p className="text-body-2 text-text-secondary">
-          {parent
-            ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
-            : `A conversation in ${where}. Everyone in the folder can read it.`}
-        </p>
-        <Field label="Title">
-          <TextInput
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="What is it about?"
-            autoFocus
-          />
-        </Field>
-        <SummaryField value={summary} onChange={setSummary} />
-        {choosing && (
-          <Field label="Folder">
-            <Select
-              value={folder}
-              onChange={setFolder}
-              options={folders.map((candidate) => ({
-                value: candidate.id,
-                label: candidate.name ?? candidate.id,
-              }))}
-              ariaLabel="Folder"
+        <>
+          <p className="text-body-2 text-text-secondary">
+            {parent
+              ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
+              : `A conversation in ${where}. Everyone in the folder can read it.`}
+          </p>
+          {/* @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet */}
+          <Field label="Title">
+            <TextInput
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="What is it about?"
+              autoFocus
             />
           </Field>
-        )}
-      </Form>
+          <SummaryField value={summary} onChange={setSummary} />
+          {choosing && (
+            // @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet
+            <Field label="Folder">
+              <Select
+                value={folder}
+                onChange={setFolder}
+                options={folders.map((candidate) => ({
+                  value: candidate.id,
+                  label: candidate.name ?? candidate.id,
+                }))}
+                ariaLabel="Folder"
+              />
+            </Field>
+          )}
+        </>
       )}
-    </DialogShell>
+    </FormDialog>
   )
 }

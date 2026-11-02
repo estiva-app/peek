@@ -2,13 +2,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
+import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
 import { folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
-import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
-import { MoveDialog, type MoveChoice } from '@/components/MoveDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
-import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
+import { ARCHIVE_WORDS, archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { currentFolderOf, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
 import { useToast } from '@/lib/toast'
@@ -21,6 +20,9 @@ import { useToast } from '@/lib/toast'
 export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive' | 'join' | 'leave'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
+
+/** Where a file may go, as the kit's Move lists it: what it goes under, by address (`''` for the top), and its path. */
+const placeOf = (target: MoveTarget): MovePlace => ({ id: target.file?.address ?? '', path: target.path })
 
 interface MoveState {
   kind: 'move'
@@ -512,17 +514,28 @@ export function useFileControls({
         what={kindNoun(dialog.file.kind)}
         hides={dialog.hides}
         staysVisible={dialog.staysVisible}
+        apps={ARCHIVE_WORDS.apps}
+        getBack={ARCHIVE_WORDS.getBack}
         onArchive={(resolution) => setArchived(dialog.file, true, resolution || undefined)}
         onClose={() => setDialog(null)}
       />
     ) : dialog.kind === 'move' ? (
+      /*
+        The kit's Move (C11): the Folder first, then what it goes under there,
+        read when a Folder is picked. Only a file that may sit under any file
+        (no `parentKind`) is put at the top for the person; for one whose move
+        names a kind (a Ship issue's project, MAN-4) the empty place takes it
+        out of its parent, and Move waits for a pick (FOL-45).
+      */
       <MoveDialog
-        file={dialog.file}
+        title={dialog.file.slots.title?.value ?? 'this file'}
+        description="Everyone who can read it now still can."
         from={dialog.from}
         folders={dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled folder' }))}
-        nests={dialog.nests}
-        targets={dialog.targets}
-        targetsIn={(folder) => targetsIn(dialog, folder)}
+        places={dialog.targets?.map(placeOf)}
+        placesIn={dialog.nests ? async (folder) => (await targetsIn(dialog, folder)).map(placeOf) : undefined}
+        startAtTop={dialog.file.parentKind === undefined}
+        topLabel={dialog.file.parentKind === undefined ? undefined : 'None — under none of these'}
         onMove={(choice) => move(dialog, choice)}
         onClose={() => setDialog(null)}
       />

@@ -1,7 +1,5 @@
-import { useId, useState } from 'react'
-import { Form } from '@estiva-app/ui'
-import { DialogShell } from './ui/DialogShell'
-import { Button } from './ui/Button'
+import { useState } from 'react'
+import { FormDialog } from '@estiva-app/ui'
 import { Field } from './ui/Field'
 import { TextInput } from './ui/TextInput'
 
@@ -39,57 +37,40 @@ export function CreateFolderDialog({
   onClose: () => void
 }) {
   const [name, setName] = useState(rename ?? '')
-  const [creating, setCreating] = useState(false)
-  const formId = useId()
   const trimmed = name.trim()
   // A rename to the name it already has would write and change nothing (5 October).
   const unchanged = rename !== undefined && trimmed === rename.trim()
 
-  async function create() {
-    if (!trimmed || unchanged || creating) return
-    setCreating(true)
-    const ok = await onCreate(trimmed)
-    setCreating(false)
-    if (ok) onClose()
-  }
-
   return (
-    <DialogShell
+    // The kit's FormDialog (C10): Enter in the field and the footer's button send it the same way, and it closes once that went through.
+    <FormDialog
       title={rename !== undefined ? 'Rename folder' : 'New folder'}
+      submitLabel={rename !== undefined ? 'Rename' : 'Create'}
+      busyLabel={rename !== undefined ? 'Renaming…' : 'Creating…'}
+      ready={!!trimmed && !unchanged}
+      onSubmit={() => onCreate(trimmed)}
       onClose={onClose}
-      footer={
-        <>
-          <Button variant="muted" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" type="submit" form={formId} disabled={!trimmed || unchanged || creating}>
-            {rename !== undefined ? (creating ? 'Renaming…' : 'Rename') : creating ? 'Creating…' : 'Create'}
-          </Button>
-        </>
-      }
     >
-      {/* The package Form (UIG-7): Enter in the field and the footer's Create send it the same way. */}
-      <Form id={formId} busy={creating} onSubmit={create}>
-        {rename === undefined && (
-          <p className="text-body-2 text-text-secondary">
-            A place for files and conversations. Everyone you add to it can read what is in it.
-          </p>
-        )}
-        {/*
-          "Folder name", the label the row above the list carried — `Field`
-          wires `aria-labelledby`, which wins over an `aria-label`, so the
-          label *is* the accessible name and a second one would only be the
-          name that loses.
-        */}
-        <Field label="Folder name">
-          <TextInput
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="What is it for?"
-            autoFocus
-          />
-        </Field>
-      </Form>
-    </DialogShell>
+      {rename === undefined && (
+        <p className="text-body-2 text-text-secondary">
+          A place for files and conversations. Everyone you add to it can read what is in it.
+        </p>
+      )}
+      {/*
+        "Folder name", the label the row above the list carried — `Field`
+        wires `aria-labelledby`, which wins over an `aria-label`, so the
+        label *is* the accessible name and a second one would only be the
+        name that loses.
+      */}
+      {/* @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet */}
+      <Field label="Folder name">
+        <TextInput
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="What is it for?"
+          autoFocus
+        />
+      </Field>
+    </FormDialog>
   )
 }

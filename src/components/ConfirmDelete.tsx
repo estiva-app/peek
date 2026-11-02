@@ -1,4 +1,4 @@
-import { Button, ConfirmDialog } from '@estiva-app/ui'
+import { ConfirmDialog } from '@estiva-app/ui'
 
 /**
  * The question asked before a file is deleted from its menu — a topic, or
@@ -37,19 +37,19 @@ export function ConfirmDelete({
       destructive
       onConfirm={onConfirm}
       onClose={onClose}
+      // The kit's third answer (C14): its sentence and button after the words, off while the delete runs.
+      alternative={
+        onArchiveInstead && {
+          label: 'Archive instead',
+          sentence: 'To take it out of every list and keep it readable, archive it instead.',
+          onClick: onArchiveInstead,
+        }
+      }
     >
       <p>
         Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.
       </p>
       <p>If the relay keeps it, Peek will say so; other apps can still read it until then.</p>
-      {onArchiveInstead && (
-        <div className="flex flex-col items-start gap-2">
-          <p>To take it out of every list and keep it readable, archive it instead.</p>
-          <Button variant="outlined" size="small" onClick={onArchiveInstead}>
-            Archive instead
-          </Button>
-        </div>
-      )}
     </ConfirmDialog>
   )
 }

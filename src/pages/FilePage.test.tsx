@@ -1948,6 +1948,38 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   }, 15_000) // the first mount of this page in a run is slow on its own
 
+  it('offers an issue in its own Folder no project as "None", and picks nothing for it (FOL-45)', async () => {
+    const otherProject = foreign({ ...project, ref: `30850:${CATH}:other-project`, address: `30850:${CATH}:other-project`, slots: { title: { value: 'Other work' } } })
+    const moving = {
+      ...issue,
+      parentRef: PROJECT_ADDRESS,
+      parentField: 'project',
+      parentKind: 30850,
+      actions: [{ id: 'move-issue', label: 'Move to project', control: 'text', effect: 'writes', field: 'project' }],
+    } as unknown as ForeignObject
+    objects.byAddress[ISSUE_ADDRESS] = moving
+    const listFolders = writes.listFolders.getMockImplementation()
+    writes.listFolders.mockResolvedValue([
+      { id: FOLDER, name: 'Folders', hasState: true, addresses: [PROJECT_ADDRESS, otherProject.address!] },
+    ] as never)
+    writes.resolveFolderContents.mockImplementation(
+      async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [project, otherProject, moving] }) as never,
+    )
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    // The empty place takes an issue out of its project rather than to a top, and is said so; it is never chosen for the person.
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
+    expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual([
+      'None — under none of these',
+      'Other work',
+    ])
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
+    writes.listFolders.mockImplementation(listFolders!)
+    writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
+  }, 15_000)
+
   it('starts a topic inside the file, in the file’s own team, and opens it', async () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))

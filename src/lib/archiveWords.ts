@@ -53,7 +53,12 @@ export function archiveImpactWords(
   return { hides, staysVisible }
 }
 
-/** "a, b and c". */
-export function listOf(parts: readonly string[]): string {
-  return parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
-}
+/**
+ * Peek's words for the kit's `ArchiveDialog` (C11), the same wherever it asks:
+ * an archived file goes out of the lists in Peek and in Ship, and the last line
+ * is Peek's own, not Ship's (5 October): Peek has an Archive view to point at.
+ */
+export const ARCHIVE_WORDS = {
+  apps: ['Peek', 'Ship'],
+  getBack: 'Nothing is deleted: it waits under Archive, where Unarchive brings everything back as it was.',
+} as const

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type CardShape, type LinkedConversation, type LinkState, type LoadingShape } from '@estiva-app/ui'
+import { AttachedCard, FieldLine, isPlainClick, LinkChip, LinkRow, type LinkedConversation, type LinkState } from '@estiva-app/ui'
 import { useConversationBadges, useDeleted, useLinksIn } from '@/api'
 import { linkedKindOf, linkStateOf, messageWordsOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
@@ -23,8 +23,6 @@ import { useHeldCard } from './useHeldCard'
   link is not a click on the message around it.
 */
 
-const isModified = (event: MouseEvent) => event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
-
 /**
  * A click on a link inside a message, routed as Peek routes a mention (RIC-16).
  *
@@ -41,7 +39,7 @@ const isModified = (event: MouseEvent) => event.button !== 0 || event.metaKey ||
 function LinkClicks({ block = false, children }: { block?: boolean; children: ReactNode }) {
   const onClickCapture = (event: MouseEvent<HTMLElement>) => {
     const anchor = (event.target as Element).closest('a')
-    if (!anchor || isModified(event) || anchor.getAttribute('target')) return
+    if (!anchor || !isPlainClick(event) || anchor.getAttribute('target')) return
     const href = anchor.getAttribute('href') ?? ''
     let url: URL
     try {
@@ -156,15 +154,12 @@ export function MessageCard({ uri, resolved, compact = false, readOnly = false, 
   }, [busy, onAct])
 
   let link: LinkState
-  let loadingShape: CardShape | undefined
   // Not this reader's to see, or deleted, or, when the body wrote a URL, that URL as written (SPEC §13.1, C21).
   const notAvailable = linkStateOf(uri, null, { url: opensAt, deleted })
   if (object === 'loading') {
     // Found not available the last time this device asked: its one-line row from the first paint, not a card's height (OPT-10).
-    // Otherwise a placeholder of the card's own height, so the conversation does not move as it loads.
-    const kind = linkedKindOf(uri)
-    loadingShape = rememberedUnavailable(naddr) || compact ? undefined : cardShapes.of(naddr, kind)
-    link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind, shape: loadingShape }
+    // Otherwise the kit holds the card's own height and shape from the last time (`remember`), so the conversation does not move as it loads.
+    link = rememberedUnavailable(naddr) ? notAvailable : { state: 'loading', kind: linkedKindOf(uri) }
   } else if (object === null) {
     // An answer of nothing, or a read that failed (a busy relay, the network): "not available", never a blank where the
     // card was (Katerina, 30 Oct). A failed read is asked again quietly (`useHeldObject`) and the card draws once it is
@@ -174,41 +169,11 @@ export function MessageCard({ uri, resolved, compact = false, readOnly = false, 
     // Without `onAct` the kit draws the values as words.
     link = openingAt(linkStateOf(uri, drawn as ForeignObject, { directory, ...(readOnly ? {} : { onAct: act }), ...(conversation ? { conversation } : {}) }), opensAt)
   }
-  /*
-    The drawn card's shape and height, kept for its placeholder next time. The
-    height holds what the shape cannot say: a summary the kit wraps to two lines.
-  */
-  const shape = !compact && link?.state === 'ready' ? loadingShapeOf(link.linked) : undefined
-  const shapeKey = shape && JSON.stringify(shape)
-  const box = useRef<HTMLDivElement>(null)
-  const kindOfCard = linkedKindOf(uri)
-  useEffect(() => {
-    const card = box.current?.firstElementChild
-    if (!shapeKey || !card) return
-    const drawn = JSON.parse(shapeKey) as LoadingShape
-    // A card not on screen (a closed panel) measures 0: it keeps the height it last drew at.
-    const note = () => {
-      const height = Math.round(card.getBoundingClientRect().height)
-      cardShapes.note(naddr, height > 0 ? { ...drawn, height } : { ...drawn, height: cardShapes.of(naddr, kindOfCard)?.height })
-    }
-    note()
-    if (typeof ResizeObserver === 'undefined') return
-    // A window being resized changes every card's height each frame: note it once it settles.
-    let settle: ReturnType<typeof setTimeout> | undefined
-    const observer = new ResizeObserver(() => {
-      clearTimeout(settle)
-      settle = setTimeout(note, 500)
-    })
-    observer.observe(card)
-    return () => {
-      observer.disconnect()
-      clearTimeout(settle)
-    }
-  }, [naddr, shapeKey, kindOfCard])
   return (
     <LinkClicks block>
-      <div ref={box} data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr} style={loadingShape?.height ? { minHeight: loadingShape.height } : undefined}>
-        {compact ? <LinkRow link={link} /> : <AttachedCard link={link} onRemove={onRemove} />}
+      <div data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr}>
+        {/* The kit measures the drawn card and keeps its shape and height for its placeholder next time (C4). */}
+        {compact ? <LinkRow link={link} /> : <AttachedCard link={link} onRemove={onRemove} remember={{ memory: cardShapes, id: naddr }} />}
         {error && (
           <FieldLine tone="error" className="mt-1">
             {error}

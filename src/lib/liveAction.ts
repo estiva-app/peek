@@ -307,13 +307,12 @@ export function splitSubmission(values: Record<string, string>): {
  * A submission's `prose` field as the block document its owner declared, and
  * the format to tell the runtime (MAN-1, RIC-13).
  *
- * The editor holds marker text (SPEC §13.2) — it is Peek's one editor, the
- * composer's, and that is what it writes — and `@estiva-app/protocol`'s bridge
- * turns it into §13.3's document, the same function Ship reads a legacy body
- * with. So what lands on the event is `content-format: estiva-blocks-1` and a
- * document Ship renders as blocks, with nothing converting it on the way in.
- * A prefilled description (PEE-5) is text in the editor like any other, and
- * leaves the same way.
+ * What was written in the field is already that document (`formats` says
+ * `blocks`: the kit's `DocumentField` hands one back, C12), and goes as it is.
+ * Marker text — a prefilled description nobody edited (PEE-5) — is turned into
+ * §13.3's document by `@estiva-app/protocol`'s bridge, the same function Ship
+ * reads a legacy body with. Either way what lands on the event is
+ * `content-format: estiva-blocks-1` and a document Ship renders as blocks.
  *
  * An empty prose field sends nothing, as an empty text field does — a
  * title-only capture carries no format and no body.
@@ -321,9 +320,11 @@ export function splitSubmission(values: Record<string, string>): {
 export function proseSubmission(
   action: LauncherAction,
   properties: Record<string, string>,
+  formats: Record<string, 'marker' | 'blocks'> = {},
 ): { properties: Record<string, string>; contentFormat?: typeof BLOCK_DOCUMENT_FORMAT } {
   const prose = action.fields.find((f) => f.control === 'prose' && properties[f.key]?.trim())
   if (!prose) return { properties }
+  if (formats[prose.key] === 'blocks') return { properties, contentFormat: BLOCK_DOCUMENT_FORMAT }
   return {
     properties: { ...properties, [prose.key]: serializeBlockDocument(markerTextToBlockDocument(properties[prose.key]!)) },
     contentFormat: BLOCK_DOCUMENT_FORMAT,

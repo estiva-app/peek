@@ -65,8 +65,8 @@ function LiveForm({ action, onSubmit }: { action: LauncherAction; onSubmit: (val
   )
 }
 
-function renderLive(onSubmit = vi.fn()) {
-  const action = launcherActionFrom(liveAddIssue, { parentNoun: 'project', submitLabel: 'Create issue' })!
+function renderLive(onSubmit = vi.fn(), resolved: ResolvedAction = liveAddIssue) {
+  const action = launcherActionFrom(resolved, { parentNoun: 'project', submitLabel: 'Create issue' })!
   render(
     <DebugProvider>
       <PeekDataProvider>
@@ -115,5 +115,25 @@ describe('Peek renders a live object-creating action as a form (PRO-4)', () => {
     const { parent, properties } = splitSubmission(values)
     expect(parent).toBe(PROJECT)
     expect(properties).toEqual({ title: 'Billing entry' })
+  })
+
+  it('holds one person in a person field: a second pick replaces the first', async () => {
+    const onSubmit = renderLive(vi.fn(), {
+      ...liveAddIssue,
+      fields: [{ name: 'title', type: 'string', required: true }, { name: 'assignee', type: 'pubkey', required: false }],
+    })
+    const picker = screen.getByRole('combobox', { name: /^Assignee/ })
+    await userEvent.type(picker, 'Alice')
+    await userEvent.click(await screen.findByRole('option', { name: /Alice Johnson/ }))
+    await userEvent.type(picker, 'Amie')
+    await userEvent.click(await screen.findByRole('option', { name: /Amie Miles/ }))
+    await userEvent.type(screen.getByLabelText(/^Title/), 'Billing entry')
+    await userEvent.click(screen.getByLabelText('Project'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Projection layer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(screen.queryByText('Alice Johnson')).toBeNull()
+    const { properties } = splitSubmission(onSubmit.mock.calls[0][0] as Record<string, string>)
+    expect(properties).toEqual({ title: 'Billing entry', assignee: 'amie' })
   })
 })

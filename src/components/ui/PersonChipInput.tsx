@@ -18,11 +18,13 @@ interface PersonChipInputProps {
   value: Person[]
   onChange: (next: Person[]) => void
   placeholder?: string
+  /** It holds one person — an assignee: a later pick replaces the chosen one (the kit's `single`). */
+  single?: boolean
 }
 
 const toOption = (p: Person): ChipInputOption => ({ id: p.id, label: p.name, description: p.role })
 
-export function PersonChipInput({ value, onChange, placeholder = 'Search people...' }: PersonChipInputProps) {
+export function PersonChipInput({ value, onChange, placeholder = 'Search people...', single }: PersonChipInputProps) {
   const people = usePeople() ?? []
   const byId = new Map<string, Person>([...people, ...value].map((p) => [p.id, p]))
   return (
@@ -31,6 +33,7 @@ export function PersonChipInput({ value, onChange, placeholder = 'Search people.
       onChange={(next) => onChange(next.map((o) => byId.get(o.id)).filter((p): p is Person => p !== undefined))}
       options={people.map(toOption)}
       placeholder={placeholder}
+      single={single}
       chipLeading={(o) => <Avatar size={16} name={o.label} alt={o.label} bot={byId.get(o.id)?.bot} />}
       rowLeading={(o) => <Avatar size={32} name={o.label} alt={o.label} bot={byId.get(o.id)?.bot} />}
     />

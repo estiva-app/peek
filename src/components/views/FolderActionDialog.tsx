@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { FolderSummary } from '@estiva-app/interop'
+import { ArchiveDialog } from '@estiva-app/ui'
 import { useForeignObjects } from '@/api'
-import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import type { FolderAction } from '@/components/views/useFolderActions'
-import { archiveImpactWords } from '@/lib/archiveWords'
+import { ARCHIVE_WORDS, archiveImpactWords } from '@/lib/archiveWords'
 import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
 
@@ -137,6 +137,8 @@ export function FolderActionDialog({
       what="folder"
       hides={impact?.hides ?? null}
       staysVisible={impact?.staysVisible}
+      apps={ARCHIVE_WORDS.apps}
+      getBack={ARCHIVE_WORDS.getBack}
       onClose={onClose}
       // A refused sign throws (a 429 under load); `setArchived` says so rather than closing silently.
       onArchive={(resolution) => setArchived(true, resolution || undefined)}
