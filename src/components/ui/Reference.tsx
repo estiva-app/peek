@@ -4,7 +4,7 @@ import { decodeNpub } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
 import { linkStateOf } from '@/lib/linked'
-import { InlineChip, LinkChip, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
+import { InlineChip, isPlainClick, LinkChip, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
 
 /**
  * A `nostr:` reference drawn where it was written — SPEC §13.1, RIC-10.
@@ -152,9 +152,6 @@ function Chip({ href, ...rest }: ChipProps) {
   return inRouter ? <RoutedChip href={href} {...rest} /> : <PlainChip href={href} {...rest} />
 }
 
-const isModified = (event: MouseEvent) =>
-  event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
-
 function PlainChip({ href, ...rest }: ChipProps & { href: string }) {
   return <InlineChip href={href} data-interactive="" onClick={(event) => event.stopPropagation()} {...rest} />
 }
@@ -165,7 +162,7 @@ function RoutedChip({ href, ...rest }: ChipProps & { href: string }) {
     // The card underneath opens a thread on click; a click on a mention is not that.
     event.stopPropagation()
     // Any modified click is the browser's to follow — open-in-new-tab keeps working, as the router link allowed.
-    if (isModified(event)) return
+    if (!isPlainClick(event)) return
     event.preventDefault()
     navigate(href)
   }

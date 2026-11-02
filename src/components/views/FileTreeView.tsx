@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { EmptyState, NavItem, SkeletonList, SkeletonRow } from '@estiva-app/ui'
+import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -12,20 +12,6 @@ import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
-import { readRemembered, writeRemembered } from '@/lib/rememberedOpen'
-
-/**
- * A line where the tree's rows would be: empty, or unreadable. Level with the
- * rows (Katerina, 2026-09-14): each row pads itself, so the line takes a
- * row's inset here, and EmptyState is never padded.
- */
-function TreeLine({ message }: { message: string }) {
-  return (
-    <div className="px-2 py-1">
-      <EmptyState scope="section" message={message} />
-    </div>
-  )
-}
 
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
@@ -99,11 +85,11 @@ export function FileTreeView({
   }
   // Unreadable is not empty — the line the whole codebase holds (PEE-10).
   if ('failed' in state) {
-    return <TreeLine message="This folder could not be read." />
+    return <EmptyState scope="rows" message="This folder could not be read." />
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <TreeLine message={filter === 'archive' ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
+    return <EmptyState scope="rows" message={filter === 'archive' ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
   }
 
   /*
@@ -141,7 +127,7 @@ export function FileTreeView({
     would be a lie about the Folder.
   */
   if (kept.length === 0) {
-    return <TreeLine message="Nothing here matches — the match is deeper in." />
+    return <EmptyState scope="rows" message="Nothing here matches — the match is deeper in." />
   }
 
   // The rows straight into the Folder's section, which sets them 2px apart (`NavTreeSection`), or the Panel's body.
@@ -262,14 +248,9 @@ export function JoinedFileRowsView({
   selectedRef?: string
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
-  if (state === 'loading') {
-    return (
-      <div className="py-1" data-loading="file-tree">
-        <SkeletonList />
-      </div>
-    )
-  }
-  if ('failed' in state) return <TreeLine message="This folder could not be read." />
+  // Drawn only in a Folder's section, whose `pending` holds it shut while the listing is read, then draws the kit's skeleton (ui 0.99).
+  if (state === 'loading') return null
+  if ('failed' in state) return <EmptyState scope="rows" message="This folder could not be read." />
 
   // An archived file is Archive's, joined or not (PEE-58): the listing leaves it out, and so does a joined issue read by address.
   const rows = files.filter(
@@ -280,7 +261,7 @@ export function JoinedFileRowsView({
   if (rows.length === 0) {
     // A joined issue still on its way is a row coming, not an empty Folder.
     if (waiting) return <SkeletonRow />
-    return <TreeLine message={filter === 'mine-unread' ? 'Nothing unread here.' : 'Nothing of yours here.'} />
+    return <EmptyState scope="rows" message={filter === 'mine-unread' ? 'Nothing unread here.' : 'Nothing of yours here.'} />
   }
   return (
     <>
@@ -323,20 +304,17 @@ function TreeRow({
    */
   remember?: boolean
 }) {
-  // `expand` decides until the person does — see `FileRow` for why this is
-  // not an initialiser and not an effect. What they did last, under All, is
-  // read once from this browser.
-  const kept = `peek.tree.row.${file.ref}`
-  const [toggled, setToggled] = useState<boolean | null>(() => (remember ? readRemembered(kept) : null))
   /*
-    And once `expand` has opened a row it stays open (SID-2): the selection
+    Once `expand` has opened a row it stays open (SID-2): the selection
     moving to another branch is not the person closing this one, and closing
     it would slide the row they just clicked out from under the pointer. Set
     during render, the one place that is neither the initialiser nor an effect.
   */
   const expanded = !!expand?.includes(file.ref)
-  if (toggled === null && expanded) setToggled(true)
-  const open = toggled ?? expanded
+  const [held, setHeld] = useState(false)
+  if (!held && expanded) setHeld(true)
+  // `expand` decides until the person does; what they did last, under All, is read once from this browser (the kit's memory).
+  const [open, setOpen] = useRememberedOpen(remember ? `peek.tree.row.${file.ref}` : undefined, expanded || held)
   const title = file.slots.title?.value ?? 'Untitled'
   const listedChildren = listedChildrenOf(file, listed)
   /*
@@ -434,10 +412,7 @@ function TreeRow({
       }
       menuLabel="More options"
       open={open}
-      onOpenChange={(next) => {
-        setToggled(next)
-        if (remember) writeRemembered(kept, next)
-      }}
+      onOpenChange={setOpen}
       // A row above the open file opens for each file opened under it, even one closed by hand (Katerina, 30 October):
       // the package's `openFor`, once per file, so closed again it stays closed until another opens.
       openFor={expandable && expanded ? selectedRef : undefined}
@@ -512,10 +487,10 @@ function FetchedRows({
 
   if (state === 'loading') return <SkeletonRow />
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
-    return <TreeLine message="What is in this could not be read." />
+    return <EmptyState scope="rows" message="What is in this could not be read." />
   }
   if (children.length === 0) {
-    return exclude.length === 0 ? <TreeLine message="Nothing in this yet." /> : null
+    return exclude.length === 0 ? <EmptyState scope="rows" message="Nothing in this yet." /> : null
   }
   return (
     <>
