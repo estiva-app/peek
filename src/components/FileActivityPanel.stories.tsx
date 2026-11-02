@@ -98,8 +98,8 @@ const meta = {
     (Story) => (
       <MemoryRouter>
         <PeekDataProvider>
-          {/* The third column, copied from `PeekFrame`: `w-[380px]`, where a thread would otherwise open. */}
-          <div className="w-[380px] h-[560px] flex flex-col bg-bg-base">
+          {/* The third column, as the kit's ConversationLayout draws it: 384px, where a thread would otherwise open. */}
+          <div className="w-[384px] h-[560px] flex flex-col bg-bg-base">
             <Routes>
               <Route path="/message/:id" element={<Opened />} />
               <Route path="*" element={<Story />} />

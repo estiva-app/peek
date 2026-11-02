@@ -38,29 +38,21 @@ const DEFAULT_DEBUG: DebugState = {
 
 interface DebugContextValue {
   state: DebugState
-  setDesk: <K extends keyof DeskDebug>(key: K, value: DeskDebug[K]) => void
-  setUnreads: <K extends keyof UnreadsDebug>(key: K, value: UnreadsDebug[K]) => void
 }
 
 const DebugContext = createContext<DebugContextValue | null>(null)
 
 /**
- * Gives every part below it the test switches for the Desk and unread dots.
+ * Gives every part below it the test switches for the Desk and unread dots, at
+ * their defaults. Nothing sets them any more: the setters had no caller and
+ * went (audit D10, 2 November).
  * @registry reusable: stays in Peek (Katerina, 18 September): Peek's test switches
  */
 export function DebugProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DebugState>(DEFAULT_DEBUG)
-
-  const setDesk = <K extends keyof DeskDebug>(key: K, value: DeskDebug[K]) => {
-    setState((prev) => ({ ...prev, desk: { ...prev.desk, [key]: value } }))
-  }
-
-  const setUnreads = <K extends keyof UnreadsDebug>(key: K, value: UnreadsDebug[K]) => {
-    setState((prev) => ({ ...prev, unreads: { ...prev.unreads, [key]: value } }))
-  }
+  const [value] = useState<DebugContextValue>({ state: DEFAULT_DEBUG })
 
   return (
-    <DebugContext.Provider value={{ state, setDesk, setUnreads }}>
+    <DebugContext.Provider value={value}>
       {children}
     </DebugContext.Provider>
   )

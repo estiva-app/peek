@@ -54,11 +54,11 @@ type Story = StoryObj<typeof meta>
 
 /**
  * The app frame: nav rail + left panel + conversation area inside the rounded app card,
- * with the top bar overlaid. Click the top-left menu button to collapse the rail + left panel.
+ * with the top bar overlaid. The top-left button folds the rail and the left panel.
  */
 export const Default: Story = {}
 
-/** With the right-hand thread panel slot filled. */
+/** With the right-hand column filled: another app's read-only file's thread or Overview, 384px. */
 export const WithThreadPanel: Story = {
   args: {
     threadPanel: <Placeholder label="Thread panel" />,

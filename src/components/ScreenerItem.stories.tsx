@@ -42,13 +42,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A topic item — topic status icon + title, two-line preview, Open work / Later / ✕ Dismiss. */
-export const TopicItem: Story = {}
-
-/** A DM item — sender avatar + name. */
-export const PersonItem: Story = {
-  args: { item: SCREENER_ITEMS[1] },
-}
+/**
+ * A DM item — sender avatar + name, two-line preview, Open work / Later / ✕ Dismiss. Since the Convex topics were
+ * deleted (FOL-23, 24 September) a topic reaches the Screener as a file row, so a DM is the only other kind; this
+ * story and "One item" asked for the deleted topic fixture, and broke.
+ */
+export const PersonItem: Story = {}
 
 /**
  * **Hovering a row opens the preview card** — the Screener line is only a

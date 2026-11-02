@@ -187,13 +187,20 @@ export function useFileView({
     : (comments.find((c) => c.id === openThreadId) ??
       (openStandIn && { id: openStandIn.id, author: '', body: '', createdAt: openStandIn.createdAt, deleted: true }))
 
-  // The middle column's body and footer, for the page's Panel (estiva-ui 0.37.0): the
-  // Panel scrolls the body with the package's bar, and keeps the composer under it.
-  const panel: Partial<ConversationParts> & { children: ReactNode } = ownView
-    ? peek.conversationParts
+  /*
+    The middle column under the page's bar. Peek's own view, and a file still resolving, are the kit's
+    ConversationLayout (its parts, spread onto one): the placeholder is the layout reading, so a file that turns out
+    to be Peek's own goes on to its messages with nothing swapped. Another app's file stays the list it was, in a
+    Panel: in the layout it would sit on the box and space its comments wider (its thread keeps its shape too,
+    Katerina, 1 November).
+  */
+  const list: { layout: ConversationParts } | { panel: { children: ReactNode } } = ownView
+    ? // The thread is what somebody just asked for, in the layout's column; the Overview is what it shows otherwise.
+      { layout: { ...peek.conversationParts, aside } }
     : conversation === 'loading'
-      ? conversationPlaceholder
+      ? { layout: conversationPlaceholder }
       : {
+          panel: {
           children: (
             <ForeignConversationView
               state={conversation}
@@ -205,12 +212,14 @@ export function useFileView({
               deletedRoots={deletedRoots}
             />
           ),
+          },
         }
 
-  const threadPanel: ReactNode | undefined = ownView ? (
-    // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
-    (peek.threadPanel ?? aside)
-  ) : openThread ? (
+  /*
+    Another app's file only: its read-only thread, or its Overview, in the frame's column beside the Panel. Peek's own
+    view draws both in its ConversationLayout's column (B1).
+  */
+  const threadPanel: ReactNode | undefined = ownView ? undefined : openThread ? (
     <Panel
       title="Thread"
       actions={
@@ -233,11 +242,12 @@ export function useFileView({
     reload,
     title,
     rootIds,
-    /** The middle column's body and footer, for a `Panel` whose header the page draws: spread it onto one. */
-    panel,
+    /** The middle column under the page's bar: the kit's ConversationLayout's parts, or another app's list for a `Panel`. */
+    list,
+    /** Another app's file: what the frame's column beside it holds, its open thread or its Overview. */
     threadPanel,
     /** The open thread has drawn its anchor, so a scroll to a comment in it can land. */
-    threadDrawn: peek.threadPanel !== undefined,
+    threadDrawn: peek.threadDrawn,
     /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
     replyOnlyThread: ownView ? peek.replyOnlyThread : readOnlyReplyThread,
     /**

@@ -6,8 +6,8 @@ import { TopicMenuItems } from './TopicMoreMenu'
 /**
  * One person on the package's sidebar row: their photo, their name, the dot,
  * and on the ⋮ Open work (Katerina, 30 October) and Hide where hiding can
- * succeed (DMS-6). The link is their page;
- * `onSelect` goes there.
+ * succeed (DMS-6). The link is their page: a plain click goes there through
+ * Peek's router, the kit's `AppProvider`, and Cmd-click opens a new tab.
  */
 export function PersonItem({
   id,
@@ -16,7 +16,6 @@ export function PersonItem({
   unread,
   urgent,
   active,
-  onSelect,
   onHide,
   openWorkAction,
   onToggleOpenWork,
@@ -27,7 +26,6 @@ export function PersonItem({
   unread?: boolean
   urgent?: boolean
   active: boolean
-  onSelect?: (id: string) => void
   onHide?: () => void
   /** Whether the ⋮ adds this DM to Open work or takes it off; absent where adding cannot succeed. */
   openWorkAction?: 'add' | 'remove'
@@ -42,15 +40,6 @@ export function PersonItem({
       active={active}
       unread={unread}
       urgent={urgent}
-      onClick={
-        onSelect
-          ? (event) => {
-              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-              event.preventDefault()
-              onSelect(id)
-            }
-          : undefined
-      }
       menu={
         onHide || (openWorkAction && onToggleOpenWork) ? (
           <TopicMenuItems onHideDm={onHide} openWorkAction={openWorkAction} onToggleOpenWork={onToggleOpenWork} />

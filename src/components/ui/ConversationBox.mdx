@@ -1,55 +1,33 @@
-import { Meta, Canvas } from '@storybook/addon-docs/blocks'
-import * as ConversationBoxStories from './ConversationBox.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta of={ConversationBoxStories} />
+<Meta title="Topics/ConversationBox" />
 
 # ConversationBox
 
-Peek's comment box: the package's `CommentBox`, the one box every app writes a
-comment, a reply, a DM and a Folder's chat line in (PEEKM-3), with what only
-Peek knows — its people, its `/` rows, its upload, its drafts and its send.
+Where a message or a reply is written in Peek.
 
-<Canvas of={ConversationBoxStories.Default} />
-
-**Seen in** — its stories: **Default**, **Reply**, **With An Issue**, **An
-Issue Alone On Its Line**, **Refused** and **Archived**; under a topic's or a
-file's messages, in an open thread, in a DM and in a Folder's chat.
+**Seen in** — No story: it needs the relay to send. *Pages/In the shell* (FileArchived) draws its closed form, `ClosedBox`.
 
 ## When
 
-- Wherever a person writes a new message or a reply in Peek: a topic, a file's
-  conversation, a thread, a DM, a Folder's chat.
+- Under a conversation (`kind="conversation"`) or in a thread (`kind="reply"`).
 
 ## When not
 
-- Editing a sent message → **EditBox**, the same box's edit form (PEEKM-4).
-- Nothing can be written (an archived file) → **ClosedBox**, the line in the
-  box's place.
-- In another app → its own wrapper of `CommentBox` (Ship's `ConversationBox`,
-  Leaf's), never this one.
+- To change a message already sent. That is `EditBox`.
+- Where nothing can be written. Use `ClosedBox`, or pass `closed`.
 
 ## How
 
 ```tsx
 import { ConversationBox } from '@/components/ui/ConversationBox'
 
-<ConversationBox
-  kind="reply"
-  onSend={(payload, away) => send(payload, away)}
-  draftKey={draftKeys.object(file.address)}
-  contextLabel={title}
-  here={file.address}
-/>
+<ConversationBox kind="reply" onSend={send} draftKey={draftKey} contextLabel="Topic" here={address} />
 ```
+
+- `onSend` gets the text, files, highlight, urgent names and cards, and answers whether the relay took it. `draftKey` keeps unsent text.
 
 ## What it owns
 
-- **Shown at once** (Decided 2026-10-17): the box empties as soon as Send is
-  pressed; a refusal puts the words back with a line under the box saying why,
-  in plain words (`notSentReason`) — no toast. A refusal that arrives after the
-  person has left the box is said in a note instead.
-- **Peek's `/` rows**: Resolve and the five Highlights, after the package's
-  Upload, Mention, Urgent and Reference.
-- **The draft**, kept under `draftKey` until it is sent.
-- **The launcher's target**: the box last used is the one the command launcher
-  writes into.
+- **Peek's half:** its drafts, the people `@` offers, the `[` list, uploads, the card shown under the box, and its Resolve row.
+- **The look and the behaviour are the kit's CommentBox.** See CommentBox in the estiva-ui Storybook (Writing / CommentBox).

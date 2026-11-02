@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import { ForeignConversationView } from './ForeignConversationView'
 
@@ -144,8 +145,9 @@ describe('ForeignConversationView', () => {
         />,
       )
 
-      expect(screen.getByRole('button', { name: '9 replies' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: '1 reply' })).toBeInTheDocument()
+      // The kit's replies row: the count spelled out, a button that opens the thread.
+      expect(screen.getByRole('button', { name: /^9 replies/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^1 reply,/ })).toBeInTheDocument()
     })
 
     it('offers a reply, not a nought, where nobody has replied', () => {
@@ -160,7 +162,9 @@ describe('ForeignConversationView', () => {
 
       // A missing entry is "nobody asked", and a "0" would be an assertion
       // nobody made — so the row says what it can offer instead.
-      expect(screen.getByRole('button', { name: '2 replies' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^2 replies/ })).toBeInTheDocument()
+      // Reply waits on the card's hover strip, the kit's (Katerina, 1 November).
+      fireEvent.mouseEnter(screen.getByText('Accepted.'))
       expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
       expect(screen.queryByText('0')).not.toBeInTheDocument()
     })
@@ -173,7 +177,7 @@ describe('ForeignConversationView', () => {
     })
 
     it('marks the comment whose thread is open', () => {
-      render(
+      const { container } = render(
         <ForeignConversationView
           people={PEOPLE}
           state={two}
@@ -183,7 +187,8 @@ describe('ForeignConversationView', () => {
         />,
       )
 
-      expect(screen.getByRole('button', { name: '9 replies', current: true })).toBeInTheDocument()
+      expect(container.querySelector('[data-comment="c1"]')?.getAttribute('aria-current')).toBe('true')
+      expect(container.querySelector('[data-comment="c2"]')?.getAttribute('aria-current')).toBeNull()
     })
 
     it('draws a comment deleted under its replies where it stood, with its thread (PEE-40)', () => {
@@ -201,7 +206,7 @@ describe('ForeignConversationView', () => {
       const rows = [...container.querySelectorAll('[data-comment]')].map((r) => r.getAttribute('data-comment'))
       expect(rows).toEqual(['c1', 'gone', 'c2'])
       expect(screen.getByText('This comment was deleted.')).toBeInTheDocument()
-      screen.getByRole('button', { name: '2 replies' }).click()
+      screen.getByRole('button', { name: /^2 replies/ }).click()
       expect(opened).toEqual(['gone'])
     })
 
@@ -231,5 +236,27 @@ describe('ForeignConversationView', () => {
 
     expect(screen.getByText(`${SHIP.slice(0, 8)}…`)).toBeInTheDocument()
     expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('ForeignConversationView, by the keyboard', () => {
+  it('a comment with no replies is still reached by Tab and opened with Enter (it had a Reply button before the kit card)', async () => {
+    const opened = vi.fn()
+    render(
+      <ForeignConversationView
+        people={PEOPLE}
+        onOpenThread={opened}
+        state={object({ comments: [{ id: 'c1', author: CATH, body: 'Nobody answered this yet.', createdAt: at(60) }] })}
+      />,
+    )
+    const card = screen.getByText('Nobody answered this yet.').closest('[tabindex="0"]') as HTMLElement
+    expect(card).not.toBeNull()
+    // The way a person gets there: Tab, until the card is the one focused.
+    const user = userEvent.setup()
+    for (let i = 0; i < 10 && document.activeElement !== card; i++) await user.tab()
+    expect(document.activeElement).toBe(card)
+    expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(opened).toHaveBeenCalledWith('c1')
   })
 })

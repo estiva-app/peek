@@ -22,7 +22,6 @@ export interface DeskMemory {
 }
 
 interface LastSelectionState {
-  topicId: string | null
   dmId: string | null
   /**
    * Where Topics last was — a file's path, or the column with none open — so
@@ -32,11 +31,6 @@ interface LastSelectionState {
   topicsPath: string | null
   /** What Desk had open: the rail's Desk returns to it. */
   desk: DeskMemory | null
-  /** One-shot: when set, the next mounted DM view should auto-open this thread, then clear. */
-  pendingDmThreadId: string | null
-  /** One-shot: when set, the topic view matching topicId should auto-open this thread, then clear.
-   *  Used by launcher search results and fact-check "view source" links. */
-  pendingTopicThread: { topicId: string; convId: string } | null
   /** One-shot: when set, the topic view for this Folder should open the conversation
    *  holding this message and scroll to it, then clear (RIC-16). Set by `ObjectPage`
    *  for a `/message/<id>` link, which knows the event and its Folder but neither
@@ -49,44 +43,32 @@ interface LastSelectionState {
 }
 
 interface LastSelectionValue extends LastSelectionState {
-  setLastTopicId: (id: string | null) => void
   setLastDmId: (id: string | null) => void
   setLastTopicsPath: (path: string | null) => void
   setLastDesk: (desk: DeskMemory | null) => void
-  setPendingDmThreadId: (id: string | null) => void
-  setPendingTopicThread: (v: { topicId: string; convId: string } | null) => void
   setPendingTopicMessage: (v: PendingTopicMessage | null) => void
 }
 
 const LastSelectionContext = createContext<LastSelectionValue | null>(null)
 
 export function LastSelectionProvider({ children }: { children: ReactNode }) {
-  const [topicId, setLastTopicId] = useState<string | null>(null)
   const [dmId, setLastDmId] = useState<string | null>(null)
   const [topicsPath, setLastTopicsPath] = useState<string | null>(null)
   const [desk, setLastDesk] = useState<DeskMemory | null>(null)
-  const [pendingDmThreadId, setPendingDmThreadId] = useState<string | null>(null)
-  const [pendingTopicThread, setPendingTopicThread] = useState<{ topicId: string; convId: string } | null>(null)
   const [pendingTopicMessage, setPendingTopicMessage] = useState<PendingTopicMessage | null>(null)
 
   const value = useMemo<LastSelectionValue>(
     () => ({
-      topicId,
       dmId,
       topicsPath,
       desk,
-      pendingDmThreadId,
-      pendingTopicThread,
       pendingTopicMessage,
-      setLastTopicId,
       setLastDmId,
       setLastTopicsPath,
       setLastDesk,
-      setPendingDmThreadId,
-      setPendingTopicThread,
       setPendingTopicMessage,
     }),
-    [topicId, dmId, topicsPath, desk, pendingDmThreadId, pendingTopicThread, pendingTopicMessage],
+    [dmId, topicsPath, desk, pendingTopicMessage],
   )
 
   return <LastSelectionContext.Provider value={value}>{children}</LastSelectionContext.Provider>

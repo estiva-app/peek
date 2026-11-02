@@ -1,66 +1,32 @@
-import { Meta, Canvas } from '@storybook/addon-docs/blocks'
-import * as EditBoxStories from './EditBox.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta of={EditBoxStories} />
+<Meta title="Topics/EditBox" />
 
 # EditBox
 
-Editing a comment or a reply you wrote: the package's `CommentBox` in its edit
-mode, with what only Peek knows — its people, its `[` sections, its chips and
-its upload (PEEKM-4). It sits beside `ConversationBox`, in the same file.
+The box a message or reply you wrote is edited in.
 
-<Canvas of={EditBoxStories.Default} />
-
-**Seen in** — its stories: **Default**, **Resolved With A File**, **With Its
-Card** and **Refused**; in `ConversationCard` and `ReplyCard`, wherever your own message
-is open for editing.
+**Seen in** — No story: it saves to the relay, and the kit's card opens it.
 
 ## When
 
-- A person edits a comment or a reply they wrote, anywhere Peek draws one.
+- Inside `ConversationCard`, in the card's `editor` slot, while editing.
 
 ## When not
 
-- Writing a new message or a reply → **ConversationBox**.
-- Somebody else's message, or a message on an archived file → no box: Edit is
-  not offered.
-- In another app → its own wrapper of `CommentBox` (Ship's `ConversationBox`,
-  Leaf's comments column).
+- To write a new message. That is `ConversationBox`.
 
 ## How
 
 ```tsx
 import { EditBox } from '@/components/ui/ConversationBox'
 
-<EditBox
-  key={editing.key}
-  message={{ body, urgent: urgentMentions, highlightType, resolution, files, embeds }}
-  refused={editing.refused}
-  here={writtenOn}
-  onSave={(saved) => apply(saved)}
-  onCancel={() => setEditing(null)}
-/>
+<EditBox message={{ body, files, embeds }} here={address} onSave={save} onCancel={done} />
 ```
 
-Give it a new `key` each time it opens: the box reads what it opens with only as
-it mounts, and a refused edit reopens it as a new box.
+- `onSave` gets what changed: text, resolution, highlight, files, cards. `refused` reopens it with a refused save and why.
 
 ## What it owns
 
-- **Shown at once** (why:
-  https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md):
-  Save hands the card what changed — the text, the files, the card, the
-  resolution, the highlight, each only when it changed — and the box closes. A
-  refusal reopens it with what was saved and "Not saved: …" under it; no toast
-  while the message is on screen.
-- **A file added while editing** (Miky, 26 October): `/` → Upload, a paste or a
-  drop. No paperclip: the edit box shows only its keys (Decided 2026-10-17).
-- **What the message has**: its highlight and its resolution open in the box and
-  are kept; taking the resolution out reopens the conversation.
-- **No new urgency** (CON-24): an edit carries no tags, so `!@` and `/` offer no
-  urgent mention, and a hand-typed `!@Name` is saved as `@Name`.
-- **The message's card** (§13.6.2; Katerina, 30 Oct): the card the message has
-  shows under the box with its ✕, so it can be seen and taken off while
-  editing; a card taken off before never shows again, and a file the edit names
-  first gets its card, as a new message's does. The rule is conversation's
-  `boxLinksOf`, read with the message's cards (`folded`), as in Ship and Leaf.
+- **Peek's half:** the people, the `[` list and uploads, the cards of the message and what it named before, and a refused save coming back with "Not saved: …".
+- **The look and the behaviour are the kit's CommentBox**, in its edit mode. See CommentBox in the estiva-ui Storybook (Writing / CommentBox).

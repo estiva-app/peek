@@ -122,24 +122,24 @@ export function ObjectPage() {
  * see**: reaching the second one meant finding a reference Peek genuinely
  * cannot open, and the first is gone in a blink.
  *
- * The frame is a flex column the height of the window, so a page-scope empty
- * state fills it as a flex child and centres (D46). It used to sit near the top
- * under a padding of its own.
+ * The page-scope empty state is the height of the window itself, so it centres
+ * (D46). It used to sit near the top under a padding of its own, then in a
+ * column of Peek's that gave it the height.
  */
 export function ObjectPageView({ state }: { state: 'looking' | 'unopenable' }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <EmptyState
-        message={
-          state === 'looking'
-            ? 'Opening…'
-            : // A reference Peek cannot open says so. Another app's `naddr` is a
-              // valid reference, and redirecting it somewhere arbitrary would be
-              // worse than an honest empty state — the same argument the widget
-              // layer makes about a blank card reading as "that app is broken".
-              'That link does not point at anything Peek can open.'
-        }
-      />
-    </div>
+    <EmptyState
+      // The window's height, so the line sits in its middle (D46).
+      className="min-h-screen"
+      message={
+        state === 'looking'
+          ? 'Opening…'
+          : // A reference Peek cannot open says so. Another app's `naddr` is a
+            // valid reference, and redirecting it somewhere arbitrary would be
+            // worse than an honest empty state — the same argument the widget
+            // layer makes about a blank card reading as "that app is broken".
+            'That link does not point at anything Peek can open.'
+      }
+    />
   )
 }

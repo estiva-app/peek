@@ -54,6 +54,7 @@ vi.mock('@/components/ui/ConversationBox', () => ({ ConversationBox: () => null,
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { useFileConversationView } from './useFileConversationView'
+import { ConversationLayout } from '@estiva-app/ui'
 
 const ME = 'a'.repeat(64)
 const CATH = 'b'.repeat(64)
@@ -69,7 +70,7 @@ const conversation = (): FileConversation => ({
 })
 
 function View() {
-  const { conversation: list } = useFileConversationView({
+  const { conversationParts } = useFileConversationView({
     container: { kind: 'file', address: `30840:${ME}:d`, h: 'team' },
     rootIds: [ROOT],
     openThreadId: undefined,
@@ -77,7 +78,7 @@ function View() {
     title: 'A file',
     onCommented: async () => {},
   })
-  return list
+  return <ConversationLayout threads="beside" {...conversationParts} />
 }
 
 const open = () =>

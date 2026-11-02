@@ -11,7 +11,6 @@ export interface RowHandlers {
   editFiles: (id: string, files: FileAttachment[]) => void
   /** The card set after an edit, when it changed (OPT-17). */
   editEmbeds: (id: string, embeds: Embed[]) => void
-  onOpenThread: (id: string) => void
   remove: (id: string) => void
 }
 
@@ -22,7 +21,6 @@ interface ConversationRowProps {
   hasNewReply: boolean
   /** What is new in it is urgent for you: the unread look in its urgent tone. */
   isUrgent: boolean
-  isSelected: boolean
   readOnly: boolean
   /** The same object on every render — the view's — so it never re-draws a row by itself. */
   actions: RowHandlers
@@ -35,14 +33,19 @@ interface ConversationRowProps {
  * shows changed: the view rebuilds every message's data from the held
  * conversation on each change, so the data is compared by value, not by
  * identity. Without this, one new message re-drew every card of a long topic.
+ *
+ * Opening its thread is the kit's ConversationLayout's: a press on the card,
+ * its replies row or Reply asks the layout, which marks the open one (B1).
  */
 export const ConversationRow = memo(
-  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, isSelected, readOnly, actions, writtenOn }: ConversationRowProps) {
+  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, readOnly, actions, writtenOn }: ConversationRowProps) {
     return (
       <ConversationCard
         authorName={c.authorName}
         authorAvatarSrc={c.authorAvatarSrc}
+        authorBot={c.authorBot}
         timestamp={c.timestamp}
+        createdAtMs={c.createdAtMs}
         body={c.body}
         editedAt={c.editedAt}
         canEditAndDelete={c.canEditAndDelete}
@@ -57,12 +60,10 @@ export const ConversationRow = memo(
         isResolved={c.isResolved}
         resolvedBy={c.resolvedBy}
         resolutionMessage={c.resolutionMessage}
-        nostrReferences={c.nostrReferences}
         urgentMentions={c.urgentMentions}
         parts={c.parts}
         embeds={c.embeds}
         deleted={c.isDeleted}
-        isSelected={isSelected}
         onResolvedChange={(resolved, _by, message) => actions.setResolution(c.id, resolved, message)}
         onReactionsChange={(_next, emoji) => actions.toggleReaction(c.id, emoji)}
         onBodyChange={(b) => actions.editBody(c.id, b)}
@@ -70,8 +71,6 @@ export const ConversationRow = memo(
         onEmbedsChange={(e) => actions.editEmbeds(c.id, e)}
         writtenOn={writtenOn}
         readOnly={readOnly}
-        onClick={readOnly && !c.replyCount ? undefined : () => actions.onOpenThread(c.id)}
-        onReply={() => actions.onOpenThread(c.id)}
         onDelete={() => actions.remove(c.id)}
         messageId={c.id}
       />
@@ -81,7 +80,6 @@ export const ConversationRow = memo(
     before.hasNewMessage === after.hasNewMessage &&
     before.hasNewReply === after.hasNewReply &&
     before.isUrgent === after.isUrgent &&
-    before.isSelected === after.isSelected &&
     before.readOnly === after.readOnly &&
     before.actions === after.actions &&
     before.writtenOn === after.writtenOn &&

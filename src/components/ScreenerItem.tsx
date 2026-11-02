@@ -1,13 +1,11 @@
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { Avatar, Card, Chip as PackageChip, PreviewCard } from '@estiva-app/ui'
+import { Card, Chip, PreviewCard, MetaText, Person } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
 import { Button } from './ui/Button'
-import { Chip } from './ui/Chip'
 import { IconButton } from './ui/IconButton'
-import { MetaText } from './ui/MetaText'
 import { formatReplyTimestamp, hasRelay, useAvatarSrc } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import { fileGlyph } from '@/lib/fileGlyph'
@@ -47,33 +45,27 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
   // Never a key: a writer the page cannot name yet is a silhouette and an em dash.
   const who = item.authorName
   const avatarSrc = item.kind === 'dm' ? item.authorAvatarSrc : who ? avatarSrcFor(who) : undefined
-  /*
-    The row's buttons keep their own clicks, and so does the Later menu: it is
-    a portal, outside the row in the page, but React still hands its clicks up
-    to the row.
-  */
-  const readFromRow = onRead
-    ? (event: MouseEvent<HTMLDivElement>) => {
-        const target = event.target as Element
-        if (!event.currentTarget.contains(target) || target.closest('button')) return
-        onRead(item.id)
-      }
-    : undefined
 
   const row = (
-    // A card in a feed (the package's `hover="fill"`): it lights when pointed at, and opens when clicked.
+    /*
+      A card in a feed (the package's `hover="fill"`): it lights when pointed at, and opens when pressed — the kit's
+      press (C16): the row's buttons keep their own clicks, and so does the Later menu, a portal outside the row that
+      React still hands its clicks up to; a Tab stop too, opened by Enter or Space.
+    */
     <Card
       fill="none"
       quietUntilHover
       hover={onRead ? 'fill' : 'none'}
       hovered={menuOpen}
-      onClick={readFromRow}
+      onPress={onRead ? () => onRead(item.id) : undefined}
       className="flex flex-col p-2"
     >
       {/* Who wrote, and when: the name truncates, the time stays. */}
       <div className="flex items-center gap-2">
-        <Avatar size={16} src={avatarSrc} name={who} alt={who ?? ''} />
-        <span className="min-w-0 flex-1 truncate text-body-2-strong text-text-primary">{who ?? '—'}</span>
+        {/* The kit's face beside a name, cut short, a dash for no name; the name's type on a box of Peek's around it (gotcha 4). */}
+        <div className="flex min-w-0 flex-1 text-body-2-strong text-text-primary">
+          <Person size={16} name={who} picture={avatarSrc} bot={item.kind === 'file' ? item.authorBot : undefined} />
+        </div>
         {/* A bare time means today; older names its day (Peek's rule). */}
         {item.at !== undefined && <MetaText className="shrink-0">{formatReplyTimestamp(item.at)}</MetaText>}
       </div>
@@ -86,7 +78,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
       {/* Where: a file, as a chip under the words, its glyph the tree's (`fileGlyph`). A DM is the person. */}
       {item.kind === 'file' && (
         <div className="flex min-w-0 items-center gap-1 pl-6 pt-2">
-          <PackageChip type="neutral" leadingIcon={<TopicState type={fileGlyph(item.fileKind)} />} label={item.title} className="min-w-0" />
+          <Chip type="neutral" leadingIcon={<TopicState type={fileGlyph(item.fileKind)} />} label={item.title} className="min-w-0" />
           {/* The chip Open work shows on an archived file (peek#515), always in sight here. */}
           {item.archived && <Chip type="neutral" label="Archived" className="shrink-0" />}
         </div>

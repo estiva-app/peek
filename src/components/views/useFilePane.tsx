@@ -1,19 +1,19 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, Panel, Toolbar, ToolbarButton, WithTooltip } from '@estiva-app/ui'
+import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
+import { formatDateLabel } from '@/api'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -183,53 +183,26 @@ export function useFilePane(
   const notice =
     file && archive ? (
       <ArchivedNotice
-        archive={archive}
-        by={people?.[archive.by]?.displayName ?? `${archive.by.slice(0, 8)}…`}
-        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
+        // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+        by={people?.[archive.by]?.displayName ?? '—'}
+        when={formatDateLabel(archive.at * 1000)}
+        resolution={archive.resolution}
+        withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
         onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
-        look="card"
       />
     ) : undefined
 
-  const pane = (
-    // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
-    <Panel
-      {...view.panel}
-      /*
-        An archived file is read-only (Katerina, 7 October). Its card goes
-        above the messages, where Ship's issue page puts it, and the comment
-        box's own line takes the composer's place, as every app says it
-        (Miky, 25 October, PEEKM-3).
-      */
-      footer={
-        notice ? (
-          <div className="p-3">
-            <ClosedBox reason={archivedLineOf(archive) ?? ''} />
-          </div>
-        ) : (
-          view.panel.footer
-        )
-      }
-      children={
-        notice ? (
-          <>
-            <div className="shrink-0 px-4 pt-4">{notice}</div>
-            {view.panel.children}
-          </>
-        ) : (
-          view.panel.children
-        )
-      }
-      title={
+  const header = (
         /*
-          One row: the file's name, and whose file it is (Katerina, 5
-          October). No trail over it: on the page the column beside shows
-          where the file sits — and a trail in one row cut every name short.
+          The kit's PageHeader. One row: the file's name, and whose file it is
+          (Katerina, 5 October). No trail over it: on the page the column beside
+          shows where the file sits — and a trail in one row cut every name short.
         */
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-body-2-strong text-text-primary">{title}</p>
-          {/*
+        <PageHeader
+          title={title}
+          after={
+            /*
             Another app's file: one way into the app that owns it, "Open" —
             the way to its text, which Peek shows and never edits for a Leaf
             document (Miky, 14 October). No chip: *"I would simplify and just
@@ -241,74 +214,94 @@ export function useFilePane(
             app is in its name and tooltip ("Open in Leaf"), the one place an
             app is named (PRO-24). A file of Peek's own gets nothing. The
             address is the manifest's, a web page only (`openInAppUrl`).
-          */}
-          {file && elsewhereAppName(file) && openInAppUrl(file) && (
-            <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
-              <Button
-                href={openInAppUrl(file)}
-                external
-                size="small"
-                className="shrink-0"
-                leadingIcon={<IconExternalLink size={14} stroke={1.5} />}
-                aria-label={`Open in ${elsewhereAppName(file)}`}
-              >
-                Open
-              </Button>
-            </WithTooltip>
-          )}
-        </div>
-      }
-      actions={
-        file?.folder || view.sidePanel ? (
-          <div className="flex shrink-0 items-center gap-2">
-            {/* The pill before the strip, as Ship's header has it: it opens a dialog, not an action. */}
-            {members}
-            {/* One strip: one Tab stop, arrows along it (UIG-14). */}
-            <Toolbar aria-label="File actions" surface={false}>
-              {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
-              {showToggle && (
-                <ToolbarButton
-                  tooltip={member ? 'Leave' : 'Join'}
-                  aria-label={member ? 'Leave' : 'Join'}
-                  pressed={member}
-                  onClick={toggleMember}
+            */
+            file && elsewhereAppName(file) && openInAppUrl(file) ? (
+              <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
+                <Button
+                  href={openInAppUrl(file)}
+                  external
+                  size="small"
+                  className="shrink-0"
+                  leadingIcon={<IconExternalLink size={14} stroke={1.5} />}
+                  aria-label={`Open in ${elsewhereAppName(file)}`}
                 >
-                  {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
-                </ToolbarButton>
-              )}
-              {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
-              {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
-              {/*
-                The topic's menu, when the manifest offers anything for it
-                to hold (FOL-33) — and absent, not inert, when it does not:
-                a Ship issue's header has nothing to put here, and a button
-                that opens nothing would say otherwise.
-              */}
-              {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
-                <TopicMoreMenu
-                  trigger={
-                    <ToolbarButton tooltip="More actions" aria-label="More actions">
-                      <IconDotsVertical size={16} stroke={1.5} />
-                    </ToolbarButton>
-                  }
-                  onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
-                  onCopyLink={hasTopicControls ? copyLink : undefined}
-                  archiveAction={archiveAction}
-                  onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
-                  openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
-                  onToggleOpenWork={toggleOpenWork}
-                  onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
-                  onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
-                  onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
-                  onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
-                />
-              )}
-            </Toolbar>
-          </div>
-        ) : undefined
-      }
-    />
+                  Open
+                </Button>
+              </WithTooltip>
+            ) : undefined
+          }
+          // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
+          // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
+          members={file?.folder || view.sidePanel ? members : undefined}
+          actions={
+            file?.folder || view.sidePanel ? (
+              /* One strip: one Tab stop, arrows along it (UIG-14). */
+              <Toolbar aria-label="File actions" surface={false}>
+                {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
+                {showToggle && (
+                  <ToolbarButton
+                    tooltip={member ? 'Leave' : 'Join'}
+                    aria-label={member ? 'Leave' : 'Join'}
+                    pressed={member}
+                    onClick={toggleMember}
+                  >
+                    {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
+                  </ToolbarButton>
+                )}
+                {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
+                {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
+                {/*
+                  The topic's menu, when the manifest offers anything for it
+                  to hold (FOL-33) — and absent, not inert, when it does not:
+                  a Ship issue's header has nothing to put here, and a button
+                  that opens nothing would say otherwise.
+                */}
+                {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
+                  <TopicMoreMenu
+                    trigger={
+                      <ToolbarButton tooltip="More actions" aria-label="More actions">
+                        <IconDotsVertical size={16} stroke={1.5} />
+                      </ToolbarButton>
+                    }
+                    onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
+                    onCopyLink={hasTopicControls ? copyLink : undefined}
+                    archiveAction={archiveAction}
+                    onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
+                    openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
+                    onToggleOpenWork={toggleOpenWork}
+                    onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
+                    onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
+                    onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
+                    onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                  />
+                )}
+              </Toolbar>
+            ) : undefined
+          }
+        />
   )
+
+  /*
+    An archived file is read-only (Katerina, 7 October). Its card goes above the messages, where Ship's issue page
+    puts it, and the comment box's own line takes the composer's place, as every app says it (Miky, 25 October,
+    PEEKM-3).
+  */
+  const closedLine = notice && <ClosedBox reason={archivedLineOf(archive) ?? ''} />
+  const pane =
+    'layout' in view.list ? (
+      // Peek's own file: the kit's ConversationLayout, two columns, under the page's bar. It scrolls the messages and keeps the composer under them.
+      <ConversationLayout threads="beside" title={title} header={header} top={notice} {...view.list.layout} box={closedLine || view.list.layout.box} />
+    ) : (
+      // Another app's file: its list as it was, in the kit's Panel under the same bar.
+      <Panel
+        title={title}
+        header={header}
+        footer={closedLine && <div className="p-3">{closedLine}</div>}
+      >
+        {notice && <div className="shrink-0 px-4 pt-4">{notice}</div>}
+        {view.list.panel.children}
+      </Panel>
+    )
 
   return {
     pane,

@@ -1,57 +1,33 @@
-import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as PartCardStories from './PartCard.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta of={PartCardStories} />
+<Meta title="Topics/PartCard" />
 
 # PartCard
 
-One block of another app's object — a paragraph, a table or a picture from a
-Ship description — shown live inside a message.
+One block of another file, shown live inside a message.
 
-<Canvas of={PartCardStories.Paragraph} />
-
-`PartCard` reads the block; `PartCardView` draws what the read gave. The stories
-draw the view, because the read needs a relay.
+**Seen in** — No story: it reads the block from the relay. The kit's PartCard has its stories in the estiva-ui Storybook.
 
 ## When
 
-- Under a message whose text holds a pasted block link, and that carries its
-  `part` tag (SPEC §13.6.1). `MessageBody` places it; nothing else needs to.
-- Above a comment anchored to one block of the object it is on (§13.6).
+- A message names a block with a `part` tag. Pass its `address` and `block`.
 
 ## When not
 
-- A link to a whole object → the kit's card under the message, `MessageCard`.
-- A file attached to the message itself → the package's `AttachmentCard`.
+- For the whole file. Use **AttachedCard**.
+- For a link in a sentence. Use **LinkChip**.
 
 ## How
 
 ```tsx
 import { PartCard } from '@/components/ui/PartCard'
 
-<PartCard address={part.address} block={part.block} />
+<PartCard address={address} block={block} anchorTags={tags} quotedBy="Ada" />
 ```
 
-<Canvas of={PartCardStories.Long} />
+- `anchorTags` is a comment's own `block` and `quote` tags. `PartCardView` draws a read that has already happened.
 
 ## What it owns
 
-- **Five states, in the kit's words** (`PartCard`'s `state`, SPEC §13.6.1):
-  shown; "This part was deleted"; "This part can't be shown", which opens the
-  whole file; "A part of this issue deleted", only when a deletion the protocol
-  trusts names the file (`readAbsence`); "A part of this issue not available".
-  The last two show no title and no text.
-- **The cut.** A block taller than 160px goes behind the package's `ShowMore`
-  and opens in place. A picture is never cut.
-- **The way into the app.** Its title, a link to the block in the app it
-  lives in, in a new tab. Words, not a link, when the app gave no link. There
-  is no "Open in" button: it said again what the title does (Katerina, 31 Oct).
-- **Staying live.** It reads again every 30 seconds while the tab is visible,
-  and when the tab comes back.
-
-<Canvas of={PartCardStories.NotAvailable} />
-<Canvas of={PartCardStories.Deleted} />
-
-## Props
-
-<Controls of={PartCardStories.Paragraph} />
+- **Peek's half:** reading the block (`usePart`), the blocks inside it, the cut at 160px behind ShowMore, and the way into the app it came from.
+- **The look and the behaviour are the kit's PartCard**: its frame and five states (loading, deleted, not available, part deleted, can't be shown). See PartCard in the estiva-ui Storybook (Links / PartCard).

@@ -26,6 +26,9 @@ beforeAll(() => {
   }
 })
 
+/** The app always passes a delete: the kit's card offers Delete only when there is one. */
+const noop = () => {}
+
 async function openMore(node: React.ReactElement) {
   const { container } = render(
     <MemoryRouter>
@@ -35,58 +38,65 @@ async function openMore(node: React.ReactElement) {
     </MemoryRouter>,
   )
   fireEvent.mouseEnter(container.firstElementChild as Element)
-  await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
-  await screen.findByText('Mark as Highlight')
+  // The kit's card offers ⋯ only when it has a row to show: someone else's reply has none, so no ⋯ at all.
+  const more = screen.queryByRole('button', { name: 'More actions' })
+  if (more) {
+    await userEvent.click(more)
+    await screen.findByRole('menu')
+  }
   return container
 }
 
+const edit = () => screen.queryByRole('menuitem', { name: 'Edit message' })
+const remove = () => screen.queryByRole('menuitem', { name: 'Delete' })
+
 describe('a message card', () => {
   it('offers Edit and Delete on your own message', async () => {
-    const container = await openMore(<ConversationCard authorName="You" timestamp="10:24" body="Mine." />)
-    expect(screen.getByText('Edit message')).toBeTruthy()
-    expect(screen.getByText('Delete')).toBeTruthy()
-    await userEvent.click(screen.getByText('Edit message'))
+    const container = await openMore(<ConversationCard onDelete={noop} authorName="You" timestamp="10:24" body="Mine." />)
+    expect(edit()).toBeTruthy()
+    expect(remove()).toBeTruthy()
+    await userEvent.click(edit()!)
     expect(container.querySelector('.ProseMirror')).not.toBeNull()
   })
 
   it("offers neither on somebody else's", async () => {
-    const container = await openMore(<ConversationCard authorName="Katerina Kelepouri" timestamp="10:24" body="Hers." />)
-    expect(screen.queryByText('Edit message')).toBeNull()
-    expect(screen.queryByText('Delete')).toBeNull()
+    const container = await openMore(<ConversationCard onDelete={noop} authorName="Katerina Kelepouri" timestamp="10:24" body="Hers." />)
+    expect(edit()).toBeNull()
+    expect(remove()).toBeNull()
     expect(container.querySelector('.ProseMirror')).toBeNull()
   })
 })
 
 describe('a reply card', () => {
   it('offers Edit and Delete on your own reply', async () => {
-    await openMore(<ReplyCard authorName="You" timestamp="10:25" body="My reply." />)
-    expect(screen.getByText('Edit message')).toBeTruthy()
-    expect(screen.getByText('Delete')).toBeTruthy()
+    await openMore(<ReplyCard onDelete={noop} authorName="You" timestamp="10:25" body="My reply." />)
+    expect(edit()).toBeTruthy()
+    expect(remove()).toBeTruthy()
   })
 
   it("offers neither on somebody else's", async () => {
-    await openMore(<ReplyCard authorName="Katerina Kelepouri" timestamp="10:25" body="Her reply." />)
-    expect(screen.queryByText('Edit message')).toBeNull()
-    expect(screen.queryByText('Delete')).toBeNull()
+    await openMore(<ReplyCard onDelete={noop} authorName="Katerina Kelepouri" timestamp="10:25" body="Her reply." />)
+    expect(edit()).toBeNull()
+    expect(remove()).toBeNull()
   })
 })
 
 // SPEC §6.5: the seam decides, and the label is only the fallback.
 describe('a seam that says who may edit', () => {
   it("offers both whenever the seam says so, whatever the label", async () => {
-    await openMore(<ConversationCard authorName="Helper" canEditAndDelete timestamp="10:24" body="Done." />)
-    expect(screen.getByText('Edit message')).toBeTruthy()
-    expect(screen.getByText('Delete')).toBeTruthy()
+    await openMore(<ConversationCard onDelete={noop} authorName="Helper" canEditAndDelete timestamp="10:24" body="Done." />)
+    expect(edit()).toBeTruthy()
+    expect(remove()).toBeTruthy()
   })
 
   it('offers neither when the seam says no, whatever the label', async () => {
-    await openMore(<ReplyCard authorName="You" canEditAndDelete={false} timestamp="10:25" body="Mine." />)
-    expect(screen.queryByText('Edit message')).toBeNull()
-    expect(screen.queryByText('Delete')).toBeNull()
+    await openMore(<ReplyCard onDelete={noop} authorName="You" canEditAndDelete={false} timestamp="10:25" body="Mine." />)
+    expect(edit()).toBeNull()
+    expect(remove()).toBeNull()
   })
 
   it('offers both on a reply when the seam says so', async () => {
-    await openMore(<ReplyCard authorName="Helper" canEditAndDelete timestamp="10:25" body="Done." />)
-    expect(screen.getByText('Edit message')).toBeTruthy()
+    await openMore(<ReplyCard onDelete={noop} authorName="Helper" canEditAndDelete timestamp="10:25" body="Done." />)
+    expect(edit()).toBeTruthy()
   })
 })

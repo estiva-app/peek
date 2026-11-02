@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Menu, MenuItem, MenuSection } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSection, MetaText } from '@estiva-app/ui'
 import { Button } from './ui/Button'
-import { MetaText } from './ui/MetaText'
 import { laterMenuTime, laterOptions } from '@/lib/laterTimes'
 
 /**
@@ -35,9 +34,7 @@ export function ScreenerLaterMenu({
         onOpenChange?.(open)
       }}
       className="min-w-[160px]"
-      // The 4px is the rows' content's; on `className` it added to the
-      // package's 8px from 0.12.6 on (migration docs D68, Finding 60).
-      contentClassName="p-1"
+      // The package's own 8px inside, as every other menu in Peek has it (Katerina, 2 November: it was 4px here).
     >
       {/* No heights here. This menu forced `h-9 px-3` on its rows and
           `h-7 px-3` on its heading, and was the only menu in Peek doing it —

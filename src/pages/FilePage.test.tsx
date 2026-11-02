@@ -23,6 +23,7 @@ import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } fro
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
 import { FilePage } from './FilePage'
+import { PeekSetup } from '@/lib/PeekSetup'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
 const OTHER_FOLDER = '3789d2ca-103c-40e5-906f-0490782db5fd'
@@ -140,8 +141,9 @@ vi.mock('@/components/views/useFileConversationView', async () => ({
   // The real fold: Activity's mention rows draw each message as it is now with it (PEE-48).
   project: (await vi.importActual<typeof import('@/components/views/useFileConversationView')>('@/components/views/useFileConversationView')).project,
   // A getter: JSX here would run while the mock is hoisted, before the runtime is imported.
+  // As the kit's ConversationLayout takes it: no messages, so the stand-in is what the layout draws in their place.
   get conversationPlaceholder() {
-    return { children: <div data-testid="conversation-placeholder" /> }
+    return { items: [], empty: <div data-testid="conversation-placeholder" /> }
   },
   useFileConversationView: (args: Record<string, unknown>) => {
     peekView.args.push(args)
@@ -151,11 +153,16 @@ vi.mock('@/components/views/useFileConversationView', async () => ({
         <textarea aria-label="Peek composer" />
       </div>
     ) : null
+    const open = container ? (args.openThreadId as string | undefined) : undefined
     return {
-      conversation: view,
-      // The same, as the page's Panel takes it (estiva-ui 0.37.0).
-      conversationParts: { children: view },
-      threadPanel: container && args.openThreadId ? <div data-testid="peek-thread">{String(args.openThreadId)}</div> : undefined,
+      /*
+        As the kit's ConversationLayout takes it: no messages, so the stand-in view is drawn in their place. An open
+        thread is the stand-in's, which the layout draws in its own column beside, as Peek's view hands it (B1).
+      */
+      conversationParts: open
+        ? { items: [{ id: open, card: view, thread: () => <div data-testid="peek-thread">{open}</div> }], open, empty: view }
+        : { items: [], empty: view },
+      threadDrawn: open !== undefined,
     }
   },
 }))
@@ -258,9 +265,9 @@ vi.mock('@/api/useFileMentions', () => ({
     return { mentions: (address && mentions.byAddress[address]) || [] }
   },
 }))
-/** The scroll a landing asks for — the DOM anchor is the thread pane's, mocked away above. */
+/** The show a landing asks for (the kit's, C3) — the DOM anchor is the thread pane's, mocked away above. */
 const anchor = vi.hoisted(() => ({ scrollTo: vi.fn(async () => true) }))
-vi.mock('@/lib/messageAnchor', () => ({ scrollToMessageWhenReady: anchor.scrollTo }))
+vi.mock('@estiva-app/ui', async () => ({ ...(await vi.importActual<Record<string, unknown>>('@estiva-app/ui')), showInConversationWhenDrawn: anchor.scrollTo }))
 vi.mock('@/lib/toast', () => ({
   useToast: () => ({ showToast: (toast: { label: string; type?: string }) => toasts.shown.push(toast) }),
 }))
@@ -311,6 +318,8 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
         <LastSelectionProvider>
           <MemoryRouter initialEntries={[url]}>
             {opts?.pending && <Seed pending={opts.pending} />}
+            {/* Peek's router handed to every kit link, as main.tsx does: a tree row's click changes page through it. */}
+            <PeekSetup>
             <Routes>
               {/* The one file route `App` mounts (FOL-39); the word is the page's to read.
                   Peek's own pages rank ahead of it there, and so here. */}
@@ -319,6 +328,7 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
               <Route path="/:word/:ref" element={<><FilePage /><Probe /></>} />
               <Route path="*" element={<Probe />} />
             </Routes>
+            </PeekSetup>
             <Remembered />
           </MemoryRouter>
         </LastSelectionProvider>
@@ -333,7 +343,25 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
   thread" with the count spelled out, because nobody reading the page could tell
   the icon meant a thread. So the tests match what a person reads.
 */
-const THREAD_CONTROL = /^(Reply|\d+ repl(y|ies))$/
+// The kit's card (1 November): the replies row says "2 replies, open the thread"; Reply waits on the hover strip.
+const THREAD_CONTROL = /^(Reply|\d+ repl(y|ies))(,|$)/
+
+/** Each comment's way into its thread: point at the comment, as a person does, and take its control. One per comment. */
+function threadControls(pane: HTMLElement): HTMLElement[] {
+  return [...pane.querySelectorAll<HTMLElement>('[data-comment]')].flatMap((comment) => {
+    fireEvent.mouseEnter(comment.firstElementChild as Element)
+    return within(comment).queryAllByRole('button', { name: THREAD_CONTROL }).slice(0, 1)
+  })
+}
+
+/** The rows under a row while it is open: the panel its arrow opens (`aria-controls`), as a screen reader is told; null while shut. */
+function rowsUnder(ref: string): HTMLElement | null {
+  const arrow = document.querySelector(`[data-file="${CSS.escape(ref)}"]`)?.parentElement?.querySelector('[aria-controls][aria-label*="what is under"]')
+  return arrow?.getAttribute('aria-expanded') === 'true' ? document.getElementById(arrow.getAttribute('aria-controls')!) : null
+}
+
+/** A Folder's listing is drawn: its rows are in its section, not a skeleton, a line or a shut fold. */
+const listed = (box: HTMLElement, folder: string) => box.querySelector(`[data-nav-group="${CSS.escape(folder)}"] [data-file]`) !== null
 
 /** What one mounted page looks like, reduced to what must not differ between apps. */
 function shape() {
@@ -342,9 +370,9 @@ function shape() {
   return {
     foldersHeading: within(left).queryAllByText('Folders').length > 0,
     folderRows: within(left).getAllByRole('button').length > 0,
-    listingOpen: left.querySelector(`[data-folder="${FOLDER}"]`) !== null,
+    listingOpen: listed(left, FOLDER),
     comments: middle.querySelectorAll('[data-comment]').length,
-    threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
+    threadButtons: threadControls(middle).length,
     composer: within(middle).queryByRole('textbox') !== null,
     // No Open folder since 5 October: the Folder is the column beside, its row open.
     openFolder: within(middle).queryByRole('link', { name: 'Open folder' }) !== null,
@@ -643,19 +671,18 @@ describe('FilePage draws every app’s file in the same panes', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const left = screen.getByTestId('left')
     // Only this file's Folder is expanded — one read, not eighty-one.
-    expect(left.querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
-    expect(left.querySelector(`[data-folder="${OTHER_FOLDER}"]`)).toBeNull()
+    expect(listed(left, FOLDER)).toBe(true)
+    expect(listed(left, OTHER_FOLDER)).toBe(false)
     // The project row is open, so the issue's place in the tree is visible.
     const projectRow = left.querySelector(`[data-file="${PROJECT_ADDRESS}"]`)
     expect(projectRow).not.toBeNull()
     expect(within((projectRow as HTMLElement).parentElement!).getByRole('button', { name: /Hide what is under/ })).toBeInTheDocument()
-    expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(left.contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
   })
 
   it('a Peek file at the top of the Folder expands nothing, since it has no parent', () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
-    const left = screen.getByTestId('left')
-    expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
   })
 
   it("clicking another file's row leads to that file's address", () => {
@@ -703,7 +730,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
     expect(screen.getByTestId('url').textContent).toBe(`/topic/another-topic-${OTHER_D}`)
     // The listing, not a skeleton and not a shut fold: nothing was thrown away.
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(OTHER_ADDRESS)).toBe(true)
     expect(selected(TOPIC_ADDRESS)).toBe(false)
     // The row carried the author, so the short link cost no `#d` read.
@@ -713,28 +740,28 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
       objects.pending.delete(OTHER_ADDRESS)
       objects.wake?.()
     })
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(OTHER_ADDRESS)).toBe(true)
   })
 
   it('a row opened for the last selection stays open when the next one is elsewhere', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(screen.getByTestId('left').contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
     fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
     expect(selected(TOPIC_ADDRESS)).toBe(true)
     // The topic has no parent, so nothing asks for the project open — and nobody closed it.
-    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(screen.getByTestId('left').contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
   })
 
   it('a click from a topic to a Ship project whose Folder is its own channel keeps the team open', () => {
     objects.byAddress[PROJECT_ADDRESS] = { ...project, folder: 'record-channel' }
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(PROJECT_ADDRESS)!).getByText('Folders: navigation for the whole suite'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(PROJECT_ADDRESS)).toBe(true)
     // And back again.
     fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(true)
     expect(selected(TOPIC_ADDRESS)).toBe(true)
   })
 
@@ -795,7 +822,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     delete objects.byAddress[OTHER_ADDRESS]
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
-    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).toBeNull()
+    expect(listed(screen.getByTestId('left'), FOLDER)).toBe(false)
   })
 })
 
@@ -806,13 +833,13 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     const middle = screen.getByTestId('middle')
-    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
+    fireEvent.click(threadControls(middle)[0])
     const thread = screen.getByTestId('thread')
     expect(thread.querySelector(`[data-thread="${rootId}"]`)).not.toBeNull()
     expect(within(thread).getByText('First on the issue')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     // The comment whose thread is open is marked in the middle pane.
-    expect(within(middle).getByRole('button', { name: THREAD_CONTROL, current: true })).toBeInTheDocument()
+    expect(middle.querySelector('[data-comment][aria-current="true"]')).not.toBeNull()
   })
 
   it('opens from a pasted ?thread= link', () => {
@@ -832,9 +859,9 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).getByText('A reply from Ship')).toBeInTheDocument()
     const middle = screen.getByTestId('middle')
-    expect(within(middle).getByRole('button', { name: '1 reply' })).toBeInTheDocument()
+    expect(within(middle).getByRole('button', { name: /^1 reply,/ })).toBeInTheDocument()
     // No count on the comment nobody replied to: absent, not "0".
-    expect(middle.querySelectorAll('[data-replies]')).toHaveLength(1)
+    expect(within(middle).getAllByRole('button', { name: /^\d+ repl(y|ies),/ })).toHaveLength(1)
   })
 
   it('offers no composer at all: the manifest declared no comment', () => {
@@ -908,7 +935,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     const last = peekView.args.at(-1)! as { onOpenThread: (id: string | null) => void }
     act(() => last.onOpenThread(null))
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(screen.queryByTestId('peek-thread')).toBeNull()
   })
 
   it('a signed-out or unresolved file hands the view no container', () => {
@@ -951,6 +978,15 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   the third column when no thread is open: labelled Mentioned in, naming the
   file it was said on, and opening the thread there rather than here.
 */
+/*
+  Peek's own file draws its Overview and its open thread in the kit's ConversationLayout, in the layout's own column
+  beside the messages, inside the page's middle pane (B1): the frame's column is another app's file's only.
+*/
+const ownColumn = () => screen.getByTestId('middle')
+/** Neither an Overview nor a thread beside the conversation: only its two columns. */
+const noColumn = () =>
+  screen.getByTestId('thread').childElementCount === 0 && screen.queryByText('Overview') === null && screen.queryByTestId('peek-thread') === null
+
 describe('FilePage draws the comments elsewhere that name this file', () => {
   const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
   /** Said on the issue, in a thread rooted there, naming the bare file. */
@@ -983,7 +1019,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByText('Activity')).toBeInTheDocument()
     const row = column.querySelector('[data-relation="mention"]')!
     expect(row).not.toBeNull()
@@ -1031,7 +1067,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ edit: 'Same shape, one level down — edited.', reactions: ['👍'], replies: 2 })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     expect(within(row).getByText('Same shape, one level down — edited.')).toBeInTheDocument()
     expect(within(row).queryByText(mention.body)).toBeNull()
     expect(within(row).getByText('(edited)')).toBeInTheDocument()
@@ -1045,7 +1081,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ kept: false })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(column.querySelector('[data-relation="mention"]')).toBeNull()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
   })
@@ -1056,7 +1092,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ reactions: ['👍'] })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     await userEvent.hover(within(row).getByText(mention.body))
     // The reaction pill is the only button, and pressing it changes nothing.
     const buttons = within(row).getAllByRole('button')
@@ -1071,14 +1107,14 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
   it('a file nobody has named keeps its two columns', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('…and so does a file somebody has named: closed until asked for (Katerina, 13 October)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
     expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
   })
 
@@ -1086,11 +1122,11 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByText('Overview')).toBeInTheDocument()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('opening it holds for the visit: back on the file, it is closed again', () => {
@@ -1098,17 +1134,17 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     const first = mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
+    expect(within(ownColumn()).getByText('Activity')).toBeInTheDocument()
     first.unmount()
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('an open thread wins the column', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}?thread=${'r'.repeat(64)}`)
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByTestId('peek-thread')).toBeInTheDocument()
     expect(within(column).queryByText('Activity')).toBeNull()
   })
@@ -1130,7 +1166,8 @@ describe("FilePage puts another app's widget in the third column", () => {
     openUrl: 'https://ship.estiva.app/issue/the-file-route',
     slots: { title: { value: 'The file route' }, status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' } },
   })
-  const widget = () => screen.getByTestId('thread').querySelector('[data-file-widget]')
+  // In the frame's column for a file the viewer may only read, in Peek's own view's column for one they may comment on (B1).
+  const widget = () => document.querySelector('[data-file-widget]')
 
   it('a Ship issue: closed until asked for, like every file (Katerina, 13 October)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
@@ -1159,13 +1196,14 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
+    expect(ownColumn().contains(widget())).toBe(true)
     expect(screen.getByTestId('middle').querySelector('[data-testid="peek-view"]')).not.toBeNull()
   })
 
   it('a bare file gets nothing: it is nobody’s, and its title is already the header', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('opening a thread replaces the widget, and closing it brings the widget back', () => {
@@ -1173,7 +1211,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     fireEvent.click(within(middle).getByRole('button', { name: 'Show side panel' }))
-    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
+    fireEvent.click(threadControls(middle)[0])
     const column = screen.getByTestId('thread')
     expect(within(column).getByText('Thread')).toBeInTheDocument()
     expect(widget()).toBeNull()
@@ -1189,7 +1227,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     ]
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     const card = widget()!
     const activity = within(column).getByText('Activity')
     expect(card.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1798,7 +1836,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     const left = screen.getByTestId('left')
     const row = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`)
     expect(row).not.toBeNull()
-    expect(left.querySelector(`[data-children-of="${notes.ref}"]`)?.contains(row)).toBe(true)
+    expect(rowsUnder(notes.ref)?.contains(row)).toBe(true)
   })
 
   it('moves through the manifest’s action, offering only the team and never below itself', async () => {
@@ -1909,6 +1947,38 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     writes.listFolders.mockImplementation(listFolders!)
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   }, 15_000) // the first mount of this page in a run is slow on its own
+
+  it('offers an issue in its own Folder no project as "None", and picks nothing for it (FOL-45)', async () => {
+    const otherProject = foreign({ ...project, ref: `30850:${CATH}:other-project`, address: `30850:${CATH}:other-project`, slots: { title: { value: 'Other work' } } })
+    const moving = {
+      ...issue,
+      parentRef: PROJECT_ADDRESS,
+      parentField: 'project',
+      parentKind: 30850,
+      actions: [{ id: 'move-issue', label: 'Move to project', control: 'text', effect: 'writes', field: 'project' }],
+    } as unknown as ForeignObject
+    objects.byAddress[ISSUE_ADDRESS] = moving
+    const listFolders = writes.listFolders.getMockImplementation()
+    writes.listFolders.mockResolvedValue([
+      { id: FOLDER, name: 'Folders', hasState: true, addresses: [PROJECT_ADDRESS, otherProject.address!] },
+    ] as never)
+    writes.resolveFolderContents.mockImplementation(
+      async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [project, otherProject, moving] }) as never,
+    )
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    // The empty place takes an issue out of its project rather than to a top, and is said so; it is never chosen for the person.
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
+    expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual([
+      'None — under none of these',
+      'Other work',
+    ])
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
+    writes.listFolders.mockImplementation(listFolders!)
+    writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
+  }, 15_000)
 
   it('starts a topic inside the file, in the file’s own team, and opens it', async () => {
     mount(`/topic/${TOPIC_ADDRESS}`)

@@ -1,61 +1,32 @@
-import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as CommentRowStories from './CommentRow.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta of={CommentRowStories} />
+<Meta title="Topics/CommentRow" />
 
 # CommentRow
 
-One comment, owned by whichever app wrote it — the row that the conversation
-pane and the thread pane both draw.
+One comment that belongs to another app, drawn in Peek.
 
-<Canvas of={CommentRowStories.Default} />
+**Seen in** — No story: it draws the kit's ConversationCard, whose stories are in the estiva-ui Storybook, and it needs a people directory.
 
 ## When
 
-- For a comment on another app's object: a Ship issue, a file, anything Peek is
-  showing but does not own.
-- In **both** panes. A reply and the comment it answers have to be the same
-  object on screen — they are the same kind of thing, and drawing them
-  differently would say they are not. That is why FOL-19 lifted this out of
-  `ForeignConversationView` unchanged.
+- A list of comments owned by another app, such as a file's comments. `CommentReply` in the same file is the reply.
 
 ## When not
 
-- For Peek's own message. That is `ReplyCard`, which is a tiptap editor,
-  reactions, attachments, resolutions and deletion — **none of which applies to
-  a comment this viewer cannot edit.** Offering those controls would be offering
-  actions that cannot succeed.
-- Putting a control in the header's right edge when it belongs to the message.
-  `below` is where what a message *has* goes, indented with the body; `actions`
-  is for what you can do to it, on the name's line. A thread belongs to the
-  message it hangs from, so it goes below (FOL-25).
+- For a message in Peek's own conversation. That is `ConversationCard`, which can edit, resolve and react.
 
 ## How
 
 ```tsx
 import { CommentRow } from '@/components/views/CommentRow'
 
-<CommentRow
-  comment={comment}
-  people={object.people}
-  actions={<ReplyButton />}
-  below={<ThreadSummary />}
-/>
+<CommentRow comment={comment} people={people} replies={3} isNew selected onOpen={openThread} />
 ```
 
-- `comment` only needs an id, an author, a body and a `createdAt` in nostr
-  seconds. Both panes' own shapes already satisfy that.
-- `people` is absent in the states where nothing resolved, and the row then
-  renders shortened keys rather than failing.
+- `comment` has `id`, `author`, `body`, `createdAt` (Nostr seconds) and `deleted`. Without `onOpen` it offers nothing.
 
 ## What it owns
 
-- **Reusing `MessageBody`**, which is the part that genuinely is shared: the
-  body, its inline marks, and any `nostr:naddr…` it references.
-- **The two slots and what each means** — `actions` on the name's line for what
-  you can do, `below` under the body for what the message has.
-- **Falling back to a shortened key** when nobody has published a name.
-
-## Props
-
-<Controls of={CommentRowStories.Default} />
+- **Peek's half:** who wrote it (a shortened key when there is no name), the short time, and the body through `MessageBody`. It offers no edit, resolve or reaction, because Peek cannot do them for another app's comment.
+- **The look and the behaviour are the kit's ConversationCard.** See ConversationCard in the estiva-ui Storybook (Conversation / ConversationCard).

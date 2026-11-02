@@ -255,6 +255,7 @@ function useUpload(): ((file: File) => Promise<UploadAnswer>) | undefined {
   }
 }
 
+/** Where a message or a reply is written in Peek: the kit's CommentBox, with Peek's drafts, its `[` and `@` lists and its Resolve row. */
 export function ConversationBox({ kind = 'conversation', onSend, draftKey, drafts = DEFAULT_DRAFTS, contextLabel, here, closed, resolvedObjects, className }: ConversationBoxProps) {
   const { people, labels } = usePeople()
   const draft = useMemo(() => (draftKey ? composerDraft(drafts, draftKey, labels) : undefined), [draftKey, drafts, labels])

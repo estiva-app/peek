@@ -1,9 +1,8 @@
-import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ConversationLayout, SkeletonList } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { useRailClosed } from '@/layouts/railClosed'
+import { RailListColumn } from '@/layouts/RailListColumn'
 import { PersonItem } from '@/components/ui/PersonItem'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
@@ -18,7 +17,6 @@ import {
   useUnread,
   useWorkspacePeople,
 } from '@/api'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { rememberRecent } from '@/lib/recents'
@@ -29,7 +27,6 @@ import { useTabTitle } from '@/lib/useTabTitle'
  * and the direct message with the chosen person beside them.
  */
 export function PeoplePage() {
-  const railClosed = useRailClosed()
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
@@ -56,10 +53,6 @@ export function PeoplePage() {
   const selectedId: string | null = routeId ?? lastDmId ?? null
   // The person whose conversation is open, once the roster names them; "People" with none open.
   useTabTitle(selectedId ? DMS?.find((dm) => dm.id === selectedId)?.name || undefined : 'People')
-
-  const handleSelect = (id: string) => {
-    navigate(`/app/people/${id}`)
-  }
 
   const starredDmItems: StarredItem[] = starredEntries
     .filter((e) => e.kind === 'dm')
@@ -129,13 +122,11 @@ export function PeoplePage() {
   const dmView = useDmConversationView({
     dmId: isDm ? selectedId : null,
     dmName: isDm ? selectedItem?.name : undefined,
-    showUnreads,
     onHideDm: isDm && canHideDm(selectedId) ? () => hideDm(selectedId) : undefined,
   })
 
   return (
     <PeoplePageView
-      railClosed={railClosed}
       loading={DMS === undefined || starredLoading}
       starred={starredDmItems}
       people={visibleDms.map((dm) => {
@@ -150,12 +141,17 @@ export function PeoplePage() {
         }
       })}
       selectedId={selectedId}
-      onSelect={handleSelect}
       onHideDm={hideDm}
       openWorkActionFor={openWorkDms ? (id) => (openWorkDms.has(id) ? 'remove' : 'add') : undefined}
       onToggleOpenWork={openWorkDms ? (id) => (openWorkDms.has(id) ? openWorkDms.remove(id) : openWorkDms.add(id)) : undefined}
-      rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
-      threadPanel={dmView.threadPanel}
+      rightPanel={
+        DMS === undefined
+          ? // The roster is still in: the conversation that is coming, as the kit draws it loading (Katerina, 2 November).
+            selectedId
+            ? <ConversationLayout threads="beside" items={[]} loading />
+            : <div className="flex-1 h-full" />
+          : dmView.rightPanel
+      }
     />
   )
 }
@@ -182,59 +178,40 @@ export interface PeopleListItem {
  * ever be made to show.
  */
 export function PeoplePageView({
-  railClosed,
   loading,
   starred,
   people,
   selectedId,
-  onSelect,
   onHideDm,
   openWorkActionFor,
   onToggleOpenWork,
   rightPanel,
-  threadPanel,
 }: {
-  railClosed: boolean
   /** The first read, still in flight. Not the same as an empty workspace. */
   loading: boolean
   starred: StarredItem[]
   /** Already sorted, already filtered of starred and hidden. */
   people: PeopleListItem[]
   selectedId: string | null
-  onSelect: (id: string) => void
   onHideDm: (id: string) => void
   /** A person's Open work item on their ⋮: add or remove; undefined offers none (Katerina, 30 October). */
   openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
   onToggleOpenWork?: (id: string) => void
+  /** The open DM: its header, its conversation and its open thread beside, all the kit's ConversationLayout. */
   rightPanel?: ReactNode
-  threadPanel?: ReactNode
 }) {
   return (
     <PeekFrame
       leftPanel={
-        <ListColumn
-          title="People"
-          collapsed={railClosed}
-          actions={
-            // One strip: one Tab stop, arrows along it (UIG-14).
-            <Toolbar aria-label="People actions" surface={false}>
-              <ToolbarButton tooltip="Sort by" aria-label="Sort by">
-                <IconSortDescending size={16} stroke={1.5} />
-              </ToolbarButton>
-              <ToolbarButton tooltip="New conversation" aria-label="New conversation">
-                <IconEdit size={16} stroke={1.5} />
-              </ToolbarButton>
-            </Toolbar>
-          }
-        >
+        /* No Sort by and no New conversation until they do something: only what can succeed is offered (Katerina, 2 November). */
+        <RailListColumn title="People">
           {loading ? (
-            <SkeletonSidebarList rows={8} />
+            <SkeletonList rows={8} />
           ) : (
             <>
               <StarredSection
                 items={starred}
                 selectedId={selectedId}
-                onSelect={onSelect}
                 openWorkActionFor={openWorkActionFor}
                 onToggleOpenWork={onToggleOpenWork}
               />
@@ -252,7 +229,6 @@ export function PeoplePageView({
                   unread={dm.isUnread}
                   urgent={dm.isUrgent}
                   active={selectedId === dm.id}
-                  onSelect={onSelect}
                   onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
                   openWorkAction={openWorkActionFor?.(dm.id)}
                   onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(dm.id) : undefined}
@@ -260,10 +236,9 @@ export function PeoplePageView({
               ))}
             </>
           )}
-        </ListColumn>
+        </RailListColumn>
       }
       rightPanel={rightPanel}
-      threadPanel={threadPanel}
     />
   )
 }

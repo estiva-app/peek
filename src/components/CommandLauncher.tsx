@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { IconBox, IconCircleDashed, IconDownload, IconEraser, IconFileText, IconListDetails, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
-import { Avatar, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform } from '@estiva-app/ui'
+import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
@@ -11,13 +11,12 @@ import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { fileEmptyState, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
-import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
+import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
-import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import {
   PARENT_FIELD,
@@ -127,9 +126,6 @@ interface CommandLauncherProps {
 }
 
 const icon = (Glyph: typeof IconPencil) => <Glyph size={16} stroke={1.5} />
-
-/** A recent file's glyph on the row's tile: the ones `TopicState` draws for it elsewhere. */
-const FILE_ICONS: Record<FileGlyph, typeof IconPencil> = { topic: IconCircleDashed, project: IconBox, issue: IconListDetails, file: IconFileText }
 
 const appMark = (app: { id: string }, size = 14) =>
   app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
@@ -581,7 +577,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
    * (PEE-1), and the new object's reference goes into the active composer
    * (PEE-2).
    */
-  const submitAction = async (form: Extract<Level, { kind: 'form' }>, values: Record<string, string>) => {
+  const submitAction = async (form: Extract<Level, { kind: 'form' }>, values: Record<string, string>, formats?: FormDraft['formats']) => {
     const { action } = form
     /*
       A CHANGE carries a target chosen with the row, and the runtime takes a
@@ -621,7 +617,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const { [action.membersField ?? '']: memberList, ...declaredValues } = values
     const members = action.membersField ? (memberList ?? '').split(',').filter(Boolean) : []
     const { parent, properties: typed } = splitSubmission(action.membersField ? declaredValues : values)
-    const { properties, contentFormat } = proseSubmission(action, typed)
+    const { properties, contentFormat } = proseSubmission(action, typed, formats)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
       return
@@ -745,8 +741,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   /*
     A file the person opened — a bare-file topic, a Ship issue — by its address
     and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
-    own topic; a Ship project or issue wears Ship's glyph (`fileGlyph`); anything
-    else is a file. Every one on the row's tile (Katerina, 7 October): here a
+    own topic; a Ship project or issue wears Ship's glyph; anything else is a
+    file — the kit's `KindIcon`, as every app draws them (`fileGlyph`). Every one on the row's tile (Katerina, 7 October): here a
     topic's circle is never a status — a recent does not know whether the topic
     is resolved — so it is an icon like the others, not a mark of its own.
   */
@@ -759,7 +755,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     id: `file-${f.id}`,
     label: f.title,
     ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
-    icon: icon(FILE_ICONS[fileGlyphOfAddress(f.id)]),
+    icon: <KindIcon kind={fileGlyphOfAddress(f.id)} tone="inherit" />,
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
   })
@@ -768,7 +764,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     id: `person-${p.id}`,
     label: p.name,
     description: p.role,
-    leading: <Avatar src={p.avatarSrc} name={p.name} size={24} />,
+    leading: <Avatar src={p.avatarSrc} name={p.name} bot={p.bot} size={24} />,
     onSelect: close(() => navigate(`/app/people/${encodeURIComponent(p.id)}`)),
     onForget: forget,
   })
@@ -942,7 +938,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         // Words, never markdown; the match in context, not the first 80 characters.
         label: snippetAround(asWords(hit.content), typed),
         description: [who?.displayName, hit.fileTitle ?? topic?.title, formatDateLabel(hit.createdAt * 1000)].filter(Boolean).join(' · '),
-        leading: <Avatar src={who?.picture} name={who?.displayName} size={24} />,
+        leading: <Avatar src={who?.picture} name={who?.displayName} bot={who?.bot === true} size={24} />,
         // The topic, at that message (R13) — the one-shot `ObjectPage` already uses;
         // or the file, with the thread open from the URL and the same one-shot for the scroll.
         onSelect: close(() => {
@@ -1069,15 +1065,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
               description: `[${n}] ${message.author} · ${message.timestamp}`,
               leading: <Avatar name={message.author} size={24} />,
               onSelect: () => {
-                // Scroll first, close second: a cited message can sit above the loaded window.
-                if (scrollToMessage(message.id)) {
+                // Shown first, closed second: a cited message can sit above the loaded window.
+                if (showInConversation(message.id)) {
                   onClose()
                   return
                 }
                 // Not on screen: a topic-wide answer cites across conversations (INT-8).
                 if (message.conversationId && openConversation(message.conversationId)) {
                   onClose()
-                  void scrollToMessageWhenReady(message.id)
+                  void showInConversationWhenDrawn(message.id)
                   return
                 }
                 setUnreachable(message.id)
@@ -1199,7 +1195,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           onSubmit={() => {
             setAttempted((a) => ({ ...a, [key]: true }))
             if (Object.keys(missingFields(action, formDraft)).length > 0) return
-            void submitAction(level, draftValues(action, formDraft))
+            void submitAction(level, draftValues(action, formDraft), formDraft.formats)
           }}
           submitWaits={unchanged && field ? `Choose a different ${field.label.toLowerCase()} first` : undefined}
           working={

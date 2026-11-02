@@ -21,11 +21,11 @@ import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
-const { canPrefill, promptForText, scrollToMessage, scrollToMessageWhenReady, openConversation } = vi.hoisted(() => ({
+const { canPrefill, promptForText, showInConversation, showInConversationWhenDrawn, openConversation } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(),
-  scrollToMessage: vi.fn<(id: string) => boolean>(),
-  scrollToMessageWhenReady: vi.fn<(id: string) => Promise<boolean>>(),
+  showInConversation: vi.fn<(id: string) => boolean>(),
+  showInConversationWhenDrawn: vi.fn<(id: string) => Promise<boolean>>(),
   openConversation: vi.fn<(id: string) => boolean>(),
 }))
 vi.mock('@/lib/threadOpener', () => ({ openConversation }))
@@ -33,7 +33,8 @@ vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
   return { ...actual, canPrefill, promptForText }
 })
-vi.mock('@/lib/messageAnchor', () => ({ scrollToMessage, scrollToMessageWhenReady }))
+// Showing a message is the kit's (C3), and its own tests hold what it does on the page; here, which message the launcher asks for.
+vi.mock('@estiva-app/ui', async () => ({ ...(await vi.importActual<Record<string, unknown>>('@estiva-app/ui')), showInConversation, showInConversationWhenDrawn }))
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
   return { ...actual, useMessageSearch: () => ({ state: { kind: 'idle' as const }, hits: [] }) }
@@ -88,13 +89,13 @@ const sources = () => screen.getByRole('group', { name: /^Sources?$/ })
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
   promptForText.mockResolvedValue('Postponed until Thursday [3].')
-  scrollToMessage.mockReturnValue(true)
-  scrollToMessageWhenReady.mockResolvedValue(true)
+  showInConversation.mockReturnValue(true)
+  showInConversationWhenDrawn.mockResolvedValue(true)
   openConversation.mockReturnValue(true)
   openConversation.mockClear()
   onClose.mockClear()
   promptForText.mockClear()
-  scrollToMessage.mockClear()
+  showInConversation.mockClear()
 })
 
 describe('the answer is drawn from selected messages (INT-3)', () => {
@@ -183,7 +184,7 @@ describe('a citation reaches the message (INT-3)', () => {
     await screen.findByTestId('answer')
 
     await userEvent.click(sources().querySelectorAll('[role="option"]')[0])
-    expect(scrollToMessage).toHaveBeenCalledWith('r3')
+    expect(showInConversation).toHaveBeenCalledWith('r3')
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -193,7 +194,7 @@ describe('a citation reaches the message (INT-3)', () => {
       Closing first would leave a click that appeared to work and did nothing,
       which is worse than a row that was never offered.
     */
-    scrollToMessage.mockReturnValue(false)
+    showInConversation.mockReturnValue(false)
     await ask()
     await screen.findByTestId('answer')
 
@@ -302,11 +303,11 @@ describe('asking about a whole topic (INT-8)', () => {
 
   it('opens the conversation a citation points into, then scrolls', async () => {
     /*
-      All but the open conversation are unmounted, so `scrollToMessage` finds
+      All but the open conversation are unmounted, so `showInConversation` finds
       nothing. Asking the topic view to open it is the difference between a
       citation that works and one that reports "not loaded" as its normal case.
     */
-    scrollToMessage.mockReturnValue(false)
+    showInConversation.mockReturnValue(false)
     promptForText.mockResolvedValue('Postponed to Thursday [3].')
     await askTopic()
     await screen.findByTestId('answer')

@@ -1,55 +1,33 @@
-import { Meta, Canvas } from '@storybook/addon-docs/blocks'
-import * as ConversationBoxStories from './ConversationBox.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta title="Writing & text/Composer/BoxReference" />
+<Meta title="Primitives/BoxReference" />
 
 # BoxReference
 
-A `nostr:` reference or an app link inside the box, drawn as the kit's chip a
-sent message draws, wherever it sits: in the box every link is a chip while it
-is written, alone on its line too.
+How a link or a person is drawn inside the box while it is written.
 
-<Canvas of={ConversationBoxStories.WithAnIssue} />
-
-**Seen in** — *Writing & text/Composer/ConversationBox* → **With An Issue**
-(in a sentence) and **An Issue Alone On Its Line** (alone on its line, still a
-chip).
+**Seen in** — No story: it only draws inside the message box, whose stories are in the estiva-ui Storybook (Writing / CommentBox).
 
 ## When
 
-- As the `referenceView` the package's `CommentBox` draws a reference with, a
-  pasted link and a `[` pick alike (ui 0.92) — handed to `keepCommentBoxWarm`
-  once as Peek starts, and used by every **ConversationBox** and **EditBox**.
-- As the `view` of a description form's `[` pick (`messageMention`, in
-  `ProseField`).
+- As the `referenceView` of the box, in `ConversationBox` and `EditBox`. The editor hands it each reference it holds.
 
 ## When not
 
-- In a sent message → `MessageChip` in a sentence, `MessageRow` alone on its
-  line, both through `MessageBody`; there a click follows the link and hovering
-  shows its card.
+- For a link in a sent message. That is **LinkChip**, drawn by `MessageChip`.
+- For a person in a sent message. That is `Reference`.
 
 ## How
 
 ```tsx
-import { keepCommentBoxWarm } from '@estiva-app/ui/editor'
-import { BOX_EXTENSIONS } from '@/components/ui/ConversationBox'
 import { BoxReference } from '@/components/ui/BoxReference'
 
-keepCommentBoxWarm({ extensions: BOX_EXTENSIONS, referenceView: BoxReference })
+<CommentBox referenceView={BoxReference} /* ...rest of the box */ />
 ```
+
+- Props are the kit's `ReferenceViewProps`: `uri`, `href`, `editing`.
 
 ## What it owns
 
-- **One chip in every box**: the kit's `LinkChip` — its icon, its key, its
-  title cut at 40 characters and its status as a mark — for a pasted link and a
-  `[` pick alike (Katerina, 30 Oct). A person is their name's chip.
-- **Reading the object**: from what a story or a test supplied, else from the
-  relay, as the sent message's chip reads it; an app link not answered yet
-  reads as the URL it was written as.
-- **No way out of the draft**: the kit holds a click on the chip while it is
-  written, and hovering it shows no card while `editing`.
-- **What cannot be read**: written as a URL, that URL as written (SPEC §13.1);
-  a file a trusted deletion names, "Issue deleted".
-- **Never a row or a card in the box**: no `LinkPlaces` in `BOX_EXTENSIONS`
-  (the kit's `LinkPlaces` page, When not).
+- **Peek's half:** where the object comes from. It reads the box's supplied objects first, then asks Peek's relay, and knows deleted files.
+- **The look and the behaviour are the kit's LinkChip.** While it is written the chip shows no card and a click does not leave the draft. See LinkChip in the estiva-ui Storybook (Links / LinkChip).

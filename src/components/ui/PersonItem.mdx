@@ -1,50 +1,33 @@
-import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as PersonItemStories from './PersonItem.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta of={PersonItemStories} />
+<Meta title="Frame/PersonItem" />
 
 # PersonItem
 
-One person in a side list, on the package's **NavItem**: their photo, their
-name, the unread dot, and "Hide conversation" on the ⋮ where hiding can succeed.
+One person as a row in the sidebar.
 
-<Canvas of={PersonItemStories.Default} />
+**Seen in** — No story: the story named PersonItem in *Screener & Desk/ScreenerItem* is a screener row, not this part. This one draws the kit's NavItem, whose stories are in the estiva-ui Storybook.
 
 ## When
 
-- The People page's lists: Starred and everyone else.
-- The link is the person's page, `/app/people/{id}`. `onSelect` takes a plain
-  click instead; a click with a modifier is left to the link, so a new tab
-  still opens it.
-
-<Canvas of={PersonItemStories.WithHide} />
+- The People list in the sidebar: photo, name, unread dot, and a menu.
 
 ## When not
 
-- A file or a DM on the Desk: the Desk draws its own rows on **NavItem**, with
-  their ✕ and the "Archived" chip.
-- A row in the Folders tree: **NavItem** through `FileTreeView`.
+- For a topic. That is `TopicState` on a **NavItem**.
+- For a file. Use **NavTree**.
 
 ## How
 
 ```tsx
 import { PersonItem } from '@/components/ui/PersonItem'
 
-<PersonItem
-  id={dm.id}
-  name={dm.name}
-  unread={dm.isUnread}
-  active={dm.id === selectedId}
-  onSelect={select}
-  onHide={dm.canHide ? () => hide(dm.id) : undefined}
-/>
+<PersonItem id={id} name="Ada" active={active} unread onHide={hide} openWorkAction="add" onToggleOpenWork={toggle} />
 ```
+
+- The menu appears only when `onHide`, or `openWorkAction` with `onToggleOpenWork`, is given.
 
 ## What it owns
 
-- **The photo**: the profile's, or the one the name finds when there is none.
-- **The link**: the person's page.
-
-## Props
-
-<Controls of={PersonItemStories.Default} />
+- **Peek's half:** the address (`/app/people/<id>`), the photo from Peek's people, and the menu items: Open work and Hide.
+- **The look and the behaviour are the kit's NavItem.** See NavItem in the estiva-ui Storybook (App frame / NavItem).

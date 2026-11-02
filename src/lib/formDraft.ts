@@ -8,9 +8,19 @@ import type { FormField, LauncherAction } from '@/lib/launcherActions'
  * exports only components.
  */
 
+/**
+ * What a `prose` field's value is written in (C12): `blocks` once it was edited
+ * in the field, which hands back a block document; `marker` for marker text — a
+ * default, or a suggestion from the conversation (PEE-5). Carried beside the
+ * value, never read off it (§13.4).
+ */
+export type ProseFormat = 'marker' | 'blocks'
+
 /** What has been typed into one form, kept while the launcher is open. */
 export interface FormDraft {
   values: Record<string, string>
+  /** Each `prose` field's format, by field key; absent is `marker`. */
+  formats?: Record<string, ProseFormat>
   /** The person pickers' choices, by field key. */
   people: Record<string, Person[]>
   /**
@@ -78,11 +88,14 @@ export function missingFields(action: LauncherAction, draft: FormDraft): Record<
 export function applyPrefill(draft: FormDraft, prefill: Record<string, string>): FormDraft {
   let changed = false
   const values = { ...draft.values }
+  // A suggestion is marker text.
+  const formats = { ...draft.formats }
   for (const [key, value] of Object.entries(prefill)) {
     if (draft.touched.includes(key) || values[key] === value) continue
     values[key] = value
+    delete formats[key]
     changed = true
   }
-  return changed ? { ...draft, values } : draft
+  return changed ? { ...draft, values, formats } : draft
 }
 

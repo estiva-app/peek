@@ -1,9 +1,8 @@
-import { Divider, EmptyState } from '@estiva-app/ui'
+import { Divider, EmptyState, SkeletonList } from '@estiva-app/ui'
 import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
+import { CommentReply, CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /**
  * One comment and what was said under it — Peek's thread pane, pointed at
@@ -50,7 +49,7 @@ export function FileThreadView({
       <div className="pt-3">
         {state === 'loading' ? (
           <div data-loading="thread">
-            <SkeletonSidebarList />
+            <SkeletonList />
           </div>
         ) : 'failed' in state ? (
           /*
@@ -68,7 +67,7 @@ export function FileThreadView({
         ) : (
           <div className="flex flex-col gap-3">
             {replies.map((reply) => (
-              <CommentRow key={reply.id} comment={reply} people={people} />
+              <CommentReply key={reply.id} comment={reply} people={people} />
             ))}
           </div>
         )}

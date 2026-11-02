@@ -47,15 +47,14 @@ export function TopicFiles({ topic, folder, title, readOnly }: {
 
   return (
     <div className="flex flex-col" data-topic-files={topic}>
-      {/* The heading's 8px inset brought to the cards' 16px edge, as Activity's is. */}
-      <div className="px-2 pt-4">
-        <SectionHeader
-          title="Files"
-          count={files.length > 0 ? files.length : undefined}
-          actions={readOnly ? undefined : [{ icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add file', onClick: () => setPicking(true) }]}
-          showActions="always"
-        />
-      </div>
+      {/* The heading's 8px inset brought to the cards' 16px edge, as Activity's is: the room on the heading itself. */}
+      <SectionHeader
+        title="Files"
+        count={files.length > 0 ? files.length : undefined}
+        actions={readOnly ? undefined : [{ icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add file', onClick: () => setPicking(true) }]}
+        showActions="always"
+        className="mx-2 mt-4"
+      />
       <div className="flex flex-col gap-3 px-4 pt-2">
         {state === 'loading' ? null : 'failed' in state ? (
           <EmptyState scope="section" message="Couldn’t load the files. Reload to try again." />

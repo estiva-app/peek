@@ -13,8 +13,10 @@ and replies columns, with Cmd/Ctrl+K opening the command launcher.
 ## When
 
 - Around every page in Peek. There is one frame and this is it.
-- With `threadPanel` when a thread is open, which is what makes the third
-  column appear.
+- With `threadPanel` for another app's read-only file (its own list in a
+  `Panel`): its open thread or its Overview, in the 384px third column.
+  Peek's own conversations, a file's and a DM's, draw their open thread and
+  Overview in the kit's `ConversationLayout` inside `rightPanel`, and pass none.
 
 <Canvas of={PeekFrameStories.WithThreadPanel} />
 
@@ -35,12 +37,14 @@ import { PeekFrame } from '@/layouts/PeekFrame'
 
 **The package's** (UIG-14 §9.3): the floating shell itself — the bar over the
 top edge, the rail on the ground, the rounded card, and the Signal dot grid on
-the ground, which the package's preset draws. The list column is the package's
-`ListColumn` (UIG-14 N9), with its own error boundary.
+the ground, which the package's preset draws. The fold, since 0.95.0: its
+button, its motion, and a folded sidebar kept folded on this browser
+(`useSidebarFold`; Katerina, 31 October: one fold in every app). The list
+column is the package's `ListColumn` (UIG-14 N9), with its own error boundary.
 
 **Peek's**: the bar's slots, the rail's entries, the three columns inside the
-card, the launcher, and the collapsing. The frame only tells the list column
-when the rail is closed.
+card, the launcher, and which pages are a file, for a link that opens one. The
+frame only tells the list column when the rail is closed.
 
 ## What it owns
 
@@ -49,7 +53,7 @@ when the rail is closed.
   the launcher's lifetime**, so what the launcher acts on cannot change under it
   while somebody is typing into it.
 - **Cmd/Ctrl+K**, in one place rather than per page.
-- **The rail collapsing**, and telling the list column about it.
+- **Telling the list column** when the rail is folded, so it folds with it.
 
 ## Props
 

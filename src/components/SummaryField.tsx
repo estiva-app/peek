@@ -29,7 +29,6 @@ export function SummaryField({ value, onChange }: { value: string; onChange: (va
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="What is it for, in a sentence?"
-        aria-label="Topic summary"
         className={long ? 'h-[80px]' : 'h-[60px]'}
       />
       <SummaryCount text={value} />

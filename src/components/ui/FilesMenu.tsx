@@ -1,5 +1,4 @@
-import { IconMessage } from '@tabler/icons-react'
-import { referenceMenu, type CaptionedItem } from '@estiva-app/ui/editor'
+import type { CaptionedItem } from '@estiva-app/ui/editor'
 import { messageReference, messageWords, openingWords } from '@estiva-app/conversation'
 import { knownCardValue, linksVersion, personByPubkey } from '@/api'
 import { MESSAGE_KIND } from '@/nostr/manifest'
@@ -49,8 +48,3 @@ export function toReferenceItem(message: ConversationMessage): CaptionedItem {
 
 const ITEMS = new WeakMap<ConversationMessage, { version: number; item: CaptionedItem }>()
 
-/** At each row's start. */
-export const FILES_MENU_ICON = <IconMessage size={16} stroke={1.5} className="text-text-secondary" />
-
-/** The list `[` opens, for a story that draws it without an editor. */
-export const FILES_MENU = referenceMenu({ ...FILES_MENU_COPY, icon: FILES_MENU_ICON })

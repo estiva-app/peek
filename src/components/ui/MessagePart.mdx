@@ -1,37 +1,35 @@
 import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta title="Writing & text/MessagePart" />
+<Meta title="Topics/MessagePart" />
 
 # MessagePart
 
-The frame around one block of another file shown in a message or under a
-message box (SPEC §13.6.1), so its links are clicked as a chip's are.
+The wrapper around a block of another file shown in a message.
 
-**Seen in** — no story: the part inside it reads its block from the relay, and
-*Messages/ForeignObject/PartCard* draws that block without the frame.
+**Seen in** — No story: it only wraps `PartCard`, which needs the relay.
 
 ## When
 
-- Around a `PartCard`, under a sent message (`MessageBody`) and under a message
-  box (`ConversationBox`).
+- Around each `PartCard` in a message or under the box.
 
 ## When not
 
-- A whole file under a message → `MessageCard`.
-- A link inside the text → `MessageChip`.
+- For the block itself. That is `PartCard`.
+- For a link. Use **LinkChip**.
 
 ## How
 
 ```tsx
 import { MessagePart } from '@/components/ui/MessageLinks'
 
-<MessagePart key={part.address}>
-  <PartCard address={part.address} block={part.block} />
+<MessagePart>
+  <PartCard address={address} block={block} />
 </MessagePart>
 ```
 
+- Takes only `children`.
+
 ## What it owns
 
-- **The click.** A click on a link or a control inside the part stays there and
-  does not also open the message's thread.
-- **No ✕.** To send a message without a block, delete its link (Miky, 16 Oct).
+- **Peek's half:** the click on a link inside the block. A link to a message lands on that message, scrolled to or opened in its thread, and a click on a link is not a click on the card around it.
+- **Everything it draws is the kit's.** The block is the kit's PartCard. See PartCard in the estiva-ui Storybook (Links / PartCard).

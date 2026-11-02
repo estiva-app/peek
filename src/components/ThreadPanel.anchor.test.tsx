@@ -2,10 +2,11 @@
  * INT-3 — the ids a citation names are the ids the thread renders.
  *
  * The citation machinery spans two files that never call each other:
- * `ThreadPanel` publishes a snapshot the launcher reads, and it renders
- * `data-reply-id` anchors `scrollToMessage` looks up. Nothing type-checks that
- * those two ids are the same one, and if they drift, every source row closes
- * the launcher and lands nowhere.
+ * `ThreadPanel` publishes a snapshot the launcher reads, and the kit's Thread
+ * and ReplyCard render the anchors the kit's `showInConversation` looks up — a
+ * reply's `data-reply-id`, the first message's `data-thread-start`. Nothing
+ * type-checks that those ids are the same one, and if they drift, every source
+ * row closes the launcher and lands nowhere.
  *
  * So this asserts the join, from the rendered DOM to the published snapshot —
  * the shape of test that would have caught the Ship description bug, where
@@ -20,6 +21,9 @@ import type { ConversationData } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { getActiveConversation } from '@/lib/conversationRegistry'
 import { ThreadPanel } from './ThreadPanel'
+
+/** Where `showInConversation` finds a message of the open thread: the kit's anchors, as it reads them. */
+const anchorOf = (id: string) => document.querySelector(`[data-reply-id="${CSS.escape(id)}"], [data-thread-start="${CSS.escape(id)}"]`)
 
 Element.prototype.scrollIntoView = vi.fn()
 
@@ -38,7 +42,6 @@ function open() {
         <ThreadPanel
           conversation={conversation}
           replies={REPLIES['t1_c1']}
-          sentReplies={[]}
           onClose={() => {}}
           onSendReply={async () => ({ accepted: true })}
         />
@@ -55,7 +58,7 @@ describe('every message the launcher can cite is reachable in the DOM', () => {
     open()
     await screen.findByText(conversation.body)
 
-    expect(document.querySelector(`[data-reply-id="${conversation.id}"]`)).not.toBeNull()
+    expect(anchorOf(conversation.id)).not.toBeNull()
   })
 
   it('anchors every message it publishes to the launcher', async () => {
@@ -65,7 +68,7 @@ describe('every message the launcher can cite is reachable in the DOM', () => {
     const published = getActiveConversation()?.messages ?? []
     expect(published.length).toBeGreaterThan(1)
     for (const message of published) {
-      expect(document.querySelector(`[data-reply-id="${message.id}"]`)).not.toBeNull()
+      expect(anchorOf(message.id)).not.toBeNull()
     }
   })
 

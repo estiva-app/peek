@@ -1,6 +1,11 @@
+import { documentForEditing, encodeNpub, publishableFromEditor, toEditorDocument, type ContentFormat, type EditorDocument } from '@estiva-app/protocol'
+import { DocumentField, type DocumentCodec, type DocumentMentions, type DocumentReferences } from '@estiva-app/ui/editor'
+import { referenceSections, subscribeReferences } from '@/api'
 import type { FormField, LauncherAction, LauncherApp, VocabOption } from '@/lib/launcherActions'
-import { article, valueOf, type FormDraft } from '@/lib/formDraft'
-import { ProseField } from './ProseField'
+import { article, valueOf, type FormDraft, type ProseFormat } from '@/lib/formDraft'
+import { BoxReference } from './ui/BoxReference'
+import { FILES_MENU_COPY } from './ui/FilesMenu'
+import { mentionDirectory } from './ui/MentionMenu'
 import { Field } from './ui/Field'
 import { PersonChipInput } from './ui/PersonChipInput'
 import { Select } from './ui/Select'
@@ -14,7 +19,7 @@ import { TextInput } from './ui/TextInput'
  * Nothing in this file knows what a Ship issue is. It receives a
  * manifest-shaped `LauncherAction` (`lib/launcherActions.ts`) and renders one
  * control per declared field: `string` a text input, `text` a textarea,
- * `prose` Peek's editor (a block document, MAN-1), `enum` Peek's Select fed from the owning app's declared vocabulary,
+ * `prose` the kit's `DocumentField` (a block document, MAN-1, C12), `enum` Peek's Select fed from the owning app's declared vocabulary,
  * `pubkey` the person picker, `parent` a Select over the objects the new one
  * would hang under. The owner declares which fields matter; Peek renders them
  * in its own design language — the same split a card makes for reading,
@@ -31,6 +36,21 @@ import { TextInput } from './ui/TextInput'
  * first"). It replaces the 31 August rule that kept the button disabled until
  * every required field was filled, which gave no reason (R14).
  */
+
+/** A description's text as the kit's document field reads and writes it: marker text from a suggestion, a block document once edited. */
+const PROSE_CODEC: DocumentCodec = {
+  read: (value, format) => toEditorDocument(documentForEditing(value, format as ContentFormat), { links: true }),
+  write: (doc) => publishableFromEditor(doc as EditorDocument),
+}
+
+/** `[`: what the comment box's `[` offers, in its words. */
+const PROSE_REFERENCES: DocumentReferences = { sections: referenceSections, subscribe: subscribeReferences, ...FILES_MENU_COPY }
+
+/** `@`: the people a message can mention, each written as their `nostr:npub`. */
+const PROSE_MENTIONS: DocumentMentions = {
+  people: mentionDirectory,
+  uriOf: (person) => (person.pubkey ? `nostr:${encodeNpub(person.pubkey)}` : null),
+}
 
 export interface ActionFormFieldsProps {
   /**
@@ -55,10 +75,11 @@ export interface ActionFormFieldsProps {
 }
 
 export function ActionFormFields({ app, vocabularies, action, parentOptions, draft, onDraft, missing = {} }: ActionFormFieldsProps) {
-  const set = (key: string, value: string) =>
+  const set = (key: string, value: string, format?: ProseFormat) =>
     onDraft({
       ...draft,
       values: { ...draft.values, [key]: value },
+      ...(format ? { formats: { ...draft.formats, [key]: format } } : {}),
       touched: draft.touched.includes(key) ? draft.touched : [...draft.touched, key],
     })
 
@@ -94,11 +115,16 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
         )
       case 'prose':
         return (
-          <ProseField
+          <DocumentField
             value={draft.values[field.key] ?? ''}
-            onChange={(value) => set(field.key, value)}
+            format={draft.formats?.[field.key] ?? 'marker'}
+            codec={PROSE_CODEC}
+            onChange={(value, contentFormat) => set(field.key, value, contentFormat ? 'blocks' : 'marker')}
             label={field.label}
             placeholder={field.placeholder}
+            references={PROSE_REFERENCES}
+            mentions={PROSE_MENTIONS}
+            referenceView={BoxReference}
           />
         )
       case 'enum':
@@ -117,7 +143,6 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
                   : `Choose ${article(field.parentNoun ?? 'parent')}…`
             }
             ariaLabel={field.label}
-            className="w-full"
           />
         )
       case 'pubkey':
@@ -126,12 +151,14 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
           <PersonChipInput
             value={draft.people[field.key] ?? []}
             // `pubkey` holds one person — a later pick replaces the current
-            // one rather than growing a list the field cannot express.
-            // `people` (invitees) keeps them all, as the app's dialog does.
+            // one rather than growing a list the field cannot express (the
+            // kit's `single`, C15). `people` (invitees) keeps them all, as
+            // the app's dialog does.
+            single={field.control === 'pubkey'}
             onChange={(next) =>
               onDraft({
                 ...draft,
-                people: { ...draft.people, [field.key]: field.control === 'pubkey' ? next.slice(-1) : next },
+                people: { ...draft.people, [field.key]: next },
                 touched: draft.touched.includes(field.key) ? draft.touched : [...draft.touched, field.key],
               })
             }

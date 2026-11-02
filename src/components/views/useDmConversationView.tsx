@@ -1,11 +1,10 @@
 import { useMarkDmRead } from '@/lib/useMarkRead'
 import { useLastSelection } from '@/lib/lastSelection'
-import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
-import { EmptyState } from '@estiva-app/ui'
+import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { useStarred, useDmChannels, useDmVisibility, useOpenWorkDms } from '@/api'
 import { useFileConversationView } from './useFileConversationView'
 
@@ -15,11 +14,6 @@ interface UseDmConversationViewArgs {
   /** Override the default toggleDm-and-stay behavior (e.g. Desk wants to clear selection on unstar) */
   onToggleStarred?: () => void
   /**
-   * Unused since REM-1. It gated each message's "new" marker, which came from
-   * Convex rows; the relay read has none until read state is the blob (REM-5).
-   */
-  showUnreads?: boolean
-  /**
    * Hide this DM from the viewer's sidebar (DMS-6). The page owns it because
    * hiding what you are looking at is followed by leaving it, and only the
    * page knows where to go. Absent on pages whose list this does not affect.
@@ -28,8 +22,8 @@ interface UseDmConversationViewArgs {
 }
 
 interface ViewSlots {
+  /** The DM's column: its header over the conversation, and its open thread in the column beside (the kit's layout). */
   rightPanel: ReactNode
-  threadPanel: ReactNode | undefined
   /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
   replyOnlyThread: string | null | undefined
   openThread: (id: string | null) => void
@@ -40,7 +34,7 @@ interface ViewSlots {
  *
  * A DM is a channel, and its conversation is the channel's `kind:9` talk, so it
  * is drawn by the view FOL-31 built for a file's conversation with a channel
- * container: the same cards, thread pane and composer, every write a relay
+ * container: the same cards, thread and composer, every write a relay
  * event and nothing on screen the relay does not hold. Until REM-1 this read
  * Convex rows the browser had imported from the relay, and wrote Convex first
  * and the relay after without waiting; DMS-7's duplicate rows broke one pair's
@@ -110,7 +104,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     title: dmName ? `DM · ${dmName}` : '',
     noteName: dmName ? `your conversation with ${dmName}` : 'this conversation',
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
-    empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
+    empty: dmName ? <NewTopicBanner name={dmName} /> : undefined,
   })
   // The DM is read up to the newest top-level message seen on screen, which had its
   // dwell already (Katerina, 30 October), and keeps reading what arrives while it
@@ -129,24 +123,23 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   // Opened while rendering, not in an effect — React's "adjusting state when a
   // prop changes", so the thread pane draws in the same pass.
   if (pending && threadConvId !== pending.eventId) setThreadConvId(pending.eventId)
-  const threadDrawn = dm.threadPanel !== undefined
+  const { threadDrawn } = dm
   useEffect(() => {
     if (!pending || threadConvId !== pending.eventId || !threadDrawn) return
     setPendingTopicMessage(null)
-    void scrollToMessageWhenReady(pending.reply ?? pending.eventId)
+    void showInConversationWhenDrawn(pending.reply ?? pending.eventId)
   }, [pending, threadConvId, threadDrawn, setPendingTopicMessage])
 
   if (dmId == null || !dmName) {
     return {
       // A page EmptyState fills and centres itself in the pane's column (UIG-42).
       rightPanel: <EmptyState message="No conversation selected" />,
-      threadPanel: undefined,
       replyOnlyThread: undefined,
       openThread: setThreadConvId,
     }
   }
 
-  // One Panel, its bar the package's: the messages scroll under it, the composer stays put.
+  // The kit's layout under the package's bar: the messages scroll under it, the composer stays put, the open thread beside.
   const rightPanel = (
     <Header
       name={dmName}
@@ -159,7 +152,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     />
   )
 
-  return { rightPanel, threadPanel: dm.threadPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }
+  return { rightPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }
 }
 
 const NO_ROOTS: readonly string[] = []

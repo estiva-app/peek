@@ -90,12 +90,13 @@ function profilesFor(events: readonly SignedEvent[]): Map<string, WorkspaceProfi
   return profiles
 }
 
-const toPerson = (p: WorkspacePerson): Person => ({
+const toPerson = (p: WorkspacePerson & { bot?: true }): Person => ({
   id: p.pubkey,
   name: p.name,
   role: '',
   avatarSrc: p.picture,
   pubkey: p.pubkey,
+  ...(p.bot ? { bot: true } : {}),
 })
 
 /**
@@ -133,7 +134,7 @@ export function isPersonKey(id: string): boolean {
  * never the viewer (`mentionablePeopleOf`). Ids are pubkeys, as on People.
  *
  * `undefined` while the first read is in flight — callers guard or render a
- * skeleton (see SkeletonSidebarList).
+ * skeleton (the kit's `SkeletonList`).
  */
 export function usePeople(): Person[] | undefined {
   const events = useWorkspaceEvents()
@@ -151,11 +152,12 @@ export function usePeople(): Person[] | undefined {
  * excludes the viewer and anyone off the roster, which is right for "who can I
  * @" and wrong for "who is this key".
  */
-export function useMentionNames(): Array<{ pubkey: string; name: string }> | undefined {
+export function useMentionNames(): Array<{ pubkey: string; name: string; bot?: true }> | undefined {
   const profiles = useWorkspaceProfiles()
   return useMemo(() => {
     if (!hasRelay) return MOCK_PEOPLE.flatMap((p) => (p.pubkey ? [{ pubkey: p.pubkey, name: p.name }] : []))
-    return profiles?.map(({ pubkey, name }) => ({ pubkey, name }))
+    // An agent's profile says so (NIP-24 `bot`): a face drawn for it is the kit's robot.
+    return profiles?.map(({ pubkey, name, bot }) => ({ pubkey, name, ...(bot ? { bot } : {}) }))
   }, [profiles])
 }
 

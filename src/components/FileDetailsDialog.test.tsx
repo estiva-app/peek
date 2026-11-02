@@ -20,6 +20,35 @@ describe('FileDetailsDialog', () => {
   })
 })
 
+describe('FileDetailsDialog’s rename', () => {
+  const file = { address: `30840:${AUTHOR}:d`, slots: { title: { value: 'Launch naming' } }, people: {} }
+
+  it('opens from the menu’s Rename holding the name, to change rather than retype', () => {
+    render(<FileDetailsDialog file={file} onRename={async () => null} initialEditing onClose={() => {}} />)
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Launch naming')
+  })
+
+  it('a refused rename keeps the field open with the new name and the relay’s reason', async () => {
+    const onRename = vi.fn(async () => ({ kind: 'error' as const, message: 'relay_membership_required' }))
+    render(<FileDetailsDialog file={file} onRename={onRename} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: ' Launch name ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('relay_membership_required')).toBeTruthy()
+    expect(onRename).toHaveBeenCalledWith('Launch name')
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(' Launch name ')
+  })
+
+  it('a rename that throws says so, and is not left saving', async () => {
+    render(<FileDetailsDialog file={file} onRename={async () => Promise.reject(new Error('Sign-in ended.'))} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Launch name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Sign-in ended.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+})
+
 describe('FileDetailsDialog’s summary (SPEC §6.12)', () => {
   const file = (summary?: string) => ({
     address: `30840:${AUTHOR}:d`,
@@ -73,6 +102,25 @@ describe('FileDetailsDialog’s summary (SPEC §6.12)', () => {
     // The same text can be sent again.
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSummarize).toHaveBeenCalledTimes(2))
+  })
+
+  it('a save that throws says so in the summary’s words, and is not left saving', async () => {
+    render(<FileDetailsDialog file={file()} onSummarize={async () => Promise.reject(new Error('Sign-in ended.'))} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add a summary' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), { target: { value: 'Mine' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Summary not saved. Sign-in ended. Your text is still here.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('a save that went through with a warning closes the field and says the warning under the summary', async () => {
+    const onSummarize = vi.fn(async () => ({ kind: 'warning' as const, message: 'Saved here; Ship shows the old summary until it reloads.' }))
+    render(<FileDetailsDialog file={file('Where we pick the name.')} onSummarize={onSummarize} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), { target: { value: 'Where we pick it.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Saved here; Ship shows the old summary until it reloads.')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Summary' })).toBeNull()
   })
 
   it('someone who can’t edit sees the summary as text, and no section when there is none', () => {

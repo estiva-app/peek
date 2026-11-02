@@ -1,5 +1,4 @@
 import type { FC, ReactNode } from 'react'
-import { CommentAnchor } from './CommentAnchor'
 import { MessageCard, MessageChip, MessagePart, MessageRow } from './MessageLinks'
 import { placeLines, ROW_BLOCK, type RowLine } from '@/lib/messageLines'
 import {
@@ -12,6 +11,7 @@ import {
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
+import { cn } from '@/lib/utils'
 import { linksIn, type ForeignObject } from '@estiva-app/interop'
 import { PartCard } from './PartCard'
 import { isWebLink } from '@/lib/referenceLink'
@@ -80,14 +80,6 @@ function renderTokens(text: string): ReactNode {
 
 
 
-/**
- * One entry per referenced object, whichever notation it arrived in.
- *
- * `naddr1…` and `<kind>:<pubkey>:<d>` are two spellings of one address, so the
- * address is the identity. A string that parses as neither is kept as-is rather
- * than dropped: the widget renders nothing for it, which is the same outcome,
- * and silently discarding references here would hide the reason.
- */
 /** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
 const MAX_PARTS_PER_MESSAGE = 6
 
@@ -117,31 +109,12 @@ function addressOf(ref: string): string {
   }
 }
 
-function dedupeReferences(refs: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const ref of refs) {
-    const key = addressOf(ref)
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(ref)
-  }
-  return out
-}
-
 /**
  * The text of a message or reply, formatted, with its mentions and links, each
  * item from another app it names drawn as its chip, and below it the cards its
  * author chose.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true, here, preview = false, readOnly = false, onRemoveCard }: { body: string; /** The author's ✕ on a card under it, by its value; shown on hover. Omitted, no ✕. */ onRemoveCard?: (value: string) => void; /** The reader cannot act here (an archived or read-only conversation): its cards' values read as words, never pickers (Katerina, 30 Oct). */ readOnly?: boolean; /** The address of the file this message is shown on ("Mentioned in", a file's conversation): no card for it, its chip stays (WID-3). */ here?: string; /** A preview of the message (the Screener's): its links as chips only — no row, no card, no part (Decided 16 Oct). */ preview?: boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
-  /*
-    What the message is about, for its anchor's card: its `a` tags (sync stores
-    them in `nostrReferences`) and the addresses its body names, deduplicated by
-    address because the two spell them differently (FEE-2). An `a` is an index,
-    not a card (§6.4): nothing is drawn for one on its own (OPT-18).
-  */
-  const references = dedupeReferences([...(nostrReferences ?? []), ...findNaddrs(body)])
+export function MessageBody({ body, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true, here, preview = false, readOnly = false, onRemoveCard }: { body: string; /** The author's ✕ on a card under it, by its value; shown on hover. Omitted, no ✕. */ onRemoveCard?: (value: string) => void; /** The reader cannot act here (an archived or read-only conversation): its cards' values read as words, never pickers (Katerina, 30 Oct). */ readOnly?: boolean; /** The address of the file this message is shown on ("Mentioned in", a file's conversation): no card for it, its chip stays (WID-3). */ here?: string; /** A preview of the message (the Screener's): its links as chips only — no row, no card, no part (Decided 16 Oct). */ preview?: boolean; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   /*
     A block of another object, shown live (SPEC §13.6.1, COM-2) — only while the
     body still names that object, because an edit carries no `part` and a person
@@ -279,19 +252,18 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const chip = (reference: string, written?: string) => <MessageChip uri={reference} object={resolved[reference]} urgent={urgentMentions} preview={!preview && !hasCard(reference)} opensAt={written} />
   const row = (line: RowLine) => <MessageRow uri={line.reference} object={resolved[line.reference]} unreadable={line.unreadable} opensAt={line.url} />
   return (
-    // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px).
-    <div data-message-body className="flex flex-col gap-2 text-body-2 text-text-secondary break-words">
+    // 8px between the text and its cards and parts, as Ship and Leaf have it (Katerina, 30 Oct: it was 4px). The words'
+    // size, colour and wrapping are the kit card's around it; a preview has no card, so it sets them itself.
+    <div data-message-body className={cn('flex flex-col gap-2', preview && 'text-body-2 text-text-secondary break-words')}>
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
       {!preview &&
-        (anchored.length > 0
-          ? anchored.map((part) => (
-              <MessagePart key={part.address}>
-                <PartCard address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />
-              </MessagePart>
-            ))
-          : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />)}
+        anchored.map((part) => (
+          <MessagePart key={part.address}>
+            <PartCard address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />
+          </MessagePart>
+        ))}
       <RichText
         blocks={placed?.blocks ?? blocks}
         renderText={renderTokens}

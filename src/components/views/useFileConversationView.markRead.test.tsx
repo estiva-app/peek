@@ -8,7 +8,7 @@
  * marked by the view itself, up to its newest reply seen. The real
  * `useFileConversation` runs over a mocked relay read, as in the SID-1 test
  * beside this one. jsdom has no IntersectionObserver, so everything drawn is
- * on screen and the dwell alone decides (`useSeenOnScreen`).
+ * on screen and the dwell alone decides (the kit's `useSeenOnScreen`).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -47,9 +47,10 @@ vi.mock('@/components/ConversationCard', () => ({
     </article>
   ),
 }))
+// It carries its id as the kit's ReplyCard does, `data-reply-id`: what the kit's Thread watches to say it was seen.
 vi.mock('@/components/ReplyCard', () => ({
-  ReplyCard: ({ body, isNew, isUrgent }: { body: string; isNew?: boolean; isUrgent?: boolean }) => (
-    <article data-new={String(!!isNew)} data-urgent={String(!!isUrgent)}>
+  ReplyCard: ({ body, isNew, isUrgent, messageId }: { body: string; isNew?: boolean; isUrgent?: boolean; messageId?: string }) => (
+    <article data-reply-id={messageId} data-new={String(!!isNew)} data-urgent={String(!!isUrgent)}>
       {body}
     </article>
   ),
@@ -65,6 +66,7 @@ vi.mock('@/nostr/useReadStateSync', async () => ({
 }))
 
 import { useFileConversationView } from './useFileConversationView'
+import { ConversationLayout } from '@estiva-app/ui'
 
 const CATH = 'b'.repeat(64)
 const people: People = { [CATH]: { displayName: 'Cath' } } as unknown as People
@@ -87,7 +89,7 @@ const conversation: FileConversation = {
 }
 
 function View({ openThreadId }: { openThreadId: string | undefined }) {
-  const { conversation: view, threadPanel, seenAt } = useFileConversationView({
+  const { conversationParts, seenAt } = useFileConversationView({
     container: { kind: 'channel', h: '1c7a1f52-6721-42fe-a348-9efde8565374' },
     rootIds: [],
     openThreadId,
@@ -97,8 +99,8 @@ function View({ openThreadId }: { openThreadId: string | undefined }) {
   return (
     <>
       <output data-testid="seen">{seenAt}</output>
-      {view}
-      {threadPanel}
+      {/* The open thread is the layout's, in its column beside. */}
+      <ConversationLayout threads="beside" {...conversationParts} />
     </>
   )
 }

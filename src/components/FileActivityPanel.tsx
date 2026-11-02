@@ -20,11 +20,12 @@ const LIVE = { live: true }
  * ## Drawn the way the topic panel draws one
  *
  * The row is `TopicActivity`'s mention row: the chip says *Mentioned in*, the
- * file it was said on is named beside it, and the card is `subdued` — the
- * hairline alone, as Ship draws a mention — because a mention is anyone
- * typing your address, retroactive and unwithdrawable (SPEC §5.2), while the
- * conversation beside it is your own. Nothing on the row acts on the message
- * (PEE-48): opening it opens the message where it was said, with its thread.
+ * file it was said on is named beside it, and the card is the kit's, as every
+ * message is since the one conversation (its quieter `subdued` look went with
+ * it, ui 0.96.0). A mention is anyone typing your address, retroactive and
+ * unwithdrawable (SPEC §5.2), while the conversation beside it is your own, so
+ * nothing on the row acts on the message (PEE-48): opening it opens the
+ * message where it was said, with its thread.
  *
  * ## The column it lives in
  *
@@ -89,8 +90,10 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
   const author = people?.[m.author]
   const conv: ConversationData = {
     id: m.id,
-    authorName: author?.displayName ?? `${m.author.slice(0, 8)}…`,
+    // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+    authorName: author?.displayName ?? '—',
     authorAvatarSrc: author?.picture,
+    authorBot: author?.bot === true,
     timestamp: formatTimestamp(m.createdAt * 1000),
     body: now?.body ?? m.body,
     editedAt: now?.editedAt,
@@ -148,10 +151,8 @@ export function FileActivityPanelView({
 }) {
   return (
     <div className="flex flex-col">
-      {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge. The count beside the title (7 October). */}
-      <div className="px-2 pt-4">
-        <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} />
-      </div>
+      {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge, on the heading itself. The count beside the title (7 October). */}
+      <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} className="mx-2 mt-4" />
       {/*
         Every row has an `href` — its thread is on another file's page — so
         nothing here is ever selected and the thread opener is never reached;

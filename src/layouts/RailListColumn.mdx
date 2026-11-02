@@ -1,0 +1,32 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Frame/RailListColumn" />
+
+# RailListColumn
+
+A page's list column that closes with the rail.
+
+**Seen in** — *Pages/In the shell* (the People and Desk stories).
+
+## When
+
+- The list column of a page inside `PeekFrame`: Desk and People.
+
+## When not
+
+- Outside the frame. Use **ListColumn** directly, which has no rail to follow.
+
+## How
+
+```tsx
+import { RailListColumn } from '@/layouts/RailListColumn'
+
+<RailListColumn title="People">...rows...</RailListColumn>
+```
+
+- Takes the kit's `ListColumnProps` except `collapsed`.
+
+## What it owns
+
+- **Peek's half:** reading whether the rail is closed, from where `PeekFrame` provides it, and passing that as `collapsed`.
+- **The look and the behaviour are the kit's ListColumn.** See ListColumn in the estiva-ui Storybook (Page structure / ListColumn).

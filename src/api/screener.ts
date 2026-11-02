@@ -25,6 +25,8 @@ import { useScreener } from '@/api/internal/screener'
 
 export interface ScreenerPreviewRow {
   authorName: string
+  /** An agent wrote it (NIP-24 `bot`): its face is the kit's robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   kind: 'message' | 'reply'
@@ -92,8 +94,10 @@ export function useScreenerPreview(itemId: string | null): ScreenerPreviewRow[] 
     }
     const me = heldToken()?.pubkey
     const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
+    const bots = new Set((names ?? []).flatMap((n) => (n.bot ? [n.pubkey] : [])))
     return said.map((s) => ({
       authorName: s.by === me ? CURRENT_USER_NAME : (nameOf.get(s.by) ?? 'Someone'),
+      authorBot: bots.has(s.by),
       // The popover floats with no date dividers, so each row's label carries
       // its own day once it isn't today (same rule as thread reply cards).
       timestamp: formatReplyTimestamp(s.at * 1000),

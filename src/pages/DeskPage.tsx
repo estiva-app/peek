@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
@@ -7,9 +7,9 @@ import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, ListColumn, MenuItem, NavItem } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { useRailClosed } from '@/layouts/railClosed'
+import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { TopicState } from '@/components/ui/TopicState'
@@ -34,7 +34,6 @@ import {
   useOpenWorkActivity,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
@@ -55,7 +54,6 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
-  const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()
   const { state: debug } = useDebug()
@@ -117,8 +115,9 @@ export function DeskPage() {
   // A file row's writer, named once for the whole list rather than asked for by every row.
   const names = useMentionNames()
   const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
+  const bots = new Set((names ?? []).flatMap((n) => (n.bot ? [n.pubkey] : [])))
   const screened = allScreenerItems
-    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey) } : i))
+    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey), authorBot: bots.has(i.authorPubkey) } : i))
     .filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
   const screenerItems = (hasRelay ? screened : screened.slice(0, debug.desk.screenerItemsCount))
     .filter((i) => !dismissedScreenerIds.has(i.id))
@@ -350,7 +349,6 @@ export function DeskPage() {
     dmId: selected?.dmId ?? null,
     dmName: selected?.dmName,
     onToggleStarred: selected ? handleToggleStarredOnDesk : undefined,
-    showUnreads: showPeopleUnreads,
   })
   /*
     The open file, as its own page draws it (OPT-12, Miky 7 October: "It
@@ -413,13 +411,13 @@ export function DeskPage() {
   const filePane = openAddress ? filePaneParts.pane : null
 
   const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
-  const threadPanel = selected ? dmView.threadPanel : filePane ? fileView.threadPanel : undefined
+  // Another app's file only: a DM, and Peek's own file, draw their open thread in their own layout's column (B1).
+  const threadPanel = !selected && filePane ? fileView.threadPanel : undefined
 
   return (
     <>
     {filePaneParts.dialogs}
     <DeskPageView
-      railClosed={railClosed}
       loading={deskLoading || starredLoading}
       screener={debug.desk.showScreener ? screenerItems : []}
       onOpenScreener={openScreener}
@@ -575,18 +573,6 @@ const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ ope
 /** A DM has no Desk address of its own: its link is the person's page. */
 const personHref = (dmId: string) => `/app/people/${dmId}`
 
-/**
- * A plain click opens the row on the Desk; a click with a modifier, or not
- * the main button, is left to the link, so a new tab still opens it.
- */
-function inPlace(open: () => void) {
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    event.preventDefault()
-    open()
-  }
-}
-
 /** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
 function DeskRowItem({ row }: { row: DeskRow }) {
   const avatarSrcFor = useAvatarSrc()
@@ -607,7 +593,8 @@ function DeskRowItem({ row }: { row: DeskRow }) {
       active={row.isSelected}
       unread={row.isUnread}
       urgent={row.isUrgent}
-      onClick={inPlace(row.onClick)}
+      // A plain click opens the row on the Desk; a click with a modifier, or not the main button, is the link's: a new tab (C8).
+      onPlainClick={row.onClick}
       hint={row.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       action={row.onRemove ? { icon: <IconX size={16} stroke={1.5} />, tooltip: 'Remove from list', onClick: row.onRemove } : undefined}
     />
@@ -634,7 +621,6 @@ function DeskRows({ rows }: { rows: DeskRow[] }) {
  * to fill.
  */
 export function DeskPageView({
-  railClosed,
   loading,
   screener,
   onOpenScreener,
@@ -650,7 +636,6 @@ export function DeskPageView({
   rightPanel,
   threadPanel,
 }: {
-  railClosed: boolean
   /** The first read, still in flight. Not the same as an empty Desk. */
   loading: boolean
   /** Empty hides the section entirely. */
@@ -674,9 +659,9 @@ export function DeskPageView({
   return (
     <PeekFrame
       leftPanel={
-        <ListColumn title="Desk" collapsed={railClosed}>
+        <RailListColumn title="Desk">
           {loading ? (
-            <SkeletonSidebarList rows={8} />
+            <SkeletonList rows={8} />
           ) : (
             <>
               {screener.length > 0 && (
@@ -734,9 +719,15 @@ export function DeskPageView({
                   }
                 />
                 {openWork.length === 0 ? (
-                  <p className="px-2 py-1 text-caption leading-snug text-text-muted">
-                    Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
-                  </p>
+                  // Level with the rows, as Starred's line below (Katerina, 2026-09-14); its lines a little closer, as they were.
+                  <div className="px-2 py-1">
+                    {/* @estiva-escape(no-restyled-part): its three lines keep the closer spacing they had (audit A7); the kit's section line is 120%, Katerina's call whether it takes that */}
+                    <EmptyState
+                      scope="section"
+                      className="leading-snug"
+                      message="Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it."
+                    />
+                  </div>
                 ) : (
                   <DeskRows rows={openWork} />
                 )}
@@ -750,11 +741,8 @@ export function DeskPageView({
                   ui/StarredSection until 2026-09-10 (Peek scan F10). */}
               <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
                 {starred.length === 0 ? (
-                  // Level with the rows (Katerina, 2026-09-14): each row pads itself,
-                  // so the line takes a row's inset here, never on EmptyState.
-                  <div className="px-2 py-1">
-                    <EmptyState scope="section" message="Favorite the conversations of People you interact mostly with" />
-                  </div>
+                  // Level with the rows (Katerina, 2026-09-14): each row pads itself, and the kit's line for rows takes a row's inset (C9).
+                  <EmptyState scope="rows" message="Favorite the conversations of People you interact mostly with" />
                 ) : (
                   starred.map((row) => <DeskRowItem key={row.id} row={row} />)
                 )}
@@ -763,7 +751,7 @@ export function DeskPageView({
               <Divider className="my-2" />
             </>
           )}
-        </ListColumn>
+        </RailListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}

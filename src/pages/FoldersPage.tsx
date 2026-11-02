@@ -3,20 +3,19 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconTrash } from '@tabler/icons-react'
-import { EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { EmptyState, IconButton, Panel, ArchivedNotice } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
-import type { ForeignObject } from '@estiva-app/interop'
 import { FileTreeView } from '@/components/views/FileTreeView'
-import { rememberFileAddress, reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { kindNoun } from '@/lib/archiveWords'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useToast } from '@/lib/toast'
 import { filePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useTabTitle } from '@/lib/useTabTitle'
+import { formatDateLabel } from '@/api'
 
 /**
  * `/app/folders` and `/app/folders/:id` — the Topics column, with no file open.
@@ -67,13 +66,6 @@ export function FoldersPage() {
     onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
     onStarted: (created) => navigate(filePath(created.address, created.title)),
   })
-
-  // A row of a no-state Folder's list opens its file, as the column's rows do.
-  const openRow = (file: ForeignObject) => {
-    if (!file.address) return
-    rememberFileAddress(file.address)
-    navigate(filePath(file.address, file.slots.title?.value))
-  }
 
   /*
     A channel that was one of Peek's old topics holds that topic's
@@ -203,10 +195,13 @@ export function FoldersPage() {
   const folderNotice =
     folderArchive && isFolder && selected?.channel ? (
       <ArchivedNotice
-        archive={folderArchive}
-        by={people?.[folderArchive.by]?.displayName ?? `${folderArchive.by.slice(0, 8)}…`}
-        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
-        onUnarchive={archivedWith || !canUnarchive ? undefined : () => void unarchive()}
+        // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+        by={people?.[folderArchive.by]?.displayName ?? '—'}
+        when={formatDateLabel(folderArchive.at * 1000)}
+        resolution={folderArchive.resolution}
+        withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
+        // The write itself, not a fire-and-forget: the card's Unarchive stays greyed until it lands, so a second click sends nothing.
+        onUnarchive={archivedWith || !canUnarchive ? undefined : unarchive}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
       />
     ) : undefined
@@ -222,13 +217,14 @@ export function FoldersPage() {
           ) : stateless && selected ? (
             <Panel
               title={selected.name ?? 'Untitled folder'}
+              // The rows' 8px inset and their 2px apart, as the column's Folders set them, on the Panel's own body.
+              bodyClassName="flex flex-col gap-0.5 p-2"
               actions={
+                // One button: an IconButton of its own, not a strip of one.
                 canDelete && (
-                  <Toolbar aria-label="Folder actions" surface={false}>
-                    <ToolbarButton tooltip="Delete folder" aria-label="Delete folder" onClick={() => setConfirmingDelete(true)}>
-                      <IconTrash size={16} stroke={1.5} />
-                    </ToolbarButton>
-                  </Toolbar>
+                  <IconButton tooltip="Delete folder" aria-label="Delete folder" onClick={() => setConfirmingDelete(true)}>
+                    <IconTrash size={16} stroke={1.5} />
+                  </IconButton>
                 )
               }
             >
@@ -237,9 +233,7 @@ export function FoldersPage() {
                 Folder with no state is in no list, so its link is the one
                 place it is seen. It used to say only that.
               */}
-              <div className="px-2 py-2">
-                <FileTreeView state={state} onSelect={openRow} onControl={fileControls.open} />
-              </div>
+              <FileTreeView state={state} onControl={fileControls.open} />
             </Panel>
           ) : (
             <EmptyState message={notAFolder ? 'This is not a folder.' : 'No file selected'} />
@@ -265,9 +259,7 @@ export function FoldersPage() {
           }}
         >
           {/* What a `kind:9008` does, and only that (FOL-9): Delete is offered only on a Folder with nothing filed in it. */}
-          <p className="text-body-2 text-text-secondary">
-            The folder and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.
-          </p>
+          <p>The folder and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.</p>
         </ConfirmDialog>
       )}
     </>

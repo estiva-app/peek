@@ -13,6 +13,8 @@ export interface Person {
   name: string
   role: string
   avatarSrc?: string
+  /** An agent (NIP-24 `bot` in its profile): its face is the kit's robot. */
+  bot?: boolean
   /**
    * The 64-hex Nostr public key, when this person has one — SPEC §13.1.
    *

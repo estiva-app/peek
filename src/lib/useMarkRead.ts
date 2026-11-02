@@ -30,7 +30,7 @@ import { READ_DWELL_MS, useReadActions } from '@/api'
  * the clock reaches it, while the pane is still open.
  *
  * Peek's own conversation view passes what has been on screen rather than
- * what is drawn (`useSeenOnScreen`, Katerina, 30 October), and no dwell of its
+ * what is drawn (the kit's `useSeenOnScreen`, Katerina, 30 October), and no dwell of its
  * own: being seen already took one.
  */
 function useDwell(target: string | null | undefined, newestAt: number | undefined, mark: (target: string, newestAt: number) => void, dwellMs: number) {

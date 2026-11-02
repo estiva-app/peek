@@ -61,7 +61,6 @@ const meta = {
     isMember: (address: string) => MINE.has(address),
     unread: { [CRASH]: true, [ISSUE]: true },
     selectedRef: RELEASE,
-    onSelect: () => {},
   },
   decorators: [
     (Story) => (
@@ -94,8 +93,6 @@ export const Waiting: Story = { args: { files: FILES.slice(2, 3), waiting: true,
 
 /** The Folder holds nothing of yours — the open file's Folder, shown for the open file's sake. */
 export const NothingOfYours: Story = { args: { files: FILES.slice(5), selectedRef: undefined } }
-
-export const Loading: Story = { args: { state: 'loading' } }
 
 /** A refused read is not an empty Folder. */
 export const Unreadable: Story = { args: { state: { failed: 'not_a_member' } } }

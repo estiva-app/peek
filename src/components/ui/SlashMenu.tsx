@@ -1,12 +1,13 @@
-import { formatSection, typeTrigger, type SlashCommand, type SlashSection } from '@estiva-app/ui/editor'
+import { typeTrigger, type SlashCommand } from '@estiva-app/ui/editor'
 
 /**
- * The `/` menu — PEE-18: which rows Peek adds beside the shared Format section.
+ * The `/` menu — PEE-18: the row Peek adds to the comment box's.
  *
- * The list, the trigger and the Format section are the package's since CON-27
- * (estiva-ui 0.52.0, `SlashCommands` and `formatSection`); code stays inline
- * here (Katerina, 29 Sep). What is left is only Peek's: its own rows, and how
- * each looks.
+ * The list, the trigger, the Format section and the Insert rows the kit's
+ * box draws are the package's (CON-27, and the comment box's own `/` since
+ * ui 0.92); code stays inline (Katerina, 29 Sep). What is left is only
+ * Peek's: its Resolve row. The whole list Peek once spelled out for its own
+ * editor went with that editor (audit D1, 2 November).
  *
  * Format, then Peek's rows under **Insert** — the one heading every app's own
  * section takes, as Ship's does (Miky, CON-25 kickoff, 2026-10-02; CON-29).
@@ -39,16 +40,3 @@ export const PEEK_INSERT_ROWS: readonly SlashCommand[] = [
   },
 ]
 
-export const SLASH_SECTIONS: readonly SlashSection[] = [
-  formatSection('inline'),
-  {
-    label: 'Insert',
-    commands: [
-      shortcut('Mention', '@', '@', 'Mention a person'),
-      shortcut('Urgent', '!@', '!@', 'Urgent mention'),
-      // What `[` lists since PEE-21: the messages on screen first, then files and topics.
-      shortcut('Reference', '[', '[', 'Reference a message, file or topic'),
-      ...PEEK_INSERT_ROWS,
-    ],
-  },
-]

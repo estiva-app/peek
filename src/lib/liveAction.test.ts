@@ -291,6 +291,14 @@ describe('a prose field (MAN-1, RIC-13)', () => {
     expect(JSON.stringify(document)).toContain('"marks":[{"type":"bold"}]')
   })
 
+  it('sends what was written in the field as the document it already is (C12)', () => {
+    const action = launcherActionFrom(addIssueWithProse)!
+    const written = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', id: 'a1b2c3d4e5f6', content: [{ type: 'text', text: 'The total is wrong' }] }] })
+    const { properties, contentFormat } = proseSubmission(action, { title: 'Billing entry', description: written }, { description: 'blocks' })
+    expect(contentFormat).toBe('estiva-blocks-1')
+    expect(properties.description).toBe(written)
+  })
+
   it('sends a title-only capture exactly as before — no body, no format', () => {
     const action = launcherActionFrom(addIssueWithProse)!
     expect(proseSubmission(action, { title: 'Billing entry' })).toEqual({ properties: { title: 'Billing entry' } })

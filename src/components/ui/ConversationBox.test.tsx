@@ -18,7 +18,6 @@ import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { DebugProvider } from '@/lib/debug'
 import { createDraftStore, draftKeys } from '@/lib/drafts'
 import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
-import { insertHighlightTag } from '@/extensions/highlight'
 import { ConversationBox, EditBox, type EditSaved, type SendAnswer, type SendPayload } from './ConversationBox'
 import { PEEK_INSERT_ROWS } from './SlashMenu'
 
@@ -92,7 +91,7 @@ describe('ConversationBox — what a send carries', () => {
     const user = userEvent.setup()
     const { onSend, send, editor } = await boxWith('Shipping Thursday')
     // As `-> ` writes the resolution; the tag as a draft from before PEEKM-3 holds it (`/` offers no Highlights now).
-    insertHighlightTag(editor, 'conclusion')
+    editor.commands.insertContentAt(1, [{ type: 'highlightTag', attrs: { highlightType: 'conclusion' } }, { type: 'text', text: ' ' }])
     editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'resolutionBlock', content: [{ type: 'text', text: 'agreed in the call' }] })
     await user.click(send)
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))

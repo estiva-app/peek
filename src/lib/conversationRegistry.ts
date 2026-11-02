@@ -62,8 +62,9 @@ export interface ConversationSnapshot {
  * One message, in the two capacities INT-3 needs it in: prose for the model,
  * and enough identity to point at the message in the thread behind the modal.
  *
- * `id` matches the `data-reply-id` the thread renders, which is the anchor a
- * citation scrolls to.
+ * `id` matches the anchor the thread renders, which a citation scrolls to: a
+ * reply's `data-reply-id`, or the pinned first message's `data-thread-start`
+ * (the kit's, which its `showInConversation` reads).
  */
 export interface ConversationMessage {
   id: string
@@ -82,8 +83,8 @@ export interface ConversationMessage {
    * screen (INT-8).
    *
    * A topic-wide snapshot spans many conversations, and a citation into one
-   * that is not open has to open it before it can scroll — `data-reply-id`
-   * only exists inside the mounted panel. Absent for a thread snapshot, where
+   * that is not open has to open it before it can scroll — its anchors
+   * (the kit's `data-reply-id` and `data-thread-start`) only exist inside the mounted panel. Absent for a thread snapshot, where
    * every message is already in the conversation being read.
    */
   conversationId?: string

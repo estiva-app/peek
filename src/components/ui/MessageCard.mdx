@@ -1,55 +1,33 @@
-import { Meta, Canvas } from '@storybook/addon-docs/blocks'
-import * as ConversationBoxStories from './ConversationBox.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta title="Writing & text/MessageCard" />
+<Meta title="Topics/MessageCard" />
 
 # MessageCard
 
-One file's card under a message, or under the box writing one (SPEC §13.6.2):
-the kit's `AttachedCard`, held live by `useHeldCard`.
+The card under a message for a file the author linked.
 
-<Canvas of={ConversationBoxStories.AnIssueAloneOnItsLine} />
-
-**Seen in** — *Writing & text/Composer/ConversationBox* → **An Issue Alone On Its
-Line**, under the box with its ✕.
+**Seen in** — No story: it reads the file from the relay. The kit's AttachedCard has its stories in the estiva-ui Storybook.
 
 ## When
 
-- Under a sent message, for each `embed` its body names: `MessageBody` places it.
-- Under a message box, for the one file's default card: `ConversationBox`
-  hands it to the kit's `CommentBox`, which puts its ✕ on it.
+- Under a message, or under the box while one is written. One card per file the author chose.
 
 ## When not
 
-- A link inside the text → `MessageChip`, or `MessageRow` for a line that is
-  only the link.
-- One block of a file → `PartCard` inside `MessagePart`.
+- For a link in a sentence. That is **LinkChip**.
+- For a link alone on its line. That is **LinkRow**.
 
 ## How
 
 ```tsx
 import { MessageCard } from '@/components/ui/MessageLinks'
 
-// Under the author's own sent message: the ✕, shown on hover or focus.
-<MessageCard uri={card.reference} onRemove={() => remove(card.value)} />
-// Under a box: no ✕ of its own; the box's is put on it.
-<MessageCard uri={reference} resolved={supplied} />
+<MessageCard uri={naddr} resolved={object} readOnly={archived} onRemove={takeOff} />
 ```
+
+- `compact` draws the old one-row form. `opensAt` is the URL the body wrote.
 
 ## What it owns
 
-- **The ✕.** Only with `onRemove`, shown on hover or focus (always on touch). A
-  reader who cannot edit the message gets none.
-- **Never a blank.** While it loads, the shape it drew last time on this device;
-  a file that cannot be read, or a read that failed (a busy relay, the network),
-  says "not available" in the card's place (Katerina, 30 Oct); "Issue deleted"
-  when a deletion the protocol trusts names it (`readAbsence`); and the URL as
-  written, when the message wrote one (SPEC §13.1). A failed read is
-  asked again quietly, longer apart each time, and the card draws once the relay
-  answers; no Try again button.
-- **An old `compact` card.** Drawn as the file's row, as it drew before the
-  kit, with no ✕.
-- **Changes from the card.** Any reader may change the file from it, each
-  change written and read back; its comment count's dot is a member's only.
-- **Words where the reader cannot act.** `readOnly` (an archived or read-only
-  conversation) draws its status and owner as words, never pickers.
+- **Peek's half:** reading the file (held for a while, one read per file), its comment count and unread dot, a change to the file written and read back, and a deleted file.
+- **The look and the behaviour are the kit's AttachedCard**: the cross on hover, values as pickers or words. See AttachedCard in the estiva-ui Storybook (Links / AttachedCard).

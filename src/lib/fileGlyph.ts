@@ -1,56 +1,38 @@
-import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { KIND_CHANNEL_METADATA } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { thingKindOf, type ThingKind } from '@estiva-app/ui'
 
-/**
- * Ship's project and issue kinds (Ship's manifest). Peek names them only to
- * give them Ship's own glyphs (Katerina, 7 October); nothing else here asks
- * what kind another app's file is. When a manifest can declare its files'
- * glyph, this map goes and the manifest's answer is drawn instead.
- */
-const KIND_SHIP_PROJECT = 30850
-const KIND_SHIP_ISSUE = 30851
-
-/** Which glyph a file wears before its name, everywhere Peek draws one. */
-export type FileGlyph = 'topic' | 'project' | 'issue' | 'file'
+/** Which glyph a file wears before its name, everywhere Peek draws one: the kit's kinds of thing, less a message. */
+export type FileGlyph = Exclude<ThingKind, 'message'>
 
 /**
- * The glyph for a file of this kind: Peek's bare file is a topic; a Ship
- * project wears Ship's box and an issue Ship's list, the icons Ship's own
- * sidebar and "Mentioned in" lines give them; anything else is a file.
+ * The glyph for a file of this kind: the kit's `thingKindOf`, which every app
+ * reads alike (Katerina, 8 October) — Peek's bare file is a topic, a Ship
+ * project and issue are themselves, anything else is another app's file.
+ *
+ * Two answers stay as Peek drew them, so nothing changes on screen (audit A13,
+ * 2 November): a Folder listed inside another Folder (FOL-22) is a row whose
+ * kind is a channel's, which the kit calls a topic and Peek's rows always drew
+ * as a file; and a message is never a row, so its kind is a file here too.
  */
 export function fileGlyph(kind: number | undefined): FileGlyph {
-  if (kind === KIND_BARE_FILE) return 'topic'
-  if (kind === KIND_SHIP_PROJECT) return 'project'
-  if (kind === KIND_SHIP_ISSUE) return 'issue'
-  return 'file'
-}
-
-/** What a reference can name: a file, or a message — the package's kinds of thing (`KindIcon`). */
-export type ReferenceGlyph = ThingKind
-
-/**
- * The glyph for a referenced object (SPEC §13.1): a message is a message; a
- * channel is a topic, as `referenceLink` opens it; anything else is a file,
- * by `fileGlyph`. The package's `thingKindOf` since estiva-ui 0.63.0, which
- * every app reads alike (Katerina, 8 October).
- */
-export function referenceGlyph(kind: number | undefined): ReferenceGlyph {
-  return thingKindOf(kind)
+  if (kind === KIND_CHANNEL_METADATA) return 'file'
+  const thing = thingKindOf(kind)
+  return thing === 'message' ? 'file' : thing
 }
 
 /**
- * The same, from a `nostr:` URI as a body carries it — for a chip that holds
+ * What a `nostr:` URI names, as a body carries it — for a chip that holds
  * only that. A message's `nevent`/`note` is a message; an `naddr` is judged by
- * its kind; anything else (a person, a URI that does not parse) is not one of
- * these, and `undefined` leaves the caller its own icon.
+ * its kind (`thingKindOf`); anything else (a person, a URI that does not parse)
+ * is not one of these, and `undefined` leaves the caller its own icon.
  */
-export function referenceGlyphOfUri(uri: string | null | undefined): ReferenceGlyph | undefined {
+export function referenceGlyphOfUri(uri: string | null | undefined): ThingKind | undefined {
   if (!uri) return undefined
   if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'message'
   if (!/^nostr:naddr1/i.test(uri)) return undefined
   try {
-    return referenceGlyph(referenceToPointer(uri).kind)
+    return thingKindOf(referenceToPointer(uri).kind)
   } catch {
     return undefined
   }

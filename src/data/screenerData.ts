@@ -29,6 +29,8 @@ export type ScreenerItem =
       authorPubkey?: string
       /** Their name, as the page has it; absent while it is not known. */
       authorName?: string
+      /** An agent made it (NIP-24 `bot`), as the page has it: its face is the kit's robot. */
+      authorBot?: boolean
       /** Archived by someone while still unread here: it stays, marked (PEE-68, Miky 19 Oct). */
       archived?: boolean
     }

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { StarredSection, type StarredItem } from './StarredSection'
 
@@ -28,14 +27,7 @@ export const Populated: Story = {
   args: { items: ITEMS },
 }
 
-/** Selection follows clicks. */
+/** The person whose conversation is open is the current row. A click opens a person's page, through the app's router. */
 export const WithSelection: Story = {
-  render: function Render() {
-    const [selectedId, setSelectedId] = useState<string | null>('1')
-    return (
-      <div className="w-72">
-        <StarredSection items={ITEMS} selectedId={selectedId} onSelect={setSelectedId} />
-      </div>
-    )
-  },
+  args: { items: ITEMS, selectedId: 'alice' },
 }

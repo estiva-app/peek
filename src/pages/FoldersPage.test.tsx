@@ -24,6 +24,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { FoldersPage } from './FoldersPage'
+import { PeekSetup } from '@/lib/PeekSetup'
 import { channelDestination } from '@/lib/legacyTopicLinks'
 import { filePath } from '@/lib/objectUrl'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
@@ -252,12 +253,15 @@ function mount(url: string) {
   return render(
     <LastSelectionProvider>
       <MemoryRouter initialEntries={[url]}>
+        {/* Peek's router handed to every kit link, as main.tsx does: a tree row's click changes page through it. */}
+        <PeekSetup>
         <Routes>
           <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
           <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
           {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
           <Route path="*" element={<Probe />} />
         </Routes>
+        </PeekSetup>
         <Remembered />
       </MemoryRouter>
     </LastSelectionProvider>,
@@ -600,7 +604,8 @@ describe('FoldersPage filters the column', () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     try {
       const { container } = mount('/app/folders')
-      const rows = container.querySelector(`[data-nav-group="${FOLDER}"] [data-flat]`)!
+      // The Folder's section: its rows are straight under its heading.
+      const rows = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
       const drawn = [...rows.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
       expect(drawn).toEqual([parent.ref, child.ref])
       expect(rows.querySelector('[aria-label^="Show what is under"]')).toBeNull()

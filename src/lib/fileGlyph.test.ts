@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { addrToNaddr, encodeNevent, encodeNpub } from '@estiva-app/protocol'
-import { fileGlyph, fileGlyphOfAddress, referenceGlyph, referenceGlyphOfUri } from './fileGlyph'
+import { fileGlyph, fileGlyphOfAddress, referenceGlyphOfUri } from './fileGlyph'
 
 describe('fileGlyph', () => {
   it('draws a bare file as a topic, and Ship files with Ship’s glyphs', () => {
@@ -22,12 +22,10 @@ describe('fileGlyph', () => {
   })
 })
 
-describe('referenceGlyph', () => {
-  it('draws a message as a message and a channel as a topic, the rest as fileGlyph does', () => {
-    expect(referenceGlyph(9)).toBe('message')
-    expect(referenceGlyph(39000)).toBe('topic')
-    expect(referenceGlyph(30850)).toBe('project')
-    expect(referenceGlyph(undefined)).toBe('file')
+describe('a row that is not a file to the kit', () => {
+  it('keeps a Folder listed in a Folder, and a message, as the file a row has always drawn', () => {
+    expect(fileGlyph(39000)).toBe('file')
+    expect(fileGlyph(9)).toBe('file')
   })
 })
 

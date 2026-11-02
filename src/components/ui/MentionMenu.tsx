@@ -1,5 +1,4 @@
 import type { MentionPerson } from '@estiva-app/ui/editor'
-import { Avatar } from '@estiva-app/ui'
 import { mentionPeople, type Person } from '@/api'
 
 /**
@@ -7,9 +6,9 @@ import { mentionPeople, type Person } from '@/api'
  *
  * The list itself — its rows (the face, the name, the role line, the shared
  * EnterHint while highlighted), the box, the keys — is the package's
- * `peopleMenu` since CON-27 (estiva-ui 0.52.0). What stays here is Peek's:
- * the directory, and the face drawn through Peek's own `Avatar`, which knows
- * the picture.
+ * `peopleMenu` since CON-27 (estiva-ui 0.52.0), its face included: the kit's
+ * `Avatar`, which finds the picture through `AppProvider`. What stays here is
+ * Peek's: the directory.
  */
 export function toMentionPerson(person: Person): MentionPerson {
   return {
@@ -17,7 +16,7 @@ export function toMentionPerson(person: Person): MentionPerson {
     name: person.name,
     description: person.role,
     pubkey: person.pubkey ?? null,
-    avatar: <Avatar size={32} alt={person.name} />,
+    bot: person.bot,
   }
 }
 

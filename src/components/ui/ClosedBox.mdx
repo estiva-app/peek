@@ -1,43 +1,33 @@
-import { Meta, Canvas } from '@storybook/addon-docs/blocks'
-import * as ConversationBoxStories from './ConversationBox.stories'
+import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta title="Writing & text/Composer/ClosedBox" />
+<Meta title="Topics/ClosedBox" />
 
 # ClosedBox
 
-The box's place where nothing can be written: the line saying why, drawn by
-the package's `CommentBox` as every app draws it (Decided 2026-10-17).
+The line that stands where the message box would be, when nothing can be written.
 
-<Canvas of={ConversationBoxStories.Archived} />
-
-**Seen in** — *Writing & text/Composer/ConversationBox* → **Archived**; and
-*Pages in the shell* → **File Archived**, under the messages, with the
-archived card above them.
+**Seen in** — *Pages/In the shell* (the FileArchived story: "Archived. Unarchive it to comment.").
 
 ## When
 
-- An archived file, or a file archived with the file above it: the line from
-  `archivedLineOf` ("Archived. Unarchive it to comment.", "Unarchive the
-  project to comment.") in the composer's place, and in an open thread's.
+- A conversation that cannot take a message, such as an archived file. Pass the reason.
 
 ## When not
 
-- Who archived it, the resolution and the way back → **ArchivedNotice**, the
-  card above the messages. This is only the line.
-- A box that can be written in → **ConversationBox**.
+- For a box that is only empty. That is `ConversationBox`.
+- To hide the box from a person who may not write. No alternative: Peek shows the line only when it can say why.
 
 ## How
 
 ```tsx
 import { ClosedBox } from '@/components/ui/ConversationBox'
 
-<div className="p-3">
-  <ClosedBox reason={archivedLineOf(file.archived) ?? ''} />
-</div>
+<ClosedBox reason="Archived. Unarchive it to comment." />
 ```
+
+- `reason` is the only prop, and it is required.
 
 ## What it owns
 
-- **The same line in every app.** It is the package's closed box, so Peek,
-  Ship and Leaf say it in one look and one set of words.
-- **No way to write.** No editor, no Send, no draft.
+- **Peek's half:** the words of the reason, which the caller gives. It also gives the box a label ("Message") and sends nothing.
+- **The look and the behaviour are the kit's CommentBox**, closed. See CommentBox in the estiva-ui Storybook (Writing / CommentBox).

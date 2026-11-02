@@ -1,19 +1,18 @@
 import { useCallback, useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconDotsVertical } from '@tabler/icons-react'
-import { ToolbarButton } from '@estiva-app/ui'
 import { PEOPLE, PeekDataProvider } from '@/api'
-import { SuggestionMenu } from '@estiva-app/ui'
+import { KindIcon, SuggestionMenu } from '@estiva-app/ui'
 import type { SuggestionPopupOptions } from '@estiva-app/ui/editor'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
-import { ConversationMoreMenu } from './ConversationMoreMenu'
-import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { NavItem } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { TopicMenuItems, TopicMoreMenu } from './ui/TopicMoreMenu'
-import { FILES_MENU, toReferenceItem } from './ui/FilesMenu'
-import { filterReferences, type CaptionedItem } from '@estiva-app/ui/editor'
+import { toReferenceItem } from './ui/FilesMenu'
+import { referenceGlyphOfUri } from '@/lib/fileGlyph'
+import { addrToNaddr } from '@estiva-app/protocol'
+import { filterReferences, referenceMenu, type CaptionedItem } from '@estiva-app/ui/editor'
 import { peopleMenu, toMentionPerson } from './ui/MentionMenu'
 
 /**
@@ -115,95 +114,6 @@ export const TopicMoreDm: Story = {
     }),
 }
 
-/* ── Conversation more menu ─────────────────────────────────────────────── */
-
-/* The menu owns its ⋯ button now, so a canvas would otherwise be one button.
-   Held open, which is what these canvases are for; in the app it opens on a
-   press and closes on Escape or an outside press. */
-function conversationMore(props: Partial<ComponentProps<typeof ConversationMoreMenu>>) {
-  return (
-    <ConversationMoreMenu
-      open
-      isResolved={false}
-      onHighlight={noop}
-      onResolve={noop}
-      onReopen={noop}
-      onOpenWork={noop}
-      onEditMessage={noop}
-      onViewDetails={noop}
-      onDelete={noop}
-      {...props}
-    />
-  )
-}
-
-/**
- * Somebody else's DM message: Resolve · Open work · Mark as Highlight, then
- * View details — no Edit, no Delete. Hover "Mark as Highlight" to open the
- * 5-type submenu. "Start topic" went with the Convex topics (FOL-23).
- */
-export const ConversationMoreDmMessage: Story = { render: () => conversationMore({}) }
-
-/**
- * Your own message adds Edit message above View details and Delete below the
- * rule. PEE-32 put the authorship gate back that CON-3 and CON-8 had removed:
- * the relay refuses a non-author anyway, so the control everyone saw could not
- * succeed on anybody else's message.
- */
-export const ConversationMoreOwnMessage: Story = { render: () => conversationMore({ isOwnMessage: true }) }
-
-/** When resolved, "Resolve →" becomes "Reopen". */
-export const ConversationMoreResolved: Story = { render: () => conversationMore({ isResolved: true }) }
-
-/** With a highlight set, the row reads "Change highlight" and the submenu gains Remove. */
-export const ConversationMoreWithHighlight: Story = {
-  render: () => conversationMore({ currentHighlight: 'insight' }),
-}
-
-/* ── Conversation quick menu ────────────────────────────────────────────── */
-
-/* The ⋯ menu owns its own button, so the strip takes the menu rather than a
-   callback and the button arrives with it. Press it. */
-const more = (
-  <ConversationMoreMenu
-    trigger={
-      <ToolbarButton tooltip="More actions" aria-label="More actions">
-        <IconDotsVertical size={16} stroke={1.5} />
-      </ToolbarButton>
-    }
-    onDelete={noop}
-  />
-)
-
-function quick(isResolved: boolean) {
-  return (
-    <ConversationQuickMenu
-      isResolved={isResolved}
-      onReact={noop}
-      onReply={noop}
-      onResolve={noop}
-      onReopen={noop}
-      more={more}
-    />
-  )
-}
-
-/** The hover toolbar on an open conversation card: React · Reply · Resolve · More. */
-export const ConversationQuickUnresolved: Story = { render: () => quick(false) }
-
-/** Once resolved, the middle action flips to Reopen (dashed circle). */
-export const ConversationQuickResolved: Story = { render: () => quick(true) }
-
-/** The two side by side. */
-export const ConversationQuickBothStates: Story = {
-  render: () => (
-    <div className="flex items-center gap-6">
-      {quick(false)}
-      {quick(true)}
-    </div>
-  ),
-}
-
 /* ── Screener "Later" menu ──────────────────────────────────────────────── */
 
 /**
@@ -222,7 +132,7 @@ export const ScreenerLater: Story = {
  * The list is the package's `SuggestionMenu` since UIG-31 (estiva-ui 0.45.0),
  * which the `[` and `@` extensions open against the caret through
  * `suggestionPopup`; Peek says only which rows and how each looks
- * (`FILES_MENU`, `peopleMenu`). So the stories draw the same list, with the
+ * (`referenceMenu`, `peopleMenu`). So the stories draw the same list, with the
  * same settings, against a marker standing in for the caret.
  */
 function InTheShell<T>({ menu, items, query = '' }: { menu: SuggestionPopupOptions<T>; items: T[]; query?: string }) {
@@ -258,44 +168,53 @@ function CaretAlone() {
   )
 }
 
-// Exactly what the `[` extension offers (mention.tsx): the messages on screen
-// (RIC-11). The Apps and Documents sections were mock rows and were retired on
-// 2026-09-05 — a story that shows them would be showing a menu the app has
-// never rendered — and topics went with Convex (FOL-23).
+// What `[` offers in the comment box (the kit's CommentBox, its list from `referenceSections`): Files, then Messages
+// (Katerina, 30 Oct), each row with the kit's icon for what it names. The sections are a fixture of that shape: a
+// Ship issue and project and a Peek topic, then the messages on screen (RIC-11). The Apps and Documents sections were
+// mock rows, retired on 2026-09-05, and Convex topics went with FOL-23.
+const SHIP = 'b3'.repeat(32)
+const FILES: CaptionedItem[] = [
+  { id: 'f1', label: 'Fix the token lint on the mobile build', snippet: '', uri: `nostr:${addrToNaddr(`30851:${SHIP}:token-lint`)}`, description: 'Mobile app' },
+  { id: 'f2', label: 'Mobile app', snippet: '', uri: `nostr:${addrToNaddr(`30850:${SHIP}:mobile-app`)}`, summary: 'The app people carry: sign-in, Desk and the conversation.' },
+  { id: 'f3', label: 'Launch checklist for v2', snippet: '', uri: `nostr:${addrToNaddr(`30840:${SHIP}:launch-checklist`)}` },
+]
 const MESSAGES: ConversationMessage[] = [
   { id: 'm1', author: 'Ada Lovelace', timestamp: '9:41 AM', body: 'Build **#4821** failed again on the same step.', eventId: 'a'.repeat(64) },
   { id: 'm2', author: 'Grace Hopper', timestamp: '9:44 AM', body: 'Reverted the runner image; re-running now.', eventId: 'b'.repeat(64) },
   { id: 'm3', author: 'Ada Lovelace', timestamp: '9:52 AM', body: 'Green. Leaving the pin in place until Monday.', eventId: 'c'.repeat(64) },
 ]
-const ITEMS: CaptionedItem[] = MESSAGES.map(toReferenceItem)
 
-/* The shell opens only when there is something to draw, exactly as the `[`
-   extension does: a `Popover` wrapped around a menu that returned null is an
-   empty box, where the old hand-built container was invisible (D47). */
-function files(items: CaptionedItem[], query: string) {
-  return (
-    <PeekDataProvider>
-      {filterReferences(items, query).length === 0 ? (
-        <CaretAlone />
-      ) : (
-        <InTheShell menu={FILES_MENU} items={filterReferences(items, query)} query={query} />
-      )}
-    </PeekDataProvider>
-  )
+/** Each row with the icon of what it is, from its URI (7 October). */
+function referenceRowIcon(uri: string) {
+  const glyph = referenceGlyphOfUri(uri)
+  return glyph ? <KindIcon kind={glyph} /> : undefined
+}
+
+/** The list as the box configures it: its name, and each row's icon from the address it names. */
+const REFERENCES = referenceMenu({ ariaLabel: 'References', sectionLabel: 'References', icon: <KindIcon kind="file" />, iconFor: (uri) => (uri ? referenceRowIcon(uri) : undefined) })
+
+/* The shell opens only when there is something to draw, exactly as `[` does: a `Popover` wrapped around a menu that
+   returned null is an empty box, where the old hand-built container was invisible (D47). Empty sections are not drawn. */
+function files(query: string) {
+  const items = [
+    ...filterReferences(FILES, query).map((item) => ({ ...item, section: 'Files' })),
+    ...filterReferences(MESSAGES.map(toReferenceItem), query).map((item) => ({ ...item, section: 'Messages' })),
+  ]
+  return <PeekDataProvider>{items.length === 0 ? <CaretAlone /> : <InTheShell menu={REFERENCES} items={items} query={query} />}</PeekDataProvider>
 }
 
 /**
- * What `[` offers: the last few messages on screen, each as who said it and
- * how it opens. Rows are the shared `MenuItem` at its default size — one
- * line of text beside a 16px icon — so a message is cut to a line too.
+ * What `[` offers: the files around, then the last few messages on screen, each
+ * row with the icon of what it is. Rows are the shared `MenuItem` at its default
+ * size, so a message is cut to a line too.
  */
-export const Files: Story = { render: () => files(ITEMS, '') }
+export const Files: Story = { render: () => files('') }
 
-/** A message is found by what was said or by who said it. */
-export const FilesFilteredToMessages: Story = { render: () => files(ITEMS, 'ada') }
+/** A message is found by what was said or by who said it; a file by its title. */
+export const FilesFilteredToMessages: Story = { render: () => files('ada') }
 
 /** Nothing matches — the menu renders nothing rather than an empty box. */
-export const FilesNoMatches: Story = { render: () => files(ITEMS, 'zzzz') }
+export const FilesNoMatches: Story = { render: () => files('zzzz') }
 
 /** The people list, as `@` (or `!@`) opens it. */
 function Mentions({ people, isUrgent }: { people: typeof PEOPLE; isUrgent?: boolean }) {

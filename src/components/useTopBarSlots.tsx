@@ -1,30 +1,24 @@
 import { useState, type ReactNode } from 'react'
 import { IdentityMenu, MenuItem } from '@estiva-app/ui'
-import { IconMenu2 } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
 import { ReadStatePanel } from './ReadStatePanel'
-import { IconButton } from './ui/IconButton'
 import { hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
-
-export interface TopBarSlotsProps {
-  onMenuToggle?: () => void
-}
 
 /** What rides in the top bar's slots, and the Read state panel that hangs off it. */
 export interface TopBarSlots {
-  menu: ReactNode
   identity: ReactNode
   /** Rendered beside the frame, not in it: a Popover that portals itself. */
   panel: ReactNode
 }
 
 /**
- * What rides in Peek's top bar — the menu button and the identity — as slots,
- * so the package's floating `AppShell` can draw the bar (UIG-14, 9.3). The
- * search field is the bar's own since 0.60.0: `PeekFrame` hands it the
- * launcher (Katerina, 8 October).
+ * What rides in Peek's top bar — the identity — as a slot, so the package's
+ * floating `AppShell` can draw the bar (UIG-14, 9.3). The search field is the
+ * bar's own since 0.60.0: `PeekFrame` hands it the launcher (Katerina, 8
+ * October); so is the fold button since 0.95.0, the same in every app
+ * (Katerina, 31 October).
  */
-export function useTopBarSlots({ onMenuToggle }: TopBarSlotsProps): TopBarSlots {
+export function useTopBarSlots(): TopBarSlots {
   const signOut = useSignOut()
   const [cluster, setCluster] = useState<HTMLDivElement | null>(null)
   const [readStateOpen, setReadStateOpen] = useState(false)
@@ -40,11 +34,6 @@ export function useTopBarSlots({ onMenuToggle }: TopBarSlotsProps): TopBarSlots 
   const live = hasRelay
 
   return {
-    menu: (
-      <IconButton tooltip="Toggle menu" tooltipPlacement="bottom" onClick={onMenuToggle} aria-label="Toggle menu">
-        <IconMenu2 size={16} stroke={1.5} />
-      </IconButton>
-    ),
     identity: (
       /*
         The cluster's element is the panel's anchor, captured by a callback
@@ -53,7 +42,7 @@ export function useTopBarSlots({ onMenuToggle }: TopBarSlotsProps): TopBarSlots 
         be null by the time it is wanted, and a ref read during render is
         what the hooks lint forbids by name.
       */
-      <div ref={setCluster} className="flex items-center gap-[6px]">
+      <div ref={setCluster} className="flex items-center">
         {/* The shared IdentityMenu (2026-09-01), Ship's anatomy, her ruling:
             identity section, workspace line naming the relay, and the actions
             — Edit your profile in Estiva ID (the ProfileDialog this used to

@@ -13,7 +13,6 @@ export interface StarredItem {
 interface StarredSectionProps {
   items?: StarredItem[]
   selectedId?: string | null
-  onSelect?: (id: string) => void
   /** A row's Open work item on its ⋮: add or remove; undefined offers none. */
   openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
   onToggleOpenWork?: (id: string) => void
@@ -33,7 +32,6 @@ interface StarredSectionProps {
 export function StarredSection({
   items = [],
   selectedId,
-  onSelect,
   openWorkActionFor,
   onToggleOpenWork,
   className,
@@ -46,10 +44,8 @@ export function StarredSection({
         /* One section of the page is empty: the line alone, left, no icon
            (B18, D41) — where a hand-made paragraph stood until 2026-09-10.
            Level with the rows (Katerina, 2026-09-14): each row pads
-           itself, so the line takes a row's inset here, never on EmptyState. */
-        <div className="px-2 py-1">
-          <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
-        </div>
+           itself, so the line takes a row's inset — the kit's `rows` scope. */
+        <EmptyState scope="rows" message="Favorite the conversations of People or Topics you interact mostly with" />
       ) : (
         items.map((item) => (
           <PersonItem
@@ -60,7 +56,6 @@ export function StarredSection({
             unread={item.isUnread}
             urgent={item.isUrgent}
             active={selectedId === item.id}
-            onSelect={onSelect}
             openWorkAction={openWorkActionFor?.(item.id)}
             onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(item.id) : undefined}
           />

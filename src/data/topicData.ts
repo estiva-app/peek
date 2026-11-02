@@ -103,6 +103,8 @@ export interface ConversationData {
    *  author with no Peek account is absent from the people directory the
    *  name lookup reads, so that lookup could never find them. */
   authorAvatarSrc?: string
+  /** An agent wrote it (NIP-24 `bot` in its profile): its face is the kit's robot. */
+  authorBot?: boolean
   timestamp: string
   body: string
   reactions?: ReactionData[]
@@ -135,7 +137,7 @@ export interface ConversationData {
   canEditAndDelete?: boolean
   /** Distinct reply authors in first-reply order — the reply row's facepile
    *  (signal theme). Server rows carry it; mock rows derive it from REPLIES. */
-  replyAuthors?: { name: string; avatarSrc?: string }[]
+  replyAuthors?: { name: string; avatarSrc?: string; bot?: boolean }[]
   /** Formatted time of the newest reply, shown next to the reply count. */
   lastReplyTime?: string
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
@@ -155,14 +157,6 @@ export interface ConversationData {
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string
-  /**
-   * Which block of the referenced object this comment is about — SPEC §13.6.
-   *
-   * `nostrReferences` says which object; this says which part. Absent means a
-   * comment about the whole object, which §13.6 requires a reader to keep
-   * distinct from an anchor that no longer resolves.
-   */
-  nostrBlockId?: string
   /** It was deleted and its replies stay (PER-24): drawn as a placeholder, with nothing to act on. */
   isDeleted?: boolean
 }

@@ -14,8 +14,10 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { FolderTree, PENDING_MS } from './FolderTree'
+import { NAV_TREE_PENDING_MS } from '@estiva-app/ui'
+import { FolderTree } from './FolderTree'
 import { ToastProvider } from '@/lib/toast'
+import { PeekSetup } from '@/lib/PeekSetup'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -147,7 +149,8 @@ function page(props: Parameters<typeof FolderTree>[0]) {
   return (
     <MemoryRouter initialEntries={['/topics']}>
       <Routes>
-        <Route path="*" element={<><FolderTree {...props} /><Probe /></>} />
+        {/* Peek's router given to every kit link, as main.tsx does: a row's plain click changes page through it. */}
+        <Route path="*" element={<PeekSetup><FolderTree {...props} /><Probe /></PeekSetup>} />
       </Routes>
     </MemoryRouter>
   )
@@ -162,6 +165,11 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
 const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
 const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
 const fold = (name: string) => screen.getByRole('button', { name })
+/** The rows under a row while it is open: the panel its arrow opens (`aria-controls`), as a screen reader is told; null while shut. */
+const rowsUnder = (ref: string) => {
+  const arrow = document.querySelector(`[data-file="${CSS.escape(ref)}"]`)?.parentElement?.querySelector('[aria-controls][aria-label*="what is under"]')
+  return arrow?.getAttribute('aria-expanded') === 'true' ? document.getElementById(arrow.getAttribute('aria-controls')!) : null
+}
 
 /** Folder ids `useFolderContents` was asked to read — `null` is "nothing". */
 const contentsAsked = () => [...new Set(reads.contents.mock.calls.map(([folder]) => folder).filter(Boolean))]
@@ -272,12 +280,12 @@ describe('the second level', () => {
     const row = section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement
     fireEvent.click(within((row).parentElement!).getByRole('button', { name: /Show what is under/ }))
     expect(childrenAsked()).toEqual([project.naddr])
-    expect(document.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
   })
 
   it("expands the open file's parent row so the file is where the tree says it is", () => {
     mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS })
-    expect(section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(section(TEAM).contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
     expect(childrenAsked()).toEqual([project.naddr])
   })
 })
@@ -290,7 +298,7 @@ describe('the second level', () => {
 describe('rows kept, and opened for the open file (Katerina, 30 October)', () => {
   const projectRow = () => (section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement).parentElement!
   const arrow = (name: RegExp) => within(projectRow()).getByRole('button', { name })
-  const shown = () => section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`) !== null
+  const shown = () => rowsUnder(PROJECT_ADDRESS) !== null
 
   it('a row opened by hand is open when the column is drawn again; one closed by hand stays closed', () => {
     const first = mount({ currentFolder: TEAM })
@@ -330,7 +338,7 @@ describe('a Folder opened before its listing is in (OPT-11)', () => {
     const heading = section(TEAM).querySelector('[aria-expanded]')!
     expect(heading.getAttribute('aria-expanded')).toBe('true')
     expect(heading.getAttribute('aria-busy')).toBe('true')
-    expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(true)
+    expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(true)
 
     reads.pending.delete(TEAM)
     rerender({})
@@ -338,15 +346,15 @@ describe('a Folder opened before its listing is in (OPT-11)', () => {
     expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
   })
 
-  it('a read still out after PENDING_MS opens on the skeleton', () => {
+  it('a read still out after NAV_TREE_PENDING_MS opens on the skeleton', () => {
     vi.useFakeTimers()
     try {
       reads.pending.add(TEAM)
       mount()
       fireEvent.click(fold('Peek'))
-      act(() => vi.advanceTimersByTime(PENDING_MS))
+      act(() => vi.advanceTimersByTime(NAV_TREE_PENDING_MS))
       expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
-      expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(false)
+      expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -393,6 +401,15 @@ describe('where things lead', () => {
     fireEvent.click(within(section(TEAM)).getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
+  })
+
+  it('a Cmd- or Ctrl-click on a row is the browser’s, for a new tab: this page stays where it is', () => {
+    mount({ currentFolder: TEAM })
+    const link = within(section(TEAM)).getByText('FOL-15 test topic 2').closest('a')!
+    // `fireEvent` answers false when the click was stopped: then the browser opens no tab.
+    expect(fireEvent.click(link, { metaKey: true })).toBe(true)
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   it('a click on a Folder only folds it, and leads nowhere — the Folders page and its Open folder are gone (5 October)', () => {
@@ -487,6 +504,15 @@ describe('the two views (Katerina, 5 October)', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'closed')
     mount({ currentFolder: OTHER, showFolder: true })
+    expect(openOf(section(OTHER))).toBe('true')
+  })
+
+  it("a Folder's own link is remembered open, as a click would: it stays open when a file in another Folder is opened next", () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    const link = mount({ currentFolder: OTHER, showFolder: true })
+    expect(openOf(section(OTHER))).toBe('true')
+    link.unmount()
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     expect(openOf(section(OTHER))).toBe('true')
   })
 
@@ -591,13 +617,13 @@ describe('a project reached by its channel’s link (5 October)', () => {
   it('is selected and open, what is under it drawn', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS, expandSelected: true })
-    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).not.toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
   })
 
   it('stays closed when opened any other way', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS })
-    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).toBeNull()
+    expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
   })
 })
 

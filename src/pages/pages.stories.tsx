@@ -16,10 +16,9 @@ import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
-import { EmptyState, Panel } from '@estiva-app/ui'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { ArchivedNotice, Divider, EmptyState, Panel } from '@estiva-app/ui'
 import { ClosedBox } from '@/components/ui/ConversationBox'
-import { DateDivider } from '@/components/ui/DateDivider'
+import { formatDateLabel } from '@/api'
 
 const noop = () => {}
 
@@ -147,12 +146,10 @@ type Story = StoryObj<typeof meta>
 export const People: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading={false}
       starred={STARRED}
       people={PEOPLE}
       selectedId="alice"
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<EmptyState message="No conversation selected" />}
     />
@@ -169,12 +166,10 @@ export const People: Story = {
 export const PeopleEmpty: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading={false}
       starred={[]}
       people={[]}
       selectedId={null}
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<EmptyState message="No conversation selected" />}
     />
@@ -188,12 +183,10 @@ export const PeopleEmpty: Story = {
 export const PeopleLoading: Story = {
   render: () => (
     <PeoplePageView
-      railClosed={false}
       loading
       starred={[]}
       people={[]}
       selectedId={null}
-      onSelect={noop}
       onHideDm={noop}
       rightPanel={<div className="flex-1 h-full" />}
     />
@@ -208,7 +201,6 @@ export const Desk: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading={false}
       screener={SCREENER_ITEMS.slice(0, 2)}
       onOpenScreener={noop}
@@ -236,7 +228,6 @@ export const DeskEmpty: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading={false}
       screener={[]}
       onOpenScreener={noop}
@@ -255,7 +246,6 @@ export const DeskLoading: Story = {
   parameters: { route: '/app/desk' },
   render: () => (
     <DeskPageView
-      railClosed={false}
       loading
       screener={[]}
       onOpenScreener={noop}
@@ -295,7 +285,6 @@ function Column({ view = 'mine', show = 'all', signedOut = false, folders = FOLD
         view={view}
         filter={treeFilterOf(view, show)}
         currentFolder={currentFolder}
-        onSelect={noop}
         menuFor={() => null}
       />
     </FolderColumn>
@@ -394,15 +383,15 @@ export const FileArchived: Story = {
         >
           <div className="shrink-0 px-4 pt-4">
             <ArchivedNotice
-              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
               by="Miky"
+              when={formatDateLabel(Date.now() - 86_400_000 * 2)}
+              resolution="Shipped in 0.37. What was left moved to the 0.38 topic."
               onUnarchive={noop}
-              look="card"
             />
           </div>
           {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
             <div key={day} className="flex flex-col">
-              <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
+              <Divider look="section" label={day} sticky />
               {Array.from({ length: 6 }, (_, i) => (
                 <p key={i} className="px-4 py-2 text-body-2 text-text-secondary">
                   A message from {day.toLowerCase()}, number {i + 1}.
