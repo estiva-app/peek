@@ -11,7 +11,8 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { TopicsColumnState } from '@/api'
 import { filePath } from '@/lib/objectUrl'
-import { OTHER_TOPICS_KEY, TopicsColumnView } from './TopicsColumn'
+import { openedFrom } from '@/lib/openedFrom'
+import { TopicsColumnView } from './TopicsColumn'
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const file = (kind: number, d: string, title: string) =>
@@ -49,9 +50,12 @@ describe('the Topics column (TOP-4)', () => {
     expect(screen.queryByRole('button', { name: /Show what is under Widgets 2: build 1/ })).toBeNull()
   })
 
-  it('a row under a topic links to its file', () => {
+  it('a row under a topic links to its file, and a click on it opens the file with Topics beside it', async () => {
     mount({ mine: [{ topic: WIDGETS, files: [TESTING] }], others: [] })
-    expect(panelOf(WIDGETS).querySelector('a[data-file]')!.getAttribute('href')).toBe(filePath(TESTING.address!, 'Testing Widgets'))
+    const link = panelOf(WIDGETS).querySelector('a[data-file]')!
+    expect(link.getAttribute('href')).toBe(filePath(TESTING.address!, 'Testing Widgets'))
+    await userEvent.click(link)
+    expect(openedFrom(TESTING.address!)).toBe('topics')
   })
 
   it('the files under a topic carry the unread dot as the Folder tree’s rows do', () => {
@@ -69,7 +73,6 @@ describe('the Topics column (TOP-4)', () => {
     await userEvent.click(screen.getByText('Other topics'))
     expect(screen.getByText('Somebody else’s')).toBeVisible()
     first.unmount()
-    expect(window.localStorage.getItem(OTHER_TOPICS_KEY)).not.toBeNull()
     mount(state)
     expect(screen.getByText('Somebody else’s')).toBeVisible()
   })

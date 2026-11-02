@@ -293,6 +293,8 @@ export function FilePage() {
  * the person. Kept in the history entry once the address bar has settled, so
  * a reload or Back shows the same one. `undefined` until it is known.
  */
+const FILE_COLUMN_WAIT_MS = 3_000
+
 function useFileColumn(address: string | null, settled: boolean): ListColumnName | undefined {
   const location = useLocation()
   const navigate = useNavigate()
@@ -301,7 +303,14 @@ function useFileColumn(address: string | null, settled: boolean): ListColumnName
   const kept = state?.column === 'topics' || state?.column === 'folders' ? state.column : undefined
   const clicked = !kept && address ? openedFrom(address) : undefined
   const [decided, setDecided] = useState<{ address: string; column: ListColumnName }>()
-  const guess = !kept && !clicked && address ? column(address) : undefined
+  // Unanswered for long (membership or the topics never read): Folders, which draws every file, rather than a skeleton for good.
+  const [waited, setWaited] = useState<string | null>(null)
+  useEffect(() => {
+    if (!address) return
+    const timer = setTimeout(() => setWaited(address), FILE_COLUMN_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [address])
+  const guess = !kept && !clicked && address ? (column(address) ?? (waited === address ? 'folders' : undefined)) : undefined
   // Set during render, as `TreeRow`'s `expand` is: neither the initialiser nor an effect, so the first answer holds.
   if (address && guess && decided?.address !== address) setDecided({ address, column: guess })
   const chosen = kept ?? clicked ?? (address !== null && decided?.address === address ? decided.column : guess)
