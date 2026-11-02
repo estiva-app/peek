@@ -152,7 +152,6 @@ export function PeoplePage() {
             : <div className="flex-1 h-full" />
           : dmView.rightPanel
       }
-      threadPanel={dmView.threadPanel}
     />
   )
 }
@@ -187,7 +186,6 @@ export function PeoplePageView({
   openWorkActionFor,
   onToggleOpenWork,
   rightPanel,
-  threadPanel,
 }: {
   /** The first read, still in flight. Not the same as an empty workspace. */
   loading: boolean
@@ -199,8 +197,8 @@ export function PeoplePageView({
   /** A person's Open work item on their ⋮: add or remove; undefined offers none (Katerina, 30 October). */
   openWorkActionFor?: (id: string) => 'add' | 'remove' | undefined
   onToggleOpenWork?: (id: string) => void
+  /** The open DM: its header, its conversation and its open thread beside, all the kit's ConversationLayout. */
   rightPanel?: ReactNode
-  threadPanel?: ReactNode
 }) {
   return (
     <PeekFrame
@@ -241,7 +239,6 @@ export function PeoplePageView({
         </RailListColumn>
       }
       rightPanel={rightPanel}
-      threadPanel={threadPanel}
     />
   )
 }

@@ -153,10 +153,16 @@ vi.mock('@/components/views/useFileConversationView', async () => ({
         <textarea aria-label="Peek composer" />
       </div>
     ) : null
+    const open = container ? (args.openThreadId as string | undefined) : undefined
     return {
-      // As the kit's ConversationLayout takes it: no messages, so the stand-in view is drawn in their place.
-      conversationParts: { items: [], empty: view },
-      threadPanel: container && args.openThreadId ? <div data-testid="peek-thread">{String(args.openThreadId)}</div> : undefined,
+      /*
+        As the kit's ConversationLayout takes it: no messages, so the stand-in view is drawn in their place. An open
+        thread is the stand-in's, which the layout draws in its own column beside, as Peek's view hands it (B1).
+      */
+      conversationParts: open
+        ? { items: [{ id: open, card: view, thread: () => <div data-testid="peek-thread">{open}</div> }], open, empty: view }
+        : { items: [], empty: view },
+      threadDrawn: open !== undefined,
     }
   },
 }))
@@ -259,9 +265,9 @@ vi.mock('@/api/useFileMentions', () => ({
     return { mentions: (address && mentions.byAddress[address]) || [] }
   },
 }))
-/** The scroll a landing asks for — the DOM anchor is the thread pane's, mocked away above. */
+/** The show a landing asks for (the kit's, C3) — the DOM anchor is the thread pane's, mocked away above. */
 const anchor = vi.hoisted(() => ({ scrollTo: vi.fn(async () => true) }))
-vi.mock('@/lib/messageAnchor', () => ({ scrollToMessageWhenReady: anchor.scrollTo }))
+vi.mock('@estiva-app/ui', async () => ({ ...(await vi.importActual<Record<string, unknown>>('@estiva-app/ui')), showInConversationWhenDrawn: anchor.scrollTo }))
 vi.mock('@/lib/toast', () => ({
   useToast: () => ({ showToast: (toast: { label: string; type?: string }) => toasts.shown.push(toast) }),
 }))
@@ -929,7 +935,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     const last = peekView.args.at(-1)! as { onOpenThread: (id: string | null) => void }
     act(() => last.onOpenThread(null))
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(screen.queryByTestId('peek-thread')).toBeNull()
   })
 
   it('a signed-out or unresolved file hands the view no container', () => {
@@ -972,6 +978,15 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   the third column when no thread is open: labelled Mentioned in, naming the
   file it was said on, and opening the thread there rather than here.
 */
+/*
+  Peek's own file draws its Overview and its open thread in the kit's ConversationLayout, in the layout's own column
+  beside the messages, inside the page's middle pane (B1): the frame's column is another app's file's only.
+*/
+const ownColumn = () => screen.getByTestId('middle')
+/** Neither an Overview nor a thread beside the conversation: only its two columns. */
+const noColumn = () =>
+  screen.getByTestId('thread').childElementCount === 0 && screen.queryByText('Overview') === null && screen.queryByTestId('peek-thread') === null
+
 describe('FilePage draws the comments elsewhere that name this file', () => {
   const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
   /** Said on the issue, in a thread rooted there, naming the bare file. */
@@ -1004,7 +1019,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByText('Activity')).toBeInTheDocument()
     const row = column.querySelector('[data-relation="mention"]')!
     expect(row).not.toBeNull()
@@ -1052,7 +1067,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ edit: 'Same shape, one level down — edited.', reactions: ['👍'], replies: 2 })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     expect(within(row).getByText('Same shape, one level down — edited.')).toBeInTheDocument()
     expect(within(row).queryByText(mention.body)).toBeNull()
     expect(within(row).getByText('(edited)')).toBeInTheDocument()
@@ -1066,7 +1081,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ kept: false })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(column.querySelector('[data-relation="mention"]')).toBeNull()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
   })
@@ -1077,7 +1092,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentionNow.current = now({ reactions: ['👍'] })
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     await userEvent.hover(within(row).getByText(mention.body))
     // The reaction pill is the only button, and pressing it changes nothing.
     const buttons = within(row).getAllByRole('button')
@@ -1092,14 +1107,14 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
   it('a file nobody has named keeps its two columns', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('…and so does a file somebody has named: closed until asked for (Katerina, 13 October)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
     expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
   })
 
@@ -1107,11 +1122,11 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByText('Overview')).toBeInTheDocument()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('opening it holds for the visit: back on the file, it is closed again', () => {
@@ -1119,17 +1134,17 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     const first = mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
+    expect(within(ownColumn()).getByText('Activity')).toBeInTheDocument()
     first.unmount()
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('an open thread wins the column', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}?thread=${'r'.repeat(64)}`)
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     expect(within(column).getByTestId('peek-thread')).toBeInTheDocument()
     expect(within(column).queryByText('Activity')).toBeNull()
   })
@@ -1151,7 +1166,8 @@ describe("FilePage puts another app's widget in the third column", () => {
     openUrl: 'https://ship.estiva.app/issue/the-file-route',
     slots: { title: { value: 'The file route' }, status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' } },
   })
-  const widget = () => screen.getByTestId('thread').querySelector('[data-file-widget]')
+  // In the frame's column for a file the viewer may only read, in Peek's own view's column for one they may comment on (B1).
+  const widget = () => document.querySelector('[data-file-widget]')
 
   it('a Ship issue: closed until asked for, like every file (Katerina, 13 October)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
@@ -1180,13 +1196,14 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
+    expect(ownColumn().contains(widget())).toBe(true)
     expect(screen.getByTestId('middle').querySelector('[data-testid="peek-view"]')).not.toBeNull()
   })
 
   it('a bare file gets nothing: it is nobody’s, and its title is already the header', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(noColumn()).toBe(true)
   })
 
   it('opening a thread replaces the widget, and closing it brings the widget back', () => {
@@ -1210,7 +1227,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     ]
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
-    const column = screen.getByTestId('thread')
+    const column = ownColumn()
     const card = widget()!
     const activity = within(column).getByText('Activity')
     expect(card.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

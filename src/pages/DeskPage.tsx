@@ -411,7 +411,8 @@ export function DeskPage() {
   const filePane = openAddress ? filePaneParts.pane : null
 
   const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
-  const threadPanel = selected ? dmView.threadPanel : filePane ? fileView.threadPanel : undefined
+  // Another app's file only: a DM, and Peek's own file, draw their open thread in their own layout's column (B1).
+  const threadPanel = !selected && filePane ? fileView.threadPanel : undefined
 
   return (
     <>

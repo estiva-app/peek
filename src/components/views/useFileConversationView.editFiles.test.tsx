@@ -84,7 +84,7 @@ const conversationOf = (r: ReturnType<typeof root>, byId: FileConversation['deco
 })
 
 function View({ openThreadId }: { openThreadId?: string }) {
-  const { conversationParts, threadPanel } = useFileConversationView({
+  const { conversationParts } = useFileConversationView({
     container: { kind: 'file', address: `30840:${ME}:d`, h: 'team' },
     rootIds: ['1'.repeat(64)],
     openThreadId,
@@ -92,12 +92,8 @@ function View({ openThreadId }: { openThreadId?: string }) {
     title: 'A file',
     onCommented: async () => {},
   })
-  return (
-    <>
-      <ConversationLayout threads="beside" {...conversationParts} />
-      {threadPanel}
-    </>
-  )
+  // The open thread is the layout's, in its column beside.
+  return <ConversationLayout threads="beside" {...conversationParts} />
 }
 
 const sentEdit = async (name = 'First') => {

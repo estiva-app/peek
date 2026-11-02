@@ -1,6 +1,6 @@
 import { useCallback, useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { EmptyState } from '@estiva-app/ui'
+import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import { useFilePane } from '@/components/views/useFilePane'
@@ -9,7 +9,6 @@ import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFol
 import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
-import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { KIND_TOPIC } from '@/nostr/foreign'
 import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
@@ -169,8 +168,8 @@ export function FilePage() {
     launcher's one-shot, the same one the topic view answers (RIC-16), read
     here for a comment whose thread is one of this file's. The thread comes
     open from the URL; what is left is the scroll, and it can only happen once
-    the thread pane has drawn the comment's anchor, which `peek.threadPanel`
-    being something says. Waiting on that rather than on the mount is what
+    the thread pane has drawn the comment's anchor, which `threadDrawn`
+    says. Waiting on that rather than on the mount is what
     makes a cold load work: the pane draws a read or more after the file does.
     The one-shot is consumed only once it is answered, so a link that opens
     while the reads are still in flight is not lost to them.
@@ -196,7 +195,7 @@ export function FilePage() {
     }
     if (!threadDrawn) return
     setPendingTopicMessage(null)
-    void scrollToMessageWhenReady(pendingTopicMessage.reply ?? pendingTopicMessage.eventId)
+    void showInConversationWhenDrawn(pendingTopicMessage.reply ?? pendingTopicMessage.eventId)
   }, [pendingTopicMessage, rootIds, openThreadId, threadDrawn, setOpenThread, setPendingTopicMessage])
 
   /*

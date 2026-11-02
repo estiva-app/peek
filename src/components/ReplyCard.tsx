@@ -21,6 +21,8 @@ interface ReplyCardProps {
   /** An agent wrote it: the kit draws its face as the robot. */
   authorBot?: boolean
   timestamp: string
+  /** When it was written, ms: its time then says the exact date and time under the pointer, before "Link to this message" (B10). */
+  createdAtMs?: number
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
   editedAt?: number
@@ -35,7 +37,10 @@ interface ReplyCardProps {
   isUrgent?: boolean
   onDelete?: () => void
   onBodyChange?: (newBody: string) => void
-  /** The message's id: an edit of it the relay refused reopens this card's edit box with the saved text (OPT-8). */
+  /**
+   * The message's id: an edit of it the relay refused reopens this card's edit box with the saved text (OPT-8), and
+   * the kit's card carries it (`data-reply-id`), which a link to it shows and the thread watches to read it (C2, C3).
+   */
   messageId?: string
   /** The reply's files after an edit added or removed some — PEE-16. The whole
    *  list, and only when this edit changed it. */
@@ -80,6 +85,7 @@ export function ReplyCard({
   authorAvatarSrc,
   authorBot,
   timestamp,
+  createdAtMs,
   body,
   editedAt,
   canEditAndDelete,
@@ -172,8 +178,10 @@ export function ReplyCard({
 
   return (
     <KitReplyCard
+      id={messageId}
       author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
       time={timestamp}
+      at={createdAtMs}
       timeHref={messageLink ?? undefined}
       timeLabel="Link to this message"
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}

@@ -20,8 +20,8 @@ interface HeaderProps extends Partial<ConversationParts> {
 /**
  * The column of an open direct message: the kit's `PageHeader` — the person's
  * face and name, a star and a more-actions menu — over the conversation, in
- * the kit's `ConversationLayout` (two columns; the thread stands in the frame's
- * column beside).
+ * the kit's `ConversationLayout` (two columns; the open thread stands in the
+ * layout's own column beside, which runs the page's full height).
  *
  * It drew a topic's and a huddle's bar too, with counts and a members pill,
  * until topics became files with a page of their own: a DM is all it draws.

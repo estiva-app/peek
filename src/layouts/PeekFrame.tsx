@@ -11,6 +11,10 @@ interface PeekFrameProps {
   /** The page's list column: the package's `ListColumn`, which closes with the rail (`useRailClosed`). */
   leftPanel?: ReactNode
   rightPanel?: ReactNode
+  /**
+   * The column beside, 384px: another app's read-only file's thread or Overview. Peek's own conversations draw their
+   * open thread and Overview in the kit's ConversationLayout, inside `rightPanel` (B1).
+   */
   threadPanel?: ReactNode
   /**
    * The package frame's banner, at the top of the content area: what a page
@@ -89,9 +93,9 @@ export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFr
             <ErrorBoundary label="conversation">{rightPanel}</ErrorBoundary>
           </div>
 
-          {/* Thread panel */}
+          {/* Thread panel: 384px, the right column in every app (Katerina, 31 October), as the kit's layout draws its own. */}
           {threadPanel && (
-            <div className="shrink-0 w-[380px] border-l border-border-subtle flex flex-col overflow-hidden">
+            <div className="shrink-0 w-[384px] border-l border-border-subtle flex flex-col overflow-hidden">
               <ErrorBoundary label="thread panel">{threadPanel}</ErrorBoundary>
             </div>
           )}

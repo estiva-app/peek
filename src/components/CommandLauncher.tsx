@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
-import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform } from '@estiva-app/ui'
+import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
@@ -17,7 +17,6 @@ import { canPrefill, downloadModel, prefillAvailability, promptForObject, prompt
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
-import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import {
   PARENT_FIELD,
@@ -1066,15 +1065,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
               description: `[${n}] ${message.author} · ${message.timestamp}`,
               leading: <Avatar name={message.author} size={24} />,
               onSelect: () => {
-                // Scroll first, close second: a cited message can sit above the loaded window.
-                if (scrollToMessage(message.id)) {
+                // Shown first, closed second: a cited message can sit above the loaded window.
+                if (showInConversation(message.id)) {
                   onClose()
                   return
                 }
                 // Not on screen: a topic-wide answer cites across conversations (INT-8).
                 if (message.conversationId && openConversation(message.conversationId)) {
                   onClose()
-                  void scrollToMessageWhenReady(message.id)
+                  void showInConversationWhenDrawn(message.id)
                   return
                 }
                 setUnreachable(message.id)

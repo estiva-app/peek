@@ -1,5 +1,5 @@
 import type { People } from '@estiva-app/interop'
-import { ConversationCard, ReplyCard, WithTooltip } from '@estiva-app/ui'
+import { ConversationCard, ReplyCard } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
 import { whenLabel } from '@/lib/whenLabel'
 
@@ -23,16 +23,8 @@ function authorOf(comment: DrawableComment, people?: People) {
   return { name: profile?.displayName ?? `${comment.author.slice(0, 8)}…`, picture: profile?.picture, bot: profile?.bot === true }
 }
 
-/** Its time, short, with the whole date and time in the package's tooltip (§4.9), as the row always said it. */
-function When({ seconds }: { seconds: number }) {
-  // Nostr seconds; `whenLabel` and `Date` both want milliseconds.
-  const at = seconds * 1000
-  return (
-    <WithTooltip label={new Date(at).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}>
-      <time dateTime={new Date(at).toISOString()}>{whenLabel(at)}</time>
-    </WithTooltip>
-  )
-}
+/** Its moment, ms: nostr seconds, and `whenLabel` and the card both want milliseconds. */
+const msOf = (comment: DrawableComment) => comment.createdAt * 1000
 
 /**
  * One comment owned by another app, in Peek: the kit's `ConversationCard`, the one conversation of every app (Katerina,
@@ -66,7 +58,9 @@ export function CommentRow({
     <article data-comment={comment.id} data-deleted={comment.deleted ? '' : undefined} aria-current={selected || undefined}>
       <ConversationCard
         author={authorOf(comment, people)}
-        time={<When seconds={comment.createdAt} />}
+        // Its time, short; with its moment the kit's card says the whole date and time in its tooltip (§4.9, B10), as the row always said it.
+        time={whenLabel(msOf(comment))}
+        at={msOf(comment)}
         deleted={comment.deleted}
         readOnly={!onOpen}
         // The replies row is a button of its own, as the count was: reached by the keyboard, it opens the thread.
@@ -84,7 +78,7 @@ export function CommentRow({
 /** A reply in another app's thread, in Peek: the kit's `ReplyCard`, with nothing to change it, as `CommentRow`. */
 export function CommentReply({ comment, people }: { comment: DrawableComment; people?: People }) {
   return (
-    <ReplyCard author={authorOf(comment, people)} time={<When seconds={comment.createdAt} />} readOnly>
+    <ReplyCard author={authorOf(comment, people)} time={whenLabel(msOf(comment))} at={msOf(comment)} readOnly>
       <MessageBody body={comment.body} />
     </ReplyCard>
   )

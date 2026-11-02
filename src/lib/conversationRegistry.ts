@@ -64,7 +64,7 @@ export interface ConversationSnapshot {
  *
  * `id` matches the anchor the thread renders, which a citation scrolls to: a
  * reply's `data-reply-id`, or the pinned first message's `data-thread-start`
- * (`messageAnchorSelector`).
+ * (the kit's, which its `showInConversation` reads).
  */
 export interface ConversationMessage {
   id: string
@@ -84,7 +84,7 @@ export interface ConversationMessage {
    *
    * A topic-wide snapshot spans many conversations, and a citation into one
    * that is not open has to open it before it can scroll — its anchors
-   * (`messageAnchorSelector`) only exist inside the mounted panel. Absent for a thread snapshot, where
+   * (the kit's `data-reply-id` and `data-thread-start`) only exist inside the mounted panel. Absent for a thread snapshot, where
    * every message is already in the conversation being read.
    */
   conversationId?: string

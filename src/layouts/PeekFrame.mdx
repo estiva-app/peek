@@ -13,8 +13,10 @@ and replies columns, with Cmd/Ctrl+K opening the command launcher.
 ## When
 
 - Around every page in Peek. There is one frame and this is it.
-- With `threadPanel` when a thread is open, which is what makes the third
-  column appear.
+- With `threadPanel` for another app's read-only file (its own list in a
+  `Panel`): its open thread or its Overview, in the 384px third column.
+  Peek's own conversations, a file's and a DM's, draw their open thread and
+  Overview in the kit's `ConversationLayout` inside `rightPanel`, and pass none.
 
 <Canvas of={PeekFrameStories.WithThreadPanel} />
 

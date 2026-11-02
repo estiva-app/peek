@@ -31,6 +31,8 @@ interface ConversationCardProps {
   /** An agent wrote it: the kit draws its face as the robot. */
   authorBot?: boolean
   timestamp: string
+  /** When it was written, ms: its time then says the exact date and time under the pointer (B10). */
+  createdAtMs?: number
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
   editedAt?: number
@@ -78,6 +80,10 @@ interface ConversationCardProps {
   onResolvedChange?: (resolved: boolean, resolvedBy?: string, message?: string) => void
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   onDelete?: () => void
+  /**
+   * Marked as the one open, opened by a press, and Reply: for a card on its own (Activity's rows). In the kit's
+   * ConversationLayout, leave them out: the layout opens its thread and marks it (B1).
+   */
   isSelected?: boolean
   onReply?: () => void
   onClick?: () => void
@@ -104,6 +110,7 @@ export function ConversationCard({
   authorAvatarSrc,
   authorBot,
   timestamp,
+  createdAtMs,
   body,
   editedAt,
   canEditAndDelete,
@@ -273,6 +280,7 @@ export function ConversationCard({
     <KitConversationCard
       author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
       time={timestamp}
+      at={createdAtMs}
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}
       files={
         files && files.length > 0

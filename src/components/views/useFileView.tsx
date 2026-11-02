@@ -195,7 +195,8 @@ export function useFileView({
     Katerina, 1 November).
   */
   const list: { layout: ConversationParts } | { panel: { children: ReactNode } } = ownView
-    ? { layout: peek.conversationParts }
+    ? // The thread is what somebody just asked for, in the layout's column; the Overview is what it shows otherwise.
+      { layout: { ...peek.conversationParts, aside } }
     : conversation === 'loading'
       ? { layout: conversationPlaceholder }
       : {
@@ -214,10 +215,11 @@ export function useFileView({
           },
         }
 
-  const threadPanel: ReactNode | undefined = ownView ? (
-    // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
-    (peek.threadPanel ?? aside)
-  ) : openThread ? (
+  /*
+    Another app's file only: its read-only thread, or its Overview, in the frame's column beside the Panel. Peek's own
+    view draws both in its ConversationLayout's column (B1).
+  */
+  const threadPanel: ReactNode | undefined = ownView ? undefined : openThread ? (
     <Panel
       title="Thread"
       actions={
@@ -242,9 +244,10 @@ export function useFileView({
     rootIds,
     /** The middle column under the page's bar: the kit's ConversationLayout's parts, or another app's list for a `Panel`. */
     list,
+    /** Another app's file: what the frame's column beside it holds, its open thread or its Overview. */
     threadPanel,
     /** The open thread has drawn its anchor, so a scroll to a comment in it can land. */
-    threadDrawn: peek.threadPanel !== undefined,
+    threadDrawn: peek.threadDrawn,
     /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
     replyOnlyThread: ownView ? peek.replyOnlyThread : readOnlyReplyThread,
     /**

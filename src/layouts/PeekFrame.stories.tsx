@@ -58,7 +58,7 @@ type Story = StoryObj<typeof meta>
  */
 export const Default: Story = {}
 
-/** With the right-hand thread panel slot filled. */
+/** With the right-hand column filled: another app's read-only file's thread or Overview, 384px. */
 export const WithThreadPanel: Story = {
   args: {
     threadPanel: <Placeholder label="Thread panel" />,

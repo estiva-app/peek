@@ -7,8 +7,8 @@
  * launcher calls it.
  *
  * The need is INT-8's citations. A topic-wide answer cites messages across
- * several conversations, and `scrollToMessage` can only find one that is
- * already mounted — its anchors (`messageAnchorSelector`) exist inside the
+ * several conversations, and the kit's `showInConversation` can only find one that is
+ * already mounted — its anchors (`data-reply-id`, `data-thread-start`) exist inside the
  * open panel and nowhere else. So a citation into a closed conversation has to open it first.
  *
  * **INT-6 needs the same capability** ("when searching and the keyword is in
@@ -34,10 +34,10 @@ export function unregisterThreadOpener() {
  *
  * Returns false when nothing can — no topic view is mounted, so there is
  * nowhere for the conversation to open. The caller has to say so rather than
- * appear to work, which is the rule `scrollToMessage` already follows.
+ * appear to work, which is the rule `showInConversation` already follows.
  *
  * Returning true means the request was *made*, not that the panel is on screen:
- * it is React state, so the view renders a beat later. `scrollToMessageWhenReady`
+ * it is React state, so the view renders a beat later. `showInConversationWhenDrawn`
  * is the other half.
  */
 export function openConversation(conversationId: string): boolean {

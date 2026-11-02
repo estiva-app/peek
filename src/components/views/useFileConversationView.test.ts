@@ -63,9 +63,10 @@ describe('project', () => {
     expect(cath.replyAuthors?.map((a) => a.bot)).toEqual([false, true])
   })
 
-  it('orders roots oldest first, names people from the directory and the viewer as You', () => {
+  it('orders roots oldest first, names people from the directory, someone it cannot name a dash, and the viewer as You', () => {
     const view = project(conversation(), ME, people)
-    expect(view.roots.map((r) => r.authorName)).toEqual(['Cath', `${STRANGER.slice(0, 8)}…`])
+    // A dash, as the kit's Person draws a nameless person: never part of their key (A27).
+    expect(view.roots.map((r) => r.authorName)).toEqual(['Cath', '—'])
     expect(view.roots[0].authorAvatarSrc).toBe('https://p/cath.png')
     expect(view.byId[rootA.id].replies[0].authorName).toBe('You')
     expect(view.roots[0]).toMatchObject({ replyCount: 1, replyAuthors: [{ name: 'You', avatarSrc: 'https://p/miky.png' }] })
@@ -141,7 +142,7 @@ describe('project', () => {
     const impostor = { ...people, [STRANGER]: { displayName: 'you' } } as unknown as People
     const r1 = { id: 'r1', target: rootA.id, emoji: '👍', by: STRANGER, at: T + 1 }
     const view = project(conversation({ decorations: decorations({ [rootA.id]: { reactions: [r1], resolutions: [] } }) }), ME, impostor)
-    expect(view.roots[0].reactions).toEqual([{ emoji: '👍', by: [`${STRANGER.slice(0, 8)}…`] }])
+    expect(view.roots[0].reactions).toEqual([{ emoji: '👍', by: ['—'] }])
   })
 
   it("offers Edit and Delete only on the viewer's own — not another person's, an agent's or an unread profile's (SPEC §6.5, SHI-29)", () => {

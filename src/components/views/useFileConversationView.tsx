@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Divider, EmptyState, MetaText, ReactionHorizon, SkeletonConversation, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
-import { isNearBottom } from './scrollPolicy'
-import { anchorIn, useSteadyScroll } from './useSteadyScroll'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Divider, EmptyState, MetaText, ReactionHorizon, SkeletonConversation, useLeftAt, useSeenOnScreen, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
@@ -9,7 +7,6 @@ import { registerTopicConversation, unregisterTopicConversation, type Conversati
 import { draftKeys } from '@/lib/drafts'
 import type { Embed } from '@estiva-app/protocol'
 import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
-import { useSeenOnScreen } from '@/lib/useSeenOnScreen'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
@@ -87,10 +84,15 @@ interface UseFileConversationViewArgs {
 }
 
 /**
- * The messages and the composer as the kit's `ConversationLayout` takes them, two columns: spread them onto one,
- * with the page's own `header`. The thread is not among them: it stands in `PeekFrame`'s column beside, 380px.
+ * The messages, their open thread and the composer as the kit's `ConversationLayout` takes them, two columns: spread
+ * them onto one, with the page's own `header`. The open thread stands in the layout's column beside, 384px; the page
+ * adds what that column holds while none is open (`aside`, a file's Overview). Where the messages scroll, and which
+ * were seen, are the layout's: it is told the conversation's name (`rememberAs`) and what to watch (`seen`).
  */
-export type ConversationParts = Pick<ConversationLayoutProps, 'items' | 'box' | 'above' | 'below' | 'loading' | 'empty' | 'bodyRef' | 'onBodyScroll'>
+export type ConversationParts = Pick<
+  ConversationLayoutProps,
+  'items' | 'open' | 'onOpenChange' | 'aside' | 'box' | 'above' | 'below' | 'loading' | 'empty' | 'rememberAs' | 'seen'
+>
 
 /**
  * A conversation not known yet (OPT-9): the layout reading, its one placeholder sitting on the box, as the
@@ -100,10 +102,10 @@ export type ConversationParts = Pick<ConversationLayoutProps, 'items' | 'box' | 
 export const conversationPlaceholder: ConversationParts = { items: [], loading: true }
 
 interface ViewSlots {
-  /** The messages and the composer, for the kit's `ConversationLayout` under the page's own header. */
+  /** The messages, the open thread and the composer, for the kit's `ConversationLayout` under the page's own header. */
   conversationParts: ConversationParts
-  /** The open thread, or nothing. */
-  threadPanel: ReactNode | undefined
+  /** The open thread is drawn (its root is in hand), so a scroll to a message in it can land. */
+  threadDrawn: boolean
   /**
    * The newest top-level message seen on screen, `createdAt`: what the DM or
    * file is marked read up to, with no dwell of its own — being seen took one
@@ -117,26 +119,14 @@ interface ViewSlots {
 }
 
 /**
- * Where each conversation was left in this tab (OPT-3): at the bottom or at an
- * offset, the message at the top of the view and how far down it sat, and
- * when, in Unix seconds. Not per viewer: it holds no content.
- */
-const positions = new Map<
-  string,
-  { atBottom: boolean; offset: number; anchor?: { id: string; top: number }; leftAt: number }
->()
-
-const nowSeconds = () => Math.floor(Date.now() / 1000)
-
-/**
  * A file's conversation drawn as Peek's own — FOL-31.
  *
  * The same cards, composer and thread pane a topic gets, over `kind:1111`
  * read from the relay by `useFileConversation` instead of `kind:9` read from
  * Convex by `useTopicMessages`. `useTopicView` is not reused because it is
  * bound to Convex's row-and-override model end to end; this hook mirrors what
- * it *draws* — date groups under a sticky divider, the scroll policy, the
- * reaction horizon said out loud, the thread pane keyed on its root — and
+ * it *draws* — date groups under a sticky divider, the reaction horizon said
+ * out loud, the thread pane keyed on its root — and
  * differs in one thing only: there is no local copy to patch, so every write
  * goes to the relay and the page re-reads. What is on screen is what the relay
  * holds, always.
@@ -196,7 +186,6 @@ export function useFileConversationView({
   })
   const people = useWorkspaceDirectory()
   const { showToast } = useToast()
-  const scrollRef = useRef<HTMLDivElement>(null)
   /*
     You are a member of what you comment in (SPEC §11.8): a root or a reply of
     yours makes you one, on the relay's own events, so nothing is written for
@@ -224,18 +213,18 @@ export function useFileConversationView({
   const stream: ReplyStream | null =
     container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null
   const newWhenDrawn = useNewWhenDrawn(stream, conversation?.roots, conversation?.replies, viewerPubkey)
-  const threadRef = useRef<HTMLDivElement>(null)
-  const seenRoots = useSeenOnScreen(scrollRef, 'data-conversation-item', newWhenDrawn ? address : null)
-  const seenReplies = useSeenOnScreen(threadRef, 'data-reply-id', newWhenDrawn ? (openThreadId ?? null) : null)
-  const seenAt = conversation ? newestMessageAt(conversation.roots.filter((r) => seenRoots.has(r.id))) : undefined
+  // The kit's watch (ConversationLayout's and Thread's `seen`): its messages by the layout, its replies by the thread.
+  const seenRoots = useSeenOnScreen(newWhenDrawn ? address : null)
+  const seenReplies = useSeenOnScreen(newWhenDrawn ? (openThreadId ?? null) : null)
+  const seenAt = conversation ? newestMessageAt(conversation.roots.filter((r) => seenRoots.ids.has(r.id))) : undefined
   const openReplies = conversation && openThreadId ? conversation.replies[openThreadId] : undefined
-  useMarkThreadRead(openThreadId, openReplies ? newestMessageAt(openReplies.filter((r) => seenReplies.has(r.id))) : undefined, 0)
+  useMarkThreadRead(openThreadId, openReplies ? newestMessageAt(openReplies.filter((r) => seenReplies.ids.has(r.id))) : undefined, 0)
   // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
   const newReplies = useNewReplyThreads(stream, conversation?.replies, viewerPubkey)
   const urgentReplies = useUrgentReplyThreads(stream, conversation?.replies, viewerPubkey)
   const replyOnlyThread = useReplyOnlyThread(stream, conversation?.roots, conversation?.replies, viewerPubkey)
   // What was new as it was drawn keeps the unread look until it is seen; urgent for you, in its urgent tone.
-  const unseen = (id: string, seen: ReadonlySet<string>) => !!newWhenDrawn?.has(id) && !seen.has(id)
+  const unseen = (id: string, seen: { ids: ReadonlySet<string> }) => !!newWhenDrawn?.has(id) && !seen.ids.has(id)
   const urgentRoots = new Set(conversation?.roots.filter((r) => !r.deleted && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
@@ -371,14 +360,9 @@ export function useFileConversationView({
     const missing = notOnTheRelay(files)
     if (missing) return missing
     const attachments = outgoing(files)
-    // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
-    nearBottom.current = true
+    // Your own comment brings you down to it as it is drawn, and a refusal leaves where you are to decide: the layout's (OPT-6).
     const result = await actions.comment(text, attachments, urgent, embeds)
-    if (!result.ok) {
-      // Nothing was drawn, or it was taken out again: where the reader actually is decides what follows next.
-      if (scrollRef.current) nearBottom.current = isNearBottom(scrollRef.current)
-      return notSent(noteName, payload, result.reason, away)
-    }
+    if (!result.ok) return notSent(noteName, payload, result.reason, away)
     membershipAfterWrite()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
     return { accepted: true }
@@ -409,7 +393,7 @@ export function useFileConversationView({
   */
   const latestRow = useRef<RowHandlers | null>(null)
   useLayoutEffect(() => {
-    latestRow.current = { setResolution, toggleReaction, editBody, editFiles, editEmbeds, onOpenThread, remove }
+    latestRow.current = { setResolution, toggleReaction, editBody, editFiles, editEmbeds, remove }
   })
   const [rowActions] = useState<RowHandlers>(() => ({
     setResolution: (id, resolved, message) => latestRow.current?.setResolution(id, resolved, message),
@@ -417,91 +401,20 @@ export function useFileConversationView({
     editBody: (id, body) => latestRow.current?.editBody(id, body),
     editFiles: (id, files) => latestRow.current?.editFiles(id, files),
     editEmbeds: (id, embeds) => latestRow.current?.editEmbeds(id, embeds),
-    onOpenThread: (id) => latestRow.current?.onOpenThread(id),
     remove: (id) => latestRow.current?.remove(id),
   }))
 
-  /**
-   * Were you at the live edge when new content arrived? The topic view's
-   * policy, unchanged: a re-read that brings someone else's comment follows
-   * only if you were already at the bottom.
-   */
-  const nearBottom = useRef(true)
-  const handleScroll = () => {
-    const el = scrollRef.current
-    if (!el) return
-    nearBottom.current = isNearBottom(el)
-    if (address && pinnedFor.current === address) {
-      positions.set(address, { atBottom: nearBottom.current, offset: el.scrollTop, anchor: anchorIn(el), leftAt: nowSeconds() })
-    }
-  }
-
   /*
-    Opening a file lands at the bottom, before the paint — once per file, and
-    once the comments are there rather than when the address changes. A
-    channel's "address" is the channel.
-
-    Going back to one lands where it was left (OPT-3, Miky 8 Oct): at the
-    bottom if it was left there, so what arrived meanwhile is in view; at the
-    same spot otherwise, with a "New" line above the first message that
-    arrived since.
+    Where the messages scroll is the kit's ConversationLayout's (C1, 2 November): it opens a file at its newest, comes
+    back to where it was left (OPT-3), follows what arrives only at the live edge, and holds still while cards fill in
+    (OPT-10). Going back to one left away from its newest draws a "New" line above the first message from someone else
+    since: when it was left is the layout's record, under the same name (`rememberAs`).
   */
-  const pinnedFor = useRef<string | null>(null)
-  // Taken once per visit, as the conversation is opened: later scrolling moves the record, not the line.
-  const [newSince, setNewSince] = useState<{ address: string; at: number | null }>()
-  if (address && newSince?.address !== address) {
-    const left = positions.get(address)
-    setNewSince({ address, at: left && !left.atBottom ? left.leftAt : null })
-  }
-  useLayoutEffect(() => {
-    if (!address || isLoading) return
-    if (pinnedFor.current === address) return
-    const el = scrollRef.current
-    if (!el) return
-    const left = positions.get(address)
-    if (left && !left.atBottom) {
-      /*
-        The message that was at the top, back at the same height — not the same
-        offset: what is above it can change height while you are away (a "new
-        reply" mark cleared once read, a reaction row past the horizon).
-      */
-      el.scrollTop = left.offset
-      const card = left.anchor && el.querySelector(`[data-conversation-item="${CSS.escape(left.anchor.id)}"]`)?.firstElementChild
-      if (card) el.scrollTop += card.getBoundingClientRect().top - el.getBoundingClientRect().top - left.anchor!.top
-      nearBottom.current = false
-    } else {
-      el.scrollTop = el.scrollHeight
-      nearBottom.current = true
-      positions.set(address, { atBottom: true, offset: el.scrollTop, leftAt: nowSeconds() })
-    }
-    pinnedFor.current = address
-  }, [address, isLoading])
-
-  // From there, it stays where the reader is while its cards, chips and images fill in (OPT-10).
-  const placed = useCallback(() => !!address && pinnedFor.current === address, [address])
-  useSteadyScroll(scrollRef, nearBottom, placed, isLoading)
-
-  // Leaving: the moment it was left is when "New" starts on the way back.
-  useEffect(() => {
-    if (!address) return
-    return () => {
-      const left = positions.get(address)
-      if (left) positions.set(address, { ...left, leftAt: nowSeconds() })
-    }
-  }, [address])
-
+  const leftAt = useLeftAt(address)
   const firstNew =
-    newSince?.address === address && newSince.at !== null && conversation
-      ? conversation.roots.find((r) => !r.deleted && r.createdAt > newSince.at! && r.author !== viewerPubkey)?.id
+    leftAt !== null && conversation
+      ? conversation.roots.find((r) => !r.deleted && r.createdAt > Math.floor(leftAt / 1000) && r.author !== viewerPubkey)?.id
       : undefined
-
-  // A comment arrives: follow only if you were watching the live edge.
-  const rootCount = view?.roots.length ?? 0
-  useLayoutEffect(() => {
-    if (isLoading || !nearBottom.current) return
-    const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [rootCount, isLoading])
 
   /*
     What the launcher can ask about (INT-8, here since FOL-36). The topic view
@@ -557,88 +470,6 @@ export function useFileConversationView({
     lastAddress.current = address
   }, [address, onOpenThread, openThreadId])
 
-  /*
-    The messages and the composer, as the kit's ConversationLayout takes them (two columns): it scrolls the messages,
-    sits a short conversation on the composer, draws each day's line over its stretch and keeps the composer under
-    them. Where the reader is in the scroll stays Peek's: `bodyRef` and `onBodyScroll` are the box this view keeps.
-  */
-  const items: ConversationItem[] = groups.flatMap((group) =>
-    group.convs.map((c) => ({
-      id: c.id,
-      day: group.dateLabel,
-      // Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct).
-      before: c.id === firstNew ? <Divider label="New" tone="warning" /> : undefined,
-      card: (
-        <ConversationRow
-          c={c}
-          hasNewMessage={unseen(c.id, seenRoots)}
-          hasNewReply={newReplies.has(c.id)}
-          isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
-          isSelected={openThreadId === c.id}
-          readOnly={readOnly}
-          actions={rowActions}
-          writtenOn={container?.kind === 'file' ? container.address : undefined}
-        />
-      ),
-    })),
-  )
-  const failedLine = failed && (
-    <EmptyState
-      scope="section"
-      message={
-        failed === 'not_a_member'
-          ? container?.kind === 'channel'
-            ? 'You are not a member of this conversation.'
-            : 'You are not a member of the folder this file is in.'
-          : failed === 'refused'
-            ? 'The relay refused to show this conversation.'
-            : 'The relay could not be reached.'
-      }
-    />
-  )
-  const conversationParts: ConversationParts = {
-    items,
-    loading: isLoading,
-    // Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above.
-    above: conversation?.earlier ? <SkeletonConversation /> : undefined,
-    empty: failedLine || (view ? (empty ?? <EmptyState scope="section" message="Nobody has commented yet." />) : null),
-    below: view && (
-      <>
-        {/*
-          The reaction horizon, said out loud — SPEC §6.6, CON-1. Reactions
-          were asked for the newest hundred comments and replies; an older
-          one drawn with none may well have some, and the reader is told
-          rather than left to conclude nobody reacted.
-        */}
-        {/* Peek calls them messages, as it always did (Katerina, 1 November: keep Peek's words). */}
-        <ReactionHorizon limit={REACTION_HORIZON} omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} noun="messages" />
-        {/*
-          The whole read will say its horizon on that line (PEE-7): its room is kept while only the newest
-          messages are here, so they do not move up when the rest lands under a reader at the bottom.
-        */}
-        {!view.reactionTargetsOmitted && (conversation?.earlier?.messages ?? 0) > REACTION_HORIZON && (
-          <div className="invisible" aria-hidden>
-            <ReactionHorizon limit={REACTION_HORIZON} omitted={1} noun="messages" />
-          </div>
-        )}
-      </>
-    ),
-    box: readOnly ? (
-      closed ? (
-        <ClosedBox reason={closed} />
-      ) : undefined
-    ) : (
-      <ConversationBox
-        onSend={handleSend}
-        contextLabel={title}
-        draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
-        here={container?.kind === 'file' ? container.address : undefined}
-      />
-    ),
-    bodyRef: scrollRef,
-    onBodyScroll: handleScroll,
-  }
-
   // Its replies carry the unread look until each is seen, as the stream's messages do.
   const urgentInThread = new Set(openReplies?.filter((r) => isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
   const threadReplies = openView?.replies.map((r) =>
@@ -646,8 +477,6 @@ export function useFileConversationView({
   )
   const threadPanel =
     openRoot && openView ? (
-      // No box of its own: it is where the thread's replies are watched from, to see which have been read.
-      <div ref={threadRef} className="contents">
       <ThreadPanel
         conversation={openView.data}
         replies={threadReplies ?? openView.replies}
@@ -671,11 +500,92 @@ export function useFileConversationView({
         onReplyFilesChange={(id, f) => editFiles(id, f)}
         onReplyEmbedsChange={(id, e) => editEmbeds(id, e)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}
+        seen={seenReplies}
       />
-      </div>
     ) : undefined
 
-  return { conversationParts, threadPanel, seenAt, viewerPubkey, replyOnlyThread }
+  /*
+    The messages, the open thread and the composer, as the kit's ConversationLayout takes them (two columns): it
+    scrolls the messages, sits a short conversation on the composer, draws each day's line over its stretch, keeps the
+    composer under them and the open thread in its column beside. A press on a card, its replies row or Reply asks it
+    open (`onOpenChange`); which one is open stays the page's, in its URL (`open`). Only the open one is built.
+  */
+  const items: ConversationItem[] = groups.flatMap((group) =>
+    group.convs.map((c) => ({
+      id: c.id,
+      day: group.dateLabel,
+      // Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct).
+      before: c.id === firstNew ? <Divider label="New" tone="warning" /> : undefined,
+      card: (
+        <ConversationRow
+          c={c}
+          hasNewMessage={unseen(c.id, seenRoots)}
+          hasNewReply={newReplies.has(c.id)}
+          isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
+          readOnly={readOnly}
+          actions={rowActions}
+          writtenOn={container?.kind === 'file' ? container.address : undefined}
+        />
+      ),
+      thread: () => threadPanel,
+    })),
+  )
+  const failedLine = failed && (
+    <EmptyState
+      scope="section"
+      message={
+        failed === 'not_a_member'
+          ? container?.kind === 'channel'
+            ? 'You are not a member of this conversation.'
+            : 'You are not a member of the folder this file is in.'
+          : failed === 'refused'
+            ? 'The relay refused to show this conversation.'
+            : 'The relay could not be reached.'
+      }
+    />
+  )
+  const conversationParts: ConversationParts = {
+    items,
+    open: openThreadId,
+    onOpenChange: (id) => onOpenThread(id ?? null),
+    loading: isLoading,
+    // Only the newest messages are here yet (PEE-7): the older ones are read, and drawn above.
+    above: conversation?.earlier ? <SkeletonConversation /> : undefined,
+    empty: failedLine || (view ? (empty ?? <EmptyState scope="section" message="Nobody has commented yet." />) : null),
+    /*
+      The reaction horizon, said out loud — SPEC §6.6, CON-1. Reactions were asked for the newest hundred comments and
+      replies; an older one drawn with none may well have some, and the reader is told rather than left to conclude
+      nobody reacted. Peek calls them messages, as it always did (Katerina, 1 November: keep Peek's words). The whole
+      read will say its horizon on that line (PEE-7): its room is kept while only the newest messages are here, so they
+      do not move up when the rest lands under a reader at the bottom.
+    */
+    below: view && (
+      <ReactionHorizon
+        limit={REACTION_HORIZON}
+        omitted={view.reactionTargetsOmitted}
+        cut={view.reactionEventsCut}
+        noun="messages"
+        keepRoom={(conversation?.earlier?.messages ?? 0) > REACTION_HORIZON}
+      />
+    ),
+    box: readOnly ? (
+      closed ? (
+        <ClosedBox reason={closed} />
+      ) : undefined
+    ) : (
+      <ConversationBox
+        onSend={handleSend}
+        contextLabel={title}
+        draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
+        here={container?.kind === 'file' ? container.address : undefined}
+      />
+    ),
+    // A channel's "address" is the channel.
+    rememberAs: address ?? undefined,
+    seen: seenRoots,
+  }
+
+  return { conversationParts, threadDrawn: threadPanel !== undefined, seenAt, viewerPubkey, replyOnlyThread }
 }
 
 // ── From the relay's events to what the cards take ──
@@ -702,15 +612,16 @@ interface ProjectedConversation {
  *
  * Names come from the workspace directory by pubkey, the viewer's own as
  * `CURRENT_USER_NAME` — which is what the reaction row lights your pills and
- * says "you" by. A pubkey the directory does not know is drawn
- * shortened, the way `CommentRow` draws it, rather than blank.
+ * says "you" by. A pubkey the directory does not know is drawn as a
+ * dash, as the kit's Person draws a nameless person: never part of their key.
  */
 export function project(conversation: FileConversation, viewerPubkey: string | null, people: People | undefined): ProjectedConversation {
   // Only the viewer is CURRENT_USER_NAME: someone who calls themselves "You" is drawn by their key, or their pill would light as yours.
   const nameOf = (pubkey: string) => {
     if (pubkey === viewerPubkey) return CURRENT_USER_NAME
     const name = people?.[pubkey]?.displayName
-    return name && name.trim().toLowerCase() !== CURRENT_USER_NAME.toLowerCase() ? name : `${pubkey.slice(0, 8)}…`
+    // A dash for a person nobody has named, as the kit's Person draws one: never their key (A27).
+    return name && name.trim().toLowerCase() !== CURRENT_USER_NAME.toLowerCase() ? name : '—'
   }
   const avatarOf = (pubkey: string) => people?.[pubkey]?.picture
   // The profile says it is an agent (NIP-24 `bot`), never its name: its face is the kit's robot.

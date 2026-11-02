@@ -1,6 +1,6 @@
-import { useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { IconArrowNarrowRight } from '@tabler/icons-react'
-import { MetaText, Thread } from '@estiva-app/ui'
+import { MetaText, Thread, type SeenOnScreen } from '@estiva-app/ui'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
 import { ConversationBox, type SendAnswer, type SendPayload } from './ui/ConversationBox'
@@ -10,10 +10,6 @@ import { registerActiveConversation, unregisterActiveConversation } from '@/lib/
 import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
-import { useSteadyScroll } from '@/components/views/useSteadyScroll'
-
-/** A thread is placed as it opens, at its bottom: the keeper may act from the first resize. */
-const always = () => true
 
 // ── Thread Panel ──
 
@@ -176,6 +172,8 @@ interface ThreadPanelProps {
     prev: ReactionData[],
     emoji: string,
   ) => void
+  /** What the view's `useSeenOnScreen` made for this thread: the kit's Thread watches its replies, and says which were seen (C2). */
+  seen?: SeenOnScreen
 }
 
 /**
@@ -184,11 +182,12 @@ interface ThreadPanelProps {
  * and a box to write a reply.
  *
  * Peek's half is what the kit cannot know: the replies interleaved with the
- * "Name resolved → note" lines (Katerina kept them, 1 November), what the
- * thread publishes for Cmd+K, and where it scrolls. The column reads as it did:
- * an empty thread says nothing, Close is "Close thread" to a screen reader, and
- * the first message is still reachable by its id (`data-thread-start`, which
- * `scrollToMessage` reads with `data-reply-id`).
+ * "Name resolved → note" lines (Katerina kept them, 1 November) and what the
+ * thread publishes for Cmd+K. Where it scrolls is the kit's: it opens at the
+ * newest reply and goes to each new one. The column reads as it did: an empty
+ * thread says nothing, Close is "Close thread" to a screen reader, and every
+ * message is reachable by its id (the kit's `data-thread-start` on the first,
+ * `data-reply-id` on each reply, which `showInConversation` reads).
  */
 export function ThreadPanel({
   conversation,
@@ -209,8 +208,8 @@ export function ThreadPanel({
   onReplyFilesChange,
   onReplyEmbedsChange,
   onReplyReactionsChange,
+  seen,
 }: ThreadPanelProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
   const readOnly = readOnlyProp || readOnlyNotice != null
 
   /*
@@ -228,7 +227,7 @@ export function ThreadPanel({
     Identity as well as prose since INT-3: an answer has to say which messages
     it came from, and a citation has to reach the message in the thread behind
     the modal. `id` is the same one a reply's wrapper renders as
-    `data-reply-id`, and the pinned first message as `data-thread-start`,
+    `data-reply-id` (the kit's ReplyCard draws it from `messageId`), and the pinned first message as `data-thread-start`,
     which is what a citation scrolls to.
   */
   // The event id rides along since RIC-11: a mention of a message is written
@@ -269,20 +268,9 @@ export function ThreadPanel({
   // Replies + resolution events interleaved by time into one render sequence.
   const threadRows = buildThreadRows(replies, resolutionEvents)
 
-  // Scroll to bottom when new replies are added — before the paint, so a thread
-  // never shows its top for a frame and then jumps (OPT-9).
-  useLayoutEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [replies.length])
-  // And stays there while the replies' cards, chips and images fill in (OPT-10).
-  // Keyed on the replies too: the panel's rows are the scroller's children, and a new one is observed only from then.
-  useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${replies.length}`)
-
   return (
     <Thread
-      bodyRef={scrollRef}
+      seen={seen}
       resolved={isResolved}
       onClose={onClose}
       closeLabel="Close thread"
@@ -292,6 +280,7 @@ export function ThreadPanel({
         id: conversation.id,
         author: { name: conversation.authorName, picture: conversation.authorAvatarSrc, bot: conversation.authorBot },
         time: rootTimestamp,
+        at: conversation.createdAtMs,
         words: previewText(conversation.body).replace(/\n/g, ' '),
         deleted: conversation.isDeleted,
       }}
@@ -308,21 +297,20 @@ export function ThreadPanel({
         row.t === 'events' ? (
           <ResolutionTimeline key={row.events[0]?.key ?? `events-${i}`} events={row.events} />
         ) : (
-          <div key={row.reply.id} data-reply-id={row.reply.id}>
-            <ThreadReplyCard
-              reply={row.reply}
-              writtenOn={writtenOn}
-              readOnly={readOnly}
-              ownsResolution={resolvedByReplyId === row.reply.id}
-              resolutionMsg={resolutionMsg}
-              onResolutionChange={onResolutionChange}
-              onDeleteReply={onDeleteReply}
-              onReplyBodyChange={onReplyBodyChange}
-              onReplyFilesChange={onReplyFilesChange}
-              onReplyEmbedsChange={onReplyEmbedsChange}
-              onReplyReactionsChange={onReplyReactionsChange}
-            />
-          </div>
+          <ThreadReplyCard
+            key={row.reply.id}
+            reply={row.reply}
+            writtenOn={writtenOn}
+            readOnly={readOnly}
+            ownsResolution={resolvedByReplyId === row.reply.id}
+            resolutionMsg={resolutionMsg}
+            onResolutionChange={onResolutionChange}
+            onDeleteReply={onDeleteReply}
+            onReplyBodyChange={onReplyBodyChange}
+            onReplyFilesChange={onReplyFilesChange}
+            onReplyEmbedsChange={onReplyEmbedsChange}
+            onReplyReactionsChange={onReplyReactionsChange}
+          />
         ),
       )}
     </Thread>
@@ -354,6 +342,7 @@ function ThreadReplyCard({
       authorAvatarSrc={reply.authorAvatarSrc}
       authorBot={reply.authorBot}
       timestamp={reply.timestamp}
+      createdAtMs={reply.createdAtMs}
       body={reply.body}
       editedAt={reply.editedAt}
       canEditAndDelete={reply.canEditAndDelete}

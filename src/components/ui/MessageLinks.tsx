@@ -4,7 +4,7 @@ import { AttachedCard, FieldLine, LinkChip, LinkRow, loadingShapeOf, type CardSh
 import { useConversationBadges, useDeleted, useLinksIn } from '@/api'
 import { linkedKindOf, linkStateOf, messageWordsOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
-import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { filePath } from '@/lib/objectUrl'
 import { writtenLinkOf } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
@@ -53,13 +53,13 @@ function LinkClicks({ block = false, children }: { block?: boolean; children: Re
     const eventId = /^\/message\/([0-9a-f]{64})$/i.exec(url.pathname)?.[1]
     const here = eventId ? findMessageByEventId(eventId.toLowerCase()) : undefined
     if (!here) return
-    if (scrollToMessage(here.id)) {
+    if (showInConversation(here.id)) {
       event.preventDefault()
       return
     }
     if (here.conversationId && openConversation(here.conversationId)) {
       event.preventDefault()
-      void scrollToMessageWhenReady(here.id)
+      void showInConversationWhenDrawn(here.id)
     }
   }
   const props = {
