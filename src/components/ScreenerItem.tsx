@@ -70,8 +70,10 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
     >
       {/* Who wrote, and when: the name truncates, the time stays. */}
       <div className="flex items-center gap-2">
-        {/* The kit's face beside a name, cut short, a dash for no name. */}
-        <Person size={16} name={who} picture={avatarSrc} bot={item.kind === 'file' ? item.authorBot : undefined} className="flex-1 text-body-2-strong text-text-primary" />
+        {/* The kit's face beside a name, cut short, a dash for no name; the name's type on a box of Peek's around it (gotcha 4). */}
+        <div className="flex min-w-0 flex-1 text-body-2-strong text-text-primary">
+          <Person size={16} name={who} picture={avatarSrc} bot={item.kind === 'file' ? item.authorBot : undefined} />
+        </div>
         {/* A bare time means today; older names its day (Peek's rule). */}
         {item.at !== undefined && <MetaText className="shrink-0">{formatReplyTimestamp(item.at)}</MetaText>}
       </div>

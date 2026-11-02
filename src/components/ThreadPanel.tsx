@@ -364,7 +364,6 @@ function ThreadReplyCard({
       isUrgent={reply.isUrgent}
       ownsResolution={ownsResolution}
       resolutionMsg={ownsResolution ? resolutionMsg : undefined}
-      nostrReferences={reply.nostrReferences}
       urgentMentions={reply.urgentMentions}
       parts={reply.parts}
       embeds={reply.embeds}

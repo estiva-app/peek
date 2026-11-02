@@ -37,9 +37,9 @@ export const UrgentMention = UrgentPersonMention.configure({ people: mentionDire
 function TopicMentionView({ node }: NodeViewProps) {
   const { label, isResolved } = node.attrs
   return (
-    <NodeViewWrapper as="span">
+    // The arrow over it, not the text cursor: a chip is one thing, not words to place the caret in.
+    <NodeViewWrapper as="span" className="cursor-default">
       <InlineChip
-        className="cursor-default"
         icon={isResolved ? <IconCircleCheck size={16} stroke={1.5} className="text-success-default" /> : <IconCircleDashed size={16} stroke={1.5} />}
       >
         <span>{label}</span>
@@ -167,8 +167,8 @@ function FileMentionView({ node }: NodeViewProps) {
   const { label, app } = node.attrs
   const TablerIcon = FILE_TABLER_ICONS[app] ?? IconFile
   return (
-    <NodeViewWrapper as="span">
-      <InlineChip className="cursor-default" icon={<TablerIcon size={14} stroke={1.5} />}>
+    <NodeViewWrapper as="span" className="cursor-default">
+      <InlineChip icon={<TablerIcon size={14} stroke={1.5} />}>
         <span>{label}</span>
       </InlineChip>
     </NodeViewWrapper>

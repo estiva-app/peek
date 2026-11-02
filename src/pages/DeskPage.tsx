@@ -731,6 +731,7 @@ export function DeskPageView({
                 {openWork.length === 0 ? (
                   // Level with the rows, as Starred's line below (Katerina, 2026-09-14); its lines a little closer, as they were.
                   <div className="px-2 py-1">
+                    {/* @estiva-escape(no-restyled-part): its three lines keep the closer spacing they had (audit A7); the kit's section line is 120%, Katerina's call whether it takes that */}
                     <EmptyState
                       scope="section"
                       className="leading-snug"

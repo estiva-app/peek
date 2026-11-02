@@ -58,7 +58,6 @@ export const ConversationRow = memo(
         isResolved={c.isResolved}
         resolvedBy={c.resolvedBy}
         resolutionMessage={c.resolutionMessage}
-        nostrReferences={c.nostrReferences}
         urgentMentions={c.urgentMentions}
         parts={c.parts}
         embeds={c.embeds}

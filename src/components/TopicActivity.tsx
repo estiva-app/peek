@@ -157,7 +157,6 @@ export function TopicActivity({
             isResolved={conv.isResolved}
             resolvedBy={conv.resolvedBy}
             resolutionMessage={conv.resolutionMessage}
-            nostrReferences={conv.nostrReferences}
             urgentMentions={conv.urgentMentions}
             parts={conv.parts}
             embeds={conv.embeds}

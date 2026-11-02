@@ -676,7 +676,6 @@ describe('FilePage draws every app’s file in the same panes', () => {
 
   it('a Peek file at the top of the Folder expands nothing, since it has no parent', () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
-    const left = screen.getByTestId('left')
     expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
   })
 

@@ -55,7 +55,6 @@ interface ReplyCardProps {
    *  - resolved=true with new `message` → parent stays/becomes resolved with that message
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
-  nostrReferences?: string[]
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
   /** The blocks of other objects the reply shows (SPEC §13.6.1, COM-2). */
@@ -99,7 +98,6 @@ export function ReplyCard({
   ownsResolution = false,
   resolutionMsg,
   onResolutionChange,
-  nostrReferences,
   urgentMentions,
   parts,
   embeds,
@@ -220,7 +218,6 @@ export function ReplyCard({
     >
       <MessageBody
         body={bodyState}
-        nostrReferences={nostrReferences}
         urgentMentions={urgentMentions}
         parts={parts}
         embeds={embeds}

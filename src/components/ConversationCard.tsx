@@ -55,7 +55,6 @@ interface ConversationCardProps {
    * (Katerina, 1 November: none until highlights are kept everywhere; the record says "No Highlights").
    */
   highlightType?: HighlightType
-  nostrReferences?: string[]
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
   /** The blocks of other objects the message shows (SPEC §13.6.1, COM-2). */
@@ -119,7 +118,6 @@ export function ConversationCard({
   isResolved: initialResolved = false,
   resolvedBy: initialResolvedBy = '',
   resolutionMessage: initialResolutionMessage = '',
-  nostrReferences,
   urgentMentions,
   parts,
   embeds,
@@ -328,7 +326,6 @@ export function ConversationCard({
     >
       <MessageBody
         body={bodyState}
-        nostrReferences={nostrReferences}
         urgentMentions={urgentMentions}
         parts={parts}
         embeds={embeds}

@@ -662,7 +662,10 @@ export function useFileConversationView({
         readOnly={readOnly}
         readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
         // MetaText, as before the adoption (in Signal the mono micro-type); it is one line, and a sentence in a narrow panel has to wrap.
-        composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
+        composerNotice={openView.data.isDeleted ? (
+          // @estiva-escape(no-restyled-part): a sentence, not a time: it wraps in the narrow thread column, as it did before the adoption (audit A17); the kit's MetaText has no way to wrap yet
+          <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText>
+        ) : undefined}
         onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}
