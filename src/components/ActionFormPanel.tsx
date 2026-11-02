@@ -125,12 +125,14 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
           <PersonChipInput
             value={draft.people[field.key] ?? []}
             // `pubkey` holds one person — a later pick replaces the current
-            // one rather than growing a list the field cannot express.
-            // `people` (invitees) keeps them all, as the app's dialog does.
+            // one rather than growing a list the field cannot express (the
+            // kit's `single`, C15). `people` (invitees) keeps them all, as
+            // the app's dialog does.
+            single={field.control === 'pubkey'}
             onChange={(next) =>
               onDraft({
                 ...draft,
-                people: { ...draft.people, [field.key]: field.control === 'pubkey' ? next.slice(-1) : next },
+                people: { ...draft.people, [field.key]: next },
                 touched: draft.touched.includes(field.key) ? draft.touched : [...draft.touched, field.key],
               })
             }
