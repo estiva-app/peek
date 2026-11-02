@@ -87,11 +87,11 @@ function addOldTopic() {
   seen.objects[OLD] = object(OLD, 'Pitch')
 }
 
-/** The viewer's own Join of `OLD`, 100 days ago: before the membership read's 90-day horizon. */
-function oldJoin(): Event {
+/** The viewer's Join of `OLD` 100 days ago, before the membership read's 90-day horizon — or an Add of them by `signer`. */
+function oldJoin(signer = VIEWER): Event {
   const at = Math.floor(Date.now() / 1000) - 100 * DAY
-  const unsigned = buildMembershipChange(VIEWER, at * 1000, { file: OLD, folder: FOLDER, person: VIEWER, member: true })
-  return { id: 'join-old', pubkey: VIEWER, content: '', sig: '', ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>), created_at: at }
+  const unsigned = buildMembershipChange(signer, at * 1000, { file: OLD, folder: FOLDER, person: VIEWER, member: true })
+  return { id: 'join-old', pubkey: signer, content: '', sig: '', ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>), created_at: at }
 }
 
 const object = (address: string, title: string, extra: Record<string, unknown> = {}) => ({
@@ -307,6 +307,25 @@ describe('the Topics screen’s topics (TOP-4)', () => {
       others: ['Somebody else’s'],
       archived: ['Old'],
     })
+  })
+
+  it('a topic somebody else added you to 100 days ago, with nothing naming you since, is among yours (7525c414)', async () => {
+    addOldTopic()
+    relay.changes = [oldJoin(SOMEBODY)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Pitch', []], ['Widgets', []]] })
+  })
+
+  it('a topic yours by an old join moves to Other topics when you leave it in this tab (7525c414)', async () => {
+    addOldTopic()
+    relay.changes = [oldJoin()]
+    const { result, rerender } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Pitch', []], ['Widgets', []]] }))
+    // The Leave reaches the membership read: it now has a word on the topic, and it is not yours.
+    seen.heard = new Set([OLD])
+    rerender()
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ others: ['Pitch', 'Somebody else’s'] }))
   })
 
   it('asks about every topic the membership read has no word on in one request, and about none it has (7525c414)', async () => {
