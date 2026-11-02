@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { planListInTopic, planRemoveFromTopic } from '@estiva-app/interop'
+import { buildMembershipChange } from '@estiva-app/conversation'
 
 const VIEWER = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -21,6 +22,8 @@ const relay = vi.hoisted(() => ({
   topics: [] as Event[],
   entries: [] as Event[],
   files: [] as Event[],
+  /** Membership changes and comments, answered to the filters that name a person. */
+  changes: [] as Event[],
   queryRelay: vi.fn(),
 }))
 vi.mock('@/nostr/bridge', () => ({ publishSigned: vi.fn(), signViaEstivaId: vi.fn(), queryRelay: relay.queryRelay }))
@@ -34,6 +37,8 @@ const seen = vi.hoisted(() => ({
   /** Archived with a file above it: marked only when read `archivedWith`, as interop marks it. */
   withParent: {} as Record<string, unknown>,
   members: new Set<string>(),
+  /** Files the membership read has a word on without counting you: a leave within its horizon. */
+  heard: new Set<string>(),
 }))
 const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
   const object = seen.objects[ref] as Record<string, unknown> | undefined
@@ -50,7 +55,11 @@ vi.mock('@/nostr/foreign', async () => ({
   resolveObjectAsViewer: async (ref: string, _relay: string, _token: unknown, options?: { archivedWith?: boolean }) => resolveSeen(ref, options?.archivedWith),
 }))
 vi.mock('@/api/internal/membership', () => ({
-  useMembership: () => ({ state: 'known', isMember: (key: string) => seen.members.has(key) }),
+  useMembership: () => ({
+    state: 'known',
+    isMember: (key: string) => seen.members.has(key),
+    judges: (key: string) => seen.members.has(key) || seen.heard.has(key),
+  }),
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
@@ -61,11 +70,29 @@ const topicAt = (dd: string) => `30840:${VIEWER}:${dd}`
 
 const WIDGETS = topicAt('7a384136-31a6-4d91-80ac-1d599464d2f2')
 const ALPHA = topicAt('1e2f3a4b-0000-4000-8000-000000000001')
-const STRANGER = topicAt('1e2f3a4b-0000-4000-8000-000000000002')
+const SOMEBODY = 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00'
+// Somebody else's: a topic whose address is the viewer's is theirs from creation, on its page as here.
+const STRANGER = `30840:${SOMEBODY}:1e2f3a4b-0000-4000-8000-000000000002`
 const ARCHIVED = topicAt('1e2f3a4b-0000-4000-8000-000000000003')
 const BUILD_1 = `30850:${VIEWER}:0ebd5fdd-c58a-416e-b8a7-cbdcec77b77f`
 const TESTING = `30851:${VIEWER}:c579e675-6365-4b62-9cc1-d14495c22ca2`
 const GONE = `30851:${VIEWER}:dddddddd-0000-4000-8000-00000000dead`
+
+/** A topic somebody else started, as the topics re-published on 15 Sep are. */
+const OLD = `30840:${SOMEBODY}:1e2f3a4b-0000-4000-8000-000000000004`
+const DAY = 24 * 60 * 60
+
+function addOldTopic() {
+  relay.topics.push({ ...event(30840, [['d', d(OLD)], ['h', FOLDER]]), pubkey: SOMEBODY })
+  seen.objects[OLD] = object(OLD, 'Pitch')
+}
+
+/** The viewer's own Join of `OLD`, 100 days ago: before the membership read's 90-day horizon. */
+function oldJoin(): Event {
+  const at = Math.floor(Date.now() / 1000) - 100 * DAY
+  const unsigned = buildMembershipChange(VIEWER, at * 1000, { file: OLD, folder: FOLDER, person: VIEWER, member: true })
+  return { id: 'join-old', pubkey: VIEWER, content: '', sig: '', ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>), created_at: at }
+}
 
 const object = (address: string, title: string, extra: Record<string, unknown> = {}) => ({
   ref: address,
@@ -82,6 +109,10 @@ function list(topic: string, file: string, listed = true, at = 200) {
     relay.entries.push({ id: `e${relay.entries.length}`, pubkey: VIEWER, content: '', sig: '', ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>), created_at: at })
   }
 }
+
+/** A filter for the changes and comments that can make one person a member, not a topic's list or root. */
+const namesAPerson = (f: Record<string, unknown>) =>
+  !f['#O'] && (f.kinds as number[]).some((kind) => kind === 1851 || kind === 1111) && !!(f['#p'] || f.authors)
 
 /** Every `#O` request the hook sent: each is the topics whose lists it read. */
 const listReads = () =>
@@ -103,7 +134,7 @@ const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
 beforeEach(() => {
   resetTopicsColumn()
   relay.entries = []
-  relay.topics = [WIDGETS, ALPHA, STRANGER, ARCHIVED].map((address) => event(30840, [['d', d(address)], ['h', FOLDER]]))
+  relay.topics = [WIDGETS, ALPHA, STRANGER, ARCHIVED].map((address) => ({ ...event(30840, [['d', d(address)], ['h', FOLDER]]), pubkey: address.split(':')[1]! }))
   relay.files = [event(30850, [['d', d(BUILD_1)], ['h', OTHER_FOLDER]]), event(30851, [['d', d(TESTING)], ['h', OTHER_FOLDER]])]
   seen.objects = {
     [WIDGETS]: object(WIDGETS, 'Widgets'),
@@ -115,8 +146,20 @@ beforeEach(() => {
   }
   seen.withParent = {}
   seen.members = new Set([WIDGETS, ALPHA, ARCHIVED])
+  seen.heard = new Set()
+  relay.changes = []
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
+    const tagged = (e: Event, name: string, values: unknown) => !values || e.tags.some((t) => t[0] === name && (values as string[]).includes(t[1]!))
     const events = filters.flatMap((f) => {
+      if (namesAPerson(f))
+        return relay.changes.filter(
+          (e) =>
+            (f.kinds as number[]).includes(e.kind) &&
+            tagged(e, 'a', f['#a']) &&
+            tagged(e, 'A', f['#A']) &&
+            tagged(e, 'p', f['#p']) &&
+            (!f.authors || (f.authors as string[]).includes(e.pubkey)),
+        )
       if (f['#O']) return relay.entries.filter((e) => e.tags.some((t) => t[0] === 'O' && (f['#O'] as string[]).includes(t[1]!)))
       const kinds = f.kinds as number[]
       const pool = [...relay.topics, ...relay.files].filter((e) => kinds.includes(e.kind))
@@ -252,6 +295,39 @@ describe('the Topics screen’s topics (TOP-4)', () => {
         archived: ['Old'],
       }),
     )
+  })
+
+  it('a topic joined 100 days ago, with nothing naming you since, is among yours, as its page counts you (7525c414)', async () => {
+    addOldTopic()
+    relay.changes = [oldJoin()]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toEqual({
+      mine: [['alpha', []], ['Pitch', []], ['Widgets', []]],
+      others: ['Somebody else’s'],
+      archived: ['Old'],
+    })
+  })
+
+  it('asks about every topic the membership read has no word on in one request, and about none it has (7525c414)', async () => {
+    addOldTopic()
+    relay.changes = [oldJoin()]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    const pastReads = relay.queryRelay.mock.calls
+      .map(([, filters]) => filters as Array<Record<string, unknown>>)
+      .filter((filters) => filters.some(namesAPerson))
+    expect(pastReads).toHaveLength(1)
+    expect(new Set(pastReads[0]!.flatMap((f) => (f['#a'] ?? f['#A']) as string[]))).toEqual(new Set([OLD, STRANGER]))
+  })
+
+  it('a topic the membership read has a word on — you left it — stays under Other topics, whatever an older join says (7525c414)', async () => {
+    addOldTopic()
+    relay.changes = [oldJoin()]
+    seen.heard = new Set([OLD])
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ others: ['Pitch', 'Somebody else’s'] })
   })
 
   it('a file opened by link belongs under Topics when a topic of yours is it or lists it, else under Folders', async () => {
