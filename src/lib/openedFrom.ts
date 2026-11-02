@@ -1,5 +1,14 @@
+import { createContext } from 'react'
+
 /** Peek's two list columns a file opens beside (TOP-4). */
 export type ListColumnName = 'topics' | 'folders'
+
+/**
+ * Which list column the rows are drawn in (TOP-4): a row's click tells the
+ * file's page, which shows that column beside the file. The Topics column
+ * provides it; everywhere else is Folders.
+ */
+export const TreeColumn = createContext<ListColumnName>('folders')
 
 let last: { address: string; column: ListColumnName } | null = null
 

@@ -307,9 +307,12 @@ function useFileColumn(address: string | null, settled: boolean): ListColumnName
   const chosen = kept ?? clicked ?? (address !== null && decided?.address === address ? decided.column : guess)
   useEffect(() => {
     if (!address || !chosen || kept === chosen || !settled) return
-    forgetOpenedFrom(address)
     navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...(location.state ?? {}), column: chosen } })
   }, [address, chosen, kept, settled, location.pathname, location.search, location.state, navigate])
+  // Once the entry holds it, the click is spent: the same file opened later some other way is not taken for it.
+  useEffect(() => {
+    if (address && kept) forgetOpenedFrom(address)
+  }, [address, kept])
   return chosen
 }
 

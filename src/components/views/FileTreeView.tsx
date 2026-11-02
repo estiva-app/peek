@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useMemo, useState, type ReactNode } from 'react'
 import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -12,14 +12,7 @@ import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
-import { rememberOpenedFrom, type ListColumnName } from '@/lib/openedFrom'
-
-/**
- * Which list column the rows are drawn in, Topics or Folders (TOP-4): a row's
- * click tells the file's page, which shows that column beside the file. The
- * Topics column provides it; everywhere else is Folders.
- */
-export const TreeColumn = createContext<ListColumnName>('folders')
+import { rememberOpenedFrom, TreeColumn } from '@/lib/openedFrom'
 
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
