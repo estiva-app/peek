@@ -578,7 +578,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
    * (PEE-1), and the new object's reference goes into the active composer
    * (PEE-2).
    */
-  const submitAction = async (form: Extract<Level, { kind: 'form' }>, values: Record<string, string>) => {
+  const submitAction = async (form: Extract<Level, { kind: 'form' }>, values: Record<string, string>, formats?: FormDraft['formats']) => {
     const { action } = form
     /*
       A CHANGE carries a target chosen with the row, and the runtime takes a
@@ -618,7 +618,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const { [action.membersField ?? '']: memberList, ...declaredValues } = values
     const members = action.membersField ? (memberList ?? '').split(',').filter(Boolean) : []
     const { parent, properties: typed } = splitSubmission(action.membersField ? declaredValues : values)
-    const { properties, contentFormat } = proseSubmission(action, typed)
+    const { properties, contentFormat } = proseSubmission(action, typed, formats)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
       return
@@ -1196,7 +1196,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           onSubmit={() => {
             setAttempted((a) => ({ ...a, [key]: true }))
             if (Object.keys(missingFields(action, formDraft)).length > 0) return
-            void submitAction(level, draftValues(action, formDraft))
+            void submitAction(level, draftValues(action, formDraft), formDraft.formats)
           }}
           submitWaits={unchanged && field ? `Choose a different ${field.label.toLowerCase()} first` : undefined}
           working={

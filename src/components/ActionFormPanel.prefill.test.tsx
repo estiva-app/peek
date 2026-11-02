@@ -18,7 +18,7 @@
  */
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { LauncherAction } from '@/lib/launcherActions'
 import { ActionFormFields } from './ActionFormPanel'
@@ -116,6 +116,32 @@ describe('the typing race has a designed answer (PEE-6)', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ title: 'Build is broken' }))
+  })
+})
+
+describe('a suggested description in a prose field (PEE-5, C12)', () => {
+  it('loads as formatting, not as the markers that spell it, and is not taken for typing', async () => {
+    const prose: LauncherAction = { ...action, fields: [action.fields[0]!, { key: 'description', label: 'Description', control: 'prose' }] }
+    function ProseForm({ prefill }: { prefill?: Record<string, string> }) {
+      const [draft, setDraft] = useState(() => seedDraft(prose))
+      const [applied, setApplied] = useState<Record<string, string> | undefined>(undefined)
+      if (prefill !== applied) {
+        setApplied(prefill)
+        if (prefill) setDraft((d) => applyPrefill(d, prefill))
+      }
+      return (
+        <>
+          <ActionFormFields action={prose} draft={draft} onDraft={setDraft} />
+          <span data-testid="touched">{draft.touched.join(',')}</span>
+        </>
+      )
+    }
+    const view = render(<ProseForm />)
+    view.rerender(<ProseForm prefill={{ description: 'The **total** is wrong' }} />)
+    const editor = await screen.findByRole('textbox', { name: /^Description/ })
+    await waitFor(() => expect(editor.querySelector('strong')?.textContent).toBe('total'))
+    expect(editor.textContent).toBe('The total is wrong')
+    expect(screen.getByTestId('touched').textContent).toBe('')
   })
 })
 
