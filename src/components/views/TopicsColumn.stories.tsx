@@ -35,6 +35,7 @@ const testing = file(30851, 'testing', 'Testing Widgets')
 const release = file(30840, 'release', 'Release notes')
 const speed = file(30840, 'speed', 'Speed')
 const others = [file(30840, 'onboarding', 'Onboarding'), file(30840, 'hiring', 'Hiring')]
+const archived = [file(30840, 'domain', 'Domain name - brainstorming'), file(30840, 'level-2', 'Level 2')]
 
 const meta = {
   title: 'Folders/TopicsColumn',
@@ -57,21 +58,48 @@ export const YourTopics: Story = {
   args: {
     state: {
       mine: [
-        { topic: release, files: [] },
-        { topic: speed, files: [] },
-        { topic: widgets, files: [build1, build2, testing] },
+        { topic: release, files: [], archivedFiles: [] },
+        { topic: speed, files: [], archivedFiles: [] },
+        { topic: widgets, files: [build1, build2, testing], archivedFiles: [] },
       ],
       others,
+      archived,
     },
     unread: { [testing.ref]: true },
     selectedRef: build2.ref,
   },
 }
 
+/**
+ * Widgets as on Miky's workspace on 2 November: both builds are finished and
+ * archived, so they wait behind its "Archived" line, which opens them in a
+ * dialog; only Testing Widgets is a row of its own.
+ */
+export const ArchivedFiles: Story = {
+  args: {
+    state: {
+      mine: [
+        { topic: speed, files: [], archivedFiles: [] },
+        { topic: widgets, files: [testing], archivedFiles: [build1, build2] },
+      ],
+      others,
+      archived,
+    },
+  },
+}
+
 /** Joined nothing yet: the other topics are there to open and join. */
-export const NoneJoined: Story = { args: { state: { mine: [], others } } }
+export const NoneJoined: Story = { args: { state: { mine: [], others, archived: [] } } }
+
+/** An archived topic open: "Archived" opens onto its row. */
+export const ArchivedOpen: Story = {
+  args: { state: { mine: [{ topic: widgets, files: [build1], archivedFiles: [] }], others, archived }, selectedRef: archived[0]!.ref },
+}
+
+/** Every topic archived: none active, and the archived ones still there to open. */
+export const OnlyArchived: Story = { args: { state: { mine: [], others: [], archived } } }
 
 /** No topic at all. */
-export const Empty: Story = { args: { state: { mine: [], others: [] } } }
+export const Empty: Story = { args: { state: { mine: [], others: [], archived: [] } } }
 
 export const Loading: Story = { args: { state: 'loading' } }

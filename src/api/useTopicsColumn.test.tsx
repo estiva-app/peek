@@ -29,16 +29,31 @@ vi.mock('@/auth/heldSession', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/auth/heldSession')),
   heldToken: () => ({ accessToken: 't', pubkey: VIEWER }),
 }))
-const seen = vi.hoisted(() => ({ objects: {} as Record<string, unknown>, members: new Set<string>() }))
+const seen = vi.hoisted(() => ({
+  objects: {} as Record<string, unknown>,
+  /** Archived with a file above it: marked only when read `archivedWith`, as interop marks it. */
+  withParent: {} as Record<string, unknown>,
+  members: new Set<string>(),
+}))
+const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
+  const object = seen.objects[ref] as Record<string, unknown> | undefined
+  if (!object) return null
+  return archivedWith && seen.withParent[ref] && !object.archived ? { ...object, archived: seen.withParent[ref] } : object
+})
 vi.mock('./foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('./foreign')),
-  useResolvedReferences: (refs: readonly string[]) => Object.fromEntries(refs.map((ref) => [ref, seen.objects[ref] ?? null])),
+  useResolvedReferences: (refs: readonly string[], options?: { archivedWith?: boolean }) =>
+    Object.fromEntries(refs.map((ref) => [ref, resolveSeen(ref, options?.archivedWith)])),
+}))
+vi.mock('@/nostr/foreign', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
+  resolveObjectAsViewer: async (ref: string, _relay: string, _token: unknown, options?: { archivedWith?: boolean }) => resolveSeen(ref, options?.archivedWith),
 }))
 vi.mock('@/api/internal/membership', () => ({
   useMembership: () => ({ state: 'known', isMember: (key: string) => seen.members.has(key) }),
 }))
 
-import { resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
 
 const d = (address: string) => address.split(':')[2]!
 const event = (kind: number, tags: string[][], at = 100): Event => ({ id: `${kind}-${tags[0]?.[1]}-${at}`, kind, pubkey: VIEWER, created_at: at, tags, content: '', sig: '' })
@@ -80,6 +95,8 @@ const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
   return {
     mine: state.mine.map(({ topic, files }) => [topic.slots.title?.value, files.map((file) => file.slots.title?.value)]),
     others: state.others.map((topic) => topic.slots.title?.value),
+    // `?? []`: on code from before Archived, the archived-with tests fail on what is listed, not on a missing field.
+    archived: (state.archived ?? []).map((topic) => topic.slots.title?.value),
   }
 }
 
@@ -96,6 +113,7 @@ beforeEach(() => {
     [BUILD_1]: object(BUILD_1, 'Widgets 2: build 1'),
     [TESTING]: object(TESTING, 'Testing Widgets'),
   }
+  seen.withParent = {}
   seen.members = new Set([WIDGETS, ALPHA, ARCHIVED])
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
     const events = filters.flatMap((f) => {
@@ -110,7 +128,7 @@ beforeEach(() => {
 })
 
 describe('the Topics screen’s topics (TOP-4)', () => {
-  it('lists your topics A–Z, each with its files from any Folder; other topics apart; an archived topic on neither', async () => {
+  it('lists your topics A–Z, each with its files from any Folder; other topics apart; an archived topic only under Archived', async () => {
     list(WIDGETS, BUILD_1, true, 200)
     list(WIDGETS, TESTING, true, 201)
     const { result } = renderHook(() => useTopicsColumn())
@@ -121,7 +139,42 @@ describe('the Topics screen’s topics (TOP-4)', () => {
         ['Widgets', ['Widgets 2: build 1', 'Testing Widgets']],
       ],
       others: ['Somebody else’s'],
+      archived: ['Old'],
     })
+  })
+
+  it('a topic archived with the project above it is under Archived, not among yours or the other topics (b1ace226)', async () => {
+    const PROJECT = `30850:${VIEWER}:archived-project`
+    seen.withParent[ALPHA] = { by: VIEWER, at: 1, with: PROJECT }
+    seen.withParent[STRANGER] = { by: VIEWER, at: 1, with: PROJECT }
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toEqual({ mine: [['Widgets', []]], others: [], archived: ['alpha', 'Old', 'Somebody else’s'] })
+  })
+
+  it('a listed file archived on its own or with its project is not among its topic’s files, but behind its Archived line (b1ace226)', async () => {
+    list(WIDGETS, BUILD_1, true, 200)
+    list(WIDGETS, TESTING, true, 201)
+    seen.objects[BUILD_1] = object(BUILD_1, 'Widgets 2: build 1', { archived: { by: VIEWER, at: 1 } })
+    seen.withParent[TESTING] = { by: VIEWER, at: 1, with: `30850:${VIEWER}:archived-project` }
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]] })
+    const state = result.current.state as Extract<typeof result.current.state, { mine: unknown }>
+    expect(state.mine[1]!.archivedFiles?.map((file) => file.slots.title?.value)).toEqual(['Widgets 2: build 1', 'Testing Widgets'])
+    // Opened by link, an archived file a topic of yours lists still belongs under Topics.
+    expect(result.current.column(TESTING)).toBe('topics')
+  })
+
+  it('a topic archived in this tab moves to Archived without a reload, and unarchived moves back (b1ace226)', async () => {
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    seen.objects[WIDGETS] = object(WIDGETS, 'Widgets', { archived: { by: VIEWER, at: 2 } })
+    await act(() => fileArchiveChanged(WIDGETS))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []]], archived: ['Old', 'Widgets'] })
+    seen.objects[WIDGETS] = object(WIDGETS, 'Widgets')
+    await act(() => fileArchiveChanged(WIDGETS))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], archived: ['Old'] })
   })
 
   it('a file two of your topics list is under both', async () => {
@@ -178,6 +231,7 @@ describe('the Topics screen’s topics (TOP-4)', () => {
       expect(titlesOf(result.current.state)).toEqual({
         mine: [['alpha', []], ['Somebody else’s', ['Testing Widgets']], ['Widgets', []]],
         others: [],
+        archived: ['Old'],
       }),
     )
   })
