@@ -8,23 +8,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Formatted text — ONE look for the composer (.tiptap) and sent
-   messages, and it is the package's: RichText draws a sent message and the
-   composers wear `richTextClassName()` (UIG-30, Katerina, 28 September), so
-   what you type is exactly what the sent card shows. A paragraph's margin is
-   the reset's, a resolution block's green line its own node's, and a link the
-   kit's link mark (the comment box) or `ProseField`'s own look. What stays
-   here is Peek's alone. ─── */
-/* Selected words in the composer — PEE-19. The same colour the selection
-   toolbar's kept selection paints while its address field has the focus
-   (`bg-bg-selected`, drawn by estiva-ui's KeptSelection since UIG-31): the
-   words stay highlighted while you type the address, as in Linear.
-   --bg-selected is the token for a selected thing; in Signal it is the accent
-   at 11%. Before this the composer used Chrome's own selection paint. */
-.tiptap ::selection {
-  background: var(--bg-selected);
-}
-
 /*
  * ─── Light theme ───
  *
