@@ -87,5 +87,13 @@ export const SummaryReadOnly: Story = {
 
 /** A refused summary: the field stays open with your text and the reason, and Save sends it again. */
 export const SummaryRefused: Story = {
-  args: { file: summarized, onSummarize: async () => null, initialSummaryError: 'relay_membership_required' },
+  args: { file: summarized, onSummarize: async (): Promise<RenameOutcome> => ({ kind: 'error', message: 'relay_membership_required' }) },
+  play: async () => {
+    // The dialog portals out of the story root, so it is found through the body.
+    const body = within(document.body)
+    await userEvent.click(await body.findByRole('button', { name: 'Edit' }))
+    await userEvent.type(await body.findByRole('textbox', { name: 'Summary' }), ' Today.')
+    await userEvent.click(body.getByRole('button', { name: 'Save' }))
+    await expect(await body.findByText('Summary not saved. relay_membership_required Your text is still here.')).toBeVisible()
+  },
 }

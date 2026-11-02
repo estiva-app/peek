@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react'
-import { IconCopy, IconPencil, IconPlus } from '@tabler/icons-react'
+import { IconCopy } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { useWorkspaceDirectory, type RenameOutcome } from '@/api'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { IconButton } from './ui/IconButton'
-import { EditableText, EmptyState, FieldLine, Form, Person } from '@estiva-app/ui'
+import { EditableText, Person } from '@estiva-app/ui'
 import { SectionLabel } from './ui/SectionHeader'
-import { Textarea } from './ui/Textarea'
 import { SummaryCount } from './SummaryField'
 import { summaryText } from '@/lib/summary'
 
@@ -36,7 +34,6 @@ export function FileDetailsDialog({
   initialEditing,
   summary,
   onSummarize,
-  initialSummaryError,
 }: {
   file: Pick<ForeignObject, 'address' | 'slots' | 'people'>
   /** Absent when the manifest declares no rename. Resolves to `null` when it went through, or to what to say. */
@@ -56,8 +53,6 @@ export function FileDetailsDialog({
   summary?: string
   /** Absent when the manifest declares no summary change: the text alone, and no section when there is none. */
   onSummarize?: (summary: string) => Promise<RenameOutcome>
-  /** A refused summary to show on open, its field open. Stories and tests only. */
-  initialSummaryError?: string
 }) {
   const title = file.slots.title?.value ?? 'Untitled'
   // The author is the address's second segment (SPEC §6.1) — the one identity
@@ -120,11 +115,7 @@ export function FileDetailsDialog({
         />
       </Section>
 
-      <SummarySection
-        summary={summary ?? file.slots.subtitle?.value ?? ''}
-        onSummarize={onSummarize}
-        initialError={initialSummaryError}
-      />
+      <SummarySection summary={summary ?? file.slots.subtitle?.value ?? ''} onSummarize={onSummarize} />
       {author && (
         <Section label="Created by">
           <Person name={people?.[author]?.displayName} picture={people?.[author]?.picture} bot={people?.[author]?.bot === true} size={24} />
@@ -157,126 +148,48 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function Outcome({ outcome }: { outcome: RenameOutcome }) {
-  if (!outcome) return null
-  return <FieldLine tone={outcome.kind}>{outcome.message}</FieldLine>
-}
-
 /**
  * Where a topic's summary is read and written (SPEC §6.12): its page shows
  * none (Miky, 15 Oct, deciding on the short-summary prototype). Drawn as the
- * prototype's `PeekDetails` — the text and Edit, or "Add a summary", then a
- * field with Save and Cancel, the way Rename is. Past about 240 a count
- * appears and nothing is refused. A refused save keeps the field open with
- * your text and the reason — why:
+ * prototype's `PeekDetails` with the kit's click-to-edit with Save (C13), as
+ * the name is: the text and Edit, or "No summary yet." and "Add a summary",
+ * then a field with Save and Cancel. Past about 240 a count appears and
+ * nothing is refused. A refused save keeps the field open with your text and
+ * the reason — why:
  * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
  *
  * Saving an empty field clears the summary, the one the topic was started
  * with included.
  */
-function SummarySection({
-  summary,
-  onSummarize,
-  initialError,
-}: {
-  summary: string
-  onSummarize?: (summary: string) => Promise<RenameOutcome>
-  initialError?: string
-}) {
-  const [editing, setEditing] = useState(!!initialError && !!onSummarize)
-  const [draft, setDraft] = useState(initialError ? summary : '')
-  const [outcome, setOutcome] = useState<RenameOutcome>(initialError ? { kind: 'error', message: initialError } : null)
-  const [saving, setSaving] = useState(false)
-  // A summary changed elsewhere while this is open replaces a draft nobody is typing.
-  useEffect(() => {
-    if (!editing) setDraft(summary)
-  }, [summary, editing])
-
+function SummarySection({ summary, onSummarize }: { summary: string; onSummarize?: (summary: string) => Promise<RenameOutcome> }) {
   // Someone who can't edit sees no section when there is nothing to read.
   if (!summary && !onSummarize) return null
-
-  const canonical = summaryText(draft)
-  // A refused text can be sent again as it is: the refusal may have been the relay's moment, not the text.
-  const changed = canonical !== summaryText(summary) || outcome?.kind === 'error'
-  const cancel = () => {
-    setEditing(false)
-    setOutcome(null)
-  }
-  const save = async () => {
-    if (!onSummarize || !changed) return
-    setSaving(true)
-    let result: RenameOutcome
-    try {
-      result = await onSummarize(canonical)
-    } catch (error) {
-      result = { kind: 'error', message: error instanceof Error ? error.message : 'The relay gave no reason.' }
-    } finally {
-      setSaving(false)
-    }
-    setOutcome(result)
-    if (result?.kind !== 'error') setEditing(false)
-  }
-
   return (
     <Section label="Summary">
-      {editing ? (
-        <Form busy={saving} onSubmit={save} layout="free" className="flex flex-col gap-2">
-          <Textarea
-            autoFocus
-            rows={4}
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value)
-              // Changing the refused text is a new attempt: the old reason goes.
-              if (outcome?.kind === 'error') setOutcome(null)
-            }}
-            aria-label="Summary"
-            placeholder="What is it for, in a sentence?"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                cancel()
-              }
-            }}
-          />
-          <SummaryCount text={draft} />
-          <div className="flex items-center gap-2">
-            <Button variant="primary" size="small" type="submit" disabled={!changed || saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
-            <Button variant="outlined" size="small" onClick={cancel}>
-              Cancel
-            </Button>
-          </div>
-          {outcome?.kind === 'error' ? (
-            <FieldLine tone="error">Summary not saved. {outcome.message} Your text is still here.</FieldLine>
-          ) : (
-            <Outcome outcome={outcome} />
-          )}
-        </Form>
-      ) : (
-        <>
-          <div className="flex items-start gap-2">
-            {summary ? (
-              <p className="min-w-0 flex-1 break-words text-body-2 text-text-primary">{summary}</p>
-            ) : (
-              // The kit's empty line for one part of the dialog (Katerina, 2 November).
-              <EmptyState scope="section" message="No summary yet." className="min-w-0 flex-1" />
-            )}
-            {onSummarize && (
-              <Button
-                variant="outlined"
-                size="small"
-                leadingIcon={summary ? <IconPencil size={14} stroke={1.5} /> : <IconPlus size={14} stroke={1.5} />}
-                onClick={() => setEditing(true)}
-              >
-                {summary ? 'Edit' : 'Add a summary'}
-              </Button>
-            )}
-          </div>
-          <Outcome outcome={outcome} />
-        </>
-      )}
+      <EditableText
+        manner="buttons"
+        multiline
+        label="Summary"
+        value={summary}
+        placeholder="No summary yet."
+        fieldPlaceholder="What is it for, in a sentence?"
+        editLabel="Edit"
+        addLabel="Add a summary"
+        clean={summaryText}
+        draftNote={(draft) => <SummaryCount text={draft} />}
+        readOnly={!onSummarize}
+        onCommit={async (text) => {
+          if (!onSummarize) return false
+          let outcome: RenameOutcome
+          try {
+            outcome = await onSummarize(text)
+          } catch (error) {
+            outcome = { kind: 'error', message: error instanceof Error ? error.message : 'The relay gave no reason.' }
+          }
+          // A refusal keeps the field open with your text, and says so in these words.
+          return outcome?.kind === 'error' ? { kind: 'error', message: `Summary not saved. ${outcome.message} Your text is still here.` } : (outcome ?? true)
+        }}
+      />
     </Section>
   )
 }
