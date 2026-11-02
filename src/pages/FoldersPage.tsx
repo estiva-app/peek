@@ -18,7 +18,8 @@ import { useTabTitle } from '@/lib/useTabTitle'
 import { formatDateLabel } from '@/api'
 
 /**
- * `/app/folders` and `/app/folders/:id` — the Topics column, with no file open.
+ * `/app/folders` and `/app/folders/:id` — the Folders column, with no file open.
+ * It was the rail's Topics until TOP-4, and moved to Folders as it was.
  *
  * It was the Folders page: the Folders on the left and one Folder's contents
  * on the right, as cards with buttons beside them. That went on 5 October
@@ -43,10 +44,10 @@ export function FoldersPage() {
     with no file open. A file closed on the way here is not brought back.
   */
   const location = useLocation()
-  const { setLastTopicsPath } = useLastSelection()
+  const { setLastFoldersPath } = useLastSelection()
   useEffect(() => {
-    setLastTopicsPath(`${location.pathname}${location.search}`)
-  }, [location.pathname, location.search, setLastTopicsPath])
+    setLastFoldersPath(`${location.pathname}${location.search}`)
+  }, [location.pathname, location.search, setLastFoldersPath])
   // A new tab or a reload showed the saved Topics until now; a plain Topics is kept for the next one (PEE-4).
   usePagePicture('topics', folders !== null, !id && !location.search)
   const { archiveFolder, dmForChannel, folderDeletable, deleteFolder, resolveFolderProject } = useForeignObjects()
@@ -64,7 +65,7 @@ export function FoldersPage() {
     onArchived: refreshRows,
     onDeleted: refreshRows,
     onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
-    onStarted: (created) => navigate(filePath(created.address, created.title)),
+    onStarted: (created) => navigate(filePath(created.address, created.title), { state: { column: 'folders' } }),
   })
 
   /*
@@ -135,7 +136,7 @@ export function FoldersPage() {
         if (cancelled) return
         const project = found?.project
         if (project?.address) {
-          navigate(filePath(project.address, project.slots.title?.value), { replace: true, state: { expandSelected: true } })
+          navigate(filePath(project.address, project.slots.title?.value), { replace: true, state: { expandSelected: true, column: 'folders' } })
         } else setProjectCheck({ id, found: false })
       })
       .catch(() => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -12,6 +12,14 @@ import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
+import { rememberOpenedFrom, type ListColumnName } from '@/lib/openedFrom'
+
+/**
+ * Which list column the rows are drawn in, Topics or Folders (TOP-4): a row's
+ * click tells the file's page, which shows that column beside the file. The
+ * Topics column provides it; everywhere else is Folders.
+ */
+export const TreeColumn = createContext<ListColumnName>('folders')
 
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
@@ -279,7 +287,7 @@ export function JoinedFileRowsView({
  * the dot, the selection, the menu on hover. Its icon becomes the arrow while
  * it is pointed at, so a row with rows under it is as wide as one without.
  */
-function TreeRow({
+export function TreeRow({
   file,
   listed = [],
   unread,
@@ -288,6 +296,7 @@ function TreeRow({
   onControl,
   nested = false,
   remember = false,
+  under,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -303,7 +312,14 @@ function TreeRow({
    * for what they lead to (FOL-41), as its Folders do.
    */
   remember?: boolean
+  /**
+   * Rows handed in to draw under this one, in place of its own children: a
+   * topic's listed files on the Topics screen (TOP-4). Open until the person
+   * closes it, and kept on this browser apart from the Folder tree's.
+   */
+  under?: ReactNode
 }) {
+  const column = useContext(TreeColumn)
   /*
     Once `expand` has opened a row it stays open (SID-2): the selection
     moving to another branch is not the person closing this one, and closing
@@ -314,9 +330,13 @@ function TreeRow({
   const [held, setHeld] = useState(false)
   if (!held && expanded) setHeld(true)
   // `expand` decides until the person does; what they did last, under All, is read once from this browser (the kit's memory).
-  const [open, setOpen] = useRememberedOpen(remember ? `peek.tree.row.${file.ref}` : undefined, expanded || held)
+  // A topic's row on Topics starts open, kept apart from the Folder tree's (TOP-4).
+  const [open, setOpen] = useRememberedOpen(
+    remember ? (under !== undefined ? `peek.topics.row.${file.ref}` : `peek.tree.row.${file.ref}`) : undefined,
+    under !== undefined || expanded || held,
+  )
   const title = file.slots.title?.value ?? 'Untitled'
-  const listedChildren = listedChildrenOf(file, listed)
+  const listedChildren = under !== undefined ? [] : listedChildrenOf(file, listed)
   /*
     A bare file's children are all in this listing — a sub-file is in its
     parent's team (SPEC §6.7) — and only the listing has them where they are
@@ -326,8 +346,8 @@ function TreeRow({
     it. Another kind's declared children (a project's issues) are not in a
     team's listing, and are fetched as before.
   */
-  const fetches = !nested && file.listsChildren && file.kind !== KIND_BARE_FILE
-  const expandable = fetches || listedChildren.length > 0
+  const fetches = under === undefined && !nested && file.listsChildren && file.kind !== KIND_BARE_FILE
+  const expandable = under !== undefined || fetches || listedChildren.length > 0
   // The row's menu, from the manifest and not from the kind (FOL-33): a bare
   // file's declares rename, move and delete, a Ship issue's declares none, and
   // the glyph below is the one place this file asks what kind a row is.
@@ -425,6 +445,8 @@ function TreeRow({
           Peek's router (`AppProvider`), and Cmd-, Ctrl- or Shift-click the browser's, for a new tab or window.
         */
         rememberFileAddress(file.address)
+        // The file's page shows the column this row is in (TOP-4).
+        rememberOpenedFrom(file.address, column)
       }}
     >
       {expandable
@@ -432,6 +454,7 @@ function TreeRow({
           ? (
               // Straight into NavItem's own column, which sets them 2px apart, as the first level is.
               <>
+                {under}
                 {fetches && file.naddr && (
                   <FetchedRows
                     naddr={file.naddr}

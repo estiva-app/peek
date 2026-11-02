@@ -4,6 +4,7 @@ import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRea
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRelayViewer } from './foreign'
 import { hasRelay } from './relayUrl'
+import { topicListChanged } from './useTopicsColumn'
 
 /** A file a topic lists, resolved: its id and the address it was found at. */
 export interface TopicFile {
@@ -85,6 +86,8 @@ export function useTopicFiles(
       try {
         const result = await setTopicFileAsViewer({ topic: address, folder, file, listed }, v.relayUrl, v.token)
         take(await load())
+        // The Topics column beside it draws the same list (TOP-4).
+        if (result.ok) topicListChanged(address)
         return result
       } finally {
         setBusy((now) => {

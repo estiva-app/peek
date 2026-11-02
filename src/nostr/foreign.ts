@@ -92,6 +92,7 @@ import {
   planListInTopic,
   planRemoveFromTopic,
   topicList,
+  topicLists,
   type ListedFile,
   archiveImpact,
   createLoadQuery,
@@ -837,6 +838,35 @@ export async function topicFilesAsViewer(
 ): Promise<Array<ListedFile & { address: string }>> {
   const listed = await topicList(viewerQuery(relayUrl, token), topic)
   return listed.filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+}
+
+/**
+ * Every topic the viewer can read, by address (TOP-4): the Topics screen's
+ * rows, before membership and archive sort them. A topic is a bare file
+ * (`kind:30840`); the relay answers only what this viewer may read.
+ *
+ * **Throws {@link RelayReadError} when the read failed.**
+ */
+export async function topicAddressesAsViewer(relayUrl: string, token: StoredToken): Promise<string[]> {
+  const events = await viewerQuery(relayUrl, token)([{ kinds: [KIND_BARE_FILE], limit: 500 }])
+  return [...new Set(events.flatMap((event) => {
+    const d = event.tags.find((tag) => tag[0] === 'd')?.[1]
+    return d ? [`${event.kind}:${event.pubkey}:${d}`] : []
+  }))]
+}
+
+/**
+ * Many topics' lists at once (TOP-4) — interop's `topicLists`, the rules of
+ * {@link topicFilesAsViewer} for each, in three requests whatever the number
+ * of topics: one per topic trips the relay's rate limit at a few dozen. Each
+ * topic asked for maps to the addresses it lists that resolved, in the order
+ * they were added.
+ *
+ * **Throws {@link RelayReadError} when the read failed.**
+ */
+export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, string[]>> {
+  const lists = await topicLists(viewerQuery(relayUrl, token), topics)
+  return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [entry.address] : []))]))
 }
 
 /**

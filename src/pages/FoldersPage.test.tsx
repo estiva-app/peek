@@ -245,8 +245,8 @@ async function folderMenu(name: string) {
 
 /** Where the rail's Topics would lead now. */
 function Remembered() {
-  const { topicsPath } = useLastSelection()
-  return <output data-testid="topics-path">{topicsPath ?? ''}</output>
+  const { foldersPath } = useLastSelection()
+  return <output data-testid="folders-path">{foldersPath ?? ''}</output>
 }
 
 function mount(url: string) {
@@ -381,10 +381,10 @@ describe("a Folder's heading offers its actions to who may take them", () => {
   included. A channel with no state is in no list, so its link is where it can
   be deleted — drawn only once the relay has said it holds nothing.
 */
-describe('the rail’s memory of Topics (Katerina, 5 October)', () => {
-  it('the Topics page with no file open is where the rail comes back to: a closed file is not brought back', () => {
+describe('the rail’s memory of Folders (Katerina, 5 October; TOP-4)', () => {
+  it('the Folders page with no file open is where the rail comes back to: a closed file is not brought back', () => {
     mount('/app/folders')
-    expect(screen.getByTestId('topics-path').textContent).toBe('/app/folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe('/app/folders')
   })
 })
 
@@ -497,7 +497,7 @@ describe('FoldersPage makes a Folder from its name, in Folders', () => {
   it('offers no New folder in Topics — a Folder is made where Folders are', () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     mount('/app/folders')
-    expect(title('Topics')).toBeTruthy()
+    expect(title('Joined')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
   })
 })

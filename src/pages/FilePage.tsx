@@ -1,11 +1,13 @@
-import { useCallback, useEffect, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
+import { PendingColumn, TopicsColumn } from '@/components/views/TopicsColumn'
+import { forgetOpenedFrom, openedFrom, type ListColumnName } from '@/lib/openedFrom'
 import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
-import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder, useRememberFile } from '@/api'
+import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder, useRememberFile, useTopicsColumn } from '@/api'
 import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -150,9 +152,10 @@ export function FilePage() {
     if (canonicalPath && shortFormAddress && location.pathname !== canonicalPath) {
       // The short form carries no author; the page has one, so the replace costs no read.
       rememberFileAddress(shortFormAddress)
-      navigate(`${canonicalPath}${location.search}`, { replace: true })
+      // With the column it was opened from (TOP-4).
+      navigate(`${canonicalPath}${location.search}`, { replace: true, state: location.state })
     }
-  }, [canonicalPath, shortFormAddress, location.pathname, location.search, navigate])
+  }, [canonicalPath, shortFormAddress, location.pathname, location.search, location.state, navigate])
 
   /*
     The launcher's Recent (UIG-29), which only `TopicsPage` fed until FOL-36 —
@@ -174,18 +177,28 @@ export function FilePage() {
     The one-shot is consumed only once it is answered, so a link that opens
     while the reads are still in flight is not lost to them.
   */
-  const { pendingTopicMessage, setPendingTopicMessage, setLastTopicsPath } = useLastSelection()
+  const { pendingTopicMessage, setPendingTopicMessage, setLastTopicsPath, setLastFoldersPath, setFileColumn } = useLastSelection()
+  const column = useFileColumn(fileAddress, !!canonicalPath && location.pathname === canonicalPath)
+  // The rail lights the item this column is under (TOP-4).
+  useEffect(() => {
+    setFileColumn(column ?? null)
+    return () => setFileColumn(null)
+  }, [column, setFileColumn])
   /*
-    The rail's Topics comes back here (Katerina, 5 October), as People comes
-    back to the last DM: going to Desk and back no longer drops the open file.
-    Its canonical path, once the address bar has settled on it, with its open
-    thread. The Topics page with no file writes its own, so a file closed —
-    by a view that does not draw it, by archiving it, by deleting it — is
-    never what the rail brings back.
+    The rail's Topics or Folders — whichever column this file is shown in —
+    comes back here (Katerina, 5 October), as People comes back to the last
+    DM: going to Desk and back no longer drops the open file. Its canonical
+    path, once the address bar has settled on it, with its open thread. The
+    column's page with no file writes its own, so a file closed — by a view
+    that does not draw it, by archiving it, by deleting it — is never what
+    the rail brings back.
   */
   useEffect(() => {
-    if (canonicalPath && location.pathname === canonicalPath) setLastTopicsPath(`${location.pathname}${location.search}`)
-  }, [canonicalPath, location.pathname, location.search, setLastTopicsPath])
+    if (!column || !canonicalPath || location.pathname !== canonicalPath) return
+    const here = `${location.pathname}${location.search}`
+    if (column === 'topics') setLastTopicsPath(here)
+    else setLastFoldersPath(here)
+  }, [column, canonicalPath, location.pathname, location.search, setLastTopicsPath, setLastFoldersPath])
   const { threadDrawn } = view
   useEffect(() => {
     if (!pendingTopicMessage || !rootIds.includes(pendingTopicMessage.eventId)) return
@@ -246,6 +259,11 @@ export function FilePage() {
     {pane.dialogs}
       <FilePageView
         nav={
+          column === 'topics' ? (
+            <TopicsColumn selectedRef={selected?.ref} onControl={pane.openControl} />
+          ) : column === undefined ? (
+            <PendingColumn />
+          ) : (
           <FolderTree
             currentFolder={navFile?.folder}
             selectedRef={selected?.ref}
@@ -258,12 +276,41 @@ export function FilePage() {
             onControl={pane.openControl}
             currentContents={navFile?.folder ? team : undefined}
           />
+          )
         }
         rightPanel={pane.pane}
         threadPanel={view.threadPanel}
       />
     </>
   )
+}
+
+/**
+ * Which column a file's page shows beside it, Topics or Folders (TOP-4): the
+ * one the clicked row was in. Opened any other way — a link, a card, Desk,
+ * the launcher — Topics when it is one of your topics or one of them lists
+ * it, else Folders, decided once per file so the column does not change under
+ * the person. Kept in the history entry once the address bar has settled, so
+ * a reload or Back shows the same one. `undefined` until it is known.
+ */
+function useFileColumn(address: string | null, settled: boolean): ListColumnName | undefined {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { column } = useTopicsColumn()
+  const state = location.state as { column?: unknown } | null
+  const kept = state?.column === 'topics' || state?.column === 'folders' ? state.column : undefined
+  const clicked = !kept && address ? openedFrom(address) : undefined
+  const [decided, setDecided] = useState<{ address: string; column: ListColumnName }>()
+  const guess = !kept && !clicked && address ? column(address) : undefined
+  // Set during render, as `TreeRow`'s `expand` is: neither the initialiser nor an effect, so the first answer holds.
+  if (address && guess && decided?.address !== address) setDecided({ address, column: guess })
+  const chosen = kept ?? clicked ?? (address !== null && decided?.address === address ? decided.column : guess)
+  useEffect(() => {
+    if (!address || !chosen || kept === chosen || !settled) return
+    forgetOpenedFrom(address)
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: { ...(location.state ?? {}), column: chosen } })
+  }, [address, chosen, kept, settled, location.pathname, location.search, location.state, navigate])
+  return chosen
 }
 
 /**
