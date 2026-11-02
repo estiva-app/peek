@@ -262,16 +262,6 @@ function topicForAddress(uri: string): { id: string; title: string; address: str
   }
 }
 
-/**
- * Whether a `nostr:` URI is another app's object (or any address that is not an
- * old topic): what the composer draws as an `objectMention` chip (UIG-40). A
- * topic's address is a `topicMention`; a person, a message and a URL are not
- * addresses.
- */
-export function isObjectAddress(uri: string): boolean {
-  return /^nostr:naddr1/i.test(uri) && !topicForAddress(uri)
-}
-
 /** Parse a single line into Tiptap inline JSON nodes (text + mention nodes,
  *  with bold/italic/underline marks parsed from storage markers). */
 export function parseInlineContent(line: string): Record<string, unknown>[] {
@@ -608,57 +598,4 @@ export function withUrgentMentions<T>(node: T, urgent: readonly string[] | undef
  */
 export function withoutNewUrgency(text: string, original: string): string {
   return text.replace(/!@([^\s!@]+)/g, (whole, name: string) => (original.includes(whole) ? whole : `@${name}`))
-}
-
-// ── serializeTiptapToText (whole-doc serializer for edit-mode submit) ──
-//
-// We type the editor structurally with `unknown` for the doc and use a small
-// internal cast to keep the `forEach` access — Tiptap's real type involves
-// generics that aren't worth importing here.
-
-/** Serialize a full Tiptap editor doc to plain text. Skips resolutionBlock nodes
- *  (those are consumed by the resolve action, not part of the message body). */
-export function serializeTiptapToText(editor: { state: { doc: unknown } } | null | undefined): string {
-  if (!editor) return ''
-  const doc = editor.state.doc as { forEach: (cb: (node: TiptapInlineChild & TiptapNode) => void) => void }
-  const lines: string[] = []
-  doc.forEach((node) => {
-    if (node.type.name === 'resolutionBlock') return
-    if (node.type.name === 'paragraph') {
-      lines.push(serializeInline(node))
-    } else if (node.type.name === 'heading') {
-      const text = serializeInline(node)
-      if (text.trim()) {
-        const level = Number((node.attrs as Record<string, unknown>)?.level) === 2 ? 2 : 1
-        lines.push(`${'#'.repeat(level)} ${text}`)
-      }
-    } else if (node.type.name === 'bulletList') {
-      node.forEach((li) => {
-        const liNode = li as TiptapInlineChild & TiptapNode
-        liNode.forEach((liChild) => {
-          if (liChild.type.name === 'paragraph') {
-            lines.push(`- ${serializeInline(liChild as TiptapInlineChild & TiptapNode)}`)
-          }
-        })
-      })
-    } else if (node.type.name === 'orderedList') {
-      let idx = 1
-      node.forEach((li) => {
-        const liNode = li as TiptapInlineChild & TiptapNode
-        liNode.forEach((liChild) => {
-          if (liChild.type.name === 'paragraph') {
-            lines.push(`${idx}. ${serializeInline(liChild as TiptapInlineChild & TiptapNode)}`)
-            idx++
-          }
-        })
-      })
-    } else if (node.type.name === 'blockquote') {
-      node.forEach((qChild) => {
-        if (qChild.type.name === 'paragraph') {
-          lines.push(`> ${serializeInline(qChild as TiptapInlineChild & TiptapNode)}`)
-        }
-      })
-    }
-  })
-  return lines.join('\n').trim()
 }

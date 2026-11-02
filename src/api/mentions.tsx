@@ -11,7 +11,6 @@
 import { useEffect } from 'react'
 import { PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { setMentionNames } from '@/lib/textParsing'
-import { getActiveConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { useCurrentUser } from './currentUser'
 import { useMentionNames, usePeople } from './people'
 import type { Person } from './types'
@@ -96,23 +95,6 @@ export function personByPubkey(pubkey: string): Person | undefined {
   const name = resolvable.get(pubkey)
   if (name) return { id: pubkey, name, role: '' }
   return directory.find((p) => p.pubkey === pubkey)
-}
-
-/**
- * The messages the `[` menu can offer — those on screen that the relay holds
- * (RIC-11).
- *
- * On screen, because that is where somebody pointing at "what Ada said" is
- * looking; the open thread wins over the topic around it, the way it does for
- * a question asked of Cmd+K. Only messages with an event id, because a mention
- * is written as `nostr:nevent…` and a message still on its way to the relay
- * has nothing to be pointed at yet. The relay's own search (NIP-50, whole
- * tokens only) is not consulted here: the launcher already offers it, and a
- * menu that answers differently mid-word than after a space is the kind of
- * thing that reads as broken rather than as a tokenised index.
- */
-export function mentionMessages(): ConversationMessage[] {
-  return (getActiveConversation()?.messages ?? []).filter((m) => !!m.eventId)
 }
 
 /**

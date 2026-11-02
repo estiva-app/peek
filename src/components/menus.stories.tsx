@@ -10,7 +10,7 @@ import { NavItem } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { TopicMenuItems, TopicMoreMenu } from './ui/TopicMoreMenu'
 import { toReferenceItem } from './ui/FilesMenu'
-import { referenceRowIcon } from '@/extensions/mention'
+import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { filterReferences, referenceMenu, type CaptionedItem } from '@estiva-app/ui/editor'
 import { peopleMenu, toMentionPerson } from './ui/MentionMenu'
@@ -183,6 +183,12 @@ const MESSAGES: ConversationMessage[] = [
   { id: 'm2', author: 'Grace Hopper', timestamp: '9:44 AM', body: 'Reverted the runner image; re-running now.', eventId: 'b'.repeat(64) },
   { id: 'm3', author: 'Ada Lovelace', timestamp: '9:52 AM', body: 'Green. Leaving the pin in place until Monday.', eventId: 'c'.repeat(64) },
 ]
+
+/** Each row with the icon of what it is, from its URI (7 October). */
+function referenceRowIcon(uri: string) {
+  const glyph = referenceGlyphOfUri(uri)
+  return glyph ? <KindIcon kind={glyph} /> : undefined
+}
 
 /** The list as the box configures it: its name, and each row's icon from the address it names. */
 const REFERENCES = referenceMenu({ ariaLabel: 'References', sectionLabel: 'References', icon: <KindIcon kind="file" />, iconFor: (uri) => (uri ? referenceRowIcon(uri) : undefined) })
