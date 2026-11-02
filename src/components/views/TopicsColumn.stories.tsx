@@ -37,7 +37,7 @@ const speed = file(30840, 'speed', 'Speed')
 const others = [file(30840, 'onboarding', 'Onboarding'), file(30840, 'hiring', 'Hiring')]
 
 const meta = {
-  title: 'Views/TopicsColumn',
+  title: 'Folders/TopicsColumn',
   component: TopicsColumnView,
   decorators: [
     (Story) => (
