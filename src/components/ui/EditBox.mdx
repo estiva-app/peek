@@ -1,0 +1,32 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/EditBox" />
+
+# EditBox
+
+The box a message or reply you wrote is edited in.
+
+**Seen in** — No story: it saves to the relay, and the kit's card opens it.
+
+## When
+
+- Inside `ConversationCard`, in the card's `editor` slot, while editing.
+
+## When not
+
+- To write a new message. That is `ConversationBox`.
+
+## How
+
+```tsx
+import { EditBox } from '@/components/ui/ConversationBox'
+
+<EditBox message={{ body, files, embeds }} here={address} onSave={save} onCancel={done} />
+```
+
+- `onSave` gets what changed: text, resolution, highlight, files, cards. `refused` reopens it with a refused save and why.
+
+## What it owns
+
+- **Peek's half:** the people, the `[` list and uploads, the cards of the message and what it named before, and a refused save coming back with "Not saved: …".
+- **The look and the behaviour are the kit's CommentBox**, in its edit mode. See CommentBox in the estiva-ui Storybook (Writing / CommentBox).

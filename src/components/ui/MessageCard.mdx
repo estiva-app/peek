@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/MessageCard" />
+
+# MessageCard
+
+The card under a message for a file the author linked.
+
+**Seen in** — No story: it reads the file from the relay. The kit's AttachedCard has its stories in the estiva-ui Storybook.
+
+## When
+
+- Under a message, or under the box while one is written. One card per file the author chose.
+
+## When not
+
+- For a link in a sentence. That is **LinkChip**.
+- For a link alone on its line. That is **LinkRow**.
+
+## How
+
+```tsx
+import { MessageCard } from '@/components/ui/MessageLinks'
+
+<MessageCard uri={naddr} resolved={object} readOnly={archived} onRemove={takeOff} />
+```
+
+- `compact` draws the old one-row form. `opensAt` is the URL the body wrote.
+
+## What it owns
+
+- **Peek's half:** reading the file (held for a while, one read per file), its comment count and unread dot, a change to the file written and read back, and a deleted file.
+- **The look and the behaviour are the kit's AttachedCard**: the cross on hover, values as pickers or words. See AttachedCard in the estiva-ui Storybook (Links / AttachedCard).

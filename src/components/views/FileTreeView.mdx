@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/FileTreeView" />
+
+# FileTreeView
+
+One Folder's files as sidebar rows, in the file page's left column.
+
+**Seen in** — *Pages/In the shell* (Topics), when a folder is opened. Its sibling `JoinedFileRowsView` is drawn by *Folders/JoinedFileRowsView*.
+
+## When
+
+- The left column of a file page and the open folder in the Topics tree. One line per file: glyph, title, unread dot.
+
+## When not
+
+- For a Folder page at full width. Cards fit there, rows do not. No alternative: that page is not built.
+- For a tree of your own. Use **NavTree**.
+
+## How
+
+```tsx
+import { FileTreeView } from '@/components/views/FileTreeView'
+
+<FileTreeView state={state} filter="all" selectedRef={ref} expand={[parentRef]} onControl={openControl} />
+```
+
+- `state` is the folder's read: loading, failed, or its files. `onControl` adds each row's menu; without it there are no menus.
+
+## What it owns
+
+- **The listing:** peers first, a parent's children under it, one badge request per level, and a filter that keeps the parents of a match.
+- **The rows:** a glyph by file kind, a menu only where the file's manifest allows the control, and loading and failed states ("This folder could not be read.").

@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/MessageBody" />
+
+# MessageBody
+
+The text of a message or reply, with its mentions, links and the cards its author chose.
+
+**Seen in** — No story: it reads links from the relay. It is drawn inside the kit's ConversationCard, whose stories are in the estiva-ui Storybook.
+
+## When
+
+- Inside every card that shows a message: `ConversationCard`, `CommentRow`, the Screener preview.
+
+## When not
+
+- For text you are writing. That is `ConversationBox`.
+- For plain formatted text with no links to resolve. Use **RichText**.
+
+## How
+
+```tsx
+import { MessageBody } from '@/components/ui/MessageBody'
+
+<MessageBody body={text} parts={parts} embeds={embeds} here={address} readOnly={archived} />
+```
+
+- `preview` shows links as chips only. `readOnly` shows card values as words. `onRemoveCard` adds the author's cross.
+
+## What it owns
+
+- **Peek's half:** `[Title]` and `@` chips, a lookup of the links once per body, the parts and cards under it, the limits (6 parts, 8 links), and where each link lands.
+- **The look is the kit's RichText, LinkChip, LinkRow and AttachedCard.** See RichText in the estiva-ui Storybook (Writing / RichText).

@@ -1,0 +1,32 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/CommentRow" />
+
+# CommentRow
+
+One comment that belongs to another app, drawn in Peek.
+
+**Seen in** — No story: it draws the kit's ConversationCard, whose stories are in the estiva-ui Storybook, and it needs a people directory.
+
+## When
+
+- A list of comments owned by another app, such as a file's comments. `CommentReply` in the same file is the reply.
+
+## When not
+
+- For a message in Peek's own conversation. That is `ConversationCard`, which can edit, resolve and react.
+
+## How
+
+```tsx
+import { CommentRow } from '@/components/views/CommentRow'
+
+<CommentRow comment={comment} people={people} replies={3} isNew selected onOpen={openThread} />
+```
+
+- `comment` has `id`, `author`, `body`, `createdAt` (Nostr seconds) and `deleted`. Without `onOpen` it offers nothing.
+
+## What it owns
+
+- **Peek's half:** who wrote it (a shortened key when there is no name), the short time, and the body through `MessageBody`. It offers no edit, resolve or reaction, because Peek cannot do them for another app's comment.
+- **The look and the behaviour are the kit's ConversationCard.** See ConversationCard in the estiva-ui Storybook (Conversation / ConversationCard).

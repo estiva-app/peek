@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Overlays/ConfirmDelete" />
+
+# ConfirmDelete
+
+The question asked before a file is deleted from its menu.
+
+**Seen in** — No story: it deletes a real file, so it is only reached from a file's menu in the app.
+
+## When
+
+- Delete is chosen from a topic's or a file's menu. A message and a reply are asked by the kit's card instead.
+
+## When not
+
+- To ask anything else. Use **ConfirmDialog** with your own words.
+- To archive. Pass `onArchiveInstead` to offer it as the safer answer here.
+
+## How
+
+```tsx
+import { ConfirmDelete } from '@/components/ConfirmDelete'
+
+<ConfirmDelete onConfirm={deleteFile} onClose={close} onArchiveInstead={canArchive ? archive : undefined} />
+```
+
+- `onConfirm` may be async. `onArchiveInstead` adds the "Archive instead" answer when given.
+
+## What it owns
+
+- **Peek's half:** the words. The title "Delete?", and the two lines saying Peek asks the relay, the relay decides, and other apps keep their copies.
+- **The look and the behaviour are the kit's ConfirmDialog**: Escape and the cross cancel, the backdrop does not. See ConfirmDialog in the estiva-ui Storybook (Menus & windows / ConfirmDialog).

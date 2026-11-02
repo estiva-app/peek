@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/SummaryCount" />
+
+# SummaryCount
+
+The warning under a summary field when the summary has grown long.
+
+**Seen in** — *Topics/StartTopicDialog* (the ALongSummary story).
+
+## When
+
+- Under a Summary field. It draws nothing until the text is past the limit (about 240 characters).
+
+## When not
+
+- To stop the person. It warns and never refuses.
+- For any other field's help. Use **FieldLine**.
+
+## How
+
+```tsx
+import { SummaryCount } from '@/components/SummaryField'
+
+<SummaryCount text={summary} />
+```
+
+- `text` is the only prop. `SummaryField` draws the field with it; Details uses it as its draft note.
+
+## What it owns
+
+- **The words:** the count and "A summary reads best in one or two sentences, under 240."
+- **The look is the kit's FieldLine** in its warning tone. See FieldLine in the estiva-ui Storybook (Forms / Field line).

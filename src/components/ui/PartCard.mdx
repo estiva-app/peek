@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/PartCard" />
+
+# PartCard
+
+One block of another file, shown live inside a message.
+
+**Seen in** — No story: it reads the block from the relay. The kit's PartCard has its stories in the estiva-ui Storybook.
+
+## When
+
+- A message names a block with a `part` tag. Pass its `address` and `block`.
+
+## When not
+
+- For the whole file. Use **AttachedCard**.
+- For a link in a sentence. Use **LinkChip**.
+
+## How
+
+```tsx
+import { PartCard } from '@/components/ui/PartCard'
+
+<PartCard address={address} block={block} anchorTags={tags} quotedBy="Ada" />
+```
+
+- `anchorTags` is a comment's own `block` and `quote` tags. `PartCardView` draws a read that has already happened.
+
+## What it owns
+
+- **Peek's half:** reading the block (`usePart`), the blocks inside it, the cut at 160px behind ShowMore, and the way into the app it came from.
+- **The look and the behaviour are the kit's PartCard**: its frame and five states (loading, deleted, not available, part deleted, can't be shown). See PartCard in the estiva-ui Storybook (Links / PartCard).

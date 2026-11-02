@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Frame/PersonItem" />
+
+# PersonItem
+
+One person as a row in the sidebar.
+
+**Seen in** — No story: the story named PersonItem in *Screener & Desk/ScreenerItem* is a screener row, not this part. This one draws the kit's NavItem, whose stories are in the estiva-ui Storybook.
+
+## When
+
+- The People list in the sidebar: photo, name, unread dot, and a menu.
+
+## When not
+
+- For a topic. That is `TopicState` on a **NavItem**.
+- For a file. Use **NavTree**.
+
+## How
+
+```tsx
+import { PersonItem } from '@/components/ui/PersonItem'
+
+<PersonItem id={id} name="Ada" active={active} unread onHide={hide} openWorkAction="add" onToggleOpenWork={toggle} />
+```
+
+- The menu appears only when `onHide`, or `openWorkAction` with `onToggleOpenWork`, is given.
+
+## What it owns
+
+- **Peek's half:** the address (`/app/people/<id>`), the photo from Peek's people, and the menu items: Open work and Hide.
+- **The look and the behaviour are the kit's NavItem.** See NavItem in the estiva-ui Storybook (App frame / NavItem).

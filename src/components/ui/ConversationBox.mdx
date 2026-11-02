@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/ConversationBox" />
+
+# ConversationBox
+
+Where a message or a reply is written in Peek.
+
+**Seen in** — No story: it needs the relay to send. *Pages/In the shell* (FileArchived) draws its closed form, `ClosedBox`.
+
+## When
+
+- Under a conversation (`kind="conversation"`) or in a thread (`kind="reply"`).
+
+## When not
+
+- To change a message already sent. That is `EditBox`.
+- Where nothing can be written. Use `ClosedBox`, or pass `closed`.
+
+## How
+
+```tsx
+import { ConversationBox } from '@/components/ui/ConversationBox'
+
+<ConversationBox kind="reply" onSend={send} draftKey={draftKey} contextLabel="Topic" here={address} />
+```
+
+- `onSend` gets the text, files, highlight, urgent names and cards, and answers whether the relay took it. `draftKey` keeps unsent text.
+
+## What it owns
+
+- **Peek's half:** its drafts, the people `@` offers, the `[` list, uploads, the card shown under the box, and its Resolve row.
+- **The look and the behaviour are the kit's CommentBox.** See CommentBox in the estiva-ui Storybook (Writing / CommentBox).
