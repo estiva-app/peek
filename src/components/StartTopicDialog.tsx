@@ -108,7 +108,6 @@ export function StartTopicDialog({
               ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
               : `A conversation in ${where}. Everyone in the folder can read it.`}
           </p>
-          {/* @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet */}
           <Field label="Title">
             <TextInput
               value={title}
@@ -119,7 +118,6 @@ export function StartTopicDialog({
           </Field>
           <SummaryField value={summary} onChange={setSummary} />
           {choosing && (
-            // @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet
             <Field label="Folder">
               <Select
                 value={folder}

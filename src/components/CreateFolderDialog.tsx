@@ -62,7 +62,6 @@ export function CreateFolderDialog({
         label *is* the accessible name and a second one would only be the
         name that loses.
       */}
-      {/* @estiva-escape(no-field-outside-a-form): inside the kit's FormDialog, which is a Form; the 0.99.0 gate does not list FormDialog among the forms yet */}
       <Field label="Folder name">
         <TextInput
           value={name}
