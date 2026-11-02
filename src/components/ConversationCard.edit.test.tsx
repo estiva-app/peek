@@ -59,11 +59,17 @@ async function openEditor(props: Partial<React.ComponentProps<typeof Conversatio
     if (!el?.editor) throw new Error('no editor yet')
     return el
   })
+  // The box puts its caret after the last word a frame after it opens; a reader types from there.
+  await waitFor(() => expect(dom.ownerDocument.activeElement).toBe(dom))
   return { dom, editor: dom.editor as Editor, container, onHighlightChange, onBodyChange, onResolvedChange }
 }
 
-// A text node, as a keystroke adds one: a string is parsed as HTML and can land as a paragraph of its own.
-const type = (editor: Editor, text: string) => act(() => void editor.chain().focus('end').insertContent({ type: 'text', text }).run())
+/*
+  A text node where the caret is, as a keystroke adds one: a string is parsed as HTML and can land as a paragraph of
+  its own. Not `focus('end')`: under a list that ends the message the editor keeps an empty line to write below it
+  (Tiptap's trailing node), and the end of the document is that line, not the list's last word.
+*/
+const type = (editor: Editor, text: string) => act(() => void editor.chain().insertContent({ type: 'text', text }).run())
 const nodeTypes = (editor: Editor) => {
   const out: string[] = []
   editor.state.doc.descendants((node) => void out.push(node.type.name))
