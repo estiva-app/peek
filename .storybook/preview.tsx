@@ -89,10 +89,6 @@ const preview: Preview = {
              `Navigation` and `Entry` were the same idea under two names). */
           'Frame',
           'Primitives',
-          'Messages',
-          /* Carved out of Messages: the body, what renders it, and the
-             composer that writes it. */
-          'Writing & text',
           'Topics',
           /* The seven file and folder parts that had been split across
              Messages, Navigation and Overlays (Katerina, 23 September). */
