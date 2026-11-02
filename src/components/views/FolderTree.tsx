@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton, useRememberedOpen } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -31,7 +31,6 @@ import {
 } from '@/components/views/treeFilter'
 import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
-import { useRememberedOpen } from '@/lib/rememberedOpen'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -654,8 +653,9 @@ export function FolderTreeView({
   }
 
   return (
-    // The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94).
-    <NavTree selected={selectedRef}>
+    // The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
+    // given the Folder a link opened, to that Folder's heading (ui 0.99).
+    <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
       {ordered.map((folder) => (
         <FolderSection
           key={folder.id}
@@ -699,7 +699,7 @@ function FolderSection({
   selectedRef?: string
   selectedParent?: string | null
   expandSelected?: boolean
-  /** A link opened this Folder: open it, whatever was remembered, and bring it into view. */
+  /** A link opened this Folder: open it, whatever was remembered. `NavTree` brings it into view (`selectedGroup`). */
   linked: boolean
   /** The heading's ⋮: the Folder's own actions. */
   menu?: ReactNode
@@ -755,15 +755,17 @@ function FolderSection({
     5 October): a notification, another app or a new Folder leading to a
     closed heading among 160 showed nothing at all. Once per arrival — the
     person can close it again — and it is remembered open, as a click would.
+    The scroll is the package's `NavTree` (`selectedGroup`, ui 0.99). The
+    opening stays here: the package's `openFor` opens only a shut Folder, and
+    one already open as the page's own is remembered open too, so it stays
+    open when the person moves on to a file in another Folder.
   */
   const openNow = useRef(setOpen)
   useEffect(() => {
     openNow.current = setOpen
   })
   useEffect(() => {
-    if (!linked) return
-    openNow.current(true)
-    document.querySelector(`[data-nav-group="${CSS.escape(folder.id)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+    if (linked) openNow.current(true)
   }, [linked, folder.id])
   /*
     And the Folder holding the open file is open in every view (Katerina,
@@ -811,21 +813,14 @@ function FolderSection({
   const state = fresh === 'loading' && drawn ? drawn : fresh
   /*
     Opened before its listing is in, the Folder stays shut with its arrow
-    turned and its icon pulsing, and opens once with every row (OPT-11,
-    Miky 12 October). A skeleton the rows then replaced moved everything
-    below it twice — Katerina's "just a few items appear and in a second,
-    the whole list" (7 October). A read still out after `PENDING_MS` opens
-    on the skeleton after all: a rate-limit retry can take seconds.
+    turned, and opens once with every row (OPT-11, Miky 12 October). A
+    skeleton the rows then replaced moved everything below it twice —
+    Katerina's "just a few items appear and in a second, the whole list"
+    (7 October). A read still out after `NAV_TREE_PENDING_MS` (2s) opens on
+    the package's skeleton after all: a rate-limit retry can take seconds.
+    The wait and the skeleton are `NavTreeSection`'s `pending` (ui 0.99).
   */
-  const waiting = open && state === 'loading'
-  const [slow, setSlow] = useState(false)
-  if (!waiting && slow) setSlow(false)
-  useEffect(() => {
-    if (!waiting) return
-    const timer = setTimeout(() => setSlow(true), PENDING_MS)
-    return () => clearTimeout(timer)
-  }, [waiting])
-  const pending = waiting && !slow
+  const pending = open && state === 'loading'
   const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
   /*
     Every row above the open file starts open, not only its parent (FOL-4): a
@@ -873,7 +868,7 @@ function FolderSection({
         are gone, and a click on the heading only folds it.
       */
       // The folder icon in every view, Topics too (Katerina, 7 October): a heading is a Folder wherever it is drawn.
-      icon={<TopicState type="folder" className={pending ? 'motion-safe:animate-pulse' : undefined} />}
+      icon={<TopicState type="folder" />}
       // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}
@@ -917,9 +912,6 @@ function FolderSection({
     </NavTreeSection>
   )
 }
-
-/** How long an opened Folder waits shut for its listing before it opens on the skeleton (OPT-11): a cold read is ~0.9 s. */
-export const PENDING_MS = 2000
 
 /** The same rows, in the same order — what a re-read that changed nothing answers. */
 function sameRows(a: readonly ForeignObject[], b: readonly ForeignObject[] | undefined): boolean {

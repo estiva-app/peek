@@ -14,7 +14,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { FolderTree, PENDING_MS } from './FolderTree'
+import { NAV_TREE_PENDING_MS } from '@estiva-app/ui'
+import { FolderTree } from './FolderTree'
 import { ToastProvider } from '@/lib/toast'
 import { PeekSetup } from '@/lib/PeekSetup'
 
@@ -337,7 +338,7 @@ describe('a Folder opened before its listing is in (OPT-11)', () => {
     const heading = section(TEAM).querySelector('[aria-expanded]')!
     expect(heading.getAttribute('aria-expanded')).toBe('true')
     expect(heading.getAttribute('aria-busy')).toBe('true')
-    expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(true)
+    expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(true)
 
     reads.pending.delete(TEAM)
     rerender({})
@@ -345,15 +346,15 @@ describe('a Folder opened before its listing is in (OPT-11)', () => {
     expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
   })
 
-  it('a read still out after PENDING_MS opens on the skeleton', () => {
+  it('a read still out after NAV_TREE_PENDING_MS opens on the skeleton', () => {
     vi.useFakeTimers()
     try {
       reads.pending.add(TEAM)
       mount()
       fireEvent.click(fold('Peek'))
-      act(() => vi.advanceTimersByTime(PENDING_MS))
+      act(() => vi.advanceTimersByTime(NAV_TREE_PENDING_MS))
       expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
-      expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(false)
+      expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -503,6 +504,15 @@ describe('the two views (Katerina, 5 October)', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
     window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'closed')
     mount({ currentFolder: OTHER, showFolder: true })
+    expect(openOf(section(OTHER))).toBe('true')
+  })
+
+  it("a Folder's own link is remembered open, as a click would: it stays open when a file in another Folder is opened next", () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    const link = mount({ currentFolder: OTHER, showFolder: true })
+    expect(openOf(section(OTHER))).toBe('true')
+    link.unmount()
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     expect(openOf(section(OTHER))).toBe('true')
   })
 
