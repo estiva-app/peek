@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
 import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton, useRememberedOpen } from '@estiva-app/ui'
@@ -665,7 +665,6 @@ export function FolderTreeView({
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           expandSelected={expandSelected}
-          linked={linkedFolder === folder.id}
           // In Archive only an archived Folder has a menu: its Unarchive.
           menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
           onControl={onControl}
@@ -686,7 +685,6 @@ function FolderSection({
   selectedRef,
   selectedParent,
   expandSelected,
-  linked,
   menu,
   onControl,
   holdsJoined,
@@ -699,8 +697,6 @@ function FolderSection({
   selectedRef?: string
   selectedParent?: string | null
   expandSelected?: boolean
-  /** A link opened this Folder: open it, whatever was remembered. `NavTree` brings it into view (`selectedGroup`). */
-  linked: boolean
   /** The heading's ⋮: the Folder's own actions. */
   menu?: ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
@@ -755,18 +751,10 @@ function FolderSection({
     5 October): a notification, another app or a new Folder leading to a
     closed heading among 160 showed nothing at all. Once per arrival — the
     person can close it again — and it is remembered open, as a click would.
-    The scroll is the package's `NavTree` (`selectedGroup`, ui 0.99). The
-    opening stays here: the package's `openFor` opens only a shut Folder, and
-    one already open as the page's own is remembered open too, so it stays
-    open when the person moves on to a file in another Folder.
+    Both are the package's `NavTree` (`selectedGroup`, ui 0.99): it opens the
+    Folder and tells `onOpenChange`, even one already open as the page's own,
+    so it stays open when the person moves on to a file in another Folder.
   */
-  const openNow = useRef(setOpen)
-  useEffect(() => {
-    openNow.current = setOpen
-  })
-  useEffect(() => {
-    if (linked) openNow.current(true)
-  }, [linked, folder.id])
   /*
     And the Folder holding the open file is open in every view (Katerina,
     5 October): when the file arrives, and when the column turns to another
