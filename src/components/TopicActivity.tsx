@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Chip } from '@/components/ui/Chip'
-import { EmptyState } from '@estiva-app/ui'
+import { ConversationPlace, EmptyState } from '@estiva-app/ui'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData } from '@/api'
 
@@ -122,19 +121,12 @@ export function TopicActivity({
         */
         const mention = relation === 'mention'
         return (
-        <div key={conv.id} className="flex flex-col gap-1" data-relation={relation}>
-          <div className="flex items-center gap-2">
-            <Chip type="neutral" label={words.label} />
-            {/*
-              The ticket's own title, from its own app's manifest. Absent while
-              the Folder is still resolving, and drawn as nothing rather than as
-              a placeholder — a row that says "Loading…" beside a real message is
-              worse than a row that simply has not said where it is from yet.
-            */}
-            {about && labelFor.get(about) && (
-              <span className="truncate text-caption text-text-muted">{labelFor.get(about)}</span>
-            )}
-          </div>
+        /*
+          The kit's ConversationPlace (B14): the chip saying how it is related, and the ticket's own title, from its
+          own app's manifest — absent while the Folder is still resolving, and drawn as nothing rather than as a
+          placeholder.
+        */
+        <ConversationPlace key={conv.id} relation={words.label} place={about ? labelFor.get(about) : undefined} data-relation={relation}>
           {/*
             The same card the stream draws. A conversation should look like a
             conversation wherever it is read, and the card already renders the
@@ -146,6 +138,7 @@ export function TopicActivity({
             authorAvatarSrc={conv.authorAvatarSrc}
             authorBot={conv.authorBot}
             timestamp={conv.timestamp}
+            createdAtMs={conv.createdAtMs}
             body={conv.body}
             editedAt={conv.editedAt}
             files={conv.files}
@@ -166,7 +159,7 @@ export function TopicActivity({
             onClick={open}
             onReply={mention ? undefined : open}
           />
-        </div>
+        </ConversationPlace>
         )
       })}
     </div>

@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
 import { Card, Chip, PreviewCard, MetaText, Person } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
@@ -45,27 +45,19 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, onRead, preview
   // Never a key: a writer the page cannot name yet is a silhouette and an em dash.
   const who = item.authorName
   const avatarSrc = item.kind === 'dm' ? item.authorAvatarSrc : who ? avatarSrcFor(who) : undefined
-  /*
-    The row's buttons keep their own clicks, and so does the Later menu: it is
-    a portal, outside the row in the page, but React still hands its clicks up
-    to the row.
-  */
-  const readFromRow = onRead
-    ? (event: MouseEvent<HTMLDivElement>) => {
-        const target = event.target as Element
-        if (!event.currentTarget.contains(target) || target.closest('button')) return
-        onRead(item.id)
-      }
-    : undefined
 
   const row = (
-    // A card in a feed (the package's `hover="fill"`): it lights when pointed at, and opens when clicked.
+    /*
+      A card in a feed (the package's `hover="fill"`): it lights when pointed at, and opens when pressed — the kit's
+      press (C16): the row's buttons keep their own clicks, and so does the Later menu, a portal outside the row that
+      React still hands its clicks up to; a Tab stop too, opened by Enter or Space.
+    */
     <Card
       fill="none"
       quietUntilHover
       hover={onRead ? 'fill' : 'none'}
       hovered={menuOpen}
-      onClick={readFromRow}
+      onPress={onRead ? () => onRead(item.id) : undefined}
       className="flex flex-col p-2"
     >
       {/* Who wrote, and when: the name truncates, the time stays. */}

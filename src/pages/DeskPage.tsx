@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
@@ -573,18 +573,6 @@ const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ ope
 /** A DM has no Desk address of its own: its link is the person's page. */
 const personHref = (dmId: string) => `/app/people/${dmId}`
 
-/**
- * A plain click opens the row on the Desk; a click with a modifier, or not
- * the main button, is left to the link, so a new tab still opens it.
- */
-function inPlace(open: () => void) {
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-    event.preventDefault()
-    open()
-  }
-}
-
 /** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
 function DeskRowItem({ row }: { row: DeskRow }) {
   const avatarSrcFor = useAvatarSrc()
@@ -605,7 +593,8 @@ function DeskRowItem({ row }: { row: DeskRow }) {
       active={row.isSelected}
       unread={row.isUnread}
       urgent={row.isUrgent}
-      onClick={inPlace(row.onClick)}
+      // A plain click opens the row on the Desk; a click with a modifier, or not the main button, is the link's: a new tab (C8).
+      onPlainClick={row.onClick}
       hint={row.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       action={row.onRemove ? { icon: <IconX size={16} stroke={1.5} />, tooltip: 'Remove from list', onClick: row.onRemove } : undefined}
     />
@@ -752,11 +741,8 @@ export function DeskPageView({
                   ui/StarredSection until 2026-09-10 (Peek scan F10). */}
               <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
                 {starred.length === 0 ? (
-                  // Level with the rows (Katerina, 2026-09-14): each row pads itself,
-                  // so the line takes a row's inset here, never on EmptyState.
-                  <div className="px-2 py-1">
-                    <EmptyState scope="section" message="Favorite the conversations of People you interact mostly with" />
-                  </div>
+                  // Level with the rows (Katerina, 2026-09-14): each row pads itself, and the kit's line for rows takes a row's inset (C9).
+                  <EmptyState scope="rows" message="Favorite the conversations of People you interact mostly with" />
                 ) : (
                   starred.map((row) => <DeskRowItem key={row.id} row={row} />)
                 )}
