@@ -91,7 +91,7 @@ describe('an issue card under a message keeps its height while it loads', () => 
     measured.mockRestore()
     resolveObject.mockReturnValue(new Promise(() => {}))
     const again = render(<MessageCard uri={`nostr:${issue}`} />)
-    expect((again.container.querySelector('[data-card]') as HTMLElement).style.minHeight).toBe('134px')
+    expect((again.container.querySelector('[data-card] > *') as HTMLElement).style.minHeight).toBe('134px')
   })
 
   it('draws "not available" from the first paint for a card this device found not available', async () => {
