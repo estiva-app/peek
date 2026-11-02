@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { IconArchive, IconEdit } from '@tabler/icons-react'
-import { EmptyState, ListColumn, NavItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconArchive } from '@tabler/icons-react'
+import { EmptyState, ListColumn, NavItem, NavTree, NavTreeSection, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { useConversationBadges, useTopicsColumn, type TopicWithFiles, type TopicsColumnState } from '@/api'
+import { useConversationBadges, useFolders, useTopicsColumn, type TopicWithFiles, type TopicsColumnState } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { DialogShell } from '@/components/ui/DialogShell'
 import { TreeRow } from '@/components/views/FileTreeView'
-import { HeaderStartTopic } from '@/components/views/HeaderStartTopic'
+import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { filePath } from '@/lib/objectUrl'
 import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
@@ -47,6 +47,13 @@ export function TopicsColumn({ selectedRef, onControl }: {
   )
   const { unread } = useConversationBadges(drawn)
   const [starting, setStarting] = useState(false)
+  // The Folder list New topic chooses from, read with the column (one shared read per tab), so its dialog opens on the press.
+  useFolders()
+  // The open file's Folder is chosen first, as the open Folder is in Folders.
+  const openFolder =
+    typeof state === 'object' && 'mine' in state
+      ? [...state.mine.flatMap(({ topic, files }) => [topic, ...files]), ...state.others].find((file) => file.ref === selectedRef)?.folder
+      : undefined
   return (
     <>
       <TopicsColumnView
@@ -58,7 +65,7 @@ export function TopicsColumn({ selectedRef, onControl }: {
         onControl={onControl}
         onNewTopic={() => setStarting(true)}
       />
-      {starting && <HeaderStartTopic column="topics" onClose={() => setStarting(false)} />}
+      {starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
     </>
   )
 }
@@ -102,9 +109,7 @@ export function TopicsColumnView({
         !signedOut &&
         onNewTopic && (
           <Toolbar aria-label="Topic list actions" surface={false}>
-            <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-              <IconEdit size={16} stroke={1.5} />
-            </ToolbarButton>
+            <NewTopicButton onClick={onNewTopic} />
           </Toolbar>
         )
       }

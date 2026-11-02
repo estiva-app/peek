@@ -1,10 +1,21 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { IconEdit } from '@tabler/icons-react'
+import { ToolbarButton } from '@estiva-app/ui'
 import { topLevelFolders, useFolders, useForeignObjects } from '@/api'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import type { ListColumnName } from '@/lib/openedFrom'
 import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
+
+/** A column header's New topic button, one strip item in its `Toolbar`. */
+export function NewTopicButton({ onClick }: { onClick: () => void }) {
+  return (
+    <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onClick}>
+      <IconEdit size={16} stroke={1.5} />
+    </ToolbarButton>
+  )
+}
 
 /**
  * A column header's New topic (FOL-41; on Topics too since TOP-9): Start a

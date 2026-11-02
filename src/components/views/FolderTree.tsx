@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
+import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
 import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton, useRememberedOpen } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
@@ -17,7 +17,7 @@ import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
-import { HeaderStartTopic } from '@/components/views/HeaderStartTopic'
+import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { useFolderActions } from '@/components/views/useFolderActions'
 import {
@@ -479,9 +479,7 @@ export function FolderColumn({
                 <IconFolderPlus size={16} stroke={1.5} />
               </ToolbarButton>
             )}
-            <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-              <IconEdit size={16} stroke={1.5} />
-            </ToolbarButton>
+            <NewTopicButton onClick={onNewTopic} />
             <Menu
               align="right"
               trigger={

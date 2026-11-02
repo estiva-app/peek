@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TopicsPage } from './TopicsPage'
+import { TopicsColumn } from '@/components/views/TopicsColumn'
 import { PeekSetup } from '@/lib/PeekSetup'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
@@ -21,10 +22,11 @@ const created = vi.hoisted(() => ({
   topic: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true; address: string; naddr: string }>>(async () => ({ ok: true, address: '', naddr: 'naddr1new' })),
 }))
 const session = vi.hoisted(() => ({ signedOut: false }))
+const column = vi.hoisted(() => ({ state: { mine: [], others: [], archived: [] } as unknown }))
 
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
-  useTopicsColumn: () => ({ state: { mine: [], others: [], archived: [] }, signedOut: session.signedOut }),
+  useTopicsColumn: () => ({ state: column.state, signedOut: session.signedOut }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useFolders: () => ({
     folders: [
@@ -72,6 +74,7 @@ function mount() {
 describe('Topics starts a topic from its header (TOP-9)', () => {
   beforeEach(() => {
     session.signedOut = false
+    column.state = { mine: [], others: [], archived: [] }
     created.topic.mockClear()
     created.topic.mockResolvedValue({ ok: true, address: NEW_TOPIC, naddr: 'naddr1new' })
   })
@@ -86,6 +89,23 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
     await user.click(screen.getByRole('button', { name: 'Start' }))
     expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: TESTING, title: 'Launch plan', hasState: true }))
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${filePath(NEW_TOPIC, 'Launch plan')} topics`))
+  })
+
+  it("beside an open topic, chooses that topic's Folder first", async () => {
+    const user = userEvent.setup()
+    const open = { ref: `30840:${PK}:open`, address: `30840:${PK}:open`, kind: 30840, folder: TESTING, slots: { title: { value: 'Widgets' } } }
+    column.state = { mine: [{ topic: open, files: [], archivedFiles: [] }], others: [], archived: [] }
+    render(
+      <MemoryRouter>
+        <PeekSetup>
+          <TopicsColumn selectedRef={open.ref} />
+        </PeekSetup>
+      </MemoryRouter>,
+    )
+    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: TESTING }))
   })
 
   it('offers no New topic to somebody signed out', () => {
