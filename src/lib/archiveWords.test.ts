@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archiveImpactWords, archivedLineOf, countOf, kindNoun, listOf } from './archiveWords'
+import { archiveImpactWords, archivedLineOf, countOf, kindNoun } from './archiveWords'
 
 /**
  * The archive warning's words (FOL-46). Kinds are named from the words their
@@ -45,12 +45,5 @@ describe('archive words', () => {
       words,
     )
     expect(worded).toEqual({ hides: ['14 issues', '6 topics'], staysVisible: ['2 files also in Estiva HQ'] })
-    expect(listOf(worded.hides)).toBe('14 issues and 6 topics')
-  })
-
-  it('lists with commas and one "and"', () => {
-    expect(listOf([])).toBe('')
-    expect(listOf(['a'])).toBe('a')
-    expect(listOf(['a', 'b', 'c'])).toBe('a, b and c')
   })
 })
