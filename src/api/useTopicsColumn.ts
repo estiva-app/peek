@@ -137,10 +137,11 @@ async function readLists(viewer: Viewer, topics: readonly string[]) {
 }
 
 async function readPast(viewer: Viewer, topics: readonly string[]) {
-  const ask = topics.filter((topic) => !pastReading.has(topic))
-  if (!ask.length) return
-  for (const topic of ask) pastReading.add(topic)
   const pubkey = viewer.token.pubkey
+  // Per viewer: a read still out for whoever was signed in before must not hold back the next one's.
+  const ask = topics.filter((topic) => !pastReading.has(`${pubkey}:${topic}`))
+  if (!ask.length) return
+  for (const topic of ask) pastReading.add(`${pubkey}:${topic}`)
   try {
     const members = await fetchMemberOf({ relayUrl: viewer.relayUrl, accessToken: viewer.token.accessToken, pubkey }, ask)
     if (!members) throw new Error('the relay did not answer')
@@ -152,7 +153,7 @@ async function readPast(viewer: Viewer, topics: readonly string[]) {
     failedRead(error, 'topic memberships')
     if (held.pubkey === pubkey) put({ ...held, pastFailed: new Set([...held.pastFailed, ...ask]) })
   } finally {
-    for (const topic of ask) pastReading.delete(topic)
+    for (const topic of ask) pastReading.delete(`${pubkey}:${topic}`)
   }
 }
 
