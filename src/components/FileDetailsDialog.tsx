@@ -5,9 +5,8 @@ import { useWorkspaceDirectory, type RenameOutcome } from '@/api'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { IconButton } from './ui/IconButton'
-import { EmptyState, FieldLine, Form, Person } from '@estiva-app/ui'
+import { EditableText, EmptyState, FieldLine, Form, Person } from '@estiva-app/ui'
 import { SectionLabel } from './ui/SectionHeader'
-import { TextInput } from './ui/TextInput'
 import { Textarea } from './ui/Textarea'
 import { SummaryCount } from './SummaryField'
 import { summaryText } from '@/lib/summary'
@@ -35,7 +34,6 @@ export function FileDetailsDialog({
   onRename,
   onClose,
   initialEditing,
-  initialError,
   summary,
   onSummarize,
   initialSummaryError,
@@ -45,12 +43,11 @@ export function FileDetailsDialog({
   onRename?: (title: string) => Promise<RenameOutcome>
   onClose: () => void
   /**
-   * Open straight into the rename field — what the menu's own Rename item
-   * does, so "Rename" and "Details → Rename" are one control reached two ways.
+   * Open straight into the rename field, holding the name — what the menu's
+   * own Rename item does, so "Rename" and "Details → Rename" are one control
+   * reached two ways.
    */
   initialEditing?: boolean
-  /** The refusal to show on open. Stories and tests only. */
-  initialError?: string
   /**
    * The summary as it is now, whole (the summarize action's `current`): the
    * card's `subtitle` slot is cut at 280, and saving from a cut copy would
@@ -74,38 +71,6 @@ export function FileDetailsDialog({
   */
   const directory = useWorkspaceDirectory()
   const people = author && file.people?.[author] ? file.people : directory
-  const [editing, setEditing] = useState((initialEditing ?? false) && !!onRename)
-  const [draft, setDraft] = useState('')
-  const [outcome, setOutcome] = useState<RenameOutcome>(
-    initialError ? { kind: 'error', message: initialError } : null,
-  )
-  const [saving, setSaving] = useState(false)
-
-  // A rename that lands from elsewhere while this is open must not be
-  // overwritten by a stale draft — `TopicDetailsDialogView`'s rule.
-  useEffect(() => {
-    if (!editing) setDraft(title)
-  }, [title, editing])
-
-  const canonical = draft.trim()
-  const changed = canonical !== '' && canonical !== title
-
-  const save = async () => {
-    if (!onRename || !changed) return
-    setSaving(true)
-    let result: RenameOutcome
-    try {
-      result = await onRename(canonical)
-    } catch (error) {
-      // Nothing may leave this control stuck on "Saving…".
-      result = { kind: 'error', message: error instanceof Error ? error.message : 'That rename did not go through.' }
-    } finally {
-      setSaving(false)
-    }
-    setOutcome(result)
-    // Only a real error keeps the field open; the draft is kept on one.
-    if (result?.kind !== 'error') setEditing(false)
-  }
 
   const copyAddress = () => {
     if (!file.address) return
@@ -127,57 +92,32 @@ export function FileDetailsDialog({
       }
     >
       <Section label="Name">
-        {editing ? (
-          // The package Form (UIG-7): Enter saves, and the field locks while saving. `free`: a rename box and its buttons, not a list of fields.
-          <Form busy={saving} onSubmit={save} layout="free" className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <TextInput
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                aria-label="Name"
-                onKeyDown={(e) => {
-                  // Escape abandons; Enter is the Form's, and saves.
-                  if (e.key === 'Escape') {
-                    e.preventDefault()
-                    setEditing(false)
-                    setOutcome(null)
-                  }
-                }}
-              />
-              <Button variant="primary" size="small" type="submit" disabled={!changed || saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => {
-                  setEditing(false)
-                  setOutcome(null)
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-            <Outcome outcome={outcome} />
-          </Form>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-body-2 text-text-primary">{title}</span>
-            {/* Absent, not disabled, when the manifest declares no rename. */}
-            {onRename && (
-              <Button
-                variant="outlined"
-                size="small"
-                leadingIcon={<IconPencil size={14} stroke={1.5} />}
-                onClick={() => setEditing(true)}
-              >
-                Rename
-              </Button>
-            )}
-          </div>
-        )}
-        {!editing && <Outcome outcome={outcome} />}
+        {/*
+          The kit's click-to-edit with Save (C13): the name and Rename — absent,
+          not disabled, when the manifest declares none — then the field with
+          Save and Cancel, Enter saving and Escape abandoning only the edit.
+          Only a refusal keeps it open, with the draft and the reason; a warning
+          is said under the name once it saved.
+        */}
+        <EditableText
+          manner="buttons"
+          label="Name"
+          value={title}
+          placeholder="Untitled"
+          editLabel="Rename"
+          required
+          readOnly={!onRename}
+          defaultEditing={initialEditing}
+          onCommit={async (name) => {
+            if (!onRename) return false
+            try {
+              return (await onRename(name)) ?? true
+            } catch (error) {
+              // Nothing may leave this control stuck on "Saving…".
+              return { kind: 'error', message: error instanceof Error ? error.message : 'That rename did not go through.' }
+            }
+          }}
+        />
       </Section>
 
       <SummarySection

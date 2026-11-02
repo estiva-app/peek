@@ -20,6 +20,35 @@ describe('FileDetailsDialog', () => {
   })
 })
 
+describe('FileDetailsDialog’s rename', () => {
+  const file = { address: `30840:${AUTHOR}:d`, slots: { title: { value: 'Launch naming' } }, people: {} }
+
+  it('opens from the menu’s Rename holding the name, to change rather than retype', () => {
+    render(<FileDetailsDialog file={file} onRename={async () => null} initialEditing onClose={() => {}} />)
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Launch naming')
+  })
+
+  it('a refused rename keeps the field open with the new name and the relay’s reason', async () => {
+    const onRename = vi.fn(async () => ({ kind: 'error' as const, message: 'relay_membership_required' }))
+    render(<FileDetailsDialog file={file} onRename={onRename} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: ' Launch name ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('relay_membership_required')).toBeTruthy()
+    expect(onRename).toHaveBeenCalledWith('Launch name')
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(' Launch name ')
+  })
+
+  it('a rename that throws says so, and is not left saving', async () => {
+    render(<FileDetailsDialog file={file} onRename={async () => Promise.reject(new Error('Sign-in ended.'))} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Launch name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Sign-in ended.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+})
+
 describe('FileDetailsDialog’s summary (SPEC §6.12)', () => {
   const file = (summary?: string) => ({
     address: `30840:${AUTHOR}:d`,
