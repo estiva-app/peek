@@ -4,6 +4,7 @@ import { resolveObjectAsViewer, topicAddressesAsViewer, topicListsAsViewer } fro
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
+import { fetchMemberOf } from '@/nostr/fileMembers'
 import { useRelayViewer, useResolvedReferences } from './foreign'
 import { hasRelay } from './relayUrl'
 
@@ -44,10 +45,28 @@ interface Held {
   stale: ReadonlySet<string>
   /** Files read again after an Archive or Unarchive in this tab, drawn over the column's first answer. */
   rearchived: ReadonlyMap<string, ForeignObject | null>
+  /**
+   * Topics the membership read has no word on, read over all history: whether
+   * you are a member. Nothing older than its horizon changes, so an answer is
+   * kept for the tab.
+   */
+  past: ReadonlyMap<string, boolean>
+  /** Topics whose past read failed: drawn as the membership read has them, and asked again on the next mount. */
+  pastFailed: ReadonlySet<string>
 }
 
 const FRESH_MS = 60_000
-const EMPTY: Held = { pubkey: undefined, topics: null, topicsAt: 0, failed: false, lists: new Map(), stale: new Set(), rearchived: new Map() }
+const EMPTY: Held = {
+  pubkey: undefined,
+  topics: null,
+  topicsAt: 0,
+  failed: false,
+  lists: new Map(),
+  stale: new Set(),
+  rearchived: new Map(),
+  past: new Map(),
+  pastFailed: new Set(),
+}
 let held: Held = EMPTY
 /** Who the column last read as, so an archive made elsewhere in the tab can be read again for it. */
 let lastViewer: Viewer | null = null
@@ -56,6 +75,7 @@ const rearchiveAsked = new Map<string, number>()
 const listeners = new Set<() => void>()
 let topicsReading = false
 const listsReading = new Set<string>()
+const pastReading = new Set<string>()
 
 function put(next: Held) {
   held = next
@@ -116,6 +136,27 @@ async function readLists(viewer: Viewer, topics: readonly string[]) {
   }
 }
 
+async function readPast(viewer: Viewer, topics: readonly string[]) {
+  const pubkey = viewer.token.pubkey
+  // Per viewer: a read still out for whoever was signed in before must not hold back the next one's.
+  const ask = topics.filter((topic) => !pastReading.has(`${pubkey}:${topic}`))
+  if (!ask.length) return
+  for (const topic of ask) pastReading.add(`${pubkey}:${topic}`)
+  try {
+    const members = await fetchMemberOf({ relayUrl: viewer.relayUrl, accessToken: viewer.token.accessToken, pubkey }, ask)
+    if (!members) throw new Error('the relay did not answer')
+    if (held.pubkey !== pubkey) return
+    const past = new Map(held.past)
+    for (const topic of ask) past.set(topic, members.has(topic))
+    put({ ...held, past })
+  } catch (error) {
+    failedRead(error, 'topic memberships')
+    if (held.pubkey === pubkey) put({ ...held, pastFailed: new Set([...held.pastFailed, ...ask]) })
+  } finally {
+    for (const topic of ask) pastReading.delete(`${pubkey}:${topic}`)
+  }
+}
+
 /**
  * A topic's list changed in this tab — Add file or Remove on its page (TOP-4):
  * the Topics column reads that topic's list again, in the same tab. Another
@@ -148,6 +189,7 @@ export async function fileArchiveChanged(address: string): Promise<void> {
 export function resetTopicsColumn(): void {
   topicsReading = false
   listsReading.clear()
+  pastReading.clear()
   lastViewer = null
   rearchiveAsked.clear()
   put(EMPTY)
@@ -176,6 +218,12 @@ const byTitle = (a: ForeignObject, b: ForeignObject) =>
  * resolve each. A listed file that does not resolve — unreadable, deleted —
  * is not drawn, as the topic's right column does not draw it.
  *
+ * Which topics are yours is judged as the topic's page judges it, over all
+ * history (Miky, 2 Nov, 7525c414): the membership read is bounded by the
+ * horizon the dots are judged over, so a topic it has no word on — joined
+ * long ago, nothing since — is asked about once more, all such topics in one
+ * request. The dots stay on the membership read.
+ *
  * `column(address)` is which rail item a file opened by link belongs to:
  * Topics when it is one of your topics or one of them lists it, else Folders;
  * `undefined` until that is known.
@@ -196,6 +244,7 @@ export function useTopicsColumn(): {
     if (!hasRelay || !v) return
     lastViewer = v
     if (held.pubkey !== v.token.pubkey) put({ ...EMPTY, pubkey: v.token.pubkey })
+    if (held.pastFailed.size) put({ ...held, pastFailed: new Set() })
     if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)
   }, [viewer, pubkey])
 
@@ -218,8 +267,26 @@ export function useTopicsColumn(): {
   const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
   const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
   const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
-  const { isMember } = membership
-  const mine = useMemo(() => live.filter((topic) => isMember(topic.address!)), [live, isMember])
+  const { isMember, judges } = membership
+  const known = membership.state !== 'unknown'
+  const { past, pastFailed } = mineHeld
+  // The topics the membership read has no word on: whether they are yours is read over all history.
+  const unheardKey = useMemo(
+    () => (known ? live.filter((topic) => !judges(topic.address!) && !isMember(topic.address!)).map((topic) => topic.address!) : []).join(','),
+    [known, live, judges, isMember],
+  )
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v || !unheardKey) return
+    const want = unheardKey.split(',').filter((topic) => !past.has(topic) && !pastFailed.has(topic))
+    if (want.length) void readPast(v, want)
+  }, [viewer, unheardKey, past, pastFailed])
+  const pastUnread = !!unheardKey && unheardKey.split(',').every((topic) => !past.has(topic) && !pastFailed.has(topic))
+  const isYours = useCallback(
+    (address: string) => isMember(address) || (!judges(address) && past.get(address) === true),
+    [isMember, judges, past],
+  )
+  const mine = useMemo(() => live.filter((topic) => isYours(topic.address!)), [live, isYours])
   const mineKey = mine.map((topic) => topic.address).join(',')
 
   const { lists, stale } = mineHeld
@@ -236,7 +303,7 @@ export function useTopicsColumn(): {
 
   const state = useMemo<TopicsColumnState>(() => {
     if (mineHeld.failed && mineHeld.topics === null) return { failed: true }
-    if (mineHeld.topics === null || membership.state === 'unknown' || !topicsResolved) return 'loading'
+    if (mineHeld.topics === null || !known || !topicsResolved || pastUnread) return 'loading'
     /*
       Loading only until the first answer: after it, a topic just joined is
       drawn at once and its files arrive under it, and a list read again keeps
@@ -252,10 +319,10 @@ export function useTopicsColumn(): {
         })
         return { topic, files: listedFiles.filter((file) => !isArchived(file)), archivedFiles: listedFiles.filter((file) => isArchived(file)) }
       }),
-      others: live.filter((topic) => !isMember(topic.address!)),
+      others: live.filter((topic) => !isYours(topic.address!)),
       archived,
     }
-  }, [mineHeld.failed, mineHeld.topics, membership.state, topicsResolved, mine, lists, listed, fileObjects, objectOf, live, archived, isMember])
+  }, [mineHeld.failed, mineHeld.topics, known, topicsResolved, pastUnread, mine, lists, listed, fileObjects, objectOf, live, archived, isYours])
 
   // Unknown while loading; a failed read cannot say, and Folders draws every file.
   const yours = useMemo(

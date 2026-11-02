@@ -42,6 +42,13 @@ export interface MembershipSeam {
   me: string | undefined
   /** Whether the viewer is a member of a file. For a control; a gate reads `termsOf`. */
   isMember: (key: string) => boolean
+  /**
+   * Whether the read has a word on the viewer in this file: an event naming
+   * them within the horizon, or the file is theirs. Without one, `isMember` is
+   * false even for a file joined before the horizon; the Topics screen reads
+   * those over all history (7525c414).
+   */
+  judges: (key: string) => boolean
   termsOf: (key: string) => StreamTerms
   /** Whether a message's content names the viewer: it counts through a mute (§11.8). */
   isMentioned: (messageId: string) => boolean
@@ -62,6 +69,7 @@ const INERT: MembershipSeam = {
   state: 'unknown',
   me: undefined,
   isMember: () => false,
+  judges: () => false,
   termsOf: () => NOT_A_MEMBER,
   isMentioned: () => false,
   isUrgent: () => false,
@@ -104,6 +112,7 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
     },
     [sync.files, sync.muted, sync.floor, me],
   )
+  const judges = useCallback((key: string) => sync.files.has(key) || (!!me && authorOfAddress(key) === me), [sync.files, me])
   const isMentioned = useCallback((id: string) => sync.mentioned.has(id), [sync.mentioned])
   const isUrgent = useCallback((id: string) => sync.urgent.has(id), [sync.urgent])
   const memberFiles = useMemo(
@@ -120,6 +129,7 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       state: sync.state,
       me,
       isMember: (key) => termsOf(key).member,
+      judges,
       termsOf,
       isMentioned,
       isUrgent,
@@ -127,7 +137,7 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       setMember: sync.setMember,
       refresh: sync.refresh,
     }),
-    [sync.state, sync.setMember, sync.refresh, me, termsOf, isMentioned, isUrgent, memberFiles],
+    [sync.state, sync.setMember, sync.refresh, me, termsOf, judges, isMentioned, isUrgent, memberFiles],
   )
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>
 }
