@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { followingOf, teamMembersOf, unreadOnPlace, type Following, type TeamMember, type TeamsList } from '@estiva-app/conversation'
-import { topLevelFolders, type FolderSummary } from '@estiva-app/interop'
+import { topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { heldToken } from '@/auth/heldSession'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { listedOf, readTeamsAsViewer, type TeamsRead } from '@/nostr/teams'
+import { listedByTopicsAsViewer, listedOf, readTeamsAsViewer, type TeamsRead } from '@/nostr/teams'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
-import { useFolders } from './useFolderContents'
+import { useFolderContents, useFolders } from './useFolderContents'
 
 /** One team, as Peek's Teams draws it (TEA-5). */
 export interface Team {
@@ -120,7 +120,10 @@ export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): 
  * spaces and whether the viewer follows it. `null` while the first read is
  * in flight or signed out; `failed` when it could not be read at all.
  */
-export function useTeams(): { teams: Team[] | null; failed: boolean; reload: () => Promise<void> } {
+export function useTeams({ read = true }: {
+  /** Off: only what this tab already holds, never a read of its own — for a row or a dialog deciding what to offer. */
+  read?: boolean
+} = {}): { teams: Team[] | null; failed: boolean; reload: () => Promise<void> } {
   const { folders } = useFolders()
   const viewer = heldToken()?.pubkey
   const folderList = useMemo(() => (folders ? teamFolders(folders) : null), [folders])
@@ -129,9 +132,9 @@ export function useTeams(): { teams: Team[] | null; failed: boolean; reload: () 
   const state = useSyncExternalStore(subscribe, snapshot, snapshot)
 
   useEffect(() => {
-    if (!key) return
+    if (!key || !read) return
     if (held.key !== key || Date.now() - held.at > FRESH_MS) void load(key, ids)
-  }, [key, ids])
+  }, [key, ids, read])
 
   const reload = useCallback(async () => {
     if (!key) return
@@ -147,6 +150,58 @@ export function useTeams(): { teams: Team[] | null; failed: boolean; reload: () 
 
   return { teams, failed: state.key === key && state.failed, reload }
 }
+
+/** The team that marks this file one of its spaces, from what this tab holds; `undefined` when none does, or none is held. */
+export function spaceTeamOf(teams: readonly Team[] | null, address: string | undefined): Team | undefined {
+  if (!teams || !address) return undefined
+  return teams.find((team) => team.listed.some((entry) => entry.space && entry.address === address))
+}
+
+/**
+ * Whether Move may be offered on a file: a space moves only by a member of its
+ * team (SPEC §3.3; the relay refuses anyone else). Read from what the tab
+ * holds: with nothing held it is offered, and a refusal says why.
+ */
+export function useMayMove(address: string | undefined): boolean {
+  const { teams } = useTeams({ read: false })
+  const team = spaceTeamOf(teams, address)
+  return !team || team.isMember
+}
+
+/**
+ * What a team holds outside any topic (Decided, 3 November: "Files" on its
+ * page): the first level of its list, less its topics and every file some
+ * topic lists. Its listing is the Folder's own read; the topics' entries are
+ * one more. `null` while either is read; `failed` when one could not be.
+ */
+export function useTeamFiles(team: string | null | undefined): { files: ForeignObject[] | null; failed: boolean } {
+  const { state } = useFolderContents(team)
+  const candidates = useMemo(
+    () =>
+      typeof state === 'object' && 'files' in state
+        ? state.files.filter((file) => !file.archived && file.address && Number(file.address.split(':')[0]) !== KIND_BARE_FILE)
+        : null,
+    [state],
+  )
+  const [listed, setListed] = useState<{ of: readonly ForeignObject[]; ids: Set<string> } | 'failed' | null>(null)
+  useEffect(() => {
+    const token = heldToken()
+    if (!candidates || !RELAY_URL || !token) return
+    let cancelled = false
+    listedByTopicsAsViewer(candidates.map((file) => dOf(file.address!)), RELAY_URL, token)
+      .then((ids) => !cancelled && setListed({ of: candidates, ids }))
+      .catch(() => !cancelled && setListed('failed'))
+    return () => {
+      cancelled = true
+    }
+  }, [candidates])
+  const failed = (typeof state === 'object' && 'failed' in state) || listed === 'failed'
+  const files = candidates && listed && listed !== 'failed' && listed.of === candidates ? candidates.filter((file) => !listed.ids.has(dOf(file.address!))) : null
+  return { files, failed }
+}
+
+const KIND_BARE_FILE = 30840
+const dOf = (address: string) => address.split(':').slice(2).join(':')
 
 /** A stream message as the shared rule reads one: a reply names its root, as NIP-10's marked `e` does. */
 const asPlaceMessage = (message: StreamMessage) => ({

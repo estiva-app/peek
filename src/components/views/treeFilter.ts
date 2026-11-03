@@ -46,9 +46,8 @@ export type TreeView = 'mine' | 'all' | 'archive'
 
 /** The title menu's rows, in order: each view's name is the column's title. */
 export const TREE_VIEWS: { value: TreeView; label: string }[] = [
-  // "Joined", no longer "Topics", since the rail's Topics is the new screen beside it (TOP-4).
-  { value: 'mine', label: 'Joined' },
-  { value: 'all', label: 'Folders' },
+  // Teams (TEA-5): what was Folders. "Joined" went with it: the rail's Topics is what you joined (TOP-4).
+  { value: 'all', label: 'Teams' },
   { value: 'archive', label: 'Archive' },
 ]
 

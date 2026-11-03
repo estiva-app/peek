@@ -995,6 +995,8 @@ export async function moveFileAsViewer(
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
+  /** The mover ticked "Keep it a space in <team>" (TEA-5): the target's entry carries the `space` role. */
+  keepSpace = false,
 ): Promise<MoveOutcome> {
   const lists = (folder: FolderRef) => {
     const listing = listings.get(folder.id) ?? []
@@ -1008,7 +1010,7 @@ export async function moveFileAsViewer(
   // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
   if (file.parentKind !== undefined && !sources.length) return { ok: true }
   // Interop's planner, the one Ship and the agent move by: one move per source, each changing both lists or neither.
-  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from: sources, to, listings })
+  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from: sources, to, listings, ...(keepSpace ? { keepSpace } : {}) })
   if (!plan.ok) {
     return {
       ok: false,

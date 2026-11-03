@@ -15,7 +15,7 @@
  */
 import { buildAddMember, buildJoinGroup, buildLeaveGroup, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { buildTeamsEvent, parseTeamsBlob, serializeTeamsBlob, teamsFilter, type TeamsList } from '@estiva-app/conversation'
-import { KIND_FOLDER_STATE, planMarkSpace, type QueryFn } from '@estiva-app/interop'
+import { KIND_FOLDER_STATE, listEntries, planMarkSpace, type QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { decryptBlob, encryptBlob } from './appData'
@@ -26,6 +26,10 @@ export const KIND_ROSTER = 39002
 
 /** The stored commands a member's start is read from: put, remove, join, leave, and the team's creation. */
 const ROSTER_COMMANDS = [KIND.NIP29_PUT_USER, KIND.NIP29_REMOVE_USER, KIND.NIP29_JOIN, KIND.NIP29_LEAVE, KIND.NIP29_CREATE_GROUP]
+
+/** A topic (§6.14), and a change to a file (its list entries among them). */
+const KIND_BARE_FILE = 30840
+const KIND_CHANGE = 1851
 
 /** Buzz's ceiling per filter; a team's commands over its whole life stay far below it (54 across 13 teams, 3 Nov). */
 const COMMANDS_LIMIT = 1_000
@@ -157,6 +161,23 @@ export async function followTeamAsViewer(team: string, follow: boolean, relayUrl
   if (!next) return { ok: true }
   const ciphertext = await encryptBlob(serializeTeamsBlob(next, now), token.accessToken)
   return publish(buildTeamsEvent(token.pubkey, now, ciphertext), relayUrl, token, follow ? 'You don’t follow it yet.' : 'You still follow it.')
+}
+
+/**
+ * Which of these files some topic lists (§6.14), by id — the `d` a topic's
+ * `lists:<d>` names: one read of every entry naming them, folded to the
+ * newest per topic and file. What is left is what a team holds outside any
+ * topic, drawn on its page as Files (Decided, 3 November).
+ */
+export async function listedByTopics(fileIds: readonly string[], query: QueryFn): Promise<Set<string>> {
+  if (fileIds.length === 0) return new Set()
+  const events = await query([{ kinds: [KIND_CHANGE], '#o': [...fileIds], limit: COMMANDS_LIMIT }])
+  return new Set(listEntries(events).filter((entry) => entry.listed && entry.list.startsWith(`${KIND_BARE_FILE}:`)).map((entry) => entry.file))
+}
+
+/** {@link listedByTopics} as the viewer. */
+export function listedByTopicsAsViewer(fileIds: readonly string[], relayUrl: string, token: StoredToken): Promise<Set<string>> {
+  return listedByTopics(fileIds, viewerQuery(relayUrl, token))
 }
 
 /** {@link readTeams} as the viewer. */

@@ -3,11 +3,13 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconTrash } from '@tabler/icons-react'
-import { EmptyState, IconButton, Panel, ArchivedNotice } from '@estiva-app/ui'
+import { EmptyState, IconButton, Panel, ArchivedNotice, SkeletonList } from '@estiva-app/ui'
+import { TeamPage } from '@/components/views/TeamPage'
+import { TeamChat } from '@/components/views/TeamChat'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import { FileTreeView } from '@/components/views/FileTreeView'
-import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useTeams, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { kindNoun } from '@/lib/archiveWords'
 import { useFileControls } from '@/components/views/useFileControls'
@@ -35,7 +37,7 @@ import { formatDateLabel } from '@/api'
  * topic's channel opens its file, and an archived Folder shows its notice
  * (FOL-46), where its owners and admins can unarchive it.
  */
-export function FoldersPage() {
+export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
   const { folders, failed: foldersFailed, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -102,6 +104,9 @@ export function FoldersPage() {
   }, [id, topic, dmForChannel, navigate])
 
   const selected = folders?.find((folder) => folder.id === id)
+  // A Folder with state is a team (TEA-5): its link opens the team's page, an archived one under its notice.
+  const { teams, failed: teamsFailed } = useTeams()
+  const team = teams?.find((candidate) => candidate.id === id)
   // "Not a DM" is not "a Folder" (PEE-42): a Folder is one the relay lists to this viewer.
   const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder && !!selected
   // Said only on an answer: a listing that failed is empty without meaning it.
@@ -150,7 +155,7 @@ export function FoldersPage() {
   const findingProject = stateless && !!selected?.listedIn?.length && !(projectCheck?.id === id)
   // As its heading says; "Folders" with none open, and nothing until the relay has said it is a Folder — nor while a
   // project's record channel is on its way to the project, whose channel name is a machine id.
-  useTabTitle(isFolder && !findingProject ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Folders')
+  useTabTitle(isFolder && !findingProject ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Teams')
 
   const { state } = useFolderContents(stateless ? id : null)
   const contentsCount = typeof state === 'object' && 'files' in state ? state.files.length : undefined
@@ -211,10 +216,22 @@ export function FoldersPage() {
     <>
       <FoldersPageView
         banner={folderNotice}
-        nav={<FolderTree currentFolder={id} showFolder={!!id} onControl={fileControls.open} />}
+        nav={<FolderTree currentFolder={id} showFolder={!!id} chatOpen={chat} onControl={fileControls.open} />}
         rightPanel={
           findingProject ? (
             <EmptyState message="Opening…" />
+          ) : isFolder && selected && !stateless ? (
+            team && chat && team.isMember ? (
+              <TeamChat team={team} onOpenTeam={() => navigate(`/app/folders/${team.id}`)} />
+            ) : team && chat ? (
+              <EmptyState message={`Join ${team.name} to read its chat.`} />
+            ) : team ? (
+              <TeamPage team={team} folder={selected} folders={folders} viewer={me} reloadFolders={reload} onControl={fileControls.open} />
+            ) : teamsFailed ? (
+              <EmptyState message="This team could not be read." />
+            ) : (
+              <SkeletonList />
+            )
           ) : stateless && selected ? (
             <Panel
               title={selected.name ?? 'Untitled folder'}

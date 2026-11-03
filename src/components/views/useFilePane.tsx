@@ -7,7 +7,7 @@ import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
-import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
+import { useFileMembers, useMayMove, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
@@ -55,6 +55,9 @@ export function useFilePane(
     where it is — the person was not looking at it.
   */
   const controls = fileControlsOf(file)
+  // A space moves only by a member of its team (TEA-5, SPEC §3.3).
+  const mayMove = useMayMove(file?.address ?? undefined)
+  const moves = canMove(file) && mayMove
   // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
@@ -256,7 +259,7 @@ export function useFilePane(
                   a Ship issue's header has nothing to put here, and a button
                   that opens nothing would say otherwise.
                 */}
-                {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
+                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork) && (
                   <TopicMoreMenu
                     trigger={
                       <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -271,7 +274,7 @@ export function useFilePane(
                     onToggleOpenWork={toggleOpenWork}
                     onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
                     onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
-                    onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
+                    onMove={moves && file && !readOnly ? () => fileControls.open('move', file) : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                   />
                 )}

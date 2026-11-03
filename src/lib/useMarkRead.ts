@@ -77,6 +77,12 @@ export function useMarkDmRead(dmId: string | null, newestAt: number | undefined,
   useDwell(dmId, newestAt, markContainerRead, dwellMs)
 }
 
+/** Mark an open team chat read up to its newest top-level message, as a DM is (TEA-5). */
+export function useMarkChannelRead(channelUuid: string | null, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
+  const { markChannelRead } = useReadActions()
+  useDwell(channelUuid, newestAt, markChannelRead, dwellMs)
+}
+
 /**
  * Mark a file's conversation read up to its newest top-level comment — FOL-16.
  *

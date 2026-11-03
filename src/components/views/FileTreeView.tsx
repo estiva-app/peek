@@ -3,7 +3,7 @@ import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } fro
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { rememberFileAddress, useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
+import { rememberFileAddress, useConversationBadges, useForeignChildren, useMayMove, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
@@ -290,6 +290,7 @@ export function TreeRow({
   nested = false,
   remember = false,
   under,
+  space,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -311,6 +312,8 @@ export function TreeRow({
    * closes it, and kept on this browser apart from the Folder tree's.
    */
   under?: ReactNode
+  /** Make it one of its team's spaces, or not (TEA-5): the Teams column passes it to a member of the topic's team. */
+  space?: { action: 'mark' | 'unmark'; onToggle: () => void }
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -350,7 +353,9 @@ export function TreeRow({
   const controls = onControl ? fileControlsOf(file) : {}
   const renames = !readOnly && !!controls.rename
   const inside = !!onControl && !readOnly && canStartInside(file)
-  const moves = !!onControl && !readOnly && canMove(file)
+  // A space moves only by a member of its team (TEA-5, SPEC §3.3).
+  const mayMove = useMayMove(file.address)
+  const moves = !!onControl && !readOnly && canMove(file) && mayMove
   // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
   const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
@@ -378,7 +383,7 @@ export function TreeRow({
   */
   const archivedNow = file.archived
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
-  const hasMenu = offers || renames || inside || moves || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
+  const hasMenu = offers || renames || inside || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -420,6 +425,8 @@ export function TreeRow({
             onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
             archiveAction={archiveAction}
             onToggleArchive={archiveAction ? () => onControl?.(archiveAction, file) : undefined}
+            spaceAction={readOnly ? undefined : space?.action}
+            onToggleSpace={space?.onToggle}
           />
         ) : undefined
       }

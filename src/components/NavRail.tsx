@@ -40,15 +40,16 @@ export function NavRail() {
     },
     {
       /*
-        What "Topics" was until TOP-4, as it was: every file you joined, by
-        Folder, and every Folder (Miky, 30 October: "Folders" until the Teams
-        stage). The prototype's Teams icon, which it stands in for. The memory
-        is the open file's, never a Folder's: a remembered Folder would be a
-        guess about which of several containers somebody meant.
+        Teams (TEA-5): the teams you are in, the ones you follow and the rest,
+        each with its chat, spaces and the topics it leads. "Folders" until
+        the Teams stage (Miky, 30 October); the route stays, so every link to
+        a Folder opens its team. The memory is the open file's, never a
+        team's: a remembered team would be a guess about which one somebody
+        meant.
       */
       to: foldersPath ?? '/app/folders',
       icon: <IconUsers size={16} stroke={1.5} />,
-      label: 'Folders',
+      label: 'Teams',
       active: isAt(pathname, '/app/folders') || fileIn('folders'),
     },
     {

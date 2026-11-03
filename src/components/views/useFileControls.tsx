@@ -3,7 +3,7 @@ import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject } from '@/api'
+import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject, useTeams } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
@@ -157,6 +157,8 @@ export function useFileControls({
 } {
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
+  // Which team marks a file a space, and which teams the person is in: what this tab holds, no read of its own (TEA-5).
+  const { teams } = useTeams({ read: false })
   // The Desk's Open work draws this tab's held copy of a file: asked again after a rename or a summary change, its row shows it.
   const reloadHeld = useReloadHeldObject()
   const { showToast } = useToast()
@@ -410,7 +412,8 @@ export function useFileControls({
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string; why?: string; stillIn?: string[] }>
     const relist: Step | undefined = changesFolder
       ? async () => {
-          const result = await moveFile(file, state.sources, target)
+          // "Keep it a space in <team>" — answered only when the dialog asked it (TEA-5).
+          const result = await moveFile(file, state.sources, target, choice.checked === true)
           if (result.ok || !('landed' in result)) return result
           // It did arrive, so the move goes on.
           refuse(partly(result.stillIn, result.why))
@@ -447,6 +450,25 @@ export function useFileControls({
     }
     onMoved?.(file)
     return true
+  }
+
+  /*
+    A space's mark does not travel by itself (SPEC §3.3): moving one of a
+    team's spaces asks "Keep it a space in <team>", ticked, and only where the
+    mover may mark one — a member of the team it goes to. A topic that was not
+    a space is not asked.
+  */
+  const keepSpaceCheck = (state: MoveState) => {
+    const source = teams?.find((team) => team.id === state.from)
+    const wasSpace = !!source?.listed.some((entry) => entry.space && entry.address === state.file.address)
+    if (!wasSpace) return undefined
+    return {
+      label: (folder: string) => {
+        const team = teams?.find((candidate) => candidate.id === folder)
+        return team?.isMember ? `Keep it a space in ${team.name}` : undefined
+      },
+      checked: true,
+    }
   }
 
   const targetsIn = async (state: MoveState, folder: string): Promise<MoveTarget[]> =>
@@ -580,6 +602,7 @@ export function useFileControls({
         placesIn={dialog.nests ? async (folder) => (await targetsIn(dialog, folder)).map(placeOf) : undefined}
         startAtTop={dialog.file.parentKind === undefined}
         topLabel={dialog.file.parentKind === undefined ? undefined : 'None — under none of these'}
+        check={keepSpaceCheck(dialog)}
         onMove={(choice) => move(dialog, choice)}
         onClose={() => setDialog(null)}
       />

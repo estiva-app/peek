@@ -16,6 +16,7 @@ import {
 import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
+import { TeamsColumn } from '@/components/views/TeamsColumn'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
@@ -98,7 +99,10 @@ export function FolderTree({
   expandSelected = false,
   onControl,
   currentContents,
+  chatOpen = false,
 }: {
+  /** The open page is `currentFolder`'s team chat (TEA-5): its row is current. */
+  chatOpen?: boolean
   /** The Folder holding the open page. Its section starts open. */
   currentFolder?: string | null
   /**
@@ -268,6 +272,15 @@ export function FolderTree({
         onNewFolder={() => setMaking('folder')}
         onNewTopic={() => setMaking('topic')}
       >
+        {view === 'all' ? (
+          <TeamsColumn
+            show={show}
+            selectedRef={selectedRef}
+            openTeam={section}
+            chatOpen={chatOpen}
+            onControl={onControl}
+          />
+        ) : (
         <FolderTreeView
           folders={view === 'archive' ? archiveLevel : topLevel}
           signedOut={signedOut}
@@ -287,6 +300,7 @@ export function FolderTree({
           onControl={onControl}
           currentContents={section === currentFolder ? currentContents : undefined}
         />
+        )}
       </FolderColumn>
       {/* Mounted only while open: the writes, and the toasts that report them, are theirs. */}
       {action && (
@@ -411,27 +425,20 @@ function useView(
   return { view: visit ?? saved, saved, choose, follow: setVisit }
 }
 
-/** The view, remembered in this browser; Topics until the person chooses. */
+/**
+ * The view the column opens on: Teams, always, since Joined went (TEA-5). A
+ * `mine` an older Peek saved in this browser is forgotten, not obeyed.
+ */
 function useRememberedView(): [TreeView, (next: TreeView) => void] {
-  const [view, setState] = useState<TreeView>(() => {
+  const [view, setState] = useState<TreeView>('all')
+  useEffect(() => {
     try {
-      return window.localStorage.getItem(VIEW_KEY) === 'all' ? 'all' : 'mine'
+      window.localStorage.removeItem(VIEW_KEY)
     } catch {
-      return 'mine'
+      // A browser that blocks storage had nothing saved either.
     }
-  })
-  const setView = useMemo(
-    () => (next: TreeView) => {
-      setState(next)
-      try {
-        window.localStorage.setItem(VIEW_KEY, next)
-      } catch {
-        // A browser that blocks storage still switches; it forgets.
-      }
-    },
-    [],
-  )
-  return [view, setView]
+  }, [])
+  return [view, setState]
 }
 
 /**
