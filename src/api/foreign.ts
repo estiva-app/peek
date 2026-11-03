@@ -38,6 +38,7 @@ import {
   deleteFolderAsViewer,
   folderDeletableAsViewer,
   moveFileAsViewer,
+  type MoveOutcome,
   renameFileAsViewer,
   renameFolderAsViewer,
   resolveFolderContentsAsViewer,
@@ -741,14 +742,14 @@ export function useForeignObjects() {
 
   /**
    * Move a file out of every Folder in `from` — the ones that list it now —
-   * into `to`, adding to the target first. Each side's `hasState` comes from a
-   * read: a move into or out of a Folder with no state is refused, because
-   * either command would empty it (FOL-10). What each source lists beneath
-   * `file` moves with it, archived files included, so each source is read
-   * again here, at the move (FOL-45, SHI-37, SPEC §3.3).
+   * into `to`: one move from each, which changes both lists or neither. Each
+   * side's `hasState` comes from a read: a move into or out of a Folder with no
+   * state is refused, because the command would empty it (FOL-10). What each
+   * source lists beneath `file` moves with it, archived files included, so each
+   * source is read again here, at the move (FOL-45, SHI-37, SPEC §3.3).
    */
   const moveFile = useCallback(
-    async (file: MovableFile, from: readonly FolderRef[], to: FolderRef) => {
+    async (file: MovableFile & { parentKind?: number }, from: readonly FolderRef[], to: FolderRef): Promise<MoveOutcome> => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
       // Every source, a Folder with no state too: it lists the file by containment, and the planner

@@ -42,8 +42,10 @@ import {
   referenceToPointer,
   type AddressPointer,
   type UnsignedEvent,
+  RELAY_BUSY_MESSAGE,
   toRenderTree,
 } from '@estiva-app/protocol'
+import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 import {
   ARCHIVED_FIELD,
   SUMMARY_FIELD,
@@ -795,10 +797,21 @@ async function publishInOrder(
   events: UnsignedEvent[],
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; index: number; reason?: string }> {
+  /**
+   * Answer a throw from signing or the network as `failed` with its `index`, as
+   * a refusal is answered, rather than throwing: an earlier event may have landed.
+   */
+  { caught = false }: { caught?: boolean } = {},
+): Promise<{ ok: true } | { ok: false; index: number; reason?: string; failed?: unknown }> {
   for (const [index, unsigned] of events.entries()) {
-    const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-    const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    let result: Awaited<ReturnType<typeof publishSigned>>
+    try {
+      const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+      result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    } catch (error) {
+      if (!caught) throw error
+      return { ok: false, index, failed: error }
+    }
     // Never the status code: the relay refuses as 200 with `accepted: false`.
     if (!result.ok) return { ok: false, index, ...(result.reason ? { reason: result.reason } : {}) }
   }
@@ -967,9 +980,14 @@ export function deleteRefusalWords(reason: string | undefined): string {
  *
  * **Refused into a private Folder** when a moved file lives in another channel:
  * a listing never changes who can read a file (§3.1).
+ *
+ * **A file no Folder lists is placed**, by the planner: an `add` to the target,
+ * and for a topic only when the target is its home — the team it was started
+ * in, or the company's Folder (§3.3). A Folder in `from` that lists none of it
+ * is left out, because the relay refuses a move from it.
  */
 export async function moveFileAsViewer(
-  file: MovableFile,
+  file: MovableFile & { parentKind?: number },
   /** Each source's files (`FolderContents.files`, archived included), by Folder id. */
   listings: ReadonlyMap<string, readonly MovableFile[]>,
   /** Every Folder that lists it now, each with `hasState` and `addresses` from a read. */
@@ -977,8 +995,7 @@ export async function moveFileAsViewer(
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string } | { ok: false; reason?: string; stillIn: string[] }> {
-  // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
+): Promise<MoveOutcome> {
   const lists = (folder: FolderRef) => {
     const listing = listings.get(folder.id) ?? []
     return (
@@ -987,9 +1004,11 @@ export async function moveFileAsViewer(
       listedBeneath(listing, file).length > 0
     )
   }
-  if (!from.some(lists)) return { ok: true }
+  const sources = from.filter(lists)
+  // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
+  if (file.parentKind !== undefined && !sources.length) return { ok: true }
   // Interop's planner, the one Ship and the agent move by: one move per source, each changing both lists or neither.
-  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from, to, listings })
+  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from: sources, to, listings })
   if (!plan.ok) {
     return {
       ok: false,
@@ -1003,21 +1022,47 @@ export async function moveFileAsViewer(
               : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  const published = await publishInOrder(plan.events, relayUrl, token)
+  const published = await publishInOrder(plan.events, relayUrl, token, { caught: true })
   if (published.ok) return { ok: true }
-  // Peek's own words for why, never the relay's text (TEA-3).
+  // Peek's own words for why, never the relay's text (TEA-3); Peek's own failure, signing or reaching the relay, as itself.
   const refusal = readMoveRefusal(plan.events, published.index, published.reason)
   const why =
-    refusal.why === 'team-archived'
-      ? 'one of the Folders is archived.'
-      : refusal.why === 'not-a-member'
-        ? 'you need to be a member of both Folders to move this.'
-        : refusal.why === 'changed-meanwhile'
-          ? 'the Folders changed since you opened this. Try again.'
-          : undefined
-  if (refusal.nothingMoved) return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.' }
-  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with the reason.
-  return { ok: false, reason: why, stillIn: refusal.notMovedFrom }
+    'failed' in published
+      ? ownFailureWords(published.failed)
+      : published.reason === RELAY_BUSY_MESSAGE
+        ? 'the relay is busy. Try again in a moment.'
+        : refusal.why === 'team-archived'
+          ? 'one of the Folders is archived.'
+          : refusal.why === 'not-a-member'
+            ? 'you need to be a member of both Folders to move this.'
+            : refusal.why === 'changed-meanwhile'
+              ? 'the Folders changed since you opened this. Try again.'
+              : undefined
+  if (refusal.nothingMoved) {
+    const stillIn = plan.events.flatMap((event) => event.tags.filter((tag) => tag[0] === 'from').map((tag) => tag[1]!))
+    return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.', why, stillIn }
+  }
+  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with why.
+  return { ok: false, landed: true, why, stillIn: refusal.notMovedFrom }
+}
+
+/**
+ * What `moveFileAsViewer` answers. Refused before anything was sent: `reason`
+ * alone, the whole sentence. Sent and refused, or failed on the way: `why` in
+ * Peek's words (none when there is none to give) and `stillIn`, the Folders
+ * that still list the file besides the target — with `reason` when nothing
+ * moved, and `landed` when an earlier move did arrive.
+ */
+export type MoveOutcome =
+  | { ok: true }
+  | { ok: false; reason: string; why?: string; stillIn?: string[] }
+  | { ok: false; landed: true; reason?: undefined; why?: string; stillIn: string[] }
+
+/** Peek's own failure on the way to the relay, in a person's words: the sign-in, Estiva ID, or the network. */
+function ownFailureWords(error: unknown): string {
+  if (error instanceof SignerTokenExpired) return 'your sign-in has ended. Sign in again.'
+  if (error instanceof SignRefused) return 'Estiva ID would not sign it.'
+  return 'the relay could not be reached. Try again.'
 }
 
 /**

@@ -41,6 +41,29 @@ interface MoveState {
   targets?: MoveTarget[]
 }
 
+/** The Move dialog on `file`, from a read of where it is: its team's contents and every Folder. */
+function moveStateOf(
+  file: ForeignObject,
+  { contents, folders, team }: { contents: { name?: string; hasState: boolean; files: ForeignObject[] }; folders: FolderSummary[]; team: string },
+): MoveState {
+  const here = contents.files.find((candidate) => candidate.ref === file.ref) ?? file
+  const nests = !!fileControlsOf(here).move
+  return {
+    kind: 'move',
+    file: here,
+    from: team,
+    sources: [
+      { id: team, name: contents.name ?? 'Untitled Folder', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
+      ...folders
+        .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
+        .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled Folder', hasState: true, addresses: folder.addresses ?? [] })),
+    ],
+    teams: topLevelFolders(folders),
+    nests,
+    targets: nests ? moveTargetsIn(contents.files, here, { sameFolder: true }) : undefined,
+  }
+}
+
 /**
  * The dialogs behind a file's more-menu, wherever the menu is (FOL-33).
  *
@@ -81,8 +104,8 @@ interface MoveState {
  * ## Move is one dialog, and the order of its writes is per kind (FOL-45)
  *
  * The Folder, then what it goes under there (`MoveDialog`). A topic or a
- * project changes Folder by its listing — `kind:1852` add to the new one, then
- * remove from each Folder that lists it, carrying everything listed under it,
+ * project changes Folder by its listing — one `kind:1852` move from each Folder
+ * that lists it into the new one, carrying everything listed under it,
  * archived or not, through interop's `planMoveFromFolders` — and a topic then
  * takes its new parent, the manifest's move action. An issue is listed by no
  * Folder: it changes Folder by changing project (Ship's `move-issue`), so the
@@ -204,6 +227,8 @@ export function useFileControls({
     [refuse, showToast],
   )
 
+  // Undo calls back into the same function, through a ref: it is still being defined.
+  const setArchivedRef = useRef<(file: ForeignObject, archived: boolean) => Promise<boolean>>(async () => false)
   const setArchived = useCallback(
     async (file: ForeignObject, archived: boolean, resolution?: string): Promise<boolean> => {
       const action = fileControlsOf(file).archive
@@ -242,11 +267,35 @@ export function useFileControls({
     },
     [archiveFile, refuse, showToast],
   )
-  // Undo calls back into the same function, through a ref: it is still being defined.
-  const setArchivedRef = useRef(setArchived)
   useEffect(() => {
     setArchivedRef.current = setArchived
   })
+
+  /*
+    The team is the top-level Folder that lists the file (SPEC §6.7), never
+    assumed from its `h`: it is where a topic started inside is listed. A Ship
+    project's Folder is its own record channel, listed under the team that holds
+    the project (`listedIn`, interop 0.28): a topic listed there went where
+    neither the team's tree nor Ship's Related lists it (FOL-4, on "Conversation
+    standard"). And a topic moved to another Folder keeps the `h` it was filed
+    with (FOL-45). The new topic is stored in the parent's own Folder all the same.
+  */
+  const readPlace = useCallback(
+    async (file: ForeignObject, ownFolder: string) => {
+      // The file's own Folder is read beside the listing, not after it: it is
+      // the current one unless the file was moved, so one round trip usually does.
+      // One load (APP-2): the three ask for each file's changes once between them.
+      const read = folderLoad()
+      const own = resolveFolderContents(ownFolder, undefined, read)
+      own.catch(() => {})
+      const folders = (await listFolders(read)) ?? []
+      const team = currentFolderOf(file, folders, topLevelFolders(folders))
+      if (!team) throw new Error('no team')
+      const contents = await (team === ownFolder ? own : resolveFolderContents(team, undefined, read))
+      return { contents, folders, team }
+    },
+    [resolveFolderContents, listFolders],
+  )
 
   const open = useCallback(
     (control: FileControl, file: ForeignObject) => {
@@ -303,59 +352,41 @@ export function useFileControls({
         return refuse('This file is in no Folder Peek can read, so nothing can be put inside it from here.')
       }
       void (async () => {
-        let contents: Awaited<ReturnType<typeof resolveFolderContents>>
-        let folders: FolderSummary[]
-        let team: string | undefined
+        let place: Awaited<ReturnType<typeof readPlace>>
         try {
-          /*
-            The team is the top-level Folder that lists the file (SPEC §6.7),
-            never assumed from its `h`: it is where a topic started inside is
-            listed. A Ship project's Folder is its own record channel, listed
-            under the team that holds the project (`listedIn`, interop 0.28):
-            a topic listed there went where neither the team's tree nor Ship's
-            Related lists it (FOL-4, on "Conversation standard"). And a topic
-            moved to another Folder keeps the `h` it was filed with (FOL-45).
-            The new topic is stored in the parent's own Folder all the same.
-          */
-          // The file's own Folder is read beside the listing, not after it: it is
-          // the current one unless the file was moved, so one round trip usually does.
-          // One load (APP-2): the three ask for each file's changes once between them.
-          const read = folderLoad()
-          const own = resolveFolderContents(ownFolder, undefined, read)
-          own.catch(() => {})
-          folders = (await listFolders(read)) ?? []
-          team = currentFolderOf(file, folders, topLevelFolders(folders))
-          if (!team) throw new Error('no team')
-          contents = await (team === ownFolder ? own : resolveFolderContents(team, undefined, read))
+          place = await readPlace(file, ownFolder)
         } catch {
           refuse('The Folder could not be read. Try again.')
           return
         }
+        const { contents, team } = place
         const teamName = contents.name ?? 'this Folder'
         if (control === 'inside') {
           setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
           return
         }
-        const here = contents.files.find((candidate) => candidate.ref === file.ref) ?? file
-        const nests = !!fileControlsOf(here).move
-        setDialog({
-          kind: 'move',
-          file: here,
-          from: team,
-          sources: [
-            { id: team, name: contents.name ?? 'Untitled Folder', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
-            ...folders
-              .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
-              .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled Folder', hasState: true, addresses: folder.addresses ?? [] })),
-          ],
-          teams: topLevelFolders(folders),
-          nests,
-          targets: nests ? moveTargetsIn(contents.files, here, { sameFolder: true }) : undefined,
-        })
+        setDialog(moveStateOf(file, place))
       })()
     },
-    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived, showToast],
+    [refuse, readPlace, archiveImpact, setArchived, showToast],
   )
+
+  /*
+    After a move the relay refused with nothing moved: where the file is is
+    read again, so Move pressed again asks with what the Folders list now — a
+    "the Folders changed" refusal says Try again, and a retry on the read the
+    dialog opened on would be refused the same way.
+  */
+  const reread = async (state: MoveState) => {
+    const ownFolder = state.file.folder
+    if (!ownFolder) return
+    try {
+      const fresh = moveStateOf(state.file, await readPlace(state.file, ownFolder))
+      setDialog((current) => (current?.kind === 'move' && current.file.ref === state.file.ref ? fresh : current))
+    } catch {
+      // The refusal is already said; Move pressed again asks with the read it has.
+    }
+  }
 
   const move = async (state: MoveState, choice: MoveChoice): Promise<boolean> => {
     const { file, from } = state
@@ -367,14 +398,22 @@ export function useFileControls({
     // interop as Ship's move is (SPEC §3.3, SHI-37). An issue is listed by no Folder — its project
     // is — so only what is listed under it moves, and with nothing under it nothing is sent.
     const target = { id: to.id, hasState: to.hasState, private: to.private, company: to.company }
-    type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
+    /*
+      Said once something did move: the Folders that still list it besides the
+      new one — named as still listing it, never as refusing, since those after
+      the refused move were never asked — and why, in Peek's words.
+    */
+    const partly = (stillIn: readonly string[], why: string | undefined) => {
+      const names = [...new Set(stillIn)].map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder')
+      return `Moved to ${to.name ?? 'the Folder'}, but ${names.join(' and ')} still list${names.length > 1 ? '' : 's'} it too${why ? `: ${why}` : '. Try moving it again.'}`
+    }
+    type Step = () => Promise<{ ok: true } | { ok: false; reason?: string; why?: string; stillIn?: string[] }>
     const relist: Step | undefined = changesFolder
       ? async () => {
           const result = await moveFile(file, state.sources, target)
-          if (result.ok || !('stillIn' in result) || !result.stillIn?.length) return result
-          // It did arrive, so the move goes on: name each Folder that refused to let it go, as Ship's move does.
-          const names = result.stillIn.map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder').join(' and ')
-          refuse(`Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too${result.reason ? `: ${result.reason}` : '. Try moving it again.'}`)
+          if (result.ok || !('landed' in result)) return result
+          // It did arrive, so the move goes on.
+          refuse(partly(result.stillIn, result.why))
           return { ok: true as const }
         }
       : undefined
@@ -395,9 +434,13 @@ export function useFileControls({
       if (!result.ok) {
         if (!moved) {
           refuse(result.reason ?? 'Nothing was moved. Try again.')
+          // Refused at the relay: the next Move asks with the Folders as they are now.
+          if (result.stillIn) await reread(state)
           return false
         }
-        refuse(`Moved to ${to.name ?? 'the Folder'}, but not all of it: ${result.reason ?? 'the rest was refused'}. Try moving it again.`)
+        // The issue took its new project, and what is listed under it was not moved with it.
+        if (result.stillIn?.length) refuse(partly(result.stillIn, result.why))
+        else refuse(`Moved to ${to.name ?? 'the Folder'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`)
         break
       }
       moved = true
