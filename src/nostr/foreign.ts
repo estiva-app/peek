@@ -42,8 +42,10 @@ import {
   referenceToPointer,
   type AddressPointer,
   type UnsignedEvent,
+  RELAY_BUSY_MESSAGE,
   toRenderTree,
 } from '@estiva-app/protocol'
+import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 import {
   ARCHIVED_FIELD,
   SUMMARY_FIELD,
@@ -85,6 +87,7 @@ import {
   planDeleteFolder,
   type MovableFile,
   planMoveFromFolders,
+  readMoveRefusal,
   listedBeneath,
   planRenameFolder,
   planUnlistFile,
@@ -794,10 +797,21 @@ async function publishInOrder(
   events: UnsignedEvent[],
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; index: number; reason?: string }> {
+  /**
+   * Answer a throw from signing or the network as `failed` with its `index`, as
+   * a refusal is answered, rather than throwing: an earlier event may have landed.
+   */
+  { caught = false }: { caught?: boolean } = {},
+): Promise<{ ok: true } | { ok: false; index: number; reason?: string; failed?: unknown }> {
   for (const [index, unsigned] of events.entries()) {
-    const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-    const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    let result: Awaited<ReturnType<typeof publishSigned>>
+    try {
+      const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+      result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    } catch (error) {
+      if (!caught) throw error
+      return { ok: false, index, failed: error }
+    }
     // Never the status code: the relay refuses as 200 with `accepted: false`.
     if (!result.ok) return { ok: false, index, ...(result.reason ? { reason: result.reason } : {}) }
   }
@@ -940,19 +954,17 @@ export function deleteRefusalWords(reason: string | undefined): string {
 /**
  * Move a file from one Folder to another.
  *
- * **Two commands, and the order is the whole design.** There is no atomic move:
- * the Folder state is per-Folder, so this is an `add` to the target and a
- * `remove` from the source, and something can fail between them.
+ * **One action per source.** Each `kind:1852 move` changes the source's and
+ * the target's list together, or the relay refuses it and neither changes, so
+ * a topic is never on no list (SPEC §3.3). A file two Folders list takes one
+ * move from each, sent in order and stopping at the first refusal.
  *
- * So it **adds first**. A failure after the add leaves the file in *both*
- * Folders — visible, obviously wrong to a person, and fixable by moving it
- * again. Removing first and failing would leave it in *neither*, which looks
- * exactly like a file that was never there and is the harder thing to notice
- * and the harder thing to undo.
- *
- * The remove failing is therefore reported as a partial move rather than a
+ * A refusal after an earlier move is reported as a partial move rather than a
  * failure, because the file did arrive and saying "it failed" would send
- * somebody looking for it in the wrong place.
+ * somebody looking for it in the wrong place. Either way the person reads
+ * Peek's words for why (`readMoveRefusal`), never the relay's text.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-always-has-a-team-and-moves-in-one-action.md
  *
  * **Refused, before anything is sent, when either Folder has no state**
  * (FOL-10). An `add` to one emits state listing only the moved file and hides
@@ -963,15 +975,19 @@ export function deleteRefusalWords(reason: string | undefined): string {
  * listed by its Folder's state beside its parent, so moving only the parent
  * would leave the sub-topic in the old Folder, drawn at its top. `listings` are
  * the source Folders' files, archived ones included; interop's
- * `planMoveFromFolders` moves the file and every file listed beneath it in any
- * of them as one `add` naming the set, then one `remove` per source, so a
- * failure leaves the whole set in both Folders and never splits it (SHI-37).
+ * `planMoveFromFolders` moves the file and every file listed beneath it in each
+ * of them as one move naming the set, so a refusal never splits it (SHI-37).
  *
  * **Refused into a private Folder** when a moved file lives in another channel:
  * a listing never changes who can read a file (§3.1).
+ *
+ * **A file no Folder lists is placed**, by the planner: an `add` to the target,
+ * and for a topic only when the target is its home — the team it was started
+ * in, or the company's Folder (§3.3). A Folder in `from` that lists none of it
+ * is left out, because the relay refuses a move from it.
  */
 export async function moveFileAsViewer(
-  file: MovableFile,
+  file: MovableFile & { parentKind?: number },
   /** Each source's files (`FolderContents.files`, archived included), by Folder id. */
   listings: ReadonlyMap<string, readonly MovableFile[]>,
   /** Every Folder that lists it now, each with `hasState` and `addresses` from a read. */
@@ -979,8 +995,7 @@ export async function moveFileAsViewer(
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string; stillIn?: string[] }> {
-  // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
+): Promise<MoveOutcome> {
   const lists = (folder: FolderRef) => {
     const listing = listings.get(folder.id) ?? []
     return (
@@ -989,9 +1004,11 @@ export async function moveFileAsViewer(
       listedBeneath(listing, file).length > 0
     )
   }
-  if (!from.some(lists)) return { ok: true }
-  // Interop's planner, the one Ship and the agent move by: one add naming everything, then a remove per source (SHI-37).
-  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from, to, listings })
+  const sources = from.filter(lists)
+  // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
+  if (file.parentKind !== undefined && !sources.length) return { ok: true }
+  // Interop's planner, the one Ship and the agent move by: one move per source, each changing both lists or neither.
+  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from: sources, to, listings })
   if (!plan.ok) {
     return {
       ok: false,
@@ -1000,16 +1017,52 @@ export async function moveFileAsViewer(
           ? 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.'
           : plan.reason === 'target-is-private'
             ? 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.'
-            : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
+            : plan.reason === 'target-is-not-home'
+              ? 'This topic is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.'
+              : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  if (!plan.add) return { ok: true }
-  const added = await publishInOrder([plan.add], relayUrl, token)
-  if (!added.ok) return { ok: false, reason: added.reason ?? 'Nothing was moved. Try again.' }
-  // It did arrive: each Folder that refused to let it go still lists it too, and the caller names them.
-  const stillIn: string[] = []
-  for (const { folder, event } of plan.removes) if (!(await publishInOrder([event], relayUrl, token)).ok) stillIn.push(folder)
-  return stillIn.length ? { ok: false, reason: 'Added to the new Folder, but the Folder it came from still lists it too. Try moving it again.', stillIn } : { ok: true }
+  const published = await publishInOrder(plan.events, relayUrl, token, { caught: true })
+  if (published.ok) return { ok: true }
+  // Peek's own words for why, never the relay's text (TEA-3); Peek's own failure, signing or reaching the relay, as itself.
+  const refusal = readMoveRefusal(plan.events, published.index, published.reason)
+  const why =
+    'failed' in published
+      ? ownFailureWords(published.failed)
+      : published.reason === RELAY_BUSY_MESSAGE
+        ? 'the relay is busy. Try again in a moment.'
+        : refusal.why === 'team-archived'
+          ? 'one of the Folders is archived.'
+          : refusal.why === 'not-a-member'
+            ? 'you need to be a member of both Folders to move this.'
+            : refusal.why === 'changed-meanwhile'
+              ? 'the Folders changed since you opened this. Try again.'
+              : undefined
+  if (refusal.nothingMoved) {
+    const stillIn = plan.events.flatMap((event) => event.tags.filter((tag) => tag[0] === 'from').map((tag) => tag[1]!))
+    return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.', why, stillIn }
+  }
+  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with why.
+  return { ok: false, landed: true, why, stillIn: refusal.notMovedFrom }
+}
+
+/**
+ * What `moveFileAsViewer` answers. Refused before anything was sent: `reason`
+ * alone, the whole sentence. Sent and refused, or failed on the way: `why` in
+ * Peek's words (none when there is none to give) and `stillIn`, the Folders
+ * that still list the file besides the target — with `reason` when nothing
+ * moved, and `landed` when an earlier move did arrive.
+ */
+export type MoveOutcome =
+  | { ok: true }
+  | { ok: false; reason: string; why?: string; stillIn?: string[] }
+  | { ok: false; landed: true; reason?: undefined; why?: string; stillIn: string[] }
+
+/** Peek's own failure on the way to the relay, in a person's words: the sign-in, Estiva ID, or the network. */
+function ownFailureWords(error: unknown): string {
+  if (error instanceof SignerTokenExpired) return 'your sign-in has ended. Sign in again.'
+  if (error instanceof SignRefused) return 'Estiva ID would not sign it.'
+  return 'the relay could not be reached. Try again.'
 }
 
 /**
