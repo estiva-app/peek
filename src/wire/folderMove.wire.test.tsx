@@ -127,6 +127,6 @@ describe('moving a file at the wire', () => {
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(commands()).toEqual(['move HQ→Steer', 'move Ops→Steer'])
-    expect(await screen.findByText(/Moved to Steer, but Ops still lists it too/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Moved to Steer, but Ops still lists it too[.:]/)).toBeInTheDocument()
   })
 })

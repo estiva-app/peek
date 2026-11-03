@@ -977,7 +977,7 @@ export async function moveFileAsViewer(
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string; stillIn?: string[] }> {
+): Promise<{ ok: true } | { ok: false; reason: string } | { ok: false; reason?: string; stillIn: string[] }> {
   // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
   const lists = (folder: FolderRef) => {
     const listing = listings.get(folder.id) ?? []
@@ -999,7 +999,7 @@ export async function moveFileAsViewer(
           : plan.reason === 'target-is-private'
             ? 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.'
             : plan.reason === 'target-is-not-home'
-              ? 'This topic is in no Folder yet, so it can only go to the one it was started in.'
+              ? 'This topic is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.'
               : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
@@ -1014,10 +1014,10 @@ export async function moveFileAsViewer(
         ? 'you need to be a member of both Folders to move this.'
         : refusal.why === 'changed-meanwhile'
           ? 'the Folders changed since you opened this. Try again.'
-          : 'try again.'
-  if (refusal.nothingMoved) return { ok: false, reason: `Nothing was moved: ${why}` }
-  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them.
-  return { ok: false, reason: `Added to the new Folder, but ${why}`, stillIn: refusal.notMovedFrom }
+          : undefined
+  if (refusal.nothingMoved) return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.' }
+  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with the reason.
+  return { ok: false, reason: why, stillIn: refusal.notMovedFrom }
 }
 
 /**

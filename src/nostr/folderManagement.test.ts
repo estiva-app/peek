@@ -134,7 +134,7 @@ describe('moving a file', () => {
     ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the Folders is archived.'],
     ["invalid: only the team's members may move a space in or out", 'Nothing was moved: you need to be a member of both Folders to move this.'],
     ['invalid: 85db5b59 does not list 30850:…', 'Nothing was moved: the Folders changed since you opened this. Try again.'],
-    ['invalid: rate-limited', 'Nothing was moved: try again.'],
+    ['invalid: rate-limited', 'Nothing was moved. Try again.'],
   ])('a refused move says why in Peek’s words, never the relay’s: %s', async (relayText, sentence) => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: relayText })
 
@@ -223,7 +223,7 @@ describe('moving a file', () => {
 
     // Not "the move failed": the file did arrive, and saying it failed would
     // send somebody looking for it in the folder it already left.
-    expect(result).toEqual({ ok: false, reason: 'Added to the new Folder, but the Folders changed since you opened this. Try again.', stillIn: [THIRD] })
+    expect(result).toEqual({ ok: false, reason: 'the Folders changed since you opened this. Try again.', stillIn: [THIRD] })
   })
 
   it('refuses, rather than reporting a move, out of a folder with no state that lists the file by containment', async () => {

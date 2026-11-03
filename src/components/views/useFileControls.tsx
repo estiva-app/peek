@@ -374,7 +374,7 @@ export function useFileControls({
           if (result.ok || !('stillIn' in result) || !result.stillIn?.length) return result
           // It did arrive, so the move goes on: name each Folder that refused to let it go, as Ship's move does.
           const names = result.stillIn.map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder').join(' and ')
-          refuse(`Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too. Try moving it again.`)
+          refuse(`Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too${result.reason ? `: ${result.reason}` : '. Try moving it again.'}`)
           return { ok: true as const }
         }
       : undefined
@@ -394,7 +394,7 @@ export function useFileControls({
       const result = await step()
       if (!result.ok) {
         if (!moved) {
-          refuse(result.reason ?? 'The relay refused the move.')
+          refuse(result.reason ?? 'Nothing was moved. Try again.')
           return false
         }
         refuse(`Moved to ${to.name ?? 'the Folder'}, but not all of it: ${result.reason ?? 'the rest was refused'}. Try moving it again.`)
