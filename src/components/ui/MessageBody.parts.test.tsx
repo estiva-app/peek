@@ -68,7 +68,9 @@ describe('a part is drawn while the body names its object', () => {
 })
 
 describe('deleted and not available, told apart (SPEC §13.6.1; Katerina, 30 Oct)', () => {
-  const words = { deleted: 'A part of this issue deleted', unreadable: 'A part of this issue not available' } as const
+  // Changed on purpose: kit 0.102.0 (ALO-4): a part you can't read is one whose file you can't read, "You can't open
+  // this issue", not "A part of this issue not available". Deleted still says so in its own words.
+  const words = { deleted: 'A part of this issue deleted', unreadable: "You can't open this issue" } as const
   for (const state of ['deleted', 'unreadable'] as const) {
     it(`${state} says "${words[state]}", and neither the title nor the text`, () => {
       const { container } = show({ state })

@@ -188,16 +188,17 @@ describe('the card under the message', () => {
     }
   })
 
-  it('keeps a card’s place while it loads, and says "not available." for a file the reader cannot read', () => {
+  it('keeps a card’s place while it loads, and says "You can\'t open this issue" for a file the reader cannot read', () => {
     delete objects[naddr(CARD_ISSUE)]
     const loading = show(THE_MESSAGE, { embeds: ITS_CARD })
     expect(loading.querySelector('[data-card="detailed"] [aria-busy="true"]')).not.toBeNull()
     loading.remove()
     objects[naddr(CARD_ISSUE)] = { ...cardIssue(), unreachable: true, noun: 'Issue' }
     const unreadable = show(THE_MESSAGE, { embeds: ITS_CARD })
-    // Its way out is the kit's Button "Open", the app in its name (ui 0.95; Katerina, 31 Oct).
-    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe('Issue not availableOpen')
-    expect(unreadable.querySelector('[data-card="detailed"] a')?.getAttribute('aria-label')).toBe('Open in Ship')
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "Issue not available", and
+    // draws no Open button, since there is nothing for the reader to open.
+    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe("You can't open this issue")
+    expect(unreadable.querySelector('[data-card="detailed"] a')).toBeNull()
   })
 })
 
