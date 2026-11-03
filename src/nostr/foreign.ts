@@ -85,6 +85,7 @@ import {
   planDeleteFolder,
   type MovableFile,
   planMoveFromFolders,
+  readMoveRefusal,
   listedBeneath,
   planRenameFolder,
   planUnlistFile,
@@ -940,19 +941,17 @@ export function deleteRefusalWords(reason: string | undefined): string {
 /**
  * Move a file from one Folder to another.
  *
- * **Two commands, and the order is the whole design.** There is no atomic move:
- * the Folder state is per-Folder, so this is an `add` to the target and a
- * `remove` from the source, and something can fail between them.
+ * **One action per source.** Each `kind:1852 move` changes the source's and
+ * the target's list together, or the relay refuses it and neither changes, so
+ * a topic is never on no list (SPEC §3.3). A file two Folders list takes one
+ * move from each, sent in order and stopping at the first refusal.
  *
- * So it **adds first**. A failure after the add leaves the file in *both*
- * Folders — visible, obviously wrong to a person, and fixable by moving it
- * again. Removing first and failing would leave it in *neither*, which looks
- * exactly like a file that was never there and is the harder thing to notice
- * and the harder thing to undo.
- *
- * The remove failing is therefore reported as a partial move rather than a
+ * A refusal after an earlier move is reported as a partial move rather than a
  * failure, because the file did arrive and saying "it failed" would send
- * somebody looking for it in the wrong place.
+ * somebody looking for it in the wrong place. Either way the person reads
+ * Peek's words for why (`readMoveRefusal`), never the relay's text.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-always-has-a-team-and-moves-in-one-action.md
  *
  * **Refused, before anything is sent, when either Folder has no state**
  * (FOL-10). An `add` to one emits state listing only the moved file and hides
@@ -963,9 +962,8 @@ export function deleteRefusalWords(reason: string | undefined): string {
  * listed by its Folder's state beside its parent, so moving only the parent
  * would leave the sub-topic in the old Folder, drawn at its top. `listings` are
  * the source Folders' files, archived ones included; interop's
- * `planMoveFromFolders` moves the file and every file listed beneath it in any
- * of them as one `add` naming the set, then one `remove` per source, so a
- * failure leaves the whole set in both Folders and never splits it (SHI-37).
+ * `planMoveFromFolders` moves the file and every file listed beneath it in each
+ * of them as one move naming the set, so a refusal never splits it (SHI-37).
  *
  * **Refused into a private Folder** when a moved file lives in another channel:
  * a listing never changes who can read a file (§3.1).
@@ -990,7 +988,7 @@ export async function moveFileAsViewer(
     )
   }
   if (!from.some(lists)) return { ok: true }
-  // Interop's planner, the one Ship and the agent move by: one add naming everything, then a remove per source (SHI-37).
+  // Interop's planner, the one Ship and the agent move by: one move per source, each changing both lists or neither.
   const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from, to, listings })
   if (!plan.ok) {
     return {
@@ -1000,16 +998,26 @@ export async function moveFileAsViewer(
           ? 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.'
           : plan.reason === 'target-is-private'
             ? 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.'
-            : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
+            : plan.reason === 'target-is-not-home'
+              ? 'This topic is in no Folder yet, so it can only go to the one it was started in.'
+              : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  if (!plan.add) return { ok: true }
-  const added = await publishInOrder([plan.add], relayUrl, token)
-  if (!added.ok) return { ok: false, reason: added.reason ?? 'Nothing was moved. Try again.' }
-  // It did arrive: each Folder that refused to let it go still lists it too, and the caller names them.
-  const stillIn: string[] = []
-  for (const { folder, event } of plan.removes) if (!(await publishInOrder([event], relayUrl, token)).ok) stillIn.push(folder)
-  return stillIn.length ? { ok: false, reason: 'Added to the new Folder, but the Folder it came from still lists it too. Try moving it again.', stillIn } : { ok: true }
+  const published = await publishInOrder(plan.events, relayUrl, token)
+  if (published.ok) return { ok: true }
+  // Peek's own words for why, never the relay's text (TEA-3).
+  const refusal = readMoveRefusal(plan.events, published.index, published.reason)
+  const why =
+    refusal.why === 'team-archived'
+      ? 'one of the Folders is archived.'
+      : refusal.why === 'not-a-member'
+        ? 'you need to be a member of both Folders to move this.'
+        : refusal.why === 'changed-meanwhile'
+          ? 'the Folders changed since you opened this. Try again.'
+          : 'try again.'
+  if (refusal.nothingMoved) return { ok: false, reason: `Nothing was moved: ${why}` }
+  // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them.
+  return { ok: false, reason: `Added to the new Folder, but ${why}`, stillIn: refusal.notMovedFrom }
 }
 
 /**

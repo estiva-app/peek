@@ -366,7 +366,7 @@ export function useFileControls({
     // The file and what each Folder it is in lists beneath it, archived files included, planned by
     // interop as Ship's move is (SPEC §3.3, SHI-37). An issue is listed by no Folder — its project
     // is — so only what is listed under it moves, and with nothing under it nothing is sent.
-    const target = { id: to.id, hasState: to.hasState, private: to.private }
+    const target = { id: to.id, hasState: to.hasState, private: to.private, company: to.company }
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
     const relist: Step | undefined = changesFolder
       ? async () => {

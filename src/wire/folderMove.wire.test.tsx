@@ -4,8 +4,8 @@
  * `useFileControls` draws, and the `kind:1852` commands are read off the fake
  * relay. The planner's own tests (`src/nostr/folderManagement.test.ts`) check
  * `moveFileAsViewer` with the bridge mocked; these check that the control
- * reads the Folders from the relay, sends add-then-remove for what the person
- * picked, and stops where a refusal says to.
+ * reads the Folders from the relay, sends one `move` per Folder that lists the
+ * file, and stops where a refusal says to, in Peek's words, never the relay's.
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, renderHook, screen, waitFor } from '@testing-library/react'
@@ -78,14 +78,16 @@ async function moveTo(to: string, onMoved = vi.fn()) {
   return onMoved
 }
 
-const commands = () => relay.sentOf(1852).map((event) => `${tagOf(event, 'op')} ${tagOf(event, 'h') === HQ ? 'HQ' : tagOf(event, 'h') === STEER ? 'Steer' : tagOf(event, 'h')}`)
+const OPS = '33333333-3333-4333-8333-333333333333'
+const nameOf = (id: string | undefined) => (id === HQ ? 'HQ' : id === STEER ? 'Steer' : id === OPS ? 'Ops' : id)
+const commands = () => relay.sentOf(1852).map((event) => `${tagOf(event, 'op')} ${nameOf(tagOf(event, 'from'))}→${nameOf(tagOf(event, 'h'))}`)
 
 describe('moving a file at the wire', () => {
-  it('Move sends an add to the picked Folder, then a remove from the one listing it, both naming the file', async () => {
+  it('Move sends one move from the Folder listing it to the picked one, naming the file', async () => {
     const onMoved = await moveTo('Steer')
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
-    expect(commands()).toEqual(['add Steer', 'remove HQ'])
+    expect(commands()).toEqual(['move HQ→Steer'])
     for (const event of relay.sentOf(1852)) {
       expect(event.pubkey).toBe(ME)
       expect(tagsOf(event, 'a')).toEqual([ADDRESS])
@@ -94,7 +96,7 @@ describe('moving a file at the wire', () => {
     expect(relay.sent.filter((event) => event.kind !== 1852)).toEqual([])
   })
 
-  it('a topic started under the file moves with it, in the same two commands', async () => {
+  it('a topic started under the file moves with it, in the same move', async () => {
     const SUB_D = '5a0e3d2f-8c4b-4f60-8b2c-3d4e5f6a7b8c'
     const SUB = `${BARE_FILE}:${ME}:${SUB_D}`
     relay.seed(
@@ -104,25 +106,27 @@ describe('moving a file at the wire', () => {
     const onMoved = await moveTo('Steer')
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
-    expect(commands()).toEqual(['add Steer', 'remove HQ'])
+    expect(commands()).toEqual(['move HQ→Steer'])
     for (const event of relay.sentOf(1852)) expect(tagsOf(event, 'a').sort()).toEqual([ADDRESS, SUB].sort())
   })
 
-  it('a refused add sends no remove, so the file is never in no Folder', async () => {
-    relay.refuse({ when: (event) => event.kind === 1852 && tagOf(event, 'op') === 'add', message: 'restricted: not a channel member' })
+  it('a refused move says why in Peek’s words, not the relay’s, and counts as not moved', async () => {
+    relay.refuse({ when: (event) => event.kind === 1852, message: "invalid: only the team's members may move a space in or out" })
     const onMoved = await moveTo('Steer')
 
-    expect(await screen.findByText(/not a channel member/)).toBeInTheDocument()
-    expect(commands()).toEqual(['add Steer'])
+    expect(await screen.findByText('Nothing was moved: you need to be a member of both Folders to move this.')).toBeInTheDocument()
+    expect(screen.queryByText(/only the team's members/)).not.toBeInTheDocument()
+    expect(commands()).toEqual(['move HQ→Steer'])
     expect(onMoved).not.toHaveBeenCalled()
   })
 
-  it('a refused remove after an accepted add counts as moved, and names the Folder that still lists it', async () => {
-    relay.refuse({ when: (event) => event.kind === 1852 && tagOf(event, 'op') === 'remove' })
+  it('a file two Folders list takes a move from each; a refused second one counts as moved and names the Folder still listing it', async () => {
+    relay.seed(...folder(OPS, 'Ops', [ADDRESS]))
+    relay.refuse({ when: (event) => event.kind === 1852 && tagOf(event, 'from') === OPS })
     const onMoved = await moveTo('Steer')
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
-    expect(commands()).toEqual(['add Steer', 'remove HQ'])
-    expect(await screen.findByText(/Moved to Steer, but HQ still lists it too/)).toBeInTheDocument()
+    expect(commands()).toEqual(['move HQ→Steer', 'move Ops→Steer'])
+    expect(await screen.findByText(/Moved to Steer, but Ops still lists it too/)).toBeInTheDocument()
   })
 })
