@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import { serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
 import { signed } from '@/test/wireRelay'
-import { chatHasUnread, teamOf } from './useTeams'
+import { chatHasUnread, mayMove, teamOf } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
 
 const RELAY = 'b'.repeat(64)
@@ -58,6 +58,18 @@ describe('teamOf', () => {
 
   it('an archived team’s chat holds nobody', () => {
     expect(teamOf({ ...folder, archived: { by: MIKY, at: 1 } } as FolderSummary, read([MIKY]), MIKY).chat.in).toBe(false)
+  })
+})
+
+describe('mayMove (SPEC §3.3)', () => {
+  it('a space moves only by a member of its team', () => {
+    expect(mayMove([teamOf(folder, read([MIKY]), MIKY)], SPACE)).toBe(true)
+    expect(mayMove([teamOf(folder, read([MIKY]), KATERINA)], SPACE)).toBe(false)
+  })
+
+  it('a topic the team only leads moves by anyone, and so does anything while no teams are held', () => {
+    expect(mayMove([teamOf(folder, read([MIKY]), KATERINA)], TOPIC)).toBe(true)
+    expect(mayMove(null, SPACE)).toBe(true)
   })
 })
 

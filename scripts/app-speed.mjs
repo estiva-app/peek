@@ -2,7 +2,7 @@
  * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
- *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-issues,ship-topics,ship-topic] [--runs 3]
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-issues,ship-topics,ship-topic,peek,teams] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>]
  *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
  *   node scripts/app-speed.mjs --table /tmp/before.json
@@ -23,6 +23,8 @@
  *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
  *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
  * - `peek`: Weekly Plans' conversation in Peek.
+ * - `teams`: Peek's Teams column, opened cold at /app/folders (TEA-5): every team's roster, list and chat in one
+ *   read, beside the Folders it replaced. Not in the default set.
  * - `--together` starts Weekly Plans in Leaf (QA-1), the Ship project (QA-2), Peek (QA-1) and the agent's
  *   `ship_get_issue` at the same moment, then reads the relay's log on the box for "pool timed out" in that window:
  *   the relay must keep answering when several people load at once (APP-9). "Relay failed" counts answers that are
@@ -66,6 +68,8 @@ const SHIP_PROJECT = '/project/cf23dbca-64fb-4802-a804-e0119b0d8584'
 const SHIP_ISSUE = '/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480'
 /** A topic QA-1 reads that lists Ship work, first on QA-1's Topics on 3 Nov (SHIPS-4). */
 const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
+/** A team QA-1 is in (the QA team of TEA-3's probes): a row of the Folders column, then a section of Teams. */
+const TEAMS_AWAIT = 'TEA-3 probe A'
 /** [host, path, texts] per page: the project's Overview counts its issues once they are loaded. */
 const SHIP_AWAIT = [
   ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: 'of \\d+ done' }]],
@@ -121,6 +125,7 @@ const LEGS = {
   'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
   'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
   peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
+  teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/folders', ...settle(60000), ...whole, ...report('teams')],
 }
 
 /** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
@@ -315,9 +320,12 @@ if (args.includes('--compare')) {
     console.error(`Weekly Plans: waiting for ${JSON.stringify(texts)}`)
     awaitList.push(['^leaf\\.', '^/(document|f)/', texts])
     // Peek's leg is the page's conversation, at /document/ since Peek redirects /topic/ there. Its title is also a
-    // row in the topic list inside <main>, so wait for the first message and its Leaf card instead.
-    awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together', 'Open in Leaf']])
+    // row in the topic list inside <main>, so wait for the first message instead. Not "Open in Leaf": that is the
+    // Open button's label and tooltip, never text on screen, and the leg never reached ready waiting for it (TEA-5).
+    awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together']])
   }
+  // Peek's Teams column (TEA-5), cold: a team QA-1 is in, drawn by the Folders column before it and Teams after.
+  if (legs.includes('teams')) awaitList.push(['^peek\\.', '^/app/folders/?$', [TEAMS_AWAIT]])
   const awaitFile = join(scratch, 'recorder.js')
   writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
   const keep = (n, reports) => {

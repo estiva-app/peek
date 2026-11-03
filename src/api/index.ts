@@ -107,5 +107,5 @@ export {
   type ReplyStream,
 } from './useNewReplyThreads'
 export { useTeamUnread } from './useTeamUnread'
-export { chatMessagesOf, spaceTeamOf, teamFolders, teamOf, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, type Team } from './useTeams'
+export { chatMessagesOf, mayMove, spaceTeamOf, teamFolders, teamOf, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'

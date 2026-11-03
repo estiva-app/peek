@@ -1,5 +1,5 @@
 /**
- * The rail's Topics, Folders and Desk go back to what was open there, as
+ * The rail's Topics, Teams and Desk go back to what was open there, as
  * People goes back to the last DM (Katerina, 5 October); a file's page lights
  * the one whose column it shows (TOP-4).
  */
@@ -32,28 +32,29 @@ function mount(opened: Parameters<typeof Opened>[0], at = '/app/people') {
 const hrefOf = (name: string) => screen.getByRole('link', { name }).getAttribute('href')
 const lit = (name: string) => screen.getByRole('link', { name }).getAttribute('aria-current') === 'page'
 
-describe('the rail’s Topics and Folders', () => {
+// "Folders" until the Teams stage (TEA-5): the rail says Teams, and its route stays /app/folders.
+describe('the rail’s Topics and Teams', () => {
   it('lead to their own screens when no file was open there', () => {
     mount({})
     expect(hrefOf('Topics')).toBe('/app/topics')
-    expect(hrefOf('Folders')).toBe('/app/folders')
+    expect(hrefOf('Teams')).toBe('/app/folders')
   })
 
   it('each lead back to the file last open under it', () => {
     mount({ topics: '/topic/release-notes-abc', folders: '/issue/fix-the-rail-def' })
     expect(hrefOf('Topics')).toBe('/topic/release-notes-abc')
-    expect(hrefOf('Folders')).toBe('/issue/fix-the-rail-def')
+    expect(hrefOf('Teams')).toBe('/issue/fix-the-rail-def')
   })
 
   it('a file’s page lights the one whose column it shows, and only that one', () => {
     mount({ column: 'topics' }, '/issue/fix-the-rail-def')
     expect(lit('Topics')).toBe(true)
-    expect(lit('Folders')).toBe(false)
+    expect(lit('Teams')).toBe(false)
   })
 
-  it('a file’s page opened from Folders lights Folders', () => {
+  it('a file’s page opened from Teams lights Teams', () => {
     mount({ column: 'folders' }, '/topic/release-notes-abc')
-    expect(lit('Folders')).toBe(true)
+    expect(lit('Teams')).toBe(true)
     expect(lit('Topics')).toBe(false)
   })
 })

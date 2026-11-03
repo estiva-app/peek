@@ -163,7 +163,11 @@ export function spaceTeamOf(teams: readonly Team[] | null, address: string | und
  * holds: with nothing held it is offered, and a refusal says why.
  */
 export function useMayMove(address: string | undefined): boolean {
-  const { teams } = useTeams({ read: false })
+  return mayMove(useTeams({ read: false }).teams, address)
+}
+
+/** `useMayMove`'s rule, from the teams handed to it. */
+export function mayMove(teams: readonly Team[] | null, address: string | undefined): boolean {
   const team = spaceTeamOf(teams, address)
   return !team || team.isMember
 }
