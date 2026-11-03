@@ -94,24 +94,27 @@ describe('an issue card under a message keeps its height while it loads', () => 
     expect((again.container.querySelector('[data-card] > *') as HTMLElement).style.minHeight).toBe('134px')
   })
 
-  it('draws "not available" from the first paint for a card this device found not available', async () => {
+  it('draws "You can\'t open this issue" from the first paint for a card this device found not available', async () => {
     const issue = issueNaddr('issue-3')
     resolveObject.mockResolvedValue({ ...object('issue-3'), unreachable: true, noun: 'issue' })
     const first = render(<MessageCard uri={`nostr:${issue}`} />)
-    await waitFor(() => expect(first.container.textContent).toContain('not available'))
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "issue not available".
+    await waitFor(() => expect(first.container.textContent).toContain("You can't open this issue"))
     first.unmount()
     resolveObject.mockReturnValue(new Promise(() => {}))
     const again = render(<MessageCard uri={`nostr:${issue}`} />)
     expect(again.container.querySelector('[aria-busy]')).toBeNull()
-    expect(again.container.textContent).toContain('not available')
+    expect(again.container.textContent).toContain("You can't open this issue")
   })
 })
 
 describe('an issue card whose read failed', () => {
-  it('draws "not available", never a blank where the card was, when this device remembers nothing of it', async () => {
+  it('draws "You can\'t open this issue", never a blank where the card was, when this device remembers nothing of it', async () => {
     resolveObject.mockRejectedValue(new Error('relay busy'))
     const { container } = render(<MessageCard uri={`nostr:${issueNaddr('issue-5')}`} />)
-    await waitFor(() => expect(container.textContent).toBe('Issue not available'))
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "Issue not available". Peek does
+    // not pass the kit's `failed` (0.102.2, "Couldn't load this issue"), so a failed read says the same.
+    await waitFor(() => expect(container.textContent).toBe("You can't open this issue"))
   })
 })
 
