@@ -64,7 +64,9 @@ describe('a topic or a message in a message body', () => {
     const c = show(`as ${NEVENT} said`)
     expect(asked.at(-1)).toContain(NEVENT)
     // Resolved to nothing here; still a chip, saying so, and never a 60-character pointer.
-    expect(c.textContent).toContain('as Message not available said')
+    // Changed on purpose: kit 0.103.0 (a chip says what a row and a card say): "You can't open this message", not
+    // "Message not available".
+    expect(c.textContent).toContain("as You can't open this message said")
     expect(c.querySelector('[data-link-row]')).toBeNull()
     expect(c.textContent).not.toContain(NEVENT)
   })
@@ -73,7 +75,8 @@ describe('a topic or a message in a message body', () => {
     const c = show(`Look at this.\n\n${NEVENT}`)
     expect(asked.at(-1)).toContain(NEVENT)
     expect(c.textContent).toContain('Look at this.')
-    expect(c.querySelector('[data-link-row]')?.textContent).toBe('Message not available')
+    // Changed on purpose: kit 0.102.0 (ALO-4): "You can't open this message", not "Message not available".
+    expect(c.querySelector('[data-link-row]')?.textContent).toBe("You can't open this message")
     expect(c.textContent).not.toContain(NEVENT.replace(/^nostr:/, ''))
   })
 
