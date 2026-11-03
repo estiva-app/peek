@@ -29,10 +29,8 @@
  * throw, so the rows can be drawn on their own.
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
-import { fileContext } from '@estiva-app/conversation'
+import { membershipJudges, streamTermsOf, type StreamTerms } from '@estiva-app/conversation'
 import { heldToken } from '@/auth/heldSession'
-import type { StreamTerms } from '@/api/streamUnread'
-import { authorOfAddress } from '@/nostr/membership'
 import { type MembershipState, useMembershipSync } from '@/nostr/useMembershipSync'
 import { RELAY_URL } from '@/api/relayUrl'
 
@@ -99,20 +97,10 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
   const sync = useMembershipSync(RELAY_URL)
   const me = viewerPubkey()
 
-  const termsOf = useCallback(
-    (key: string): StreamTerms => {
-      const muted = sync.muted.has(key)
-      // A Folder has nothing to read (Miky, 2026-10-01): its own chat is a stream nobody is a member of, so it lights only for a message that names the viewer.
-      if (fileContext(key) === undefined) return { member: false, muted }
-      const folded = sync.files.get(key)
-      if (folded) return { member: folded.member, since: folded.since, muted }
-      // A file the viewer created is theirs unless a leave of theirs says otherwise, and a leave is among the files read.
-      if (me && authorOfAddress(key) === me) return { member: true, since: sync.floor, muted }
-      return { member: false, muted }
-    },
-    [sync.files, sync.muted, sync.floor, me],
-  )
-  const judges = useCallback((key: string) => sync.files.has(key) || (!!me && authorOfAddress(key) === me), [sync.files, me])
+  // The rule is `@estiva-app/conversation`'s, so Ship's Topics judges a topic as Peek does (SHIPS-2).
+  const read = useMemo(() => ({ files: sync.files, floor: sync.floor }), [sync.files, sync.floor])
+  const termsOf = useCallback((key: string): StreamTerms => streamTermsOf(key, read, me, sync.muted), [read, me, sync.muted])
+  const judges = useCallback((key: string) => membershipJudges(key, read, me), [read, me])
   const isMentioned = useCallback((id: string) => sync.mentioned.has(id), [sync.mentioned])
   const isUrgent = useCallback((id: string) => sync.urgent.has(id), [sync.urgent])
   const memberFiles = useMemo(

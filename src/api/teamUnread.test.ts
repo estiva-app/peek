@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import type { StreamTerms } from './streamUnread'
+import type { StreamTerms } from '@estiva-app/conversation'
 import { placeStreams, teamHasMemberStream, teamHasUnread, unlistedFiles } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'

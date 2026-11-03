@@ -1,7 +1,6 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { fileContext } from '@estiva-app/conversation'
-import { type StreamFrontier, type StreamTerms, streamHasUnread } from './streamUnread'
+import { fileContext, type StreamFrontier, type StreamTerms, streamHasUnread } from '@estiva-app/conversation'
 
 /**
  * Is there a file with something new in a Folder — SPEC §11.3, FOL-18.
