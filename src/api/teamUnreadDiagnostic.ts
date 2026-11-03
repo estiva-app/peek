@@ -1,9 +1,8 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, fileContext } from '@estiva-app/conversation'
+import { channelContext, fileContext, type StreamTerms, streamHasUnread } from '@estiva-app/conversation'
 import type { RelayFailureKind } from '@/nostr/relayRead'
 import type { MembershipState } from '@/nostr/useMembershipSync'
-import { type StreamTerms, streamHasUnread } from './streamUnread'
 import { streamsOf } from './teamUnread'
 
 /**

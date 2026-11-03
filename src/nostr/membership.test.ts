@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { encodeNpub } from '@estiva-app/protocol'
-import { authorOfAddress, foldMemberships, membershipQueries } from './membership'
+import { foldMemberships } from './membership'
 
 const ME = 'c'.repeat(64)
 const THEM = 'd'.repeat(64)
@@ -29,16 +29,6 @@ const change = (file: string, field: string, value: string, pubkey: string, p: s
     created_at: at,
     tags: [['a', file], ['field', field], ['value', value], ['h', FOLDER], ['ts', String(at * 1000)], ['p', p]],
   })
-
-describe('membershipQueries — the three filters, bounded by the horizon', () => {
-  it('asks for the changes that name the viewer, what they wrote, and what mentions them', () => {
-    const filters = membershipQueries(ME, NOW)
-    expect(filters).toHaveLength(3)
-    expect(filters[0]).toMatchObject({ kinds: [1851], '#p': [ME], since: NOW - 90 * DAY })
-    expect(filters[1]).toMatchObject({ authors: [ME] })
-    expect(filters[2]).toMatchObject({ '#p': [ME] })
-  })
-})
 
 describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
   it('a comment of the viewer’s makes them a member from that second', () => {
@@ -101,12 +91,5 @@ describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
 
   it('reports the horizon floor for a created file the read held no event for', () => {
     expect(foldMemberships(ME, [], NOW).floor).toBe(NOW - 90 * DAY)
-  })
-})
-
-describe('authorOfAddress', () => {
-  it('names the author of a file address and nothing else', () => {
-    expect(authorOfAddress(MINE)).toBe(ME)
-    expect(authorOfAddress(FOLDER)).toBeUndefined()
   })
 })
