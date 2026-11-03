@@ -16,6 +16,8 @@
  * - `weekly`: Miky's Weekly Plans (Estiva HQ) opened in Leaf at its own link.
  * - `weekly-from-peek`: the same page from Peek — its conversation, then "Open ↗", which opens Leaf in a new tab.
  * - `ship-project`, `ship-issue`: a Ship project ("Ship: Feedback & Bugs", its Overview) and one of its issues.
+ * - `ship-issues`, `ship-topics`: Ship's Issues and Topics pages, the whole load each, so a Topics read is weighed
+ *   against the Issues open it sits beside (SHIPS-3). Not in the default set: name them in `--legs`.
  * - `agent`: the agent's `ship_get_issue` on "Peek opens instantly" and `peek_read_topic` on "Planning and
  *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
  *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
@@ -65,6 +67,8 @@ const SHIP_ISSUE = '/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480'
 const SHIP_AWAIT = [
   ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: 'of \\d+ done' }]],
   ['^ship\\.', '^/issue/', ["Ship's address for a file opens it only when one author holds its d", 'Who, when']],
+  ['^ship\\.', '^/issues$', ['Assigned to me']],
+  ['^ship\\.', '^/topics$', ['Other topics', 'Archived']],
 ]
 const AGENT_CALLS = [
   ['ship_get_issue', { ref: 'Peek opens instantly' }],
@@ -110,6 +114,8 @@ const LEGS = {
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
+  'ship-issues': () => ['--base', 'https://ship.estiva.app', '--url', '/issues', ...settle(60000), ...whole, ...report('ship-issues')],
+  'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
   peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
 }
 
