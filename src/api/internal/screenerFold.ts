@@ -19,9 +19,16 @@
  */
 import type { ScreenerItem } from '@/api/types'
 import { fileHasUnread } from '@/api/fileUnread'
-import { type StreamFrontier, type StreamTerms, streamHasUnread } from '@/api/streamUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
-import { REPLY_FLOOR_CONTEXT, channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import {
+  REPLY_FLOOR_CONTEXT,
+  channelContext,
+  fileContext,
+  threadContext,
+  type StreamFrontier,
+  type StreamTerms,
+  streamHasUnread,
+} from '@estiva-app/conversation'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
 export interface ScreenerDecisions {
