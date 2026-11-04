@@ -73,7 +73,8 @@ const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
  */
 const SHIP_AWAIT = [
   ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: '\\d+/\\d+' }]],
-  ['^ship\\.', '^/projects$', ['Ship: Feedback & Bugs', { re: '\\d+/\\d+' }]],
+  // Projects opens on Active, each row counting "7 / 11" (SHIPS-7).
+  ['^ship\\.', '^/projects$', ['Active', { re: '\\d+ / \\d+' }]],
   ['^ship\\.', '^/issue/', ["Ship's address for a file opens it only when one author holds its d", 'Who, when']],
   ['^ship\\.', '^/issues$', ['Assigned to me']],
   ['^ship\\.', '^/topics$', ['Other topics', 'Archived']],
