@@ -190,6 +190,7 @@ vi.mock('@/api', async () => ({
   usePeekActions: () => ({}),
   useMentionNames: () => [],
   useTopicsColumn: () => ({ state: { mine: [], others: places.topics }, signedOut: false }),
+  useTeamTopics: () => ({ topics: new Map((places.topics as { address: string }[]).map((topic) => [topic.address, topic])), loading: false, signedOut: false }),
   useTeamFiles: () => ({ files: [], failed: false }),
 }))
 /*
@@ -454,7 +455,8 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 
 /*
   A team's link and its chat's (TEA-5): `/app/folders/<id>` is the team's
-  page, `/app/folders/<id>/chat` its chat, which is a member's.
+  page, `/app/folders/<id>/chat` its chat, which anyone in the company reads
+  until teams can be private; only its members are told about it.
 */
 describe("a team's page and its chat, at their own links (TEA-5)", () => {
   it('the chat’s link opens the chat for a member of the team', async () => {
@@ -464,11 +466,11 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     expect(screen.queryByText(/^Members · /)).toBeNull()
   })
 
-  it('the chat’s link says to join, to anyone not in the team, and draws no chat', async () => {
+  it('the chat’s link opens the chat for someone not in the team too: a person named there can read it', async () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { isFollowing: true })]
     mount(`/app/folders/${FOLDER}/chat`)
-    expect(await screen.findByText('Join Folders to read its chat.')).toBeTruthy()
-    expect(screen.queryByTestId('team-chat')).toBeNull()
+    expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
+    expect(screen.queryByText(/to read its chat/)).toBeNull()
   })
 
   it('draws a skeleton while the teams are read, and neither the page nor No file selected', async () => {
@@ -484,7 +486,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     teamsRead.teams = null
     teamsRead.failed = true
     mount(`/app/folders/${FOLDER}`)
-    expect(await screen.findByText('This team could not be read.')).toBeTruthy()
+    expect(await screen.findByText('Couldn’t load this team. Reload to try again.')).toBeTruthy()
     expect(document.querySelector('.animate-skeleton-in')).toBeNull()
   })
 })

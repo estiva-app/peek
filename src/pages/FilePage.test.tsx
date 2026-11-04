@@ -108,6 +108,7 @@ const threads = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }))
 const writes = vi.hoisted(() => ({
+  markSpace: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
   // The Overview's card (the kit's, as a message draws it): a pick, and whether its file is archived with its parent.
   applyCardAction: vi.fn(async () => ({ ok: true })),
@@ -192,6 +193,8 @@ const real = vi.hoisted(() => ({ api: {} as Record<string, unknown> }))
 const listing = vi.hoisted(() => ({ files: [] as { address?: string }[] }))
 vi.mock('@/api', async () => ({
   ...(real.api = await vi.importActual<Record<string, unknown>>('@/api')),
+  // The real actions, with a team's space mark answered here (TEA-5): its wire is src/wire/teams.wire.test.tsx's.
+  usePeekActions: () => ({ ...(real.api.usePeekActions as () => object)(), markSpace: writes.markSpace }),
   listedFile: (address: string) => listing.files.find((file) => file.address === address),
   useReadActions: () => ({
     markFileRead: marks.file,
@@ -262,12 +265,18 @@ vi.mock('@/api', async () => ({
   // useMayMove's own rule over the teams above (its hook reads useTeams inside its module, past this mock).
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
-  useTopicsColumn: () => ({
-    // The topics the Teams column titles its rows from: every bare file a test opens.
-    state: { mine: topicsColumn.mine, others: topicsColumn.others },
-    column: (address: string) => (topicsColumn.mine.some(({ topic, files }) => [topic, ...files].some((file) => file.address === address)) ? 'topics' : 'folders'),
-    signedOut: false,
-  }),
+  useTopicsColumn: () => topicsColumnNow(),
+}))
+// The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same answer there.
+vi.mock('@/api/useTopicsColumn', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useTopicsColumn: () => topicsColumnNow(),
+}))
+const topicsColumnNow = vi.hoisted(() => () => ({
+  // The topics the Teams column titles its rows from: every bare file a test opens.
+  state: { mine: topicsColumn.mine, others: topicsColumn.others },
+  column: (address: string) => (topicsColumn.mine.some(({ topic, files }) => [topic, ...files].some((file) => file.address === address)) ? 'topics' : 'folders'),
+  signedOut: false,
 }))
 const topicsColumn = vi.hoisted(() => ({
   mine: [] as { topic: { address: string | null }; files: { address: string | null }[] }[],
@@ -1435,6 +1444,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       'Rename',
       'New topic inside',
       'Move…',
+      // Its team's member may mark it (TEA-5): the default team here leads it and has the person in it.
+      'Make it a space',
       'Copy link',
       'Add to Open work',
       'Delete',
@@ -2096,5 +2107,34 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     expect(screen.getByRole('menuitem', { name: 'Move…' })).toBeInTheDocument()
+  })
+})
+
+describe('A topic’s own menu marks it a space of its team (TEA-5)', () => {
+  const menu = () => fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+  beforeEach(() => writes.markSpace.mockClear())
+
+  it('a member of the team that leads it makes it a space', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    menu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Make it a space' }))
+    expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, true)
+  })
+
+  it('a member stops one of its spaces being a space', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    menu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Stop being a space' }))
+    expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, false)
+  })
+
+  it('somebody not in the team is offered neither', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: false, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    menu()
+    expect(screen.queryByRole('menuitem', { name: 'Stop being a space' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Make it a space' })).toBeNull()
   })
 })

@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import { serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
+import { encodeNpub } from '@estiva-app/protocol'
 import { signed } from '@/test/wireRelay'
 import { chatHasUnread, mayMove, teamOf } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
@@ -43,6 +44,13 @@ describe('teamOf', () => {
       { address: SPACE, space: true },
       { address: TOPIC, space: false },
     ])
+  })
+
+  it('a space its list names by id alone is still its space: not moved by a non-member', () => {
+    const byId = signed({ kind: 30890, created_at: 1_700_000_200, tags: [['d', TEAM], ['o', 'roadmap', '', 'space']] }, RELAY)
+    const team = (who: string) => teamOf(folder, { ...read([MIKY]), listings: { [TEAM]: [byId] } }, who)
+    expect(team(MIKY).listed).toEqual([{ id: 'roadmap', space: true }])
+    expect(mayMove([team(KATERINA)], SPACE)).toBe(false)
   })
 
   it('a follower who is not in it follows it; a member who also listed it is a member, not a follower', () => {
@@ -100,5 +108,11 @@ describe('a team chat’s dot', () => {
 
   it('nothing lights for someone not in the team', () => {
     expect(chatHasUnread(team(KATERINA, [MIKY]), [root], {}, KATERINA)).toBe(false)
+  })
+
+  it('a message naming someone not in the team does not light a chat row: they have none', () => {
+    const naming = { ...root, body: `nostr:${encodeNpub(KATERINA)} can you look?` }
+    expect(chatHasUnread(team(KATERINA, [MIKY, KATERINA]), [naming], {}, KATERINA)).toBe(true)
+    expect(chatHasUnread(team(KATERINA, [MIKY]), [naming], {}, KATERINA)).toBe(false)
   })
 })

@@ -73,7 +73,7 @@ describe('marking a space, at the wire', () => {
     expect(mark.tags.find((t) => t[0] === 'a' && t[1] === TOPIC)?.[3]).toBe('space')
   })
 
-  it('Not a space sends the same add with no role', async () => {
+  it('Stop being a space sends the same add with no role', async () => {
     expect(await actions().markSpace(TEAM, TOPIC, false)).toEqual({ ok: true })
     const [unmark] = relay.sentOf(1852)
     const entry = unmark.tags.find((t) => t[0] === 'a' && t[1] === TOPIC)

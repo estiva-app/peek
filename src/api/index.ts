@@ -101,5 +101,5 @@ export {
   useUrgentReplyThreads,
   type ReplyStream,
 } from './useNewReplyThreads'
-export { chatMessagesOf, mayMove, spaceTeamOf, teamFolders, teamOf, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, type Team } from './useTeams'
+export { chatMessagesOf, entryNames, listingOf, mayMove, spaceTeamOf, teamFolders, teamOf, teamPlaces, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'

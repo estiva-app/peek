@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { IconUsers } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
 import type { Team } from '@/api'
-import { Button } from '@/components/ui/Button'
 import { chatLabel } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { draftKeys } from '@/lib/drafts'
@@ -15,7 +14,7 @@ import { useMarkChannelRead } from '@/lib/useMarkRead'
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-teams-chat-is-followed-like-a-space.md
  */
-export function TeamChat({ team, onOpenTeam }: { team: Team; onOpenTeam: () => void }) {
+export function TeamChat({ team }: { team: Team }) {
   const [thread, setThread] = useState<string | null>(null)
   const name = chatLabel(team)
   const chat = useFileConversationView({
@@ -36,15 +35,7 @@ export function TeamChat({ team, onOpenTeam }: { team: Team; onOpenTeam: () => v
       {...chat.conversationParts}
       title={name}
       header={
-        <PageHeader
-          title={name}
-          leading={<IconUsers size={16} stroke={1.5} aria-hidden />}
-          actions={
-            <Button variant="muted" size="small" onClick={onOpenTeam}>
-              {team.name}
-            </Button>
-          }
-        />
+        <PageHeader title={name} leading={<IconUsers size={16} stroke={1.5} aria-hidden />} />
       }
     />
   )

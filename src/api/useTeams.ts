@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { followingOf, teamMembersOf, unreadOnPlace, type Following, type TeamMember, type TeamsList } from '@estiva-app/conversation'
-import { topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { heldToken } from '@/auth/heldSession'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { listedByTopicsAsViewer, listedOf, readTeamsAsViewer, type TeamsRead } from '@/nostr/teams'
+import { dOfAddress, entryNames, listedByTopicsAsViewer, listedOf, readTeamsAsViewer, type ListedEntry, type TeamsRead } from '@/nostr/teams'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
 import { useFolderContents, useFolders } from './useFolderContents'
+import { useTopicsColumn } from './useTopicsColumn'
+
+export { entryNames, type ListedEntry }
 
 /** One team, as Peek's Teams draws it (TEA-5). */
 export interface Team {
@@ -17,6 +20,8 @@ export interface Team {
   archived: boolean
   /** The Company team (§3.4): nobody leaves it. */
   company: boolean
+  /** Private (NIP-29): joined only by being added, never by Join. */
+  private: boolean
   /** Owners and admins: who may rename and archive it. */
   admins: readonly string[]
   /** Everyone its roster lists, in the order they joined. Agents among them; the page draws them apart. */
@@ -25,7 +30,7 @@ export interface Team {
   /** The viewer follows it, privately (§11.8). Never true of a team they are in: being in it says more. */
   isFollowing: boolean
   /** What its list holds, in its order, each with whether it is one of its spaces. */
-  listed: readonly { address: string; space: boolean }[]
+  listed: readonly ListedEntry[]
   /** How the viewer is in its chat: by the team's default for a member, never for anyone else (`a-teams-chat-is-followed-like-a-space`). */
   chat: Following
 }
@@ -57,6 +62,15 @@ function put(next: Held) {
 }
 
 let lastIds: readonly string[] = []
+/** Which read was started last: only it may put, so a slower, older read never lands over a newer one. */
+let started = 0
+
+/** Forget the held teams: one test's read is not the next one's. */
+export function resetTeamsForTests(): void {
+  held = { key: '', at: 0, failed: false }
+  reading = null
+  lastIds = []
+}
 
 /** Read the teams again now: after a join, leave, add, follow or mark, so the change shows where it was made. */
 export function reloadTeamsOnScreen(): Promise<void> {
@@ -71,10 +85,15 @@ function load(key: string, ids: readonly string[], again = false): Promise<void>
   lastIds = ids
   const current = reading
   if (current && held.key === key && !again) return current
+  const mine = ++started
   const run = readTeamsAsViewer(ids, RELAY_URL, token)
-    .then((read) => put({ key, read, at: Date.now(), failed: false }))
+    .then((read) => {
+      if (mine === started) put({ key, read, at: Date.now(), failed: false })
+    })
     // A failure after a good read keeps the good one: a read that failed is not "in no team".
-    .catch(() => put({ ...held, key, failed: held.key !== key || !held.read }))
+    .catch(() => {
+      if (mine === started) put({ ...held, key, failed: held.key !== key || !held.read })
+    })
     .finally(() => {
       if (reading === run) reading = null
     })
@@ -106,6 +125,7 @@ export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): 
     name: folder.name ?? 'Untitled team',
     archived,
     company: !!folder.company,
+    private: !!folder.private,
     admins: folder.admins ?? [],
     members,
     isMember,
@@ -151,16 +171,52 @@ export function useTeams({ read = true }: {
   return { teams, failed: state.key === key && state.failed, reload }
 }
 
+/** The team whose list names this file, and whether as one of its spaces; `undefined` when none does, or none is held. */
+export function listingOf(teams: readonly Team[] | null, address: string | undefined): { team: Team; space: boolean } | undefined {
+  if (!teams || !address) return undefined
+  for (const team of teams) {
+    const entry = team.listed.find((candidate) => entryNames(candidate, address))
+    if (entry) return { team, space: entry.space }
+  }
+  return undefined
+}
+
 /** The team that marks this file one of its spaces, from what this tab holds; `undefined` when none does, or none is held. */
 export function spaceTeamOf(teams: readonly Team[] | null, address: string | undefined): Team | undefined {
   if (!teams || !address) return undefined
-  return teams.find((team) => team.listed.some((entry) => entry.space && entry.address === address))
+  return teams.find((team) => team.listed.some((entry) => entry.space && entryNames(entry, address)))
+}
+
+/** Every topic this viewer can read, by address: a team's list names them, the Topics column holds their titles. */
+export function useTeamTopics(): { topics: ReadonlyMap<string, ForeignObject>; loading: boolean; signedOut: boolean } {
+  const { state, signedOut } = useTopicsColumn()
+  const topics = useMemo(() => {
+    const out = new Map<string, ForeignObject>()
+    if (typeof state === 'object' && 'mine' in state) {
+      for (const { topic } of state.mine) if (topic.address) out.set(topic.address, topic)
+      for (const topic of state.others) if (topic.address) out.set(topic.address, topic)
+    }
+    return out
+  }, [state])
+  return { topics, loading: state === 'loading', signedOut }
+}
+
+/** A team's spaces and the topics it leads, in its list's order, from the topics this viewer can read; archived ones left out. */
+export function teamPlaces(team: Team, topics: ReadonlyMap<string, ForeignObject>): { spaces: ForeignObject[]; led: ForeignObject[] } {
+  const byId = new Map([...topics].map(([address, topic]) => [dOfAddress(address), topic]))
+  const of = (space: boolean) =>
+    team.listed
+      .filter((entry) => entry.space === space)
+      .flatMap((entry) => ('address' in entry ? topics.get(entry.address) : byId.get(entry.id)) ?? [])
+      .filter((topic) => !topic.archived)
+  return { spaces: of(true), led: of(false) }
 }
 
 /**
- * Whether Move may be offered on a file: a space moves only by a member of its
- * team (SPEC §3.3; the relay refuses anyone else). Read from what the tab
- * holds: with nothing held it is offered, and a refusal says why.
+ * Whether Move may be offered on a row's file: a space moves only by a member
+ * of its team (SPEC §3.3; the relay refuses anyone else). Read from what the
+ * tab holds, never a read per row: with nothing held it is offered, and a
+ * refusal says why.
  */
 export function useMayMove(address: string | undefined): boolean {
   return mayMove(useTeams({ read: false }).teams, address)
@@ -204,8 +260,7 @@ export function useTeamFiles(team: string | null | undefined): { files: ForeignO
   return { files, failed }
 }
 
-const KIND_BARE_FILE = 30840
-const dOf = (address: string) => address.split(':').slice(2).join(':')
+const dOf = dOfAddress
 
 /** A stream message as the shared rule reads one: a reply names its root, as NIP-10's marked `e` does. */
 const asPlaceMessage = (message: StreamMessage) => ({

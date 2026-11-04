@@ -221,14 +221,13 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
           findingProject ? (
             <EmptyState message="Opening…" />
           ) : isFolder && selected && !stateless ? (
-            team && chat && team.isMember ? (
-              <TeamChat team={team} onOpenTeam={() => navigate(`/app/folders/${team.id}`)} />
-            ) : team && chat ? (
-              <EmptyState message={`Join ${team.name} to read its chat.`} />
+            // Anyone in the company reads a team's chat until teams can be private; only its members are told about it.
+            team && chat ? (
+              <TeamChat team={team} />
             ) : team ? (
               <TeamPage team={team} folder={selected} folders={folders} viewer={me} reloadFolders={reload} onControl={fileControls.open} />
             ) : teamsFailed ? (
-              <EmptyState message="This team could not be read." />
+              <EmptyState message="Couldn’t load this team. Reload to try again." />
             ) : (
               <SkeletonList />
             )

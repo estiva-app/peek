@@ -266,6 +266,7 @@ const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   name: folder.name,
   archived: false,
   company: false,
+  private: false,
   admins: [],
   members: [],
   isMember: i === 0,

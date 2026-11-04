@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
-import type { ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
-import { useFileMembers, useMayMove, useMembership, useOpenWorkFiles, useWorkspaceDirectory } from '@/api'
+import { listingOf, mayMove, useFileMembers, useMembership, useOpenWorkFiles, usePeekActions, useTeams, useWorkspaceDirectory } from '@/api'
+import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
@@ -55,9 +56,26 @@ export function useFilePane(
     where it is — the person was not looking at it.
   */
   const controls = fileControlsOf(file)
-  // A space moves only by a member of its team (TEA-5, SPEC §3.3).
-  const mayMove = useMayMove(file?.address ?? undefined)
-  const moves = canMove(file) && mayMove
+  /*
+    The topic's team (TEA-5): Move only where it can succeed, since a space
+    moves only by a member of its team (SPEC §3.3), and Make it a space / Stop
+    being a space for its members. A topic reads its teams, so one opened from
+    a link offers both; any other file reads none.
+  */
+  const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
+  const { teams } = useTeams({ read: isTopic })
+  const { markSpace } = usePeekActions()
+  const { showToast } = useToast()
+  const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
+  const listing = isTopic ? listingOf(teams, file?.address ?? undefined) : undefined
+  const spaceTeam = listing?.team.isMember && !listing.team.archived ? listing.team : undefined
+  const toggleSpace =
+    spaceTeam && file?.address
+      ? async () => {
+          const result = await markSpace(spaceTeam.id, file.address!, !listing!.space)
+          if (!result.ok) showToast({ label: result.reason, type: 'error' })
+        }
+      : undefined
   // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
@@ -259,7 +277,7 @@ export function useFilePane(
                   a Ship issue's header has nothing to put here, and a button
                   that opens nothing would say otherwise.
                 */}
-                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork) && (
+                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork || toggleSpace) && (
                   <TopicMoreMenu
                     trigger={
                       <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -275,6 +293,8 @@ export function useFilePane(
                     onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
                     onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
                     onMove={moves && file && !readOnly ? () => fileControls.open('move', file) : undefined}
+                    spaceAction={toggleSpace && !readOnly ? (listing?.space ? 'unmark' : 'mark') : undefined}
+                    onToggleSpace={toggleSpace ? () => void toggleSpace() : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                   />
                 )}

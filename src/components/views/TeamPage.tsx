@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { IconDotsVertical, IconUserPlus, IconUsers } from '@tabler/icons-react'
 import { EmptyState, IconButton, Menu, MenuItem, MenuSection, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { useMentionNames, usePeekActions, useTeamFiles, useTopicsColumn, type Team } from '@/api'
+import { teamPlaces, useMentionNames, usePeekActions, useTeamFiles, useTeamTopics, type Team } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PersonItem } from '@/components/ui/PersonItem'
 import { TreeRow } from '@/components/views/FileTreeView'
@@ -11,8 +11,6 @@ import type { FileControl } from '@/components/views/useFileControls'
 import { useFolderActions } from '@/components/views/useFolderActions'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { useToast } from '@/lib/toast'
-
-const KIND_BARE_FILE = 30840
 
 /**
  * A team's page (TEA-5): its places, the files it holds outside any topic, and
@@ -40,10 +38,10 @@ export function TeamPage({
   reloadFolders: () => Promise<unknown>
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
-  const { joinTeam, leaveTeam, addToTeam, followTeam } = usePeekActions()
+  const { joinTeam, leaveTeam, addToTeam, followTeam, markSpace } = usePeekActions()
   const { showToast } = useToast()
   const names = useMentionNames()
-  const { state } = useTopicsColumn()
+  const { topics } = useTeamTopics()
   const { files, failed: filesFailed } = useTeamFiles(team.id)
   const { menuFor, action, close } = useFolderActions()
   const [busy, setBusy] = useState(false)
@@ -54,22 +52,14 @@ export function TeamPage({
   const inTeam = new Set(team.members.map((member) => member.pubkey))
   const candidates = (names ?? []).filter((person) => !inTeam.has(person.pubkey)).sort((a, b) => a.name.localeCompare(b.name))
 
-  const topics = useMemo(() => {
-    const out = new Map<string, ForeignObject>()
-    if (typeof state === 'object' && 'mine' in state) {
-      for (const { topic } of state.mine) if (topic.address) out.set(topic.address, topic)
-      for (const topic of state.others) if (topic.address) out.set(topic.address, topic)
-    }
-    return out
-  }, [state])
-  const placesOf = (space: boolean) =>
-    team.listed
-      .filter((entry) => entry.space === space && Number(entry.address.split(':')[0]) === KIND_BARE_FILE)
-      .flatMap((entry) => topics.get(entry.address) ?? [])
-      .filter((topic) => !topic.archived)
-  const places = [...placesOf(true), ...placesOf(false)]
+  const { spaces, led } = teamPlaces(team, topics)
 
-  // Nobody leaves the Company team (§3.4); NIP-29 keeps a sole owner in, so Leave is not offered to the last admin.
+  /*
+    Nobody leaves the Company team (§3.4). The relay keeps a team's last owner
+    in ("transfer ownership first"), so Leave is not offered to them — until
+    the relay lets them leave and the Company team's owners look after the
+    team (Miky, 4 November).
+  */
   const soleAdmin = !!viewer && team.admins.length === 1 && team.admins[0] === viewer
   const canLeave = !team.company && !soleAdmin
 
@@ -79,6 +69,16 @@ export function TeamPage({
     setBusy(false)
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
   }
+  const row = (topic: ForeignObject, space: boolean) => (
+    <TreeRow
+      key={topic.ref}
+      file={topic}
+      onControl={onControl}
+      nested
+      // Only a team's members mark its spaces (SPEC §3.3); the relay refuses anyone else.
+      space={team.isMember && !team.archived && topic.address ? { action: space ? 'unmark' : 'mark', onToggle: () => void run(() => markSpace(team.id, topic.address!, !space)) } : undefined}
+    />
+  )
 
   const actions = team.archived ? undefined : team.isMember ? (
     <>
@@ -109,9 +109,12 @@ export function TeamPage({
       <Button variant="muted" size="small" disabled={busy} onClick={() => void run(() => followTeam(team.id, !team.isFollowing))}>
         {team.isFollowing ? 'Unfollow' : 'Follow'}
       </Button>
-      <Button size="small" disabled={busy} onClick={() => void run(() => joinTeam(team.id))}>
-        Join
-      </Button>
+      {/* A private team is joined only by being added: the relay refuses a Join there. */}
+      {!team.private && (
+        <Button size="small" disabled={busy} onClick={() => void run(() => joinTeam(team.id))}>
+          Join
+        </Button>
+      )}
     </>
   )
   const menu = menuFor(folder)
@@ -143,17 +146,16 @@ export function TeamPage({
           <section className="flex flex-col gap-0.5">
             <SectionLabel tone="muted">Places</SectionLabel>
             {team.isMember && <NavItem href={teamChatPath(team.id)} label={chatLabel(team)} icon={<IconUsers size={16} stroke={1.5} aria-hidden />} />}
-            {places.map((topic) => (
-              <TreeRow key={topic.ref} file={topic} onControl={onControl} nested />
-            ))}
-            {places.length === 0 && <EmptyState scope="section" message="No spaces or topics yet" />}
+            {spaces.map((topic) => row(topic, true))}
+            {led.map((topic) => row(topic, false))}
+            {spaces.length + led.length === 0 && <EmptyState scope="section" message="No spaces or topics yet" />}
           </section>
           {/* A team with nothing outside its topics shows no Files at all: an empty heading tells nobody anything. */}
           {(filesFailed || files === null || files.length > 0) && (
             <section className="flex flex-col gap-0.5">
               <SectionLabel tone="muted">Files</SectionLabel>
               {filesFailed ? (
-                <EmptyState scope="section" message="Its files could not be read." />
+                <EmptyState scope="section" message="Couldn’t load its files. Reload to try again." />
               ) : files === null ? (
                 <SkeletonList />
               ) : (

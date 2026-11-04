@@ -27,6 +27,7 @@ const team = (id: string, name: string, over: Partial<Team> = {}): Team => ({
   name,
   archived: false,
   company: false,
+  private: false,
   admins: [],
   members: [],
   isMember: false,
@@ -153,7 +154,7 @@ describe('marking a space from the Teams column (TEA-5)', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'Make it a space' }))
     expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, LAUNCH, true)
     await openMenu(sectionOf('Engineering'), 'General')
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Not a space' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Stop being a space' }))
     expect(onMarkSpace).toHaveBeenLastCalledWith(ENGINEERING, GENERAL, false)
   })
 
@@ -162,7 +163,7 @@ describe('marking a space from the Teams column (TEA-5)', () => {
     // The row still has its menu (Join, Copy link…): what it lacks is the mark.
     await openMenu(sectionOf('Sales'), 'Hiring')
     expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('menuitem', { name: 'Not a space' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Stop being a space' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Make it a space' })).toBeNull()
   })
 })

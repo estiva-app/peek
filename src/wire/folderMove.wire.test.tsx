@@ -14,6 +14,7 @@ import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { installWireRelay, ME, signed, tagOf, tagsOf, type WireRelay } from '@/test/wireRelay'
 import { useForeignObjects } from '@/api'
+import { resetTeamsForTests } from '@/api/useTeams'
 import { useFileControls } from '@/components/views/useFileControls'
 import { ToastProvider } from '@/lib/toast'
 
@@ -153,6 +154,41 @@ describe('moving a file at the wire', () => {
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(commands()).toEqual(['move HQ→Steer', 'move Ops→Steer'])
+  })
+})
+
+/*
+  A space's mark (TEA-5, SPEC §3.3): moving one of HQ's spaces into a team the
+  mover is in asks "Keep it a space in Steer", ticked. The tab holds no teams
+  until Move opens — as on a topic opened from a link — so they are read then.
+*/
+describe('moving a space at the wire', () => {
+  beforeEach(() => {
+    // The teams an earlier case read are module state: this one's are read when Move opens.
+    resetTeamsForTests()
+    relay.seed(
+      signed({ kind: 30890, created_at: 1_700_000_001, tags: [['d', HQ], ['a', ADDRESS, '', 'space']] }, RELAY_KEY),
+      signed({ kind: 39002, created_at: 1_700_000_000, tags: [['d', STEER], ['p', ME]] }, RELAY_KEY),
+      signed({ kind: 39002, created_at: 1_700_000_000, tags: [['d', HQ], ['p', ME]] }, RELAY_KEY),
+    )
+  })
+  const roleAtTarget = () => relay.sentOf(1852)[0]?.tags.find((t) => t[0] === 'a' && t[1] === ADDRESS)?.[3]
+
+  it('ticked, the move makes it a space of the team it goes to', async () => {
+    const onMoved = await pick('Steer')
+    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(onMoved).toHaveBeenCalled())
+    expect(commands()).toEqual(['move HQ→Steer'])
+    expect(roleAtTarget()).toBe('space')
+  })
+
+  it('unticked, it arrives a topic the team leads', async () => {
+    const onMoved = await pick('Steer')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(onMoved).toHaveBeenCalled())
+    expect(roleAtTarget()).toBeUndefined()
   })
 })
 

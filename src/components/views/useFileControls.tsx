@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
+import { KIND_BARE_FILE, SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject, useTeams } from '@/api'
+import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject, useTeams, entryNames } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
@@ -11,6 +11,7 @@ import { ARCHIVE_WORDS, archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { currentFolderOf, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
 import { useToast } from '@/lib/toast'
+
 
 /**
  * What a menu asks for on a file: its details, a rename, a deletion, a move
@@ -23,6 +24,9 @@ const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
 /** Where a file may go, as the kit's Move lists it: what it goes under, by address (`''` for the top), and its path. */
 const placeOf = (target: MoveTarget): MovePlace => ({ id: target.file?.address ?? '', path: target.path })
+
+/** A topic: the one kind a team marks as a space (§3.3). */
+const isTopic = (file: ForeignObject) => Number(file.address?.split(':')[0]) === KIND_BARE_FILE
 
 interface MoveState {
   kind: 'move'
@@ -157,8 +161,6 @@ export function useFileControls({
 } {
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
-  // Which team marks a file a space, and which teams the person is in: what this tab holds, no read of its own (TEA-5).
-  const { teams } = useTeams({ read: false })
   // The Desk's Open work draws this tab's held copy of a file: asked again after a rename or a summary change, its row shows it.
   const reloadHeld = useReloadHeldObject()
   const { showToast } = useToast()
@@ -181,6 +183,14 @@ export function useFileControls({
     | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
     | null
   >(null)
+  /*
+    Which team marks a file a space, and which teams the person is in (TEA-5):
+    read once Move is pressed, beside the Folder's own read, since from the
+    Topics rail or a link none may be held yet. A topic's Move is drawn once
+    they are, so its "Keep it a space" box opens ticked, never late.
+  */
+  const [teamsWanted, setTeamsWanted] = useState(false)
+  const { teams, failed: teamsFailed } = useTeams({ read: teamsWanted })
 
   const refuse = useCallback(
     (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
@@ -353,6 +363,7 @@ export function useFileControls({
       if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
         return refuse('This file is in no Folder Peek can read, so nothing can be put inside it from here.')
       }
+      if (control === 'move') setTeamsWanted(true)
       void (async () => {
         let place: Awaited<ReturnType<typeof readPlace>>
         try {
@@ -395,6 +406,11 @@ export function useFileControls({
     const to = state.teams.find((team) => team.id === choice.folder)
     if (!to) return false
     const changesFolder = to.id !== from
+    // A topic may be a space, and whether to keep it one is asked only once its teams are read: never a guess.
+    if (changesFolder && !teams && isTopic(file)) {
+      refuse(teamsFailed ? 'Its team could not be read, so nothing was moved. Try again.' : 'Its team is still being read. Try again in a moment.')
+      return false
+    }
     const changesParent = choice.parent !== undefined && choice.parent !== (file.parentRef ?? '')
     // The file and what each Folder it is in lists beneath it, archived files included, planned by
     // interop as Ship's move is (SPEC §3.3, SHI-37). An issue is listed by no Folder — its project
@@ -460,7 +476,8 @@ export function useFileControls({
   */
   const keepSpaceCheck = (state: MoveState) => {
     const source = teams?.find((team) => team.id === state.from)
-    const wasSpace = !!source?.listed.some((entry) => entry.space && entry.address === state.file.address)
+    const address = state.file.address
+    const wasSpace = !!address && !!source?.listed.some((entry) => entry.space && entryNames(entry, address))
     if (!wasSpace) return undefined
     return {
       label: (folder: string) => {
@@ -585,7 +602,7 @@ export function useFileControls({
         onArchive={(resolution) => setArchived(dialog.file, true, resolution || undefined)}
         onClose={() => setDialog(null)}
       />
-    ) : dialog.kind === 'move' ? (
+    ) : dialog.kind === 'move' && !teams && !teamsFailed && isTopic(dialog.file) ? null : dialog.kind === 'move' ? (
       /*
         The kit's Move (C11): the Folder first, then what it goes under there,
         read when a Folder is picked. Only a file that may sit under any file

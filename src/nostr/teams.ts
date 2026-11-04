@@ -15,7 +15,7 @@
  */
 import { buildAddMember, buildJoinGroup, buildLeaveGroup, KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { buildTeamsEvent, parseTeamsBlob, serializeTeamsBlob, teamsFilter, type TeamsList } from '@estiva-app/conversation'
-import { KIND_FOLDER_STATE, listEntries, planMarkSpace, type QueryFn } from '@estiva-app/interop'
+import { KIND_BARE_FILE, KIND_FOLDER_STATE, listEntries, planMarkSpace, type QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { decryptBlob, encryptBlob } from './appData'
@@ -27,8 +27,7 @@ export const KIND_ROSTER = 39002
 /** The stored commands a member's start is read from: put, remove, join, leave, and the team's creation. */
 const ROSTER_COMMANDS = [KIND.NIP29_PUT_USER, KIND.NIP29_REMOVE_USER, KIND.NIP29_JOIN, KIND.NIP29_LEAVE, KIND.NIP29_CREATE_GROUP]
 
-/** A topic (§6.14), and a change to a file (its list entries among them). */
-const KIND_BARE_FILE = 30840
+/** A change to a file: its list entries among them. */
 const KIND_CHANGE = 1851
 
 /** Buzz's ceiling per filter; a team's commands over its whole life stay far below it (54 across 13 teams, 3 Nov). */
@@ -101,12 +100,25 @@ async function listOf(event: SignedEvent | undefined, decrypt: (ciphertext: stri
   return list ? { state: 'present', list } : { state: 'absent' }
 }
 
-/** The addresses a team's newest `30890` lists, each with whether it is one of the team's spaces (the `space` role). */
-export function listedOf(listing: readonly SignedEvent[]): { address: string; space: boolean }[] {
+/** One entry of a team's list: a file named by its address (`a`), or by its id alone (`o`, as the relay also takes), and whether it is one of the team's spaces. */
+export type ListedEntry = { space: boolean } & ({ address: string } | { /** The file's `d`. */ id: string })
+
+/** What a team's newest `30890` lists, each with whether it is one of the team's spaces (the `space` role). */
+export function listedOf(listing: readonly SignedEvent[]): ListedEntry[] {
   const newest = [...listing].sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return []
-  return newest.tags.filter((t) => t[0] === 'a' && t[1]).map((t) => ({ address: t[1], space: t[3] === 'space' }))
+  return newest.tags.flatMap((t) => {
+    if (!t[1] || (t[0] !== 'a' && t[0] !== 'o')) return []
+    const space = t[3] === 'space'
+    return [t[0] === 'a' ? { address: t[1], space } : { id: t[1], space }]
+  })
 }
+
+/** Whether a list entry names the file at this address: by the address, or by its id when the list names it by id. */
+export const entryNames = (entry: ListedEntry, address: string) => ('address' in entry ? entry.address === address : entry.id === dOfAddress(address))
+
+/** An address's `d`: what an id-form entry names. */
+export const dOfAddress = (address: string) => address.split(':').slice(2).join(':')
 
 /** The teams list after following or unfollowing one; `undefined` when nothing changes. */
 export function followedList(current: TeamsList | undefined, team: string, follow: boolean, nowMs: number): Pick<TeamsList, 'teams' | 'off'> | undefined {

@@ -3,13 +3,11 @@ import { Link } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
 import { EmptyState, NavItem, NavTree, SectionHeader, SkeletonList } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { useConversationBadges, usePeekActions, useTeamChatUnread, useTeams, useTopicsColumn, type Team } from '@/api'
+import { teamPlaces, useConversationBadges, usePeekActions, useTeamChatUnread, useTeams, useTeamTopics, type Team } from '@/api'
 import { TreeRow } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import type { TreeShow } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
-
-const KIND_BARE_FILE = 30840
 
 /** A team's chat: its own path beside the team's page (TEA-5). */
 export const teamChatPath = (team: string) => `/app/folders/${team}/chat`
@@ -48,25 +46,16 @@ export function TeamsColumn({
 }) {
   const { teams, failed } = useTeams()
   const chatUnread = useTeamChatUnread(teams)
-  const { state, signedOut } = useTopicsColumn()
+  const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
 
-  // Every topic this viewer can read, by address: a team's list names them, the topics column has their titles.
-  const topics = useMemo(() => {
-    const out = new Map<string, ForeignObject>()
-    if (typeof state === 'object' && 'mine' in state) {
-      for (const { topic } of state.mine) if (topic.address) out.set(topic.address, topic)
-      for (const topic of state.others) if (topic.address) out.set(topic.address, topic)
-    }
-    return out
-  }, [state])
   const drawn = useMemo(() => (teams ? [...topics.values()] : undefined), [teams, topics])
   const { unread } = useConversationBadges(drawn)
 
   if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
-  if (failed) return <EmptyState scope="section" message="Teams could not be read." />
-  if (!teams || state === 'loading') return <SkeletonList />
+  if (failed) return <EmptyState scope="section" message="Couldn’t load your teams. Reload to try again." />
+  if (!teams || loading) return <SkeletonList />
 
   const mark = async (team: Team, topic: ForeignObject, space: boolean) => {
     if (!topic.address) return
@@ -123,13 +112,10 @@ export function TeamsColumnView({
 
   // Its chat, its spaces, then the topics it leads; under Unread only what lights, and the open one.
   const section = (team: Team) => {
-    const placesOf = (space: boolean) =>
-      team.listed
-        .filter((entry) => entry.space === space && Number(entry.address.split(':')[0]) === KIND_BARE_FILE)
-        .flatMap((entry) => topics.get(entry.address) ?? [])
-        .filter((topic) => !topic.archived && (show === 'all' || unread[topic.ref] === true || topic.ref === selectedRef))
-    const spaces = placesOf(true)
-    const led = placesOf(false)
+    const shown = (topic: ForeignObject) => show === 'all' || unread[topic.ref] === true || topic.ref === selectedRef
+    const places = teamPlaces(team, topics)
+    const spaces = places.spaces.filter(shown)
+    const led = places.led.filter(shown)
     const chatOpenHere = chatOpen && openTeam === team.id
     const chat = team.isMember && (show === 'all' || chatUnread[team.id] === true || chatOpenHere)
     if (show !== 'all' && !chat && spaces.length + led.length === 0 && openTeam !== team.id) return null

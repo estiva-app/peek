@@ -116,7 +116,7 @@ export function TopicMenuItems({
       {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}
       {onMove && <MenuItem label="Move…" onClick={onMove} />}
       {spaceAction && onToggleSpace && (
-        <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Not a space'} onClick={onToggleSpace} />
+        <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />
       )}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
       {openWorkAction && onToggleOpenWork && (

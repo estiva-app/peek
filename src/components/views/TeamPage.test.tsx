@@ -23,24 +23,26 @@ const file = (kind: number, d: string, title: string) =>
   ({ ref: `${kind}:${PK}:${d}`, address: `${kind}:${PK}:${d}`, kind, folder: 'eng', slots: { title: { value: title } } }) as unknown as ForeignObject
 const LAUNCH = file(30840, 'launch', 'Launch')
 const ROADMAP = file(30850, 'roadmap', 'Roadmap project')
+const BRIEF = file(30840, 'brief', 'Brief')
 
 const api = vi.hoisted(() => ({
   joinTeam: vi.fn(),
   leaveTeam: vi.fn(),
   addToTeam: vi.fn(),
   followTeam: vi.fn(),
+  markSpace: vi.fn(),
   files: [] as ForeignObject[] | null,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
-  usePeekActions: () => ({ joinTeam: api.joinTeam, leaveTeam: api.leaveTeam, addToTeam: api.addToTeam, followTeam: api.followTeam }),
+  usePeekActions: () => ({ joinTeam: api.joinTeam, leaveTeam: api.leaveTeam, addToTeam: api.addToTeam, followTeam: api.followTeam, markSpace: api.markSpace }),
   useMentionNames: () => [
     { pubkey: ME, name: 'Miky' },
     { pubkey: KATERINA, name: 'Katerina' },
     { pubkey: AGENT, name: 'Claude', bot: true },
     { pubkey: STRANGER, name: 'Zoe' },
   ],
-  useTopicsColumn: () => ({ state: { mine: [{ topic: LAUNCH, files: [], archivedFiles: [] }], others: [], archived: [] }, signedOut: false }),
+  useTeamTopics: () => ({ topics: new Map([[LAUNCH.address!, LAUNCH], [BRIEF.address!, BRIEF]]), loading: false, signedOut: false }),
   useTeamFiles: () => ({ files: api.files, failed: false }),
   useMayMove: () => true,
 }))
@@ -52,6 +54,7 @@ const team = (over: Partial<Team> = {}): Team => ({
   name: 'Engineering',
   archived: false,
   company: false,
+  private: false,
   admins: [KATERINA],
   members: [
     { pubkey: KATERINA, role: 'admin' },
@@ -60,7 +63,10 @@ const team = (over: Partial<Team> = {}): Team => ({
   ] as unknown as Team['members'],
   isMember: true,
   isFollowing: false,
-  listed: [{ address: LAUNCH.address!, space: true }],
+  listed: [
+    { address: LAUNCH.address!, space: true },
+    { id: 'brief', space: false },
+  ],
   chat: 'all' as unknown as Team['chat'],
   ...over,
 })
@@ -77,7 +83,7 @@ const ok = { ok: true } as const
 
 beforeEach(() => {
   vi.clearAllMocks()
-  for (const write of [api.joinTeam, api.leaveTeam, api.addToTeam, api.followTeam]) write.mockResolvedValue(ok)
+  for (const write of [api.joinTeam, api.leaveTeam, api.addToTeam, api.followTeam, api.markSpace]) write.mockResolvedValue(ok)
   api.files = []
 })
 
@@ -113,6 +119,24 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
     expect(api.joinTeam).toHaveBeenCalledWith('eng')
     await userEvent.click(screen.getByRole('button', { name: 'Follow' }))
     expect(api.followTeam).toHaveBeenCalledWith('eng', true)
+  })
+
+  it('a private team offers no Join: only being added puts someone in it', () => {
+    mount(team({ isMember: false, private: true }), STRANGER)
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Follow' })).toBeTruthy()
+  })
+
+  it('a member marks a topic a space, and takes the mark off a space, from its row', async () => {
+    mount(team())
+    const places = within(screen.getByText(/^Places$/).parentElement as HTMLElement)
+    const menuOf = (title: string) => places.getByText(title).closest('[data-tree-row], li, a, div')!.parentElement as HTMLElement
+    await userEvent.click(within(menuOf('Launch')).getByRole('button', { name: 'More options' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Stop being a space' }))
+    expect(api.markSpace).toHaveBeenCalledWith('eng', LAUNCH.address, false)
+    await userEvent.click(within(menuOf('Brief')).getByRole('button', { name: 'More options' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it a space' }))
+    expect(api.markSpace).toHaveBeenCalledWith('eng', BRIEF.address, true)
   })
 
   it('a follower is offered Unfollow, which stops following', async () => {
