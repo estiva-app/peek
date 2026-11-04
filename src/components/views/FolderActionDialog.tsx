@@ -30,7 +30,7 @@ export function FolderActionDialog({
   const { createTopic, renameFolder, archiveFolder, archiveImpact } = useForeignObjects()
   const { showToast } = useToast()
   const { folder } = action
-  const name = folder.name ?? 'Untitled folder'
+  const name = folder.name ?? 'Untitled team'
 
   /* What archiving would hide, read once as the dialog opens (FOL-46): a warning with no counts would say it hides nothing. */
   const [impact, setImpact] = useState<{ hides: string[]; staysVisible: string[] } | null>(null)
@@ -134,7 +134,7 @@ export function FolderActionDialog({
   return (
     <ArchiveDialog
       title={name}
-      what="folder"
+      what="team"
       hides={impact?.hides ?? null}
       staysVisible={impact?.staysVisible}
       apps={ARCHIVE_WORDS.apps}

@@ -133,12 +133,12 @@ describe('moving a file', () => {
     for why, never the relay's text, which is written for a developer.
   */
   it.each([
-    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the Folders is archived.'],
-    ['invalid: channel is archived', 'Nothing was moved: one of the Folders is archived.'],
-    ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both Folders to move this.'],
-    [`invalid: the team a move leaves does not list ${ADDRESS}`, 'Nothing was moved: the Folders changed since you opened this. Try again.'],
-    ['invalid: the team a move leaves lists none of its files', 'Nothing was moved: the Folders changed since you opened this. Try again.'],
-    ["invalid: a topic is listed by one team: take it off the other team's list first", 'Nothing was moved: the Folders changed since you opened this. Try again.'],
+    ['invalid: team 31afb7af is archived; its list does not change', 'Nothing was moved: one of the teams is archived.'],
+    ['invalid: channel is archived', 'Nothing was moved: one of the teams is archived.'],
+    ["invalid: only the team's members mark or unmark its spaces", 'Nothing was moved: you need to be a member of both teams to move this.'],
+    [`invalid: the team a move leaves does not list ${ADDRESS}`, 'Nothing was moved: the teams changed since you opened this. Try again.'],
+    ['invalid: the team a move leaves lists none of its files', 'Nothing was moved: the teams changed since you opened this. Try again.'],
+    ["invalid: a topic is listed by one team: take it off the other team's list first", 'Nothing was moved: the teams changed since you opened this. Try again.'],
     ['invalid: rate-limited', 'Nothing was moved. Try again.'],
   ])('a refused move says why in Peek’s words, never the relay’s: %s', async (relayText, sentence) => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: relayText, httpStatus: 200 })
@@ -190,7 +190,7 @@ describe('moving a file', () => {
   it('sends nothing into a private folder when the file lives in another channel', async () => {
     const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here],{ ...there, private: true }, 'https://relay.test', token)
 
-    expect(result.ok === false && result.reason).toMatch(/private Folder/)
+    expect(result.ok === false && result.reason).toMatch(/private team/)
     expect(sent()).toHaveLength(0)
   })
 
@@ -242,8 +242,8 @@ describe('moving a file', () => {
 
     expect(result).toEqual({
       ok: false,
-      reason: 'Nothing was moved: one of the Folders is archived.',
-      why: 'one of the Folders is archived.',
+      reason: 'Nothing was moved: one of the teams is archived.',
+      why: 'one of the teams is archived.',
       stillIn: [FOLDER, THIRD],
     })
     expect(sent()).toHaveLength(1)
@@ -256,13 +256,13 @@ describe('moving a file', () => {
 
     // Not "the move failed": the file did arrive, and saying it failed would
     // send somebody looking for it in the folder it already left.
-    expect(result).toEqual({ ok: false, landed: true, why: 'the Folders changed since you opened this. Try again.', stillIn: [THIRD] })
+    expect(result).toEqual({ ok: false, landed: true, why: 'the teams changed since you opened this. Try again.', stillIn: [THIRD] })
   })
 
   it('refuses, rather than reporting a move, out of a folder with no state that lists the file by containment', async () => {
     const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [{ id: FOLDER, hasState: false, addresses: [] }], there, 'https://relay.test', token)
 
-    expect(result.ok === false && result.reason).toMatch(/out of this Folder/)
+    expect(result.ok === false && result.reason).toMatch(/out of this team/)
     expect(sent()).toHaveLength(0)
   })
 
@@ -305,7 +305,7 @@ describe('moving a file', () => {
 
       expect(result).toEqual({
         ok: false,
-        reason: 'This topic is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.',
+        reason: 'This topic is in no team yet, so it can go only to the one it was started in or to the Company team.',
       })
       expect(sent()).toHaveLength(0)
     })
@@ -341,13 +341,13 @@ describe('deleting a folder', () => {
     ['an issue is filed in it', [metadata(), admins(), roster(), event(30851, [['h', FOLDER]])], /filed/],
     ['a topic is filed in it', [metadata(), admins(), roster(), event(30840, [['h', FOLDER]])], /filed/],
     ['a Leaf document is filed in it — the relay refuses the delete since buzz#27', [metadata(), admins(), roster(), event(30842, [['h', FOLDER]])], /filed/],
-    ['it is a DM, which names no owner — even for a steward', [event(39000, [['d', FOLDER], ['name', 'DM'], ['t', 'dm']]), event(39001, [['d', FOLDER]]), roster('admin')], /not a folder/],
-    ['the viewer is neither its owner nor a steward', [metadata(), admins(OTHER_PERSON), roster('member')], /made this folder/],
+    ['it is a DM, which names no owner — even for a steward', [event(39000, [['d', FOLDER], ['name', 'DM'], ['t', 'dm']]), event(39001, [['d', FOLDER]]), roster('admin')], /not a team/],
+    ['the viewer is neither its owner nor a steward', [metadata(), admins(OTHER_PERSON), roster('member')], /made this team/],
     ['the relay does not answer for it', [], /could not be read/],
     [
       'only a roster somebody other than the relay signed makes the viewer a steward',
       [metadata(), admins(OTHER_PERSON), event(13534, [['member', AUTHOR, 'admin']], OTHER_PERSON)],
-      /made this folder/,
+      /made this team/,
     ],
   ])('sends nothing when %s', async (_why, events, reason) => {
     relayHolds(...events)
@@ -416,7 +416,7 @@ describe('deleting a folder', () => {
 
     expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toEqual({
       ok: false,
-      reason: 'This folder still has 2 files. Move or delete them first.',
+      reason: 'This team still has 2 files. Move or delete them first.',
     })
   })
 })

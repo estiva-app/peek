@@ -360,7 +360,7 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     await teamMenu()
     await screen.findByRole('menuitem', { name: 'Rename' })
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete team' })).toBeNull()
     expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
   })
 })
@@ -389,7 +389,7 @@ describe('a stateless channel’s link (5 October)', () => {
 
   it('a channel with no project lists what it holds, not a sentence about folder state', async () => {
     mount(`/app/folders/${BARE_CHANNEL}`)
-    expect(await screen.findByText('Nothing in this folder yet.')).toBeTruthy()
+    expect(await screen.findByText('Nothing in this team yet.')).toBeTruthy()
     expect(screen.queryByText(/no folder state/)).toBeNull()
   })
 })
@@ -397,7 +397,7 @@ describe('a stateless channel’s link (5 October)', () => {
 describe('a stateless channel’s link offers Delete only where it loses nothing but the Folder', () => {
   it('offers it on an empty channel the relay says may go, and says what goes', async () => {
     mount(`/app/folders/${BARE_CHANNEL}`)
-    await userEvent.click(await screen.findByRole('button', { name: 'Delete folder' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete team' }))
     expect(await screen.findByText(/every message in it disappear for everyone/)).toBeTruthy()
     expect(screen.queryByText(/not deleted/)).toBeNull()
   })
@@ -406,7 +406,7 @@ describe('a stateless channel’s link offers Delete only where it loses nothing
     mount(`/app/folders/${RECORD_CHANNEL}`)
     await waitFor(() => expect(deletable.check).toHaveBeenCalledWith(RECORD_CHANNEL))
     await new Promise((r) => setTimeout(r, 0))
-    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete team' })).toBeNull()
   })
 })
 
@@ -423,8 +423,8 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 
   it('says a DM with no single partner is not a folder, and offers nothing on it', async () => {
     mount(`/app/folders/${GROUP_DM_CHANNEL}`)
-    expect(await screen.findByText('This is not a folder.')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(await screen.findByText('This is not a team.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Delete team' })).toBeNull()
   })
 
   /*
@@ -434,7 +434,7 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
   it('says a channel the relay does not list is not a folder, and never shows its uuid', async () => {
     const unlisted = 'cccccccc-0000-4000-8000-000000000000'
     mount(`/app/folders/${unlisted}`)
-    expect(await screen.findByText('This is not a folder.')).toBeTruthy()
+    expect(await screen.findByText('This is not a team.')).toBeTruthy()
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(unlisted))
     expect(screen.queryByText(unlisted)).toBeNull()
     expect(screen.queryByRole('toolbar', { name: 'Folder actions' })).toBeNull()
@@ -446,7 +446,7 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
       mount(`/app/folders/${FOLDER}`)
       await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
       await new Promise((r) => setTimeout(r, 0))
-      expect(screen.queryByText('This is not a folder.')).toBeNull()
+      expect(screen.queryByText('This is not a team.')).toBeNull()
     } finally {
       listing.failed = false
     }
@@ -497,8 +497,8 @@ describe('FoldersPage makes a Folder from its name, in Teams', () => {
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
-    await user.click(screen.getByRole('button', { name: 'New folder' }))
-    const name = screen.getByRole('textbox', { name: 'Folder name' })
+    await user.click(screen.getByRole('button', { name: 'New team' }))
+    const name = screen.getByRole('textbox', { name: 'Team name' })
     await user.type(name, 'Launch notes{Shift>}{Enter}{/Shift}')
     expect(created.folder).not.toHaveBeenCalled()
     await user.type(name, '{Enter}')
@@ -527,7 +527,7 @@ describe('FoldersPage starts a topic from the header', () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
-    await user.click(screen.getByRole('combobox', { name: 'Folder' }))
+    await user.click(screen.getByRole('combobox', { name: 'Team' }))
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
@@ -543,7 +543,7 @@ describe('FoldersPage starts a topic from the header', () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
-    await user.click(screen.getByRole('combobox', { name: 'Folder' }))
+    await user.click(screen.getByRole('combobox', { name: 'Team' }))
     expect(await screen.findByRole('option', { name: 'For testing' })).toBeTruthy()
     expect(screen.queryByRole('option', { name: 'project-0804b906' })).toBeNull()
   })

@@ -1885,7 +1885,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual(['The top of Steer'])
@@ -1934,7 +1934,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     // Only Steer's projects: an issue under no project is in no Folder.
@@ -2064,7 +2064,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
     await userEvent.click(await screen.findByRole('option', { name: to }))
   }
 

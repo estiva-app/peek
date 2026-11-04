@@ -88,7 +88,7 @@ export async function publishTopicAsViewer(
   const file = await publishConfirmed(planned.event, relayUrl, token, 'The relay refused to create the topic.')
   if (!file.ok) return file
   for (const command of planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address: planned.address, hasState: args.hasState })) {
-    const placed = await publishConfirmed(command, relayUrl, token, 'The Folder refused to list the topic.')
+    const placed = await publishConfirmed(command, relayUrl, token, 'The team refused to list the topic.')
     if (placed.ok) continue
     const deleted = file.id
       ? await publishConfirmed(buildDeletion(token.pubkey, Date.now(), { targetEventId: file.id }), relayUrl, token, '')

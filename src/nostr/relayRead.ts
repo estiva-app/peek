@@ -210,7 +210,7 @@ export function isOutage(kind: RelayFailureKind): boolean {
 export function describeRelayFailure(kind: RelayFailureKind): string {
   switch (kind) {
     case 'not_a_member':
-      return 'You are not a member of this Folder, so its contents are not visible to you.'
+      return 'You are not a member of this team, so its contents are not visible to you.'
     case 'refused':
       return 'The relay refused this read. Showing what was already saved.'
     case 'rate_limited':

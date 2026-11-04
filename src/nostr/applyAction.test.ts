@@ -145,7 +145,7 @@ describe('the Folder is found however the record spells it', () => {
     const result = await create()
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toMatch(/no Folder/)
+    expect(result.ok === false && result.reason).toMatch(/no team/)
     expect(publishSigned).not.toHaveBeenCalled()
   })
 })

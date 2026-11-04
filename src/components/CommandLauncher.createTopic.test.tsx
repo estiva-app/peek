@@ -132,7 +132,7 @@ describe('Create topic (INT-12)', () => {
     registerTopicConversation({ references: [], messages: [], folder: QA_FOLDER })
     open()
     await userEvent.click(await screen.findByRole('option', { name: /Create topic/ }))
-    expect(await screen.findByLabelText(/folder/i)).toHaveTextContent('QA')
+    expect(await screen.findByLabelText(/team/i)).toHaveTextContent('QA')
   })
 
   it('files the topic in the chosen Folder with the built-in, and adds its members after', async () => {
@@ -171,7 +171,7 @@ describe('Create topic (INT-12)', () => {
     }))
     open()
     await userEvent.click(await screen.findByRole('option', { name: /Create topic/ }))
-    expect(await screen.findByText('No Folder you can add to yet')).toBeInTheDocument()
+    expect(await screen.findByText('No team you can add to yet')).toBeInTheDocument()
   })
 
   it('starts with no Folder outside one, and says the Folder is needed', async () => {

@@ -416,7 +416,7 @@ describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
     open()
     await userEvent.click(await screen.findByText('New project'))
     await userEvent.type(await screen.findByRole('textbox', { name: /^name/i }), 'MAN-8 prod check')
-    await userEvent.click(screen.getByLabelText('Folder'))
+    await userEvent.click(screen.getByLabelText('Team'))
     expect(screen.queryByRole('option', { name: 'A DM' })).not.toBeInTheDocument()
     await userEvent.click(await screen.findByRole('option', { name: 'QA' }))
     await userEvent.click(screen.getByRole('button', { name: 'New project' }))

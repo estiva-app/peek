@@ -57,10 +57,10 @@ function moveStateOf(
     file: here,
     from: team,
     sources: [
-      { id: team, name: contents.name ?? 'Untitled Folder', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
+      { id: team, name: contents.name ?? 'Untitled team', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
       ...folders
         .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
-        .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled Folder', hasState: true, addresses: folder.addresses ?? [] })),
+        .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled team', hasState: true, addresses: folder.addresses ?? [] })),
     ],
     teams: topLevelFolders(folders),
     nests,
@@ -221,7 +221,7 @@ export function useFileControls({
     async (file: ForeignObject, pubkeys: string[], nameOf: (pubkey: string) => string): Promise<boolean> => {
       const title = file.slots.title?.value ?? 'this file'
       if (!file.address || !file.folder) {
-        refuse(`“${title}” is in no Folder Peek can read, so nobody can be added from here.`)
+        refuse(`“${title}” is in no team Peek can read, so nobody can be added from here.`)
         return false
       }
       let added = true
@@ -321,7 +321,7 @@ export function useFileControls({
       if (control === 'join' || control === 'leave') {
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
-        if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
+        if (!file.address || !file.folder) return refuse(`“${title}” is in no team Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
         void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) => {
           if (outcome === true) membershipCallback.current?.(file)
           showToast(
@@ -361,7 +361,7 @@ export function useFileControls({
       }
       const ownFolder = file.folder
       if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
-        return refuse('This file is in no Folder Peek can read, so nothing can be put inside it from here.')
+        return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
       }
       if (control === 'move') setTeamsWanted(true)
       void (async () => {
@@ -369,11 +369,11 @@ export function useFileControls({
         try {
           place = await readPlace(file, ownFolder)
         } catch {
-          refuse('The Folder could not be read. Try again.')
+          refuse('The team could not be read. Try again.')
           return
         }
         const { contents, team } = place
-        const teamName = contents.name ?? 'this Folder'
+        const teamName = contents.name ?? 'this team'
         if (control === 'inside') {
           setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
           return
@@ -422,8 +422,8 @@ export function useFileControls({
       the refused move were never asked — and why, in Peek's words.
     */
     const partly = (stillIn: readonly string[], why: string | undefined) => {
-      const names = [...new Set(stillIn)].map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder')
-      return `Moved to ${to.name ?? 'the Folder'}, but ${names.join(' and ')} still list${names.length > 1 ? '' : 's'} it too${why ? `: ${why}` : '. Try moving it again.'}`
+      const names = [...new Set(stillIn)].map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another team')
+      return `Moved to ${to.name ?? 'the team'}, but ${names.join(' and ')} still list${names.length > 1 ? '' : 's'} it too${why ? `: ${why}` : '. Try moving it again.'}`
     }
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string; why?: string; stillIn?: string[] }>
     const relist: Step | undefined = changesFolder
@@ -459,7 +459,7 @@ export function useFileControls({
         }
         // The issue took its new project, and what is listed under it was not moved with it.
         if (result.stillIn?.length) refuse(partly(result.stillIn, result.why))
-        else refuse(`Moved to ${to.name ?? 'the Folder'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`)
+        else refuse(`Moved to ${to.name ?? 'the team'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`)
         break
       }
       moved = true
@@ -570,7 +570,7 @@ export function useFileControls({
       try {
         hasState = (await resolveFolderContents(file.folder)).hasState
       } catch {
-        refuse('The folder could not be read, so nothing was deleted. Try again.')
+        refuse('The team could not be read, so nothing was deleted. Try again.')
         return
       }
     }
@@ -614,7 +614,7 @@ export function useFileControls({
         title={dialog.file.slots.title?.value ?? 'this file'}
         description="Everyone who can read it now still can."
         from={dialog.from}
-        folders={dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled folder' }))}
+        folders={dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled team' }))}
         places={dialog.targets?.map(placeOf)}
         placesIn={dialog.nests ? async (folder) => (await targetsIn(dialog, folder)).map(placeOf) : undefined}
         startAtTop={dialog.file.parentKind === undefined}

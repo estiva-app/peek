@@ -68,11 +68,11 @@ export function FileTreeView({
   }
   // Unreadable is not empty — the line the whole codebase holds (PEE-10).
   if ('failed' in state) {
-    return <EmptyState scope="rows" message="This folder could not be read." />
+    return <EmptyState scope="rows" message="This team could not be read." />
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <EmptyState scope="rows" message={archive ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
+    return <EmptyState scope="rows" message={archive ? 'Nothing archived in this team.' : 'Nothing in this team yet.'} />
   }
 
   // The rows straight into the Folder's section, which sets them 2px apart (`NavTreeSection`), or the Panel's body.

@@ -159,7 +159,7 @@ describe('the Topics column (TOP-4)', () => {
 
   it('with no topic at all, says your files are in Folders, and draws no Archived section', () => {
     mount({ mine: [], others: [], archived: [] })
-    expect(screen.getByText('No topics yet. Your files are in Folders.')).toBeInTheDocument()
+    expect(screen.getByText('No topics yet. Your files are in your teams.')).toBeInTheDocument()
     expect(screen.queryByText('Archived')).toBeNull()
   })
 

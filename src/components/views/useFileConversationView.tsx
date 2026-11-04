@@ -537,7 +537,7 @@ export function useFileConversationView({
         failed === 'not_a_member'
           ? container?.kind === 'channel'
             ? 'You are not a member of this conversation.'
-            : 'You are not a member of the folder this file is in.'
+            : 'You are not a member of the team this file is in.'
           : failed === 'refused'
             ? 'The relay refused to show this conversation.'
             : 'The relay could not be reached.'

@@ -762,9 +762,9 @@ export async function createFolderAsViewer(
   const id = crypto.randomUUID()
   const result = await publishInOrder(planCreateFolder(token.pubkey, Date.now(), { folder: id, name }), relayUrl, token)
   if (result.ok) return { ok: true, id }
-  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
+  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused to create the team.' }
   // The channel exists and is reachable by its id; only the list will not show it.
-  return { ok: false, reason: 'The folder was created but the relay refused to list it. Reload and rename it to try again.' }
+  return { ok: false, reason: 'The team was created but the relay refused to list it. Reload and rename it to try again.' }
 }
 
 /**
@@ -931,7 +931,7 @@ export async function deleteFolderAsViewer(
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const deletable = await folderDeletableAsViewer(folder, relayUrl, token).catch(
-    (): { ok: false; reason: string } => ({ ok: false, reason: 'This folder could not be read, so it was not deleted.' }),
+    (): { ok: false; reason: string } => ({ ok: false, reason: 'This team could not be read, so it was not deleted.' }),
   )
   if (!deletable.ok) return deletable
   const result = await publishInOrder(planDeleteFolder(token.pubkey, Date.now(), { folder }), relayUrl, token)
@@ -946,9 +946,9 @@ export async function deleteFolderAsViewer(
  */
 export function deleteRefusalWords(reason: string | undefined): string {
   const held = reason?.match(/holds (\d+) file/)
-  if (!held) return reason ?? 'The relay refused to delete the folder.'
+  if (!held) return reason ?? 'The relay refused to delete the team.'
   const count = Number(held[1])
-  return `This folder still has ${count} ${count === 1 ? 'file' : 'files'}. Move or delete ${count === 1 ? 'it' : 'them'} first.`
+  return `This team still has ${count} ${count === 1 ? 'file' : 'files'}. Move or delete ${count === 1 ? 'it' : 'them'} first.`
 }
 
 /**
@@ -1016,12 +1016,12 @@ export async function moveFileAsViewer(
       ok: false,
       reason:
         plan.reason === 'source-has-no-state'
-          ? 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.'
+          ? 'Files can’t be moved out of this team yet: it has no list of its own, so moving one would hide the rest.'
           : plan.reason === 'target-is-private'
-            ? 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.'
+            ? 'Can’t move this into a private team: it would stay readable by everyone who can read it now.'
             : plan.reason === 'target-is-not-home'
-              ? 'This topic is in no Folder yet, so it can go only to the one it was started in or to the company’s Folder.'
-              : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
+              ? 'This topic is in no team yet, so it can go only to the one it was started in or to the Company team.'
+              : 'That team has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
   const published = await publishInOrder(plan.events, relayUrl, token, { caught: true })
@@ -1034,11 +1034,11 @@ export async function moveFileAsViewer(
       : published.reason === RELAY_BUSY_MESSAGE
         ? 'the relay is busy. Try again in a moment.'
         : refusal.why === 'team-archived'
-          ? 'one of the Folders is archived.'
+          ? 'one of the teams is archived.'
           : refusal.why === 'not-a-member'
-            ? 'you need to be a member of both Folders to move this.'
+            ? 'you need to be a member of both teams to move this.'
             : refusal.why === 'changed-meanwhile'
-              ? 'the Folders changed since you opened this. Try again.'
+              ? 'the teams changed since you opened this. Try again.'
               : undefined
   if (refusal.nothingMoved) {
     const stillIn = plan.events.flatMap((event) => event.tags.filter((tag) => tag[0] === 'from').map((tag) => tag[1]!))
@@ -1748,7 +1748,7 @@ export async function applyActionAsViewer(
     { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
   ])
   if (!root) {
-    return fail('That object is not readable from here — you may not have access to its Folder.')
+    return fail('That object is not readable from here — you may not have access to its team.')
   }
   /*
     The runtime's answer, not a local copy of it.
@@ -1768,7 +1768,7 @@ export async function applyActionAsViewer(
     the suite exercises this function and not the one it should have called.
   */
   const folder = folderOf(root)
-  if (!folder) return fail('That object has no Folder, so there is nowhere to write.')
+  if (!folder) return fail('That object has no team, so there is nowhere to write.')
 
   // `@me` lets the UI offer "assign to me" without the caller composing a
   // pubkey. It resolves against the signed-in viewer, which is the only
@@ -1836,7 +1836,7 @@ export async function applyActionAsViewer(
           ? { listedIn: states.map((state) => ({ id: dOf(state)!, hasState: true })) }
           : { folderHasState: states.length > 0 }
     } catch {
-      return fail('The Folder could not be read, so nothing was written. Try again.')
+      return fail('The team could not be read, so nothing was written. Try again.')
     }
   }
 
@@ -1877,7 +1877,7 @@ export async function applyActionAsViewer(
   let incomplete: string | undefined
   if (commands.length > 0) {
     const followed = await publishInOrder(commands, relayUrl, token)
-    if (!followed.ok) incomplete = followed.reason ?? 'The relay refused the Folder command.'
+    if (!followed.ok) incomplete = followed.reason ?? 'The relay refused the team command.'
   }
   const listed = isListed ? { listed: true as const, ...(incomplete ? { incomplete } : {}) } : {}
   /*
@@ -1985,7 +1985,7 @@ export async function deleteFileAsViewer(
   */
   if (deleted.listed) {
     return deleted.incomplete
-      ? { ok: false, reason: 'It was deleted but is still listed in a folder. Reload and remove it from the folder again.' }
+      ? { ok: false, reason: 'It was deleted but is still listed in a team. Reload and remove it from the team again.' }
       : { ok: true }
   }
   const removed = await publishInOrder(
@@ -1996,7 +1996,7 @@ export async function deleteFileAsViewer(
   if (!removed.ok) {
     return {
       ok: false,
-      reason: 'The topic was deleted but is still listed in this folder. Reload and remove it from the folder again.',
+      reason: 'The topic was deleted but is still listed in this team. Reload and remove it from the team again.',
     }
   }
   return { ok: true }

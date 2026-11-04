@@ -700,7 +700,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     // A `listed` creation whose Folder command was refused (SPEC §7.3): the
     // object exists and its Folder does not show it, which is not a success.
     if (result.incomplete) {
-      setSubmitError(`Created, but its folder does not list it yet: ${result.incomplete}`)
+      setSubmitError(`Created, but its team does not list it yet: ${result.incomplete}`)
       return
     }
     /*

@@ -257,15 +257,15 @@ export function creationsFor(
         action,
         parents: (read.parentsFor?.[action.id] ?? read.parents).map((p) => ({ value: p.address, label: p.title })),
         // The app's own noun for its own kind (INT-9); for another's, what that
-        // kind's projection says, and a Folder is a Folder whoever draws it.
+        // kind's projection says, and a Folder is a team whoever draws it (TEA-8).
         // Start a conversation keeps the noun it had while Peek declared it:
         // its picker holds DMs, which are no Folder.
         parentNoun:
           builtIn && !conversation
-            ? 'Folder'
+            ? 'team'
             : kind === app.parentKind
               ? (app.parentNoun ?? 'parent')
-              : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'Folder' : 'parent')),
+              : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'team' : 'parent')),
         ...(conversation && read.dms?.length ? { dms: read.dms } : {}),
       })
     }

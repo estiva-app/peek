@@ -155,7 +155,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
   const findingProject = stateless && !!selected?.listedIn?.length && !(projectCheck?.id === id)
   // As its heading says; "Folders" with none open, and nothing until the relay has said it is a Folder — nor while a
   // project's record channel is on its way to the project, whose channel name is a machine id.
-  useTabTitle(isFolder && !findingProject ? (selected.name ?? 'Untitled folder') : id ? undefined : 'Teams')
+  useTabTitle(isFolder && !findingProject ? (selected.name ?? 'Untitled team') : id ? undefined : 'Teams')
 
   const { state } = useFolderContents(stateless ? id : null)
   const contentsCount = typeof state === 'object' && 'files' in state ? state.files.length : undefined
@@ -233,13 +233,13 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
             )
           ) : stateless && selected ? (
             <Panel
-              title={selected.name ?? 'Untitled folder'}
+              title={selected.name ?? 'Untitled team'}
               // The rows' 8px inset and their 2px apart, as the column's Folders set them, on the Panel's own body.
               bodyClassName="flex flex-col gap-0.5 p-2"
               actions={
                 // One button: an IconButton of its own, not a strip of one.
                 canDelete && (
-                  <IconButton tooltip="Delete folder" aria-label="Delete folder" onClick={() => setConfirmingDelete(true)}>
+                  <IconButton tooltip="Delete team" aria-label="Delete team" onClick={() => setConfirmingDelete(true)}>
                     <IconTrash size={16} stroke={1.5} />
                   </IconButton>
                 )
@@ -253,14 +253,14 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
               <FileTreeView state={state} onControl={fileControls.open} />
             </Panel>
           ) : (
-            <EmptyState message={notAFolder ? 'This is not a folder.' : 'No file selected'} />
+            <EmptyState message={notAFolder ? 'This is not a team.' : 'No file selected'} />
           )
         }
       />
       {fileControls.dialogs}
       {confirmingDelete && id && (
         <ConfirmDialog
-          title="Delete this folder?"
+          title="Delete this team?"
           confirmLabel="Delete"
           destructive
           onClose={() => setConfirmingDelete(false)}
@@ -276,7 +276,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
           }}
         >
           {/* What a `kind:9008` does, and only that (FOL-9): Delete is offered only on a Folder with nothing filed in it. */}
-          <p>The folder and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.</p>
+          <p>The team and every message in it disappear for everyone. Nothing is filed in it. This can’t be undone.</p>
         </ConfirmDialog>
       )}
     </>

@@ -115,7 +115,7 @@ describe('creationsFor — an action goes to the app that declared it (MAN-8)', 
     const ship = creationsFor({ parentKind: 30850, parentNoun: 'project' }, reads)!
     expect(ship.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label)])).toEqual([
       ['add-issue', 'project', ['Payments']],
-      ['add-project', 'Folder', ['QA']],
+      ['add-project', 'team', ['QA']],
     ])
   })
 
@@ -148,7 +148,7 @@ describe('a Folder’s built-ins: Create topic and Start a conversation (INT-12,
         actions: [startConversation, createFile],
         parents: [{ address: DM, title: 'A DM' }],
         manifest: FOLDER_ACTIONS_ADDRESS,
-        noun: 'folder',
+        noun: 'team',
         parentsFor: {
           'create-file': [{ address: '39000:relay:qa', title: 'QA' }],
           'start-a-conversation': [{ address: DM, title: 'A DM' }],
@@ -162,7 +162,7 @@ describe('a Folder’s built-ins: Create topic and Start a conversation (INT-12,
     const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
     expect(peek.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label), c.dms])).toEqual([
       ['start-a-conversation', 'topic', ['A DM'], [DM]],
-      ['create-file', 'Folder', ['QA'], undefined],
+      ['create-file', 'team', ['QA'], undefined],
     ])
     expect(creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)).toEqual([])
   })

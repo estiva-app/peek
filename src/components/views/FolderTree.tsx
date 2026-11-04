@@ -367,7 +367,7 @@ export function FolderColumn({
 }) {
   return (
     <ListColumn
-      title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Folders'}
+      title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Teams'}
       titleMenu={TREE_VIEWS.map((option) => (
         <MenuItem key={option.value} label={option.label} selected={view === option.value} onClick={() => onViewChange(option.value)} />
       ))}
@@ -377,7 +377,7 @@ export function FolderColumn({
         !signedOut && view !== 'archive' && (
           <Toolbar aria-label="Topic list actions" surface={false}>
             {view === 'all' && (
-              <ToolbarButton tooltip="New folder" aria-label="New folder" onClick={onNewFolder}>
+              <ToolbarButton tooltip="New team" aria-label="New team" onClick={onNewFolder}>
                 <IconFolderPlus size={16} stroke={1.5} />
               </ToolbarButton>
             )}
@@ -442,9 +442,9 @@ export function ArchiveTreeView({
     Three states, not two: "not signed in", "still loading" and "there are
     genuinely none" are different sentences — the Folders page's lesson.
   */
-  if (signedOut) return <EmptyState scope="section" message="Sign in to see folders." />
+  if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
   if (folders === null) return <SkeletonList />
-  if (folders.length === 0) return <EmptyState scope="section" message="No folders yet." />
+  if (folders.length === 0) return <EmptyState scope="section" message="No teams yet." />
 
   // Alphabetical: the relay's order is arrival order, which tells the person nothing.
   const ordered = [...folders].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
