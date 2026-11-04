@@ -2,7 +2,7 @@
  * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
- *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-issues,ship-topics,ship-topic,peek,teams] [--runs 3]
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>]
  *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
  *   node scripts/app-speed.mjs --table /tmp/before.json
@@ -18,7 +18,8 @@
  * - `ship-project`, `ship-issue`: a Ship project ("Ship: Feedback & Bugs", its Overview) and one of its issues.
  * - `ship-issues`, `ship-topics`: Ship's Issues and Topics pages, the whole load each, so a Topics read is weighed
  *   against the Issues open it sits beside (SHIPS-3). `ship-topic`: one topic's page in Ship, opened cold at its
- *   link, the whole load (SHIPS-4). Not in the default set: name them in `--legs`.
+ *   link, the whole load (SHIPS-4). `ship-projects`: Ship's Projects page, the whole load (SHIPS-7). Not in the
+ *   default set: name them in `--legs`.
  * - `agent`: the agent's `ship_get_issue` on "Peek opens instantly" and `peek_read_topic` on "Planning and
  *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
  *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
@@ -73,9 +74,13 @@ const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
  * which waits on the roster read. ("TEA-3 probe A" was archived, so neither column ever drew it.)
  */
 const TEAMS_AWAIT = 'Topic-list probe (QA-1 only)'
-/** [host, path, texts] per page: the project's Overview counts its issues once they are loaded. */
+/**
+ * [host, path, texts] per page: a project counts its issues once they are loaded, as "3/7" beside its ring (ship#362)
+ * and on each project of the Projects page (SHIPS-7).
+ */
 const SHIP_AWAIT = [
-  ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: 'of \\d+ done' }]],
+  ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: '\\d+/\\d+' }]],
+  ['^ship\\.', '^/projects$', ['Ship: Feedback & Bugs', { re: '\\d+/\\d+' }]],
   ['^ship\\.', '^/issue/', ["Ship's address for a file opens it only when one author holds its d", 'Who, when']],
   ['^ship\\.', '^/issues$', ['Assigned to me']],
   ['^ship\\.', '^/topics$', ['Other topics', 'Archived']],
@@ -124,6 +129,7 @@ const LEGS = {
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
+  'ship-projects': () => ['--base', 'https://ship.estiva.app', '--url', '/projects', ...settle(60000), ...whole, ...report('ship-projects')],
   'ship-issues': () => ['--base', 'https://ship.estiva.app', '--url', '/issues', ...settle(60000), ...whole, ...report('ship-issues')],
   'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
   'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
