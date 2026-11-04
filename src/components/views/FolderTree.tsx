@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton, useRememberedOpen } from '@estiva-app/ui'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import {
-  prefetchFolderContents,
-  topLevelFolders,
-  useFolderContents,
-  useFolders,
-  useForeignObjects,
-  useTeamUnread,
-} from '@/api'
-import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
+import { teamFolders, topLevelFolders, useFolderContents, useFolders, useForeignObjects } from '@/api'
+import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
 import { TeamsColumn } from '@/components/views/TeamsColumn'
@@ -21,60 +14,23 @@ import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { useFolderActions } from '@/components/views/useFolderActions'
-import {
-  folderMatches,
-  treeFilterOf,
-  TREE_FILTERS,
-  TREE_VIEWS,
-  type TreeFilter,
-  type TreeShow,
-  type TreeView,
-} from '@/components/views/treeFilter'
+import { TREE_FILTERS, TREE_VIEWS, type TreeShow, type TreeView } from '@/components/views/treeFilter'
 import { useRailClosed } from '@/layouts/railClosed'
 import { useToast } from '@/lib/toast'
 
 /**
- * The left column: the Folders the person is in, each a fold over its first
- * level — FOL-21, the visible payoff of v1.
- *
- * **The navigation for the whole suite** — a Peek topic appears in it only by
- * what it is on the relay: a Folder, until FOL-22 sorts the twenty-five into
- * teams and files. Nothing here knows what a topic is, and nothing here knows
- * what Ship is: a Folder is a section, a file is a row, and which app owns the
- * file is the row's glyph.
- *
- * Where it is drawn: the Topics rail item (`FoldersPage`, with no file open)
- * and the file page (`FilePage`). It is the one column (Katerina, 5 October):
- * its title switches between Topics — what the person joined — and Folders —
- * every Folder — and a Folder is managed from its heading's ⋮.
+ * The left column of the Teams rail item (`FoldersPage`) and the file page
+ * (`FilePage`). Its title switches between its two views (Katerina,
+ * 5 October): Teams (`TeamsColumn`, TEA-5) and Archive, every top-level Folder
+ * as a fold over what is archived in it, where Unarchive brings it back.
  *
  * ## What is read, and when
  *
- * The list of Folders, once (`useFolders`, one `POST /query`), and one batched
- * read for every Folder's union of streams (`useTeamUnread`, FOL-18 — two POSTs for
- * all of production's 162). **Nothing else until a fold opens.** An open
- * Folder reads its first level (`useFolderContents`, two POSTs) and its rows'
- * dots (one more); a row with a chevron reads its children when it is
- * expanded and never before (`FileTreeView` → `useForeignChildren`, **one
- * POST**, and one for the children's dots). The first Folder or row of a
- * session that meets an app pays for that app's manifest on top — that is the
- * seam's `ProjectionCache`, which this ticket's measurement made Peek start
- * passing: without it a fold was 13 POSTs and a row 8, warm or cold. Measured
- * against production by `scripts/probe-fol21-tree-cost.ts`; the seam-level
- * half — that nothing is *asked* before the fold or the row opens — is
- * `FolderTree.test.tsx`. The union draws no dot — a Folder row carries none
- * (Miky, 2026-10-03), only its files do. It decides what the Unread filter
- * keeps. An open Folder's row dots fold what the tab's channel store holds,
- * with no read of their own after the first (OPT-5).
- *
- * ## Which folds are open
- *
- * Only the Folder holding the open page, by default — 162 Folders open at
- * once would be the whole minute's relay budget on every cold load. The
- * default is live and the person's choice beats it (`useRememberedOpen`), so a
- * Folder somebody opened stays open across reloads and one they closed stays
- * closed whatever is selected inside it, which is `CollapsibleSection`'s own
- * ruling.
+ * The list of Folders, once (`useFolders`, one `POST /query`); Teams reads what
+ * it draws (`useTeams`). In Archive **nothing else until a fold opens**: an
+ * open Folder reads what is archived in it (`useFolderContents`), and a row
+ * with a chevron reads its children when it is expanded and never before
+ * (`FileTreeView` → `useForeignChildren`). Every Folder starts closed there.
  *
  * ## Sections, not rows, for the Folders
  *
@@ -95,10 +51,8 @@ export function FolderTree({
   selectedRef,
   selectedParent,
   selectedArchived,
-  selectedMine,
   expandSelected = false,
   onControl,
-  currentContents,
   chatOpen = false,
 }: {
   /** The open page is `currentFolder`'s team chat (TEA-5): its row is current. */
@@ -119,52 +73,22 @@ export function FolderTree({
    */
   selectedParent?: string | null
   /**
-   * The open file is archived: Archive draws it, Topics and Folders do not.
+   * The open file is archived: Archive draws it, Teams does not.
    * `undefined` while the file is still resolving — nothing is judged on a guess.
    */
   selectedArchived?: boolean
-  /**
-   * The person is a member of the open file — joined it, or made it. Leaving
-   * it while it is open in Topics takes it out of the list, and closes it.
-   * `undefined` while that is not known yet.
-   */
-  selectedMine?: boolean
   /** Open the selected row too, showing what is under it — a Ship project reached by its channel's link. */
   expandSelected?: boolean
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
   onControl?: (control: FileControl, file: ForeignObject) => void
-  /**
-   * `currentFolder`'s listing, when the page has already read it (FOL-4): the
-   * file page reads its team for the breadcrumb, and the section drawing the
-   * same team uses that read instead of making a second one.
-   */
-  currentContents?: FolderContentsState
 }) {
   const railClosed = useRailClosed()
   const navigate = useNavigate()
   const { folders, signedOut, reload } = useFolders()
-  /*
-    The verdicts are judged over every Folder, the sections drawn for the
-    top-level ones (FOL-22, PEE-31). A topic is a channel placed in its Folder
-    by address, so it is in `listFolders` like any channel, and it is a row
-    inside that Folder's section rather than a section of its own — but its
-    stream is one of the Folder's, and `useTeamUnread` folds its verdict into
-    the Folder's. A
-    record channel is in `listFolders` too and is nobody's section:
-    `topLevelFolders` says which are.
-  */
-  const { unread, member, holdsJoined, joinedUnder, ready } = useTeamUnread(folders)
+  // A record channel is in `listFolders` too and is nobody's section: `topLevelFolders` says which are (FOL-22, PEE-31).
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
-  /*
-    The Archive view's Folders (5 October): every top-level one, the archived
-    included — `topLevelFolders` leaves those out, since nothing else
-    navigates by them. Judged as if none were archived, then the real ones.
-  */
-  const archiveLevel = useMemo(() => {
-    if (!folders) return null
-    const ids = new Set(topLevelFolders(folders.map((folder) => ({ ...folder, archived: undefined }))).map((folder) => folder.id))
-    return folders.filter((folder) => ids.has(folder.id))
-  }, [folders])
+  // The Archive view's Folders (5 October): every top-level one, the archived included — the teams.
+  const archiveLevel = useMemo(() => (folders ? teamFolders(folders) : null), [folders])
   /*
     The section a file is drawn in (SID-2). A Ship project's Folder is its own
     record channel and an issue's is the same one, and neither is a section:
@@ -180,59 +104,41 @@ export function FolderTree({
     ) ?? currentFolder
 
   /*
-    The two views (Katerina, 5 October): Topics, what you are a member of, and
-    Folders, every Folder. The person's choice is remembered in this browser;
-    a Folder's own link turns the column to Folders, where that Folder is —
-    for this visit only, so the saved choice stays theirs.
+    The two views (Katerina, 5 October): Teams and Archive. A Folder's own
+    link turns the column to where that Folder is, for this visit only.
   */
-  // An archived Folder's link opens Archive, where it is; any other, Folders.
+  // An archived Folder's link opens Archive, where it is; any other, Teams.
   const linkedArchived = !!folders?.find((folder) => folder.id === currentFolder)?.archived
   const { view, choose: setView, follow } = useView(showFolder ? (currentFolder ?? null) : null, linkedArchived ? 'archive' : 'all')
 
   /*
     One rule (Katerina, 5 October): the page beside the column only ever shows
-    a file the column draws.
-    - Archive draws what is archived: the file itself, or the Folder it is in.
-    - Topics and Folders draw what is not archived. Topics lists what the
-      person joined or made, and keeps the open file in view besides — a file
-      opened from a link or a search is shown where it is (5 October) — until
-      the person leaves it there.
-    The filter (All / Unread) never hides the open file: one read is not one
-    gone. Unknown until the file has resolved, the Folders are read and the
-    relay has said what the person joined: nothing is judged on a guess.
+    a file the column draws. Archive draws what is archived: the file itself,
+    or the Folder it is in; Teams what is not. The filter (All / Unread) never
+    hides the open file: one read is not one gone. Unknown until the file has
+    resolved and the Folders are read: nothing is judged on a guess.
   */
   const openArchived =
     selectedRef && selectedArchived !== undefined && folders
       ? selectedArchived || !!folders.find((folder) => folder.id === section)?.archived
       : undefined
-  const openMine = selectedRef && selectedMine !== undefined ? selectedMine || holdsJoined.has(selectedRef) : undefined
-  const known = openArchived !== undefined && openMine !== undefined
   const draws = (which: TreeView, file: { archived: boolean }) => (which === 'archive' ? file.archived : !file.archived)
   /*
     The column follows a file that arrives — a click, a link, a search, the
     back button, the rail coming back — to a view that draws it, for this
-    visit: Archive for an archived one, the person's own view for a live one.
-    A file that leaves the open view's list while it is open closes ("No file
-    selected"), as an item leaves the list it was in: archived (the toast has
-    Undo), or left while Topics is showing (Katerina, 5 October: "when I
-    leave a topic, it disappears from the topics list"). One that is
-    unarchived while open in Archive stays open, and the column goes where it
-    now is. Set during render, once per change: neither the initialiser nor an
-    effect.
+    visit: Archive for an archived one, Teams for a live one. A file archived
+    while it is open closes ("No file selected"), as an item leaves the list
+    it was in (the toast has Undo). One that is unarchived while open in
+    Archive stays open, and the column goes where it now is. Set during
+    render, once per change: neither the initialiser nor an effect.
   */
-  const [seenFile, setSeenFile] = useState<{ ref: string; archived: boolean; mine: boolean } | null>(null)
+  const [seenFile, setSeenFile] = useState<{ ref: string; archived: boolean } | null>(null)
   const [closing, setClosing] = useState(false)
-  if (
-    selectedRef &&
-    known &&
-    (seenFile?.ref !== selectedRef || seenFile.archived !== openArchived || seenFile.mine !== openMine)
-  ) {
-    const now = { archived: openArchived, mine: openMine }
+  if (selectedRef && openArchived !== undefined && (seenFile?.ref !== selectedRef || seenFile.archived !== openArchived)) {
+    const now = { archived: openArchived }
     const same = seenFile?.ref === selectedRef
-    const leftInTopics = same && view === 'mine' && seenFile.mine && !now.mine && !now.archived
     setSeenFile({ ref: selectedRef, ...now })
-    if (leftInTopics) setClosing(true)
-    else if (!draws(view, now)) {
+    if (!draws(view, now)) {
       const unarchived = view === 'archive' && !now.archived
       if (same && draws(view, seenFile) && !unarchived) setClosing(true)
       else follow(now.archived ? 'archive' : null)
@@ -256,12 +162,9 @@ export function FolderTree({
             A view that does not draw the open file closes it, and the page
             says "No file selected" (Katerina, 5 October): a selection the
             column cannot show is a page about nothing beside it. Archive
-            draws only what is archived; Topics and Folders only what is not,
-            and both keep a live open file in view.
+            draws only what is archived; Teams only what is not.
           */
-          // Topics and Folders draw the same open file, so only a turn into or out of Archive can close it.
-          const acrossArchive = (next === 'archive') !== (view === 'archive')
-          if (selectedRef && acrossArchive && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
+          if (selectedRef && next !== view && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
             navigate('/app/folders')
           }
         }}
@@ -281,25 +184,17 @@ export function FolderTree({
             onControl={onControl}
           />
         ) : (
-        <FolderTreeView
-          folders={view === 'archive' ? archiveLevel : topLevel}
-          signedOut={signedOut}
-          unread={unread}
-          member={member}
-          holdsJoined={holdsJoined}
-          joinedUnder={joinedUnder}
-          ready={ready}
-          view={view}
-          linkedFolder={showFolder ? currentFolder : undefined}
-          filter={treeFilterOf(view, show)}
-          currentFolder={section}
-          selectedRef={selectedRef}
-          selectedParent={selectedParent}
-          expandSelected={expandSelected}
-          menuFor={signedOut ? undefined : menuFor}
-          onControl={onControl}
-          currentContents={section === currentFolder ? currentContents : undefined}
-        />
+          <ArchiveTreeView
+            folders={archiveLevel}
+            signedOut={signedOut}
+            linkedFolder={showFolder ? currentFolder : undefined}
+            currentFolder={section}
+            selectedRef={selectedRef}
+            selectedParent={selectedParent}
+            expandSelected={expandSelected}
+            menuFor={signedOut ? undefined : menuFor}
+            onControl={onControl}
+          />
         )}
       </FolderColumn>
       {/* Mounted only while open: the writes, and the toasts that report them, are theirs. */}
@@ -517,49 +412,23 @@ export function FolderColumn({
   )
 }
 
-/** The column's body, handed what it draws — the part a story can show. */
-export function FolderTreeView({
+/** Archive's body, handed what it draws — the part a story can show. */
+export function ArchiveTreeView({
   folders,
   signedOut,
-  unread,
-  member = {},
-  holdsJoined,
-  joinedUnder,
-  ready = { member: true, unread: true },
-  view = 'all',
   linkedFolder,
-  filter = 'all',
   currentFolder,
   selectedRef,
   selectedParent,
   expandSelected = false,
   menuFor,
   onControl,
-  currentContents,
 }: {
-  /** `null` while the first read is in flight, or when signed out. */
+  /** Every top-level Folder, the archived included. `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
   signedOut: boolean
-  /**
-   * Whether each Folder holds something unread — the union of its streams
-   * (FOL-18). Drawn as nothing; it is what the Unread filter keeps. Missing
-   * means unjudged.
-   */
-  unread: Record<string, boolean>
-  /** Whether each Folder holds a file the person is a member of (FOL-41, §11.8) — `useTeamUnread`. */
-  member?: Record<string, boolean>
-  /** Parents of joined files no listing holds — a project, for an issue of yours: Topics keeps its row. */
-  holdsJoined?: ReadonlySet<string>
-  /** Joined files no listing holds, by their parent's address — Topics draws them flat. */
-  joinedUnder?: Readonly<Record<string, readonly string[]>>
-  /** Whether `member` and `unread` are judged yet. A filter over an unjudged verdict is a skeleton. */
-  ready?: { member: boolean; unread: boolean }
-  /** Which view: Topics, Folders or Archive. */
-  view?: TreeView
   /** The Folder a link opened (`/app/folders/<id>`): it opens, and is scrolled to. */
   linkedFolder?: string | null
-  /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
-  filter?: TreeFilter
   currentFolder?: string | null
   selectedRef?: string
   selectedParent?: string | null
@@ -568,8 +437,6 @@ export function FolderTreeView({
   /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
   menuFor?: (folder: FolderSummary) => ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
-  /** `currentFolder`'s listing, already read by the page — see `FolderTree`. */
-  currentContents?: FolderContentsState
 }) {
   /*
     Three states, not two: "not signed in", "still loading" and "there are
@@ -578,76 +445,42 @@ export function FolderTreeView({
   if (signedOut) return <EmptyState scope="section" message="Sign in to see folders." />
   if (folders === null) return <SkeletonList />
   if (folders.length === 0) return <EmptyState scope="section" message="No folders yet." />
-  /*
-    Still loading, not empty: Topics before the relay has said what the person
-    joined, Unread before the read state is in. "Nothing yours yet" there was
-    a sentence about a question nobody had answered (5 October).
-  */
-  const waitsFor = filter === 'mine' ? ready.member : filter === 'all' ? true : ready.unread
-  if (!waitsFor) return <SkeletonList />
 
-  // Alphabetical, as the topic list was. The relay's order is arrival order,
-  // which tells the person nothing.
-  const ordered = [...folders]
-    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
-    // The Folder holding the open file stays whatever the filter: a file opened
-    // from a link, a search or a notification is shown where it is (5 October).
-    .filter((folder) => folder.id === currentFolder || folderMatches(filter, folder.id, unread, member))
-
-  /*
-    A filter that matched nothing is not an empty workspace, and the two must
-    not share a sentence: the Folders are there, this view is hiding them.
-  */
-  if (ordered.length === 0) {
-    return (
-      <EmptyState
-        scope="section"
-        message={filter === 'unread' || filter === 'mine-unread' ? 'Nothing unread.' : 'Nothing yours yet. Join a file to hear about it.'}
-      />
-    )
-  }
+  // Alphabetical: the relay's order is arrival order, which tells the person nothing.
+  const ordered = [...folders].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
 
   return (
     // The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
     // given the Folder a link opened, to that Folder's heading (ui 0.99).
     <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
       {ordered.map((folder) => (
-        <FolderSection
+        <ArchiveSection
           key={folder.id}
           folder={folder}
-          filter={filter}
           current={folder.id === currentFolder}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           expandSelected={expandSelected}
-          // In Archive only an archived Folder has a menu: its Unarchive.
-          menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
+          // Only an archived Folder has a menu here: its Unarchive.
+          menu={folder.archived ? menuFor?.(folder) : undefined}
           onControl={onControl}
-          holdsJoined={holdsJoined}
-          joinedUnder={joinedUnder}
-          preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
       ))}
     </NavTree>
   )
 }
 
-/** One Folder: a fold, and its first level once it is open. */
-function FolderSection({
+/** One Folder in Archive: a fold, and what is archived in it once it is open. */
+function ArchiveSection({
   folder,
-  filter,
   current,
   selectedRef,
   selectedParent,
   expandSelected,
   menu,
   onControl,
-  holdsJoined,
-  joinedUnder,
-  preloaded,
 }: {
   folder: FolderSummary
-  filter: TreeFilter
   current: boolean
   selectedRef?: string
   selectedParent?: string | null
@@ -655,128 +488,48 @@ function FolderSection({
   /** The heading's ⋮: the Folder's own actions. */
   menu?: ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
-  holdsJoined?: ReadonlySet<string>
-  joinedUnder?: Readonly<Record<string, readonly string[]>>
-  /** This Folder's listing, already read by the page (FOL-4) — then this section reads nothing. */
-  preloaded?: FolderContentsState
 }) {
   /*
-    Under a filter every section that survived it starts open (FOL-41). The
-    filter's whole job is to lead to the file, and a list of shut Folders leads
-    nowhere — the person would open each in turn, which is the tree they asked
-    to be spared. The reads stay bounded because the filter is what bounds
-    them: only the Folders with a match are drawn, so only those are read.
-
-    The remembered state is deliberately not consulted and not written: a
-    Folder somebody closed under `All` is closed again the moment they go back
-    to it, and closing one here is this view's, not a change of mind about the
-    tree. `useRememberedOpen` is still what holds it under `All`.
-
-    Topics remembers its own folds, under its own key (PEE-74, Miky
-    27 October): a Folder closed there is one the person does not follow, and
-    it reopened every time the file page drew the column again — after Desk,
-    say. Starts open, as before; Unread still starts every Folder open.
+    Every Folder starts closed (5 October): what is archived in one is a read
+    of its own, made when it opens — 160 open at once would be the relay's
+    whole minute. Held for the visit (sessionStorage): the column is drawn
+    again on every page, and a Folder opened in Archive shut the moment a file
+    in it was clicked (5 October).
   */
-  const [remembered, setRemembered] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
-  const [topics, setTopics] = useRememberedOpen(`peek.tree.topics.folder.${folder.id}`, true)
-  const [filtered, setFiltered] = useState(true)
-  /*
-    In Archive every Folder starts closed (5 October): what is archived in one
-    is a read of its own, made when it opens — 160 open at once would be the
-    relay's whole minute. A Folder that is itself archived is no different.
-  */
-  const [archiveOpen, setArchiveOpenState] = useState(() => archiveOpenHeld(folder.id))
-  /*
-    Held for the visit (sessionStorage), as the other views hold theirs: the
-    column is drawn again on every page, and a Folder opened in Archive shut
-    the moment a file in it was clicked (5 October).
-  */
-  const setArchiveOpen = useCallback(
+  const [open, setOpenState] = useState(() => archiveOpenHeld(folder.id))
+  const setOpen = useCallback(
     (next: boolean) => {
-      setArchiveOpenState(next)
+      setOpenState(next)
       holdArchiveOpen(folder.id, next)
     },
     [folder.id],
   )
-  const archive = filter === 'archive'
-  const open = archive ? archiveOpen : filter === 'all' ? remembered : filter === 'mine' ? topics : filtered
-  const setOpen = archive ? setArchiveOpen : filter === 'all' ? setRemembered : filter === 'mine' ? setTopics : setFiltered
   /*
-    A Folder's link always lands on it open, and scrolled to (Katerina,
-    5 October): a notification, another app or a new Folder leading to a
-    closed heading among 160 showed nothing at all. Once per arrival — the
-    person can close it again — and it is remembered open, as a click would.
-    Both are the package's `NavTree` (`selectedGroup`, ui 0.99): it opens the
-    Folder and tells `onOpenChange`, even one already open as the page's own,
-    so it stays open when the person moves on to a file in another Folder.
+    A Folder's link lands on it open, and the Folder holding the open file is
+    open (Katerina, 5 October): the package's `NavTree` (`selectedGroup`, ui
+    0.99) and `openFor`, once per arrival — the person can close it again.
   */
-  /*
-    And the Folder holding the open file is open in every view (Katerina,
-    5 October): when the file arrives, and when the column turns to another
-    view. A selected row inside a shut Folder is a selection nobody can see.
-    Once per arrival or turn — the person can still close it — and only when
-    it is shut: an open default is left alone, not written down as the
-    person's choice, so the Folder still closes when the file goes. The
-    package's `openFor`, as the rows have it; the view is in its key, so a
-    turn to another view opens it again.
-  */
-  const openFor = current && selectedRef ? `${filter}:${selectedRef}` : undefined
-  /*
-    The read is the fold. `null` while closed is the hook's "nothing to read"
-    — no request, no refresh trigger, no socket subscription — so a Folder
-    nobody opened costs the column nothing beyond its dot.
-  */
-  const own = useFolderContents(open && (archive || !preloaded) ? folder.id : null, {
-    archived: archive,
-    folderArchived: !!folder.archived,
-  })
-  /*
-    A closed Folder is read a moment before it is opened (SID-2): when the
-    pointer rests on it, or the keyboard lands on it, so the first open draws
-    rows. Resting, not passing — a pointer sweeping down the column must not
-    spend a read per Folder — and never for one the tab has read already
-    (`prefetchFolderContents`), so it costs at most one read per Folder.
-  */
-  const { resolveFolderContents } = useForeignObjects()
-  const prefetch = () => {
-    if (!open && !archive) prefetchFolderContents(resolveFolderContents, folder.id)
-  }
-  /*
-    The last listing drawn stays drawn while the next read of the same Folder
-    is in flight (SID-2). The read hands over between the page's and this
-    section's own as the open file moves between a topic and a Ship project,
-    and each hand-over starts at 'loading' — a skeleton over rows that were
-    right a moment ago. Only a listing is held; a failure is said as before.
-  */
-  const fresh = (archive ? undefined : preloaded) ?? own.state
+  const openFor = current && selectedRef ? `archive:${selectedRef}` : undefined
+  // The read is the fold: `null` while closed is the hook's "nothing to read".
+  const own = useFolderContents(open ? folder.id : null, { archived: true, folderArchived: !!folder.archived })
+  // The last listing drawn stays drawn while the next read of the same Folder is in flight (SID-2).
+  const fresh = own.state
   const listing = typeof fresh === 'object' && 'files' in fresh ? fresh : undefined
   const [drawn, setDrawn] = useState(listing)
   // By the rows, not the wrapper: a listing rebuilt per render would set this for ever.
   if (listing && !sameRows(listing.files, drawn?.files)) setDrawn(listing)
   const state = fresh === 'loading' && drawn ? drawn : fresh
-  /*
-    Opened before its listing is in, the Folder stays shut with its arrow
-    turned, and opens once with every row (OPT-11, Miky 12 October). A
-    skeleton the rows then replaced moved everything below it twice —
-    Katerina's "just a few items appear and in a second, the whole list"
-    (7 October). A read still out after `NAV_TREE_PENDING_MS` (2s) opens on
-    the package's skeleton after all: a rate-limit retry can take seconds.
-    The wait and the skeleton are `NavTreeSection`'s `pending` (ui 0.99).
-  */
+  // Opened before its listing is in, it stays shut with its arrow turned, then opens with every row (OPT-11, ui 0.99).
   const pending = open && state === 'loading'
   const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
   /*
-    Every row above the open file starts open, not only its parent (FOL-4): a
-    topic three levels down under a closed grandparent is a selected row nobody
-    can see. The chain is the listing's (`nestingOf`), so it costs no request;
-    a file the listing does not hold — an issue fetched under its project —
-    still opens its parent's chain.
+    Every row above the open file starts open, not only its parent (FOL-4).
+    The chain is the listing's (`nestingOf`), so it costs no request; a file
+    the listing does not hold still opens its parent's chain.
   */
   const nesting = listed ? nestingOf(listed) : undefined
   const selectedRow = listed?.find((candidate) => candidate.ref === selectedRef)
-  const parentRow = selectedParent
-    ? listed?.find((candidate) => candidate.address === selectedParent)
-    : undefined
+  const parentRow = selectedParent ? listed?.find((candidate) => candidate.address === selectedParent) : undefined
   const chain = nesting
     ? selectedRow
       ? nesting.ancestorsOf(selectedRow).map((row) => row.ref)
@@ -784,74 +537,23 @@ function FolderSection({
         ? [...nesting.ancestorsOf(parentRow), parentRow].map((row) => row.ref)
         : undefined
     : undefined
-  // A project reached by its channel's link opens too, its issues under it (Katerina, 5 October).
   const expand = expandSelected && selectedRow ? [...(chain ?? []), selectedRow.ref] : chain
 
   return (
     <NavTreeSection
       id={folder.id}
-      /*
-        The id when there is no name. A Folder with no state event has only
-        its channel's name, and a channel created by an app rather than a
-        person may carry none — the ordinary case on today's data.
-      */
+      // The id when there is no name: a channel created by an app rather than a person may carry none.
       title={folder.name ?? folder.id}
       open={open}
       pending={pending}
       onOpenChange={setOpen}
       openFor={openFor}
-      /*
-        No dot on a Folder, open or collapsed (Miky, 2026-10-03): read state
-        is the file's, and only a file row carries one. What is new inside a
-        shut Folder is what the header's Unread filter is for.
-      */
-      /*
-        The Folder's own actions on its heading's ⋮ — Start a topic, Rename,
-        Archive… (Katerina, 5 October): the Folders page and its "Open folder"
-        are gone, and a click on the heading only folds it.
-      */
-      // The folder icon in every view, Topics too (Katerina, 7 October): a heading is a Folder wherever it is drawn.
       icon={<TopicState type="folder" />}
-      // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
-      trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
+      // An archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
+      trailing={folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}
-      // The pointer resting on a closed Folder, or the keyboard reaching it,
-      // reads it ahead (SID-2): resting, not passing, and never twice.
-      onIntent={prefetch}
     >
-      {/*
-        Rows only while open. The section keeps its panel mounted while
-        closed so find-in-page can reach into it, but a closed Folder has
-        nothing read, so there would be nothing to find — only a skeleton
-        per Folder, 147 of them, hidden.
-      */}
-      {open && (filter === 'mine' || filter === 'mine-unread') && (
-        /* Topics: what is yours, flat — no row opens onto others (7 October). */
-        <JoinedFileRows
-          state={state}
-          filter={filter}
-          joinedUnder={joinedUnder}
-          selectedRef={selectedRef}
-          selectedParent={selectedParent}
-          onControl={onControl}
-        />
-      )}
-      {open && filter !== 'mine' && filter !== 'mine-unread' && (
-        <FileTreeView
-          state={state}
-          filter={filter}
-          selectedRef={selectedRef}
-          expand={expand}
-          /*
-            The rows' dots re-read on the team's signal (FOL-44). The
-            section's own dot was live and its rows were not: they stay
-            mounted while open, and their badge read was keyed only on the
-            listing, so a comment reached them on collapse and expand.
-          */
-          onControl={onControl}
-          holdsJoined={holdsJoined}
-        />
-      )}
+      {open && <FileTreeView state={state} archive selectedRef={selectedRef} expand={expand} onControl={onControl} />}
     </NavTreeSection>
   )
 }

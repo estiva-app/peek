@@ -33,11 +33,6 @@ installMembershipDiagnostic()
 import { installWideFilterDiagnostic } from '@/nostr/liveTopics'
 installWideFilterDiagnostic()
 
-/* `window.__teamUnread()` — the other end of the same path (FOL-40): what the
-   sidebar did with a delivery `__wideFilters()` proved arrived. */
-import { installTeamUnreadDiagnostic } from '@/api/teamUnreadDiagnostic'
-installTeamUnreadDiagnostic()
-
 /* `window.__relayReads()` — see src/nostr/relayMeter.ts (PER-8): how many
    requests this tab spent against the relay's per-minute meter, by shape. */
 import { installRelayReadsDiagnostic } from '@/nostr/relayMeter'
@@ -106,6 +101,5 @@ export {
   useUrgentReplyThreads,
   type ReplyStream,
 } from './useNewReplyThreads'
-export { useTeamUnread } from './useTeamUnread'
 export { chatMessagesOf, mayMove, spaceTeamOf, teamFolders, teamOf, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'

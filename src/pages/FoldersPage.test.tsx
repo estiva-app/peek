@@ -179,7 +179,6 @@ vi.mock('@/api', async () => ({
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: {}, member: {}, holdsJoined: new Set(), joinedUnder: {} }),
   useWorkspaceDirectory: () => undefined,
   useMembership: () => ({ isMember: () => false, setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),

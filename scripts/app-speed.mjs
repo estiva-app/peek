@@ -68,8 +68,11 @@ const SHIP_PROJECT = '/project/cf23dbca-64fb-4802-a804-e0119b0d8584'
 const SHIP_ISSUE = '/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480'
 /** A topic QA-1 reads that lists Ship work, first on QA-1's Topics on 3 Nov (SHIPS-4). */
 const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
-/** A team QA-1 is in (the QA team of TEA-3's probes): a row of the Folders column, then a section of Teams. */
-const TEAMS_AWAIT = 'TEA-3 probe A'
+/**
+ * A team QA-1 is in, not archived: a row of the old Folders column's Joined view, then a My teams section of Teams,
+ * which waits on the roster read. ("TEA-3 probe A" was archived, so neither column ever drew it.)
+ */
+const TEAMS_AWAIT = 'Topic-list probe (QA-1 only)'
 /** [host, path, texts] per page: the project's Overview counts its issues once they are loaded. */
 const SHIP_AWAIT = [
   ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: 'of \\d+ done' }]],

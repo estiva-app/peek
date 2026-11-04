@@ -107,7 +107,6 @@ vi.mock('@/api', async () => ({
   },
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: {}, member: {}, holdsJoined: new Set(), joinedUnder: {} }),
   useCurrentUser: () => (viewer.id ? { id: viewer.id } : undefined),
 }))
 
@@ -226,7 +225,7 @@ describe('the Teams view (TEA-5)', () => {
 })
 
 describe('the page only shows a file the column draws (Katerina, 5 October)', () => {
-  const LIVE = { currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: false, selectedMine: true }
+  const LIVE = { currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: false }
   const ARCHIVED_FILE = { ...LIVE, selectedArchived: true }
 
   it('an archived file that arrives turns the column to Archive, for this visit only', () => {
@@ -262,12 +261,6 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
     rerender(LIVE)
     expect(screen.getByTestId('url').textContent).toBe('/topics')
     expect(title('Teams')).not.toBeNull()
-  })
-
-  it('a file left while Teams is showing stays open: leaving a file is not leaving its team', () => {
-    const { rerender } = mount(LIVE)
-    rerender({ ...LIVE, selectedMine: false })
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   it('in Archive, the open file’s Folder opens, and a Folder opened there stays open on the next page', () => {

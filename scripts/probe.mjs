@@ -5,17 +5,11 @@
  * to act as (PER-22), the agent can run them itself from WSL, where Claude in
  * Chrome does not work.
  *
- *   SETTLED="__teamUnread().some((h) => h.frontierReady && h.lastLoad && h.lastLoad.outcome !== 'pending')"
- *   node scripts/probe.mjs --as qa1 --url /app/folders --until "$SETTLED" --eval "__teamUnread()"
- *   node scripts/probe.mjs --as qa2 --url /app/folders --timeout 180000 \
- *     --until "__teamUnread().some((h) => h.lit.includes('<folder>'))" --eval "__teamUnread('<folder>')"
- *   node scripts/probe.mjs --as qa2 --url /app/folders/<folder> --click "Follow this folder"
+ *   node scripts/probe.mjs --as qa1 --url /app/folders --until "!!document.querySelector('main a')" \
+ *     --eval "document.querySelector('main')?.innerText"
+ *   node scripts/probe.mjs --as qa2 --url /app/folders/<team> --click "Join"
  *
- * `__teamUnread()` is `[]` until a `useTeamUnread` mounts, and only the
- * Folders page and a file page's tree mount one — not the Desk. Wait for the
- * hook to settle before reading it: a read straight after sign-in reports
- * `relayState: "connecting"` and no Folders.
- *
+
  * Steps run in argument order, so `--click`, `--fill`, `--press`, `--type`, `--hover`,
  * `--drag`, `--wait`, `--until`, `--eval`, `--screenshot` and `--tab` can be
  * repeated and interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.

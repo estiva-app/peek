@@ -1,18 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import type { StreamTerms } from '@estiva-app/conversation'
-import { placeStreams, teamHasMemberStream, teamHasUnread, unlistedFiles } from './teamUnread'
+import { placeStreams, teamHasMemberStream, unlistedFiles } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
-const ME = 'c'.repeat(64)
 const THEM = 'd'.repeat(64)
 const PK = 'b'.repeat(64)
 const FOL16 = `30851:${PK}:fol-16`
 const FOL18 = `30851:${PK}:fol-18`
-const ROOT = 'a'.repeat(64)
 const NOW = 1_800_000_000
-const HORIZON = 90 * 24 * 60 * 60
 
 const said = (id: string, at: number, about: string[] = [], by = THEM): StreamMessage => ({
   id,
@@ -23,167 +19,6 @@ const said = (id: string, at: number, about: string[] = [], by = THEM): StreamMe
   urgent: false,
   body: '',
 })
-const replied = (id: string, at: number, inThread: string, about: string[] = [], by = THEM): StreamMessage => ({
-  id,
-  at,
-  by,
-  root: inThread,
-  about,
-  urgent: false,
-  body: '',
-})
-
-/* Everything a member of unless a test says otherwise: the FOL-16/18 rules are
-   judged over the streams the person is a member of, and these tests are about
-   the rules. `terms` overrides one stream's terms (join time, mute). */
-const frontier = (
-  markers: Record<string, number> = {},
-  me = ME,
-  isMember: (key: string) => boolean = () => true,
-  terms: (key: string) => Partial<StreamTerms> = () => ({}),
-  mentioned: (id: string) => boolean = () => false,
-) => ({
-  merged: markers,
-  termsOf: (key: string): StreamTerms => ({ member: isMember(key), muted: false, ...terms(key) }),
-  isMentioned: mentioned,
-  me,
-  nowSeconds: NOW,
-  horizonSeconds: HORIZON,
-})
-
-/*
-  SPEC §11.3, FOL-18. The Folder's verdict is the union of its file streams,
-  each judged against the file's own marker. A Folder lights for a sibling file
-  nobody read, and only that file's marker puts it out. The general stream is
-  not judged (§11.8: Peek has no screen for it, 2026-10-05).
-*/
-describe('teamHasUnread — the general stream is not judged', () => {
-  it('stays dark for a message about no file, however new or unread', () => {
-    expect(teamHasUnread(FOLDER, [said('m', 2000)], frontier({ [FOLDER]: 1000 }))).toBe(false)
-    expect(teamHasUnread(FOLDER, [said('m', NOW - 10)], frontier())).toBe(false)
-  })
-
-  it('stays dark for one that names the person', () => {
-    const named = frontier({}, ME, () => false, () => ({}), (id) => id === 'named')
-    expect(teamHasUnread(FOLDER, [said('named', NOW - 10)], named)).toBe(false)
-  })
-
-  it('is dark with nothing said', () => {
-    expect(teamHasUnread(FOLDER, [], frontier())).toBe(false)
-  })
-})
-
-describe("teamHasUnread — a file's stream answers to the file's marker, never the channel's", () => {
-  // Said an hour ago: inside the horizon, so a file nobody ever read is new.
-  const AT = NOW - 3600
-  const siblingUnread = [said('fol16', AT, [FOL16]), said('fol18', AT, [FOL18])]
-
-  it('lights for a file nobody read, however recently the chat was read', () => {
-    const f = frontier({ [FOLDER]: NOW, [FOL16]: NOW })
-    expect(teamHasUnread(FOLDER, siblingUnread, f)).toBe(true)
-  })
-
-  it("goes dark only when that file's own marker advances past it", () => {
-    expect(teamHasUnread(FOLDER, siblingUnread, frontier({ [FOL16]: NOW, [FOL18]: AT - 1 }))).toBe(true)
-    expect(teamHasUnread(FOLDER, siblingUnread, frontier({ [FOL16]: NOW, [FOL18]: AT }))).toBe(false)
-  })
-
-  it('reads a message about two files as in both streams', () => {
-    const both = [said('m', AT, [FOL16, FOL18])]
-    expect(teamHasUnread(FOLDER, both, frontier({ [FOL16]: NOW }))).toBe(true)
-    expect(teamHasUnread(FOLDER, both, frontier({ [FOL16]: NOW, [FOL18]: NOW }))).toBe(false)
-  })
-
-  it('keeps a message whose `a` is not an address in the general stream, which is not judged', () => {
-    const odd = [said('m', 1500, ['not-an-address'])]
-    expect(teamHasUnread(FOLDER, odd, frontier({ [FOLDER]: 1000 }))).toBe(false)
-  })
-})
-
-describe('teamHasUnread — the rules it inherits from the file judge', () => {
-  it('never counts your own message, in the chat or on a file', () => {
-    const mine = [said('a', 2000, [], ME), said('b', 2000, [FOL18], ME)]
-    expect(teamHasUnread(FOLDER, mine, frontier({ [FOLDER]: 1000 }))).toBe(false)
-  })
-
-  it('lets a stream frontier clear its threads, and a thread marker clear its own replies', () => {
-    const thread = [said(ROOT, 100, [FOL18]), replied('r', 1500, ROOT, [FOL18])]
-    expect(teamHasUnread(FOLDER, thread, frontier({ [FOL18]: 9000 }))).toBe(false)
-    expect(teamHasUnread(FOLDER, thread, frontier({ [FOL18]: 1000, [`thread:${ROOT}`]: 9000 }))).toBe(false)
-    expect(teamHasUnread(FOLDER, thread, frontier({ [FOL18]: 1000, [`thread:${ROOT}`]: 1000 }))).toBe(true)
-  })
-
-  it('reads an absent marker by the horizon: recent is new, older is quiet (§11.6)', () => {
-    expect(teamHasUnread(FOLDER, [said('m', NOW - 10, [FOL18])], frontier())).toBe(true)
-    expect(teamHasUnread(FOLDER, [said('m', NOW - HORIZON - 10, [FOL18])], frontier())).toBe(false)
-  })
-})
-
-/*
-  SPEC §11.8. The dot exists only for what you are a member of: each stream is
-  asked of `termsOf` by its key — the file's address, the Folder's own id for
-  the general stream — and a stream the person is not a member of contributes
-  nothing however new it is, unless a message in it names them. The ticket's
-  done-when in miniature: a message in a file you are in lights the team, the
-  same in a file you are not in lights nothing, and leaving a file puts a lit
-  team out at once, with no marker moving.
-*/
-describe('teamHasUnread — only member streams are judged (§11.8)', () => {
-  const only =
-    (...keys: string[]) =>
-    (key: string) =>
-      keys.includes(key)
-
-  it('lights from the second the person joined, and not for what was said before', () => {
-    const messages = [said('before', NOW - 100, [FOL18]), said('after', NOW - 10, [FOL18])]
-    const joined = (since: number) => frontier({}, ME, only(FOL18), () => ({ since }))
-    expect(teamHasUnread(FOLDER, messages, joined(NOW - 50))).toBe(true)
-    expect(teamHasUnread(FOLDER, [messages[0]], joined(NOW - 50))).toBe(false)
-    // The message that placed or mentioned the person counts: at the second they joined.
-    expect(teamHasUnread(FOLDER, [messages[0]], joined(NOW - 100))).toBe(true)
-  })
-
-  it('goes quiet for a muted stream, except for a message that names the person', () => {
-    const messages = [said('quiet', NOW - 20, [FOL18]), said('named', NOW - 10, [FOL18])]
-    const muted = (mentioned: (id: string) => boolean) => frontier({}, ME, only(FOL18), () => ({ muted: true }), mentioned)
-    expect(teamHasUnread(FOLDER, [messages[0]], muted(() => false))).toBe(false)
-    expect(teamHasUnread(FOLDER, messages, muted((id) => id === 'named'))).toBe(true)
-  })
-
-  it('lights for a message that names the person in a file they are not a member of', () => {
-    const messages = [said('named', NOW - 10, [FOL18])]
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false, () => ({}), (id) => id === 'named'))).toBe(true)
-  })
-
-  it('lights for a file you are in and not for one you are not, given the same message', () => {
-    const messages = [said('m', NOW - 10, [FOL18])]
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL16)))).toBe(false)
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false))).toBe(false)
-  })
-
-  it('judges a file’s stream and ignores the general stream beside it', () => {
-    const both = [said('chat', NOW - 10), said('m', NOW - 10, [FOL18])]
-    // Chat is new, but only the file counts: the file lights, and reading it puts the Folder out.
-    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOL18)))).toBe(true)
-    expect(teamHasUnread(FOLDER, both, frontier({ [FOL18]: NOW }, ME, only(FOL18)))).toBe(false)
-    // Even a person counted a member of the general stream is not lit by it.
-    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOLDER)))).toBe(false)
-  })
-
-  it('leaving clears a lit team at once, with no marker moving', () => {
-    const messages = [said('m', NOW - 10, [FOL18])]
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
-    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only()))).toBe(false)
-  })
-})
-
-/*
-  The `Mine` filter's Folder-level question — FOL-41. Judged over the same
-  messages as the dot and with no read of its own, which is what makes the
-  filter affordable; what it cannot see is pinned here too, so the limit is a
-  test rather than a comment.
-*/
 describe('teamHasMemberStream — does this Folder hold a file the person is a member of', () => {
   const only =
     (...keys: string[]) =>
@@ -233,25 +68,15 @@ describe('placeStreams — a moved file is judged where its Folder lists it', ()
     hasState,
     ...(addresses ? { addresses } : {}),
   })
-  const project = (key: string) => key === PROJECT
   const place = (...args: Parameters<typeof placeStreams>) => placeStreams(...args).streams
 
-  it('lights the Folder the project moved to, and not the one it was talked in', () => {
+  it('puts the talk in the Folder the project moved to, and not the one it was talked in', () => {
     const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }, [
       folder(A, true, []),
       folder(B, true, [PROJECT]),
     ])
-    expect(teamHasUnread(B, placed[B], frontier({}, ME, project))).toBe(true)
-    expect(teamHasUnread(A, placed[A], frontier({}, ME, project))).toBe(false)
-  })
-
-  it('does not leave the moved comment in the old Folder’s general stream', () => {
-    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }, [
-      folder(A, true, []),
-      folder(B, true, [PROJECT]),
-    ])
+    expect(placed[B].map((message) => message.id)).toEqual(['c'])
     expect(placed[A]).toEqual([])
-    expect(teamHasUnread(A, placed[A], frontier())).toBe(false)
   })
 
   it('keeps a file its own Folder still lists', () => {
@@ -315,21 +140,19 @@ describe('placeStreams — an issue lives where its project does', () => {
     hasState,
     ...(addresses ? { addresses } : {}),
   })
-  const issue = (key: string) => key === FOL18
   const moved = [folder(A, true, [OTHER]), folder(B, true, [PROJECT])]
 
-  it('lights the Folder the project moved to for a follower of the issue, and not the old one', () => {
+  it('puts an issue’s talk in the Folder its project moved to, and not the old one', () => {
     const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }, moved, { [FOL18]: PROJECT })
-    expect(teamHasUnread(B, streams[B], frontier({}, ME, issue))).toBe(true)
-    expect(teamHasUnread(A, streams[A], frontier({}, ME, issue))).toBe(false)
+    expect(streams[B].map((message) => message.id)).toEqual(['c'])
+    expect(streams[A]).toEqual([])
   })
 
-  it('hands over the issue’s own stream — its address, judged by its marker', () => {
+  it('hands over the issue’s own stream — its address', () => {
     const { streams, handed } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }, moved, {
       [FOL18]: PROJECT,
     })
     expect(streams[B].map((message) => message.about)).toEqual([[FOL18]])
-    expect(teamHasUnread(B, streams[B], frontier({ [FOL18]: NOW }, ME, issue))).toBe(false)
     expect(handed).toEqual({ [A]: [B] })
   })
 

@@ -243,7 +243,6 @@ vi.mock('@/api', async () => ({
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: {}, member: {}, holdsJoined: new Set<string>() }),
   useMembership: () => ({
     state: follows.state,
     me: ME,
