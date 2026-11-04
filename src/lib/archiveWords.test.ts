@@ -12,7 +12,7 @@ const words = {
 }
 
 describe('archive words', () => {
-  it('names a kind by its declared word, a Folder as a folder, and anything else as a file', () => {
+  it('names a kind by its declared word, a team as a team, and anything else as a file', () => {
     expect(kindNoun(30851, words)).toBe('issue')
     expect(kindNoun(39000, words)).toBe('team')
     expect(kindNoun(31999, words)).toBe('file')
