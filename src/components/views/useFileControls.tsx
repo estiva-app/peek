@@ -612,6 +612,8 @@ export function useFileControls({
         out of its parent, and Move waits for a pick (FOL-45).
       */
       <MoveDialog
+        // The kit ticks its box only as it opens: drawn again once the teams are read, before any team could be picked.
+        key={teams ? 'teams' : 'reading'}
         title={dialog.file.slots.title?.value ?? 'this file'}
         description="Everyone who can read it now still can."
         from={dialog.from}

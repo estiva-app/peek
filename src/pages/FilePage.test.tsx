@@ -11,7 +11,7 @@
  * hold. `FoldersPage.test.tsx` used to pin that such a file "opens nothing",
  * which was true of the pane and is the gap this route closes.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -260,7 +260,8 @@ vi.mock('@/api', async () => ({
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
   // The Teams column and Move read the teams this tab holds (TEA-5): one, the Folder's, unless a test says otherwise.
-  useTeams: () => ({ teams: teamsHeld.teams, failed: false, reload: async () => {} }),
+  // Subscribed, as the real read is: a test that sets them after mounting (`arrive`) redraws the page.
+  useTeams: () => ({ teams: useSyncExternalStore(teamsHeld.subscribe, () => teamsHeld.teams), failed: false, reload: async () => {} }),
   useTeamChatUnread: () => ({}),
   // useMayMove's own rule over the teams above (its hook reads useTeams inside its module, past this mock).
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
@@ -283,7 +284,18 @@ const topicsColumn = vi.hoisted(() => ({
   others: [] as ForeignObject[],
 }))
 type HeldTeam = { id: string; name: string; isMember: boolean; listed: { address: string; space: boolean }[] }
-const teamsHeld = vi.hoisted(() => ({ teams: [] as (HeldTeam & Record<string, unknown>)[] }))
+const teamsHeld = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  return {
+    teams: [] as (HeldTeam & Record<string, unknown>)[],
+    subscribe: (listener: () => void) => (listeners.add(listener), () => void listeners.delete(listener)),
+    /** The teams read lands after the page is drawn. */
+    arrive(teams: (HeldTeam & Record<string, unknown>)[]) {
+      this.teams = teams
+      listeners.forEach((listener) => listener())
+    },
+  }
+})
 /** A team as `useTeams` hands it: open, nobody's Company team, its people left out (the page's tests draw none). */
 const team = (over: HeldTeam) => ({ archived: false, company: false, admins: [], members: [], isFollowing: false, ...over })
 /** What has been done to those mentions where they were said (PEE-48): nothing read, unless a test says otherwise. */
@@ -2036,12 +2048,13 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   const STEER = 'steer'
   const DESIGN = 'design'
   /** The topic is one of the Folder team's spaces unless a test says otherwise; the person is in Steer, not in Design. */
-  const holdTeams = ({ space = true, inSource = true } = {}) => {
-    teamsHeld.teams = [
-      team({ id: FOLDER, name: 'Folders', isMember: inSource, listed: [{ address: TOPIC_ADDRESS, space }] }),
-      team({ id: STEER, name: 'Steer', isMember: true, listed: [] }),
-      team({ id: DESIGN, name: 'Design', isMember: false, listed: [] }),
-    ]
+  const teamsOf = ({ space = true, inSource = true } = {}) => [
+    team({ id: FOLDER, name: 'Folders', isMember: inSource, listed: [{ address: TOPIC_ADDRESS, space }] }),
+    team({ id: STEER, name: 'Steer', isMember: true, listed: [] }),
+    team({ id: DESIGN, name: 'Design', isMember: false, listed: [] }),
+  ]
+  const holdTeams = (options?: { space?: boolean; inSource?: boolean }) => {
+    teamsHeld.teams = teamsOf(options)
   }
   let listFolders: ReturnType<typeof writes.listFolders.getMockImplementation>
 
@@ -2111,6 +2124,21 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     expect(within(dialog).getByText('Reading…')).toBeInTheDocument()
     expect(within(dialog).queryByRole('option')).toBeNull()
     expect(within(dialog).getByRole('button', { name: 'Move' })).toBeDisabled()
+  })
+
+  it('opened before the teams are read, the box is still ticked once they are, and the move keeps it a space', async () => {
+    teamsHeld.teams = null as never
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    await screen.findByText('Reading…')
+    act(() => teamsHeld.arrive(teamsOf()))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
+    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
+    expect(writes.moveFile.mock.calls[0][3]).toBe(true)
   })
 
   it('a space of a team the person is not in offers no Move at all, in the header or on its row', () => {
