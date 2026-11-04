@@ -85,6 +85,12 @@ export interface FileConversationActions {
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
 
+/**
+ * Why a message or a change could not be built, in its own words: the box says them in the shared ones, so an edit
+ * over the protocol's 64 KB ("content is … bytes, max …") says "it is too long", not "something went wrong" (ONE-4).
+ */
+const builtFailure = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 
 /** The comment a held reply answers, by id: an edit of the reply earns no `q` for it, as the reply's send did not. */
@@ -472,7 +478,7 @@ export function useFileConversation(
       } catch (error) {
         // Reported, never thrown: the composer puts the text back only on an answer.
         console.warn('[nostr] building a message failed:', error)
-        return { ok: false, reason: 'The message could not be prepared. Try again.' }
+        return { ok: false, reason: builtFailure(error) }
       }
       const refusal = container.kind === 'channel' ? 'The relay refused the message.' : 'The relay refused the comment.'
       const result = await publishOwn(v, built.event, id, refusal)
@@ -522,7 +528,7 @@ export function useFileConversation(
             (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
           )
         }
-        return { ok: false, reason: 'The change could not be prepared. Try again.' }
+        return { ok: false, reason: builtFailure(error) }
       }
       return publishOwn(v, event, id, refusal, drafted)
     },

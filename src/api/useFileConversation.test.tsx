@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { FileConversation } from '@/nostr/fileConversation'
+import type { FileConversation, WriteResult } from '@/nostr/fileConversation'
+import { refusalReason } from '@estiva-app/conversation'
 import type { ConversationStore } from '@/platform/conversationStore'
 import { RelayReadError } from '@/nostr/relayRead'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { MAX_MESSAGE_BYTES, type SignedEvent } from '@estiva-app/protocol'
 
 /*
   The hook's contract with the held store (OPT-3) and the socket (FOL-32). The
@@ -62,11 +63,16 @@ vi.mock('@/nostr/conversationCatchUp', () => ({
 }))
 /** Each composed event's id is `<n>` repeated: the first message is '1'×64. */
 const idOf = (n: number) => String(n).repeat(64)
+/** What the protocol's builders throw for words over its 64 KB (`MAX_MESSAGE_BYTES`), before anything is signed. */
+const tooLong = (body: string) => {
+  if (body.length > MAX_MESSAGE_BYTES) throw new Error(`content is ${body.length} bytes, max ${MAX_MESSAGE_BYTES}`)
+}
 vi.mock('@/nostr/fileConversation', () => ({
   // A file with more than three comments is a long one here.
   FIRST_PAGE: 3,
   firstPageWith: (container: unknown, rootIds: readonly string[]) => relay.firstPage(container, rootIds),
   composeCommentAsViewer: async (args: { body: string }) => {
+    tooLong(args.body)
     relay.composed += 1
     return { ok: true, event: { kind: 9, content: args.body, tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) } }
   },
@@ -83,6 +89,7 @@ vi.mock('@/nostr/fileConversation', () => ({
     id unless the link wait named more (PEEKM-7); `links.wait` holds the signed one.
   */
   composeEdit: async (args: { body: string }, _url: unknown, _token: unknown, options: { at?: number; waitMs?: number } = {}) => {
+    tooLong(args.body)
     const signed = options.waitMs !== 0
     if (signed) await links.wait
     const slot = `${options.at}:${args.body}`
@@ -605,6 +612,23 @@ describe('useFileConversation — a channel (REM-1)', () => {
     await act(async () => answerLinks())
     expect(await edited).toEqual({ ok: true, id: idOf(2) })
     expect(relay.own).toEqual([`shown ${idOf(1)}`, `shown ${idOf(2)}`, `withdrawn ${idOf(1)}`, `confirmed ${idOf(2)}`])
+  })
+
+  it('an edit or a message over 64 KB is not sent, and the box says it is too long (ONE-4)', async () => {
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    const pasted = 'ONE-4 long paste '.repeat(18000)
+    let edit: WriteResult | undefined
+    let message: WriteResult | undefined
+    await act(async () => {
+      edit = await result.current.actions.edit('e'.repeat(64), pasted, [])
+      message = await result.current.actions.comment(pasted, [])
+    })
+    expect(edit?.ok).toBe(false)
+    expect(message?.ok).toBe(false)
+    expect(refusalReason(edit?.ok === false ? edit.reason : undefined)).toBe('it is too long')
+    expect(refusalReason(message?.ok === false ? message.reason : undefined)).toBe('it is too long')
+    expect(relay.publish).not.toHaveBeenCalled()
   })
 
   const refused = { ok: false as const, reason: 'The relay refused the edit.' }
