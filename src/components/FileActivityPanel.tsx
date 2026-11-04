@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { SectionHeader } from '@estiva-app/ui'
-import { formatTimestamp, useMentionConversation, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
+import { formatReplyTimestamp, useMentionConversation, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { project } from '@/components/views/useFileConversationView'
@@ -94,7 +94,8 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     authorName: author?.displayName ?? '—',
     authorAvatarSrc: author?.picture,
     authorBot: author?.bot === true,
-    timestamp: formatTimestamp(m.createdAt * 1000),
+    // No day divider above these rows, so each names its own day: a bare time means today (format.ts).
+    timestamp: formatReplyTimestamp(m.createdAt * 1000),
     body: now?.body ?? m.body,
     editedAt: now?.editedAt,
     createdAtMs: m.createdAt * 1000,
