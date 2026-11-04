@@ -296,6 +296,11 @@ const teamsHeld = vi.hoisted(() => {
     },
   }
 })
+/** Move's Team list once its teams are read: before that it says "Reading…", and the dialog is drawn again when they land. */
+const readTeamList = async () => {
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Team' })).not.toHaveTextContent('Reading…'))
+  return screen.getByRole('combobox', { name: 'Team' })
+}
 /** A team as `useTeams` hands it: open, nobody's Company team, its people left out (the page's tests draw none). */
 const team = (over: HeldTeam) => ({ archived: false, company: false, admins: [], members: [], isFollowing: false, ...over })
 /** What has been done to those mentions where they were said (PEE-48): nothing read, unless a test says otherwise. */
@@ -1897,7 +1902,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
+    await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual(['The top of Steer'])
@@ -1946,7 +1951,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     mount(`/topic/${ISSUE_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
+    await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     // Only Steer's projects: an issue under no project is in no Folder.
@@ -2077,7 +2082,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
+    await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: to }))
   }
 
@@ -2126,6 +2131,20 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     expect(within(dialog).getByRole('button', { name: 'Move' })).toBeDisabled()
   })
 
+  it('opens at once while its own team is read too, and closed meanwhile, stays closed when the read lands', async () => {
+    holdTeams()
+    let land!: (folders: unknown) => void
+    writes.listFolders.mockReturnValueOnce(new Promise((resolve) => (land = resolve)) as never)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reading…')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await act(async () => land([{ id: FOLDER, name: 'Folders', hasState: true, addresses: [TOPIC_ADDRESS] }]))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('opened before the teams are read, the box is still ticked once they are, and the move keeps it a space', async () => {
     teamsHeld.teams = null as never
     mount(`/topic/${TOPIC_ADDRESS}`)
@@ -2133,7 +2152,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await screen.findByText('Reading…')
     act(() => teamsHeld.arrive(teamsOf()))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
+    await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))

@@ -178,6 +178,8 @@ export function useFileControls({
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
     | { kind: 'confirm'; file: ForeignObject }
+    // Move pressed, its teams still read: the dialog is up at once, saying so.
+    | { kind: 'move-reading'; file: ForeignObject }
     | MoveState
     | { kind: 'inside'; file: ForeignObject; team: string; teamName: string; hasState: boolean }
     | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
@@ -186,12 +188,13 @@ export function useFileControls({
   /*
     Which team marks a file a space, and which teams the person is in (TEA-5):
     read once Move is pressed, beside the Folder's own read, since from the
-    Topics rail or a link none may be held yet. A topic's Move opens at once
-    and says "Reading…" until they are, so no team can be picked before its
-    "Keep it a space" box is there, ticked.
+    Topics rail or a link none may be held yet. Move opens at once and says
+    "Reading…" until they and the file's own team are read, so no team can be
+    picked before a topic's "Keep it a space" box is there, ticked.
   */
   const [teamsWanted, setTeamsWanted] = useState(false)
   const { teams, failed: teamsFailed } = useTeams({ read: teamsWanted })
+  const teamsPending = (file: ForeignObject) => !teams && !teamsFailed && isTopic(file)
 
   const refuse = useCallback(
     (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
@@ -364,12 +367,19 @@ export function useFileControls({
       if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
         return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
       }
-      if (control === 'move') setTeamsWanted(true)
+      if (control === 'move') {
+        setTeamsWanted(true)
+        setDialog({ kind: 'move-reading', file })
+      }
+      // Only over the Move that is still waiting for it: closed meanwhile, it stays closed.
+      const replaceReading = (next: typeof dialog) =>
+        setDialog((current) => (current?.kind === 'move-reading' && current.file.ref === file.ref ? next : current))
       void (async () => {
         let place: Awaited<ReturnType<typeof readPlace>>
         try {
           place = await readPlace(file, ownFolder)
         } catch {
+          replaceReading(null)
           refuse('The team could not be read. Try again.')
           return
         }
@@ -379,7 +389,7 @@ export function useFileControls({
           setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
           return
         }
-        setDialog(moveStateOf(file, place))
+        replaceReading(moveStateOf(file, place))
       })()
     },
     [refuse, readPlace, archiveImpact, setArchived, showToast],
@@ -603,6 +613,16 @@ export function useFileControls({
         onArchive={(resolution) => setArchived(dialog.file, true, resolution || undefined)}
         onClose={() => setDialog(null)}
       />
+    ) : dialog.kind === 'move-reading' ? (
+      <MoveDialog
+        key="reading"
+        title={dialog.file.slots.title?.value ?? 'this file'}
+        description="Everyone who can read it now still can."
+        from=""
+        folders={undefined}
+        onMove={() => false}
+        onClose={() => setDialog(null)}
+      />
     ) : dialog.kind === 'move' ? (
       /*
         The kit's Move (C11): the Folder first, then what it goes under there,
@@ -613,15 +633,11 @@ export function useFileControls({
       */
       <MoveDialog
         // The kit ticks its box only as it opens: drawn again once the teams are read, before any team could be picked.
-        key={teams ? 'teams' : 'reading'}
+        key={teamsPending(dialog.file) ? 'reading' : 'ready'}
         title={dialog.file.slots.title?.value ?? 'this file'}
         description="Everyone who can read it now still can."
         from={dialog.from}
-        folders={
-          !teams && !teamsFailed && isTopic(dialog.file)
-            ? undefined
-            : dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled team' }))
-        }
+        folders={teamsPending(dialog.file) ? undefined : dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled team' }))}
         places={dialog.targets?.map(placeOf)}
         placesIn={dialog.nests ? async (folder) => (await targetsIn(dialog, folder)).map(placeOf) : undefined}
         startAtTop={dialog.file.parentKind === undefined}
