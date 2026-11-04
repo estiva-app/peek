@@ -66,7 +66,7 @@ export async function folderDeletableOf(query: QueryFn, folder: string, me: stri
   }
   const name = metadata.tags.find((t) => t[0] === 'name')?.[1] ?? ''
   if (name.startsWith('project-')) {
-    return { ok: false, reason: "This is a Ship project's team: deleting it would hide the project's issues." }
+    return { ok: false, reason: "This belongs to a Ship project: deleting it would hide the project's issues." }
   }
   if (first.some((e) => FILED_KINDS.includes(e.kind))) {
     return { ok: false, reason: 'Something is filed in this team, and deleting it would hide that for everyone.' }
