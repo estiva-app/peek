@@ -14,14 +14,14 @@ const words = {
 describe('archive words', () => {
   it('names a kind by its declared word, a Folder as a folder, and anything else as a file', () => {
     expect(kindNoun(30851, words)).toBe('issue')
-    expect(kindNoun(39000, words)).toBe('folder')
+    expect(kindNoun(39000, words)).toBe('team')
     expect(kindNoun(31999, words)).toBe('file')
   })
 
   it('says the line in the box’s place: the file itself, or the closest archived file above it by its kind', () => {
     expect(archivedLineOf({}, words)).toBe('Archived. Unarchive it to comment.')
     expect(archivedLineOf({ with: `30850:${'a'.repeat(64)}:p` }, words)).toBe('Unarchive the project to comment.')
-    expect(archivedLineOf({ with: `39000:${'a'.repeat(64)}:f` }, words)).toBe('Unarchive the Folder to comment.')
+    expect(archivedLineOf({ with: `39000:${'a'.repeat(64)}:f` }, words)).toBe('Unarchive the team to comment.')
     expect(archivedLineOf(undefined, words)).toBeUndefined()
   })
 

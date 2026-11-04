@@ -365,7 +365,7 @@ async function main() {
   }
   check('there is a real Folder to open', channels.length > 0)
   if (channels.length > 0) {
-    check('  …it resolves through the built-in, as a folder', resolved?.noun === 'folder', resolved?.noun ?? 'null')
+    check('  …it resolves through the built-in, as a team', resolved?.noun === 'team', resolved?.noun ?? 'null')
     check(
       '  …and opens here, from the naddr template',
       typeof resolved?.openUrl === 'string' && resolved.openUrl.includes('naddr1'),

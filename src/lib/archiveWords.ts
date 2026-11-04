@@ -3,14 +3,14 @@ import { archivedLine } from '@estiva-app/ui'
 import { currentRouteWords, type RouteWords } from '@/lib/objectUrl'
 
 /**
- * The name of a kind in a sentence — "issue", "topic", "folder" (FOL-46).
+ * The name of a kind in a sentence — "issue", "topic", "team" (FOL-46, TEA-8).
  *
  * Read off the word the kind's manifest declares for its links (§7.7), so Peek
  * names Ship's kinds without knowing them: `/issue/` makes an issue. A Folder
- * is a Folder, and a kind nobody gave a word is a file.
+ * is a team, and a kind nobody gave a word is a file.
  */
 export function kindNoun(kind: number, words: RouteWords = currentRouteWords()): string {
-  if (kind === KIND_CHANNEL_METADATA) return 'folder'
+  if (kind === KIND_CHANNEL_METADATA) return 'team'
   return words.byKind[kind] ?? 'file'
 }
 
@@ -46,7 +46,7 @@ export function archiveImpactWords(
   const hides = impact.hides.map(({ kind, count }) => countOf(kind, count, words))
   const byFolder = new Map<string, number>()
   for (const file of impact.staysVisible) {
-    const name = file.in[0]?.name ?? 'another folder'
+    const name = file.in[0]?.name ?? 'another team'
     byFolder.set(name, (byFolder.get(name) ?? 0) + 1)
   }
   const staysVisible = [...byFolder].map(([name, n]) => `${n} ${n === 1 ? 'file' : 'files'} also in ${name}`)

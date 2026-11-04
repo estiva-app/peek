@@ -196,7 +196,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       if (!FOLDER_ID.test(folder)) {
         // `buildMembershipChange` would throw; say so now rather than flipping the control and flipping it back.
         console.warn('[membership] not changed: the file has no Folder to name in the change:', folder)
-        return 'This file is in no Folder Peek can name.'
+        return 'This file is in no team Peek can name.'
       }
       if (person !== undefined && person !== seam.pubkey) {
         // Only the person may leave (§11.8): a leave signed for somebody else would be ignored by every reader.

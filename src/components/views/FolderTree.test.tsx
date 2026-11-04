@@ -191,7 +191,7 @@ describe('the Teams view (TEA-5)', () => {
 
   it('offers New folder and New topic in its header', () => {
     mount()
-    expect(screen.getByRole('button', { name: 'New folder' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'New team' })).not.toBeNull()
     expect(screen.getByRole('button', { name: 'New topic' })).not.toBeNull()
   })
 

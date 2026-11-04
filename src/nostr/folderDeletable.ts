@@ -55,21 +55,21 @@ export async function folderDeletableOf(query: QueryFn, folder: string, me: stri
     { kinds: FILED_KINDS, '#h': [folder], limit: 1 },
   ])
   const metadata = first.find((e) => e.kind === KIND_CHANNEL_METADATA)
-  if (!metadata) return { ok: false, reason: 'This folder could not be read.' }
+  if (!metadata) return { ok: false, reason: 'This team could not be read.' }
   // A DM's channel is not a Folder (PEE-36), and a DM names no owner, so a
   // steward would otherwise pass every check below.
   if (metadata.tags.some((t) => t[0] === 't' && t[1] === 'dm')) {
-    return { ok: false, reason: 'This is a conversation, not a folder.' }
+    return { ok: false, reason: 'This is a conversation, not a team.' }
   }
   if (first.some((e) => e.kind === KIND_FOLDER_STATE)) {
-    return { ok: false, reason: 'A folder that files things is not deleted from Peek: everything in it would disappear.' }
+    return { ok: false, reason: 'A team that files things is not deleted from Peek: everything in it would disappear.' }
   }
   const name = metadata.tags.find((t) => t[0] === 'name')?.[1] ?? ''
   if (name.startsWith('project-')) {
-    return { ok: false, reason: "This is a Ship project's folder: deleting it would hide the project's issues." }
+    return { ok: false, reason: "This is a Ship project's team: deleting it would hide the project's issues." }
   }
   if (first.some((e) => FILED_KINDS.includes(e.kind))) {
-    return { ok: false, reason: 'Something is filed in this folder, and deleting it would hide that for everyone.' }
+    return { ok: false, reason: 'Something is filed in this team, and deleting it would hide that for everyone.' }
   }
 
   const relay = metadata.pubkey
@@ -80,12 +80,12 @@ export async function folderDeletableOf(query: QueryFn, folder: string, me: stri
   ])
   const ofKind = (kind: number) => second.filter((e) => e.kind === kind && e.pubkey === relay)
   if (ofKind(KIND_FOLDER_STATE).length) {
-    return { ok: false, reason: 'This folder is inside another one; deleting it would leave a gap there.' }
+    return { ok: false, reason: 'This team is inside another one; deleting it would leave a gap there.' }
   }
   const owner = ofKind(KIND_CHANNEL_ADMINS)[0]?.tags.find((t) => t[0] === 'p' && t[2] === 'owner')?.[1]
   const role = ofKind(KIND_MEMBERSHIP_LIST)[0]?.tags.find((t) => t[0] === 'member' && t[1] === me)?.[2]
   if (owner !== me && role !== 'owner' && role !== 'admin') {
-    return { ok: false, reason: 'Only the person who made this folder can delete it.' }
+    return { ok: false, reason: 'Only the person who made this team can delete it.' }
   }
   return { ok: true }
 }

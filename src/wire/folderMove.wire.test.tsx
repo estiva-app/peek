@@ -128,7 +128,7 @@ describe('moving a file at the wire', () => {
     const onMoved = await moveTo('Steer')
 
     await waitFor(() => expect(commands()).toEqual(['move HQ→Steer']))
-    expect(await said()).toBe('Nothing was moved: you need to be a member of both Folders to move this.')
+    expect(await said()).toBe('Nothing was moved: you need to be a member of both teams to move this.')
     expect(onMoved).not.toHaveBeenCalled()
   })
 
@@ -139,7 +139,7 @@ describe('moving a file at the wire', () => {
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(commands()).toEqual(['move HQ→Steer', 'move Ops→Steer'])
-    expect(await said()).toBe('Moved to Steer, but Ops still lists it too: one of the Folders is archived.')
+    expect(await said()).toBe('Moved to Steer, but Ops still lists it too: one of the teams is archived.')
   })
 
   it('after "the Folders changed", Move pressed again moves it from where it is now', async () => {
@@ -149,7 +149,7 @@ describe('moving a file at the wire', () => {
     relay.refuse({ when: (event) => event.kind === 1852 && tagOf(event, 'from') === HQ, message: `invalid: the team a move leaves does not list ${ADDRESS}` })
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
 
-    expect(await said()).toBe('Nothing was moved: the Folders changed since you opened this. Try again.')
+    expect(await said()).toBe('Nothing was moved: the teams changed since you opened this. Try again.')
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
@@ -273,6 +273,6 @@ describe('moving an issue at the wire', () => {
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(relay.sentOf(1851).map((event) => [tagOf(event, 'field'), tagOf(event, 'value')])).toEqual([['project', PROJECT_STEER]])
     expect(commands()).toEqual(['move HQ→Steer'])
-    expect(await said()).toBe('Moved to Steer, but HQ still lists it too: you need to be a member of both Folders to move this.')
+    expect(await said()).toBe('Moved to Steer, but HQ still lists it too: you need to be a member of both teams to move this.')
   })
 })

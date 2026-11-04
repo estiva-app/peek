@@ -169,7 +169,7 @@ function TopicsBody({
   const { mine, others, archived } = state
   // A section's empty line takes no button (the kit's EmptyState): Folders is the rail item below.
   if (mine.length === 0 && others.length === 0 && archived.length === 0)
-    return <EmptyState scope="section" message="No topics yet. Your files are in Folders." />
+    return <EmptyState scope="section" message="No topics yet. Your files are in your teams." />
   // The topics that list the open file open onto it, as a Folder opens onto its row.
   const listing = mine.filter(({ topic, files }) => topic.ref !== selectedRef && files.some((file) => file.ref === selectedRef)).map(({ topic }) => topic.ref)
   const otherOpen = others.some((topic) => topic.ref === selectedRef)

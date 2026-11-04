@@ -86,7 +86,7 @@ export function StartTopicDialog({
     here, as it is in the tree and in `MoveDialog`, not a defensive branch.
   */
   const chosen = folders?.find((f) => f.id === folder)
-  const where = choosing ? (chosen?.name ?? chosen?.id ?? 'the folder') : (folderName ?? 'this folder')
+  const where = choosing ? (chosen?.name ?? chosen?.id ?? 'the team') : (folderName ?? 'this team')
   const ready = !!trimmed && (!choosing || !!folder)
 
   return (
@@ -100,13 +100,13 @@ export function StartTopicDialog({
       onClose={onClose}
     >
       {choosing && folders.length === 0 ? (
-        <EmptyState scope="section" message="There is nowhere to start one yet — make a folder first." />
+        <EmptyState scope="section" message="There is nowhere to start one yet — make a team first." />
       ) : (
         <>
           <p className="text-body-2 text-text-secondary">
             {parent
               ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
-              : `A conversation in ${where}. Everyone in the folder can read it.`}
+              : `A conversation in ${where}. Everyone in the team can read it.`}
           </p>
           <Field label="Title">
             <TextInput
@@ -118,7 +118,7 @@ export function StartTopicDialog({
           </Field>
           <SummaryField value={summary} onChange={setSummary} />
           {choosing && (
-            <Field label="Folder">
+            <Field label="Team">
               <Select
                 value={folder}
                 onChange={setFolder}
@@ -126,7 +126,7 @@ export function StartTopicDialog({
                   value: candidate.id,
                   label: candidate.name ?? candidate.id,
                 }))}
-                ariaLabel="Folder"
+                ariaLabel="Team"
               />
             </Field>
           )}

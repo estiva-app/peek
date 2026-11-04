@@ -44,7 +44,7 @@ export function CreateFolderDialog({
   return (
     // The kit's FormDialog (C10): Enter in the field and the footer's button send it the same way, and it closes once that went through.
     <FormDialog
-      title={rename !== undefined ? 'Rename folder' : 'New folder'}
+      title={rename !== undefined ? 'Rename team' : 'New team'}
       submitLabel={rename !== undefined ? 'Rename' : 'Create'}
       busyLabel={rename !== undefined ? 'Renaming…' : 'Creating…'}
       ready={!!trimmed && !unchanged}
@@ -62,7 +62,7 @@ export function CreateFolderDialog({
         label *is* the accessible name and a second one would only be the
         name that loses.
       */}
-      <Field label="Folder name">
+      <Field label="Team name">
         <TextInput
           value={name}
           onChange={(event) => setName(event.target.value)}

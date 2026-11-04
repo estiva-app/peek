@@ -83,7 +83,7 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
     const user = userEvent.setup()
     mount()
     await user.click(screen.getByRole('button', { name: 'New topic' }))
-    await user.click(screen.getByRole('combobox', { name: 'Folder' }))
+    await user.click(screen.getByRole('combobox', { name: 'Team' }))
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))

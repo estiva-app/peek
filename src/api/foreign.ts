@@ -708,7 +708,7 @@ export function useForeignObjects() {
   const renameFolder = useCallback(
     async (folder: string, name: string) => {
       const v = viewer()
-      if (!v) return { ok: false as const, reason: 'Sign in to rename a folder.' }
+      if (!v) return { ok: false as const, reason: 'Sign in to rename a team.' }
       return renameFolderAsViewer(folder, name, v.relayUrl, v.token)
     },
     [viewer],
@@ -721,7 +721,7 @@ export function useForeignObjects() {
   const folderDeletable = useCallback(
     async (folder: string) => {
       const v = viewer()
-      if (!v) return { ok: false as const, reason: 'Sign in to delete a folder.' }
+      if (!v) return { ok: false as const, reason: 'Sign in to delete a team.' }
       return folderDeletableAsViewer(folder, v.relayUrl, v.token)
     },
     [viewer],
@@ -734,7 +734,7 @@ export function useForeignObjects() {
   const deleteFolder = useCallback(
     async (folder: string) => {
       const v = viewer()
-      if (!v) return { ok: false as const, reason: 'Sign in to delete a folder.' }
+      if (!v) return { ok: false as const, reason: 'Sign in to delete a team.' }
       return deleteFolderAsViewer(folder, v.relayUrl, v.token)
     },
     [viewer],
@@ -758,7 +758,7 @@ export function useForeignObjects() {
       const read = await Promise.all(
         sources.map((folder) => resolveFolderContentsAsViewer(folder.id, v.relayUrl, v.token, { includeArchived: true }).then((contents) => contents.files, () => null)),
       )
-      if (read.some((files) => files === null)) return { ok: false as const, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
+      if (read.some((files) => files === null)) return { ok: false as const, reason: 'The team it is in could not be read, so nothing was moved. Try again.' }
       const listings = new Map(sources.map((folder, i) => [folder.id, read[i]!] as const))
       return moveFileAsViewer(file, listings, from, to, v.relayUrl, v.token, keepSpace)
     },
@@ -826,7 +826,7 @@ export function useForeignObjects() {
   const archiveFolder = useCallback(
     async (args: { folder: string; channel: string; archived: boolean; resolution?: string }) => {
       const v = viewer()
-      if (!v) return { ok: false as const, reason: 'Sign in to archive a folder.' }
+      if (!v) return { ok: false as const, reason: 'Sign in to archive a team.' }
       return archiveFolderAsViewer(args, v.relayUrl, v.token)
     },
     [viewer],
@@ -850,7 +850,7 @@ export function useForeignObjects() {
   const createFolder = useCallback(
     async (name: string) => {
       const v = viewer()
-      if (!v) return { ok: false as const, reason: 'Sign in to create a folder.' }
+      if (!v) return { ok: false as const, reason: 'Sign in to create a team.' }
       return createFolderAsViewer(name, v.relayUrl, v.token)
     },
     [viewer],
