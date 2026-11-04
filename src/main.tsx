@@ -24,6 +24,10 @@ import { StartedTopicRefusals } from './components/StartedTopicRefusals'
 import { setSocketReader } from './nostr/bridge'
 import { relayLog } from './nostr/liveTopics'
 import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
+import { fieldsOptIn } from './nostr/projectFields'
+
+// This tab's `?fields=on|off` (ALO-6), taken before sign-in can move the address.
+fieldsOptIn(window.location.search)
 
 // Reads go over the open connection, one round trip each (OPT-2). Here rather
 // than in `@/api`, which tests import, so a test keeps the HTTP path.

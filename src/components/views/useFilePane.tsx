@@ -1,13 +1,13 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice } from '@estiva-app/ui'
+import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
-import { listingOf, mayMove, useFileMembers, useMembership, useOpenWorkFiles, usePeekActions, useTeams, useWorkspaceDirectory } from '@/api'
+import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, usePeekActions, useTeams, useWorkspaceDirectory } from '@/api'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
@@ -44,6 +44,7 @@ export function useFilePane(
 ) {
   const { file, title, reload: reloadConversation } = view
   const navigate = useNavigate()
+  const { restoreFile } = useForeignObjects()
 
   /*
     Rename and Delete, from the manifest and not from the kind (FOL-33) — the
@@ -201,8 +202,28 @@ export function useFilePane(
   const archive = file?.archived
   const archivedWith = archive?.with
   const archiveAction = controls.archive && !archivedWith ? (archive ? 'unarchive' : 'archive') : undefined
+  /*
+    Deleted (SPEC §6.5, ALO-6): gone from every list, and a link still opens it — so the page says who deleted it and
+    when, first, with Restore: its Delete action with the empty value. Ahead of an archive: a deleted file is not work.
+  */
+  const deleted = file?.deleted
   const notice =
-    file && archive ? (
+    file && deleted ? (
+      <DeletedNotice
+        // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+        by={people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'}
+        when={formatDateLabel(deleted.at * 1000)}
+        onRestore={
+          controls.delete?.field && file.naddr
+            ? () =>
+                restoreFile({ naddr: file.naddr!, actionId: controls.delete!.id }).then((result) => {
+                  if (!result.ok) showToast({ label: result.reason, type: 'error' })
+                  return Promise.all([reloadConversation(), onListingChanged?.()])
+                })
+            : undefined
+        }
+      />
+    ) : file && archive ? (
       <ArchivedNotice
         // A dash for a person nobody has named, as the kit's Person draws one: never their key.
         by={people?.[archive.by]?.displayName ?? '—'}

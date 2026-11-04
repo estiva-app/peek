@@ -1,7 +1,8 @@
 import { useCallback, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { AttachedCard, FieldLine, isPlainClick, LinkChip, LinkRow, type LinkedConversation, type LinkState } from '@estiva-app/ui'
-import { useConversationBadges, useDeleted, useLinksIn } from '@/api'
+import { formatDateLabel, useConversationBadges, useDeleted, useLinksIn } from '@/api'
+import { DELETED_FIELD } from '@/lib/fileControls'
 import { linkedKindOf, linkStateOf, messageWordsOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
@@ -11,6 +12,7 @@ import { openConversation } from '@/lib/threadOpener'
 import { referenceTypeWord } from '@/lib/textParsing'
 import { cardShapes } from '@/lib/cardShapes'
 import { rememberedUnavailable } from '@/lib/unavailableCards'
+import { DeletedCard } from './DeletedCard'
 import { Reference } from './Reference'
 import { useHeldCard } from './useHeldCard'
 
@@ -152,6 +154,32 @@ export function MessageCard({ uri, resolved, compact = false, readOnly = false, 
   const act = useCallback((actionId: string, value: string) => {
     if (!busy) void onAct(actionId, value)
   }, [busy, onAct])
+
+  /*
+    Deleted (SPEC §6.5, ALO-6): its title, who deleted it and when, and Restore — the action that deleted it, with the
+    empty value — for someone who may change it from here. Read the same with the switch on or off: interop folds
+    `deleted` either way.
+  */
+  if (ready?.deleted) {
+    const restore = readOnly ? undefined : ready.actions.find((action) => action.field === DELETED_FIELD)
+    return (
+      <div data-card={compact ? 'compact' : 'detailed'} data-card-value={naddr}>
+        <DeletedCard
+          title={ready.slots.title?.value ?? ''}
+          noun={referenceTypeWord(uri) ?? ready.noun ?? 'File'}
+          // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+          by={ready.people?.[ready.deleted.by]?.displayName ?? directory?.[ready.deleted.by]?.displayName ?? '—'}
+          when={formatDateLabel(ready.deleted.at * 1000)}
+          onRestore={restore ? () => onAct(restore.id, '') : undefined}
+        />
+        {error && (
+          <FieldLine tone="error" className="mt-1">
+            {error}
+          </FieldLine>
+        )}
+      </div>
+    )
+  }
 
   let link: LinkState
   // Not this reader's to see, or deleted, or, when the body wrote a URL, that URL as written (SPEC §13.1, C21).
