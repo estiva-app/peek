@@ -1035,6 +1035,21 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(screen.getByTestId('url').textContent).toBe(`/message/${mention.id}`)
   })
 
+  /*
+    No day divider sits above these rows, so a mention from another day names
+    its day, as its hover does: a bare time means today (format.ts). It read
+    "11:22 PM" for a message of 30 October (Katerina, 4 November).
+  */
+  it('a mention from another day names its day beside its time', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
+    const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
+    // 1_700_000_000 is 14 November 2023 (the 15th east of UTC+2): a past year names itself.
+    expect(within(row).getByText(/^Nov 1[45], 2023 at \d{1,2}:\d{2} [AP]M$/)).toBeInTheDocument()
+  })
+
   /** The mention as a read finds it now: `edit`, reactions and replies as `mentionConversationWith` folds them. */
   const now = (over: { edit?: string; reactions?: string[]; replies?: number; kept?: boolean }) => ({
     asked: new Set([mention.id]),
