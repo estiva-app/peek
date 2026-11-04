@@ -1,22 +1,19 @@
 /**
- * The left column is the Folder tree — FOL-21.
+ * The left column under the rail's Teams — FOL-21, then TEA-5.
  *
- * What the ticket's done-when promises, pinned at the seam: the Folders as
- * folds, only the current one open; a Folder's first level read when its fold
- * opens and never before; a row's children read when the row is expanded and
- * never before; no dot on a Folder, collapsed or open; and where a Folder and a
- * row lead. The relay's side of "one query on expand" is measured by
- * `scripts/probe-fol21-tree-cost.ts`, against production; this file proves
- * *when* the read is asked for, which no probe can.
+ * Since TEA-5 the column has two views: Teams, which is `TeamsColumn` (its own
+ * rows are pinned in `TeamsColumn.test.tsx`), and Archive, which is still the
+ * Folder tree: every top-level Folder as a fold, the archived included, each
+ * fold read when it opens. What this file pins is the column's own part: which
+ * view it opens on, what it hands the teams column, the header, and that the
+ * page beside it only ever shows a file the column draws.
  */
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { NAV_TREE_PENDING_MS } from '@estiva-app/ui'
 import { FolderTree } from './FolderTree'
-import { ToastProvider } from '@/lib/toast'
 import { PeekSetup } from '@/lib/PeekSetup'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -89,56 +86,44 @@ const folders: FolderSummary[] = [
 ]
 
 const reads = vi.hoisted(() => ({
-  /** Folders whose read has not answered yet. */
-  pending: new Set<string>(),
   contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
-  children: vi.fn<(naddr: string | null | undefined) => unknown>(),
   /** More rows in the team's listing, for one test. */
   extra: [] as ForeignObject[],
 }))
-const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean>, member: {} as Record<string, boolean> }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
-/** Joined files no listing holds (an issue, under its project), for the Topics tests: by parent, and as read. */
-const joined = vi.hoisted(() => ({
-  under: {} as Record<string, string[]>,
-  resolved: {} as Record<string, ForeignObject>,
-}))
 
-vi.mock('@/api', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@/api')
-  const useMembership = actual.useMembership as () => { isMember: (address: string) => boolean }
-  return {
-  ...actual,
-  useMembership: () => {
-    const membership = useMembership()
-    return { ...membership, isMember: (address: string) => address in joined.resolved || membership.isMember(address) }
-  },
-  useResolvedReferences: (refs: readonly string[]) =>
-    Object.fromEntries(refs.filter((ref) => ref in joined.resolved).map((ref) => [ref, joined.resolved[ref]])),
+vi.mock('@/api', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  useResolvedReferences: () => ({}),
   useFolders: () => ({ folders, signedOut: false, reload: async () => {} }),
   useFolderContents: (folder: string | null | undefined, options?: { archived?: boolean }) => {
     reads.contents(folder, options)
     return {
-      state: folder && !reads.pending.has(folder)
+      state: folder
         ? { id: folder, name: 'Peek', hasState: true, source: 'state', files: folder === TEAM ? [project, file, ...reads.extra] : [] }
         : 'loading',
       reload: async () => {},
     }
   },
-  useForeignChildren: (naddr: string | null | undefined) => {
-    reads.children(naddr)
-    return { state: [], reload: async () => {} }
-  },
+  useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({
-    unread: dots.unread,
-    member: dots.member,
-    holdsJoined: new Set(Object.keys(joined.under)),
-    joinedUnder: joined.under,
-  }),
   useCurrentUser: () => (viewer.id ? { id: viewer.id } : undefined),
-  }
-})
+}))
+
+/**
+ * The Teams view's body, as what it was handed: its rows are
+ * `TeamsColumn.test.tsx`'s, and here the question is only what the column
+ * tells it.
+ */
+const teams = vi.hoisted(() => ({
+  props: undefined as { show: string; selectedRef?: string; openTeam?: string | null; chatOpen?: boolean } | undefined,
+}))
+vi.mock('@/components/views/TeamsColumn', () => ({
+  TeamsColumn: (props: { show: string; selectedRef?: string; openTeam?: string | null; chatOpen?: boolean }) => {
+    teams.props = props
+    return <div data-testid="teams-column" />
+  },
+}))
 
 function Probe() {
   const location = useLocation()
@@ -164,387 +149,96 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
 /** A group's open state: its heading's `aria-expanded`, as the package's section draws it. */
 const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
 const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
-const fold = (name: string) => screen.getByRole('button', { name })
-/** The rows under a row while it is open: the panel its arrow opens (`aria-controls`), as a screen reader is told; null while shut. */
-const rowsUnder = (ref: string) => {
-  const arrow = document.querySelector(`[data-file="${CSS.escape(ref)}"]`)?.parentElement?.querySelector('[aria-controls][aria-label*="what is under"]')
-  return arrow?.getAttribute('aria-expanded') === 'true' ? document.getElementById(arrow.getAttribute('aria-controls')!) : null
-}
-
-/** Folder ids `useFolderContents` was asked to read — `null` is "nothing". */
-const contentsAsked = () => [...new Set(reads.contents.mock.calls.map(([folder]) => folder).filter(Boolean))]
-const childrenAsked = () => [...new Set(reads.children.mock.calls.map(([naddr]) => naddr).filter(Boolean))]
+/** The column's title: the view, and the button that opens their menu. */
+const title = (name: string) => screen.getByRole('button', { name })
 
 beforeEach(() => {
-  reads.pending.clear()
   reads.contents.mockClear()
-  reads.children.mockClear()
   reads.extra = []
-  dots.unread = {}
-  dots.member = {}
-  joined.under = {}
-  joined.resolved = {}
   viewer.id = undefined
+  teams.props = undefined
   window.localStorage.clear()
-  // The tree's mechanics are the Folders view's — every Folder. Topics is `describe('The two views')`.
-  window.localStorage.setItem('peek.tree.view', 'all')
+  window.sessionStorage.clear()
 })
 afterEach(() => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
 })
 
-describe('the Folders, as folds', () => {
-  it('lists the top-level Folders alphabetically, as a section each, and no topic list', () => {
+describe('the Teams view (TEA-5)', () => {
+  it('the column opens on Teams, which is the teams column and not the Folders as folds', () => {
     mount()
-    const titles = [...document.querySelectorAll('[data-nav-group]')].map(
-      (node) => within(node as HTMLElement).getAllByRole('button')[0].textContent,
-    )
-    expect(titles).toEqual(['A topic of ours', 'Peek', 'Zebra'])
-    // A placed channel is a row in its team; a bare record channel is nobody's
-    // section (PEE-31). Both are in `listFolders`, neither is navigation.
-    expect(document.querySelector(`[data-nav-group="${PLACED}"]`)).toBeNull()
-    expect(document.querySelector(`[data-nav-group="${RECORD}"]`)).toBeNull()
-    expect(screen.queryByText('project-0804b906')).toBeNull()
-    expect(screen.queryByText('Your topics')).toBeNull()
-    expect(screen.queryByText('Other topics')).toBeNull()
+    expect(title('Teams')).not.toBeNull()
+    expect(screen.getByTestId('teams-column')).not.toBeNull()
+    expect(document.querySelector('[data-nav-group]')).toBeNull()
+    // Nothing is read for a Folder's fold: there are none.
+    expect(reads.contents.mock.calls.filter(([folder]) => folder)).toEqual([])
   })
 
-  it('a Folder another Folder lists is a row in that section, not a section of its own (FOL-22)', () => {
-    mount()
-    expect(section(PLACED)).toBeNull()
-    expect(screen.queryByText('Aardvark, placed')).toBeNull()
-  })
-
-  it('opens only the Folder holding the page, and reads only that one — none before', () => {
-    mount({ currentFolder: TEAM })
-    expect(openOf(section(TEAM))).toBe('true')
-    expect(openOf(section(OTHER))).toBe('false')
-    expect(openOf(section(TOPIC_FOLDER))).toBe('false')
-    // The first level of the open Folder is drawn, as rows.
-    expect(section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`)).not.toBeNull()
-    expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
-    expect(document.querySelector('[data-card]')).toBeNull()
-    // And it is the only Folder whose contents were asked for.
-    expect(contentsAsked()).toEqual([TEAM])
-  })
-
-  it('opens nothing when no Folder is current', () => {
-    mount()
-    expect([...document.querySelectorAll('[data-nav-group]')].every((n) => openOf(n as HTMLElement) === 'false')).toBe(true)
-    expect(contentsAsked()).toEqual([])
-  })
-
-  it("reads a Folder's first level when its fold opens, and remembers the fold", () => {
-    mount()
-    expect(contentsAsked()).toEqual([])
-    fireEvent.click(fold('Zebra'))
-    expect(openOf(section(OTHER))).toBe('true')
-    expect(contentsAsked()).toEqual([OTHER])
-    expect(window.localStorage.getItem(`peek.tree.folder.${OTHER}`)).toBe('open')
-  })
-
-  it('a fold the person opened stays open on the next mount, whatever is current', () => {
-    window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'open')
-    mount({ currentFolder: TEAM })
-    expect(openOf(section(OTHER))).toBe('true')
-    expect(openOf(section(TEAM))).toBe('true')
-    expect(contentsAsked().sort()).toEqual([OTHER, TEAM].sort())
-  })
-
-  it("a fold the person closed stays closed even when it holds the page — the section's own ruling", () => {
-    window.localStorage.setItem(`peek.tree.folder.${TEAM}`, 'closed')
-    mount({ currentFolder: TEAM })
-    expect(openOf(section(TEAM))).toBe('false')
-    expect(contentsAsked()).toEqual([])
-  })
-
-  /*
-    A Folder carries no dot, open or closed (Miky, 2026-10-03) — only its file
-    rows do. The rows' badges are mocked empty here, so any dot in a section
-    would be the Folder's own.
-  */
-  it('draws no dot on a Folder that holds something new, open or closed', () => {
-    dots.unread = { [OTHER]: true, [TEAM]: true }
-    mount({ currentFolder: TEAM })
-    expect(openOf(section(TEAM))).toBe('true')
-    expect(openOf(section(OTHER))).toBe('false')
-    expect(section(OTHER).querySelector('[data-unread]')).toBeNull()
-    expect(section(TEAM).querySelector('[data-unread]')).toBeNull()
-  })
-})
-
-describe('the second level', () => {
-  it("reads a row's children only after its chevron is clicked — one ask, none before", () => {
-    mount({ currentFolder: TEAM })
-    expect(childrenAsked()).toEqual([])
-    const row = section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement
-    fireEvent.click(within((row).parentElement!).getByRole('button', { name: /Show what is under/ }))
-    expect(childrenAsked()).toEqual([project.naddr])
-    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
-  })
-
-  it("expands the open file's parent row so the file is where the tree says it is", () => {
-    mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS })
-    expect(section(TEAM).contains(rowsUnder(PROJECT_ADDRESS))).toBe(true)
-    expect(childrenAsked()).toEqual([project.naddr])
-  })
-})
-
-/*
-  Katerina, 30 October: a row keeps how the person left it on this browser —
-  the column is drawn again on every page, and another app's card opens a new
-  tab — and a row above the open file opens for each file opened under it.
-*/
-describe('rows kept, and opened for the open file (Katerina, 30 October)', () => {
-  const projectRow = () => (section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement).parentElement!
-  const arrow = (name: RegExp) => within(projectRow()).getByRole('button', { name })
-  const shown = () => rowsUnder(PROJECT_ADDRESS) !== null
-
-  it('a row opened by hand is open when the column is drawn again; one closed by hand stays closed', () => {
-    const first = mount({ currentFolder: TEAM })
-    fireEvent.click(arrow(/Show what is under/))
-    first.unmount()
-    const second = mount({ currentFolder: TEAM })
-    expect(shown()).toBe(true)
-    fireEvent.click(arrow(/Hide what is under/))
-    second.unmount()
-    mount({ currentFolder: TEAM })
-    expect(shown()).toBe(false)
-  })
-
-  it('a row above the open file, closed by hand, opens for another file opened under it, and not again for the same one', () => {
-    const view = mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-a' })
-    expect(shown()).toBe(true)
-    fireEvent.click(arrow(/Hide what is under/))
-    view.rerender({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-a' })
-    expect(shown()).toBe(false)
-    view.rerender({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS, selectedRef: 'issue-b' })
-    expect(shown()).toBe(true)
-  })
-})
-
-/*
-  Opened before its listing is in, a Folder stays shut with its arrow turned,
-  then opens once with every row (OPT-11, Miky 12 October): a skeleton the
-  rows replaced moved everything below it twice.
-*/
-describe('a Folder opened before its listing is in (OPT-11)', () => {
-  const hidden = (node: Element | null) => !!node?.closest('[hidden]')
-
-  it('says open and busy, draws nothing yet, and opens with every row when the listing lands', () => {
-    reads.pending.add(TEAM)
-    const { rerender } = mount()
-    fireEvent.click(fold('Peek'))
-    const heading = section(TEAM).querySelector('[aria-expanded]')!
-    expect(heading.getAttribute('aria-expanded')).toBe('true')
-    expect(heading.getAttribute('aria-busy')).toBe('true')
-    expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(true)
-
-    reads.pending.delete(TEAM)
-    rerender({})
-    expect(heading.getAttribute('aria-busy')).toBeNull()
-    expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
-  })
-
-  it('a read still out after NAV_TREE_PENDING_MS opens on the skeleton', () => {
-    vi.useFakeTimers()
-    try {
-      reads.pending.add(TEAM)
-      mount()
-      fireEvent.click(fold('Peek'))
-      act(() => vi.advanceTimersByTime(NAV_TREE_PENDING_MS))
-      expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
-      expect(hidden(section(TEAM).querySelector('.animate-skeleton-in'))).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('a Folder whose listing is already in opens at once, never busy', () => {
-    mount()
-    fireEvent.click(fold('Peek'))
-    expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
-    expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
-  })
-})
-
-describe('a Ship project opens in the team that lists its channel (SID-2)', () => {
-  const channelListing = { id: PROJECT_CHANNEL, name: 'project-5b2e7c90', hasState: false, source: 'h', files: [project] }
-  const teamListing = { id: TEAM, name: 'Peek', hasState: true, source: 'state', files: [project, file] }
-
-  it('the team is current, reads its own listing, and opens the project row', () => {
-    mount({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS, currentContents: channelListing as never })
-    expect(openOf(section(TEAM))).toBe('true')
-    // The page's read is the channel's; the team is not handed it.
-    expect(contentsAsked()).toEqual([TEAM])
-    expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
-  })
-
-  it('topic → project: the rows stay while the team reads its own listing', () => {
-    const { rerender } = mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, currentContents: teamListing as never })
-    reads.pending.add(TEAM)
-    rerender({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS, currentContents: channelListing as never })
-    expect(openOf(section(TEAM))).toBe('true')
-    expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
-  })
-
-  it('project → topic: the rows stay while the page reads the team', () => {
-    const { rerender } = mount({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS, currentContents: channelListing as never })
-    rerender({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, currentContents: 'loading' })
-    expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
-  })
-})
-
-describe('where things lead', () => {
-  it('a row opens the file at its address, in three panes', () => {
-    mount({ currentFolder: TEAM })
-    fireEvent.click(within(section(TEAM)).getByText('FOL-15 test topic 2'))
-    // A bare file's link is its short form (FOL-37): the slug and the d.
-    expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
-  })
-
-  it('a Cmd- or Ctrl-click on a row is the browser’s, for a new tab: this page stays where it is', () => {
-    mount({ currentFolder: TEAM })
-    const link = within(section(TEAM)).getByText('FOL-15 test topic 2').closest('a')!
-    // `fireEvent` answers false when the click was stopped: then the browser opens no tab.
-    expect(fireEvent.click(link, { metaKey: true })).toBe(true)
-    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
-  })
-
-  it('a click on a Folder only folds it, and leads nowhere — the Folders page and its Open folder are gone (5 October)', () => {
-    mount()
-    expect(within(section(OTHER)).queryByRole('button', { name: 'Open folder' })).toBeNull()
-    expect(openOf(section(OTHER))).toBe('false')
-    fireEvent.click(fold('Zebra'))
-    expect(openOf(section(OTHER))).toBe('true')
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
-  })
-})
-
-describe('the two views (Katerina, 5 October)', () => {
-  /** The column's title: the view, and the button that opens their menu. */
-  const title = (name: string) => screen.getByRole('button', { name })
-
-  it('opens on Topics: the Folders you are a member of something in, and the one holding the open file', () => {
-    window.localStorage.removeItem('peek.tree.view')
-    dots.member = { [TEAM]: true }
-    mount({ currentFolder: OTHER })
-    expect(title('Joined')).not.toBeNull()
-    expect(section(TEAM)).not.toBeNull()
-    // Not yours, but the open file is in it: where the tree says it is.
-    expect(section(OTHER)).not.toBeNull()
-    expect(section(TOPIC_FOLDER)).toBeNull()
-  })
-
-  it('an archived issue you joined is not in Topics; a live one beside it is (PEE-58)', () => {
-    const ARCHIVED_ISSUE = `30851:${SHIP}:aa000000-0000-4000-8000-000000000001`
-    const LIVE_ISSUE = `30851:${SHIP}:bb000000-0000-4000-8000-000000000002`
-    const issue = (address: string, name: string, over: Partial<ForeignObject> = {}) =>
-      foreign({ ref: address, address, kind: 30851, appName: 'Estiva Ship', slots: { title: { value: name } }, ...over })
-    joined.under = { [PROJECT_ADDRESS]: [ARCHIVED_ISSUE, LIVE_ISSUE] }
-    joined.resolved = {
-      [ARCHIVED_ISSUE]: issue(ARCHIVED_ISSUE, 'Archived issue of mine', { archived: { by: SHIP, at: 1 } } as Partial<ForeignObject>),
-      [LIVE_ISSUE]: issue(LIVE_ISSUE, 'Live issue of mine'),
-    }
-    dots.member = { [TEAM]: true }
+  it('forgets a Joined an older Peek saved in this browser, rather than obeying it', () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     mount()
-    expect(within(section(TEAM)).queryByText('Live issue of mine')).not.toBeNull()
-    expect(within(section(TEAM)).queryByText('Archived issue of mine')).toBeNull()
+    expect(title('Teams')).not.toBeNull()
+    expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
   })
 
-  it('a Folder closed in Topics stays closed when the column is drawn again, and only in Topics (PEE-74)', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    dots.member = { [TEAM]: true, [OTHER]: true }
-    const first = mount({ currentFolder: OTHER })
-    expect(openOf(section(TEAM))).toBe('true')
-    fireEvent.click(within(section(TEAM)).getAllByRole('button')[0])
-    expect(openOf(section(TEAM))).toBe('false')
-    // Leaving the file for Desk and coming back draws the column again.
-    first.unmount()
-    const again = mount({ currentFolder: OTHER })
-    expect(openOf(section(TEAM))).toBe('false')
-    expect(openOf(section(OTHER))).toBe('true')
-    // Folders keeps its own folds: the one holding the open file is open there.
-    again.unmount()
-    window.localStorage.setItem('peek.tree.view', 'all')
-    mount({ currentFolder: TEAM })
-    expect(openOf(section(TEAM))).toBe('true')
-  })
-
-  it('the title opens a menu of the views, and the choice is remembered in this browser', async () => {
-    window.localStorage.removeItem('peek.tree.view')
+  it('its title menu offers Teams and Archive, and no Joined', async () => {
     mount()
-    await userEvent.click(title('Joined'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
-    expect(title('Folders')).not.toBeNull()
-    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
-    expect(section(TOPIC_FOLDER)).not.toBeNull()
+    await userEvent.click(title('Teams'))
+    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
+    expect(items).toEqual(['Teams', 'Archive'])
   })
 
-  it('New folder is offered in Folders only — a Folder is made where Folders are; New topic in both', async () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
+  it('offers New folder and New topic in its header', () => {
     mount()
-    expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'New topic' })).not.toBeNull()
-    await userEvent.click(title('Joined'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
     expect(screen.getByRole('button', { name: 'New folder' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'New topic' })).not.toBeNull()
   })
 
-  it("a Folder's own link turns the column to Folders, where it is — for this visit, not saved", () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    mount({ currentFolder: OTHER, showFolder: true })
-    expect(title('Folders')).not.toBeNull()
-    expect(window.localStorage.getItem('peek.tree.view')).toBe('mine')
-  })
-
-  it("a Folder's own link opens it, though the person had closed it", () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'closed')
-    mount({ currentFolder: OTHER, showFolder: true })
-    expect(openOf(section(OTHER))).toBe('true')
-  })
-
-  it("a Folder's own link is remembered open, as a click would: it stays open when a file in another Folder is opened next", () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    const link = mount({ currentFolder: OTHER, showFolder: true })
-    expect(openOf(section(OTHER))).toBe('true')
-    link.unmount()
-    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
-    expect(openOf(section(OTHER))).toBe('true')
-  })
-
-  it('in Folders each heading wears the folder icon; in Topics none does', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
+  it('the filter’s Unread reaches the teams column', async () => {
     mount()
-    expect(section(OTHER).querySelector('.tabler-icon-folder')).not.toBeNull()
-    await userEvent.click(title('Folders'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
-    dots.member = {}
-    expect(document.querySelector('.tabler-icon-folder')).toBeNull()
+    expect(teams.props?.show).toBe('all')
+    await userEvent.click(screen.getByRole('button', { name: 'Filter' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Unread' }))
+    expect(teams.props?.show).toBe('unread')
+  })
+
+  it('a Ship project opened by its channel opens the team that lists the channel (SID-2), with the file current', () => {
+    mount({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS })
+    expect(teams.props?.openTeam).toBe(TEAM)
+    expect(teams.props?.selectedRef).toBe(PROJECT_ADDRESS)
+  })
+
+  it('the open team’s chat is current there, and only while it is the page', () => {
+    const view = mount({ currentFolder: TEAM, chatOpen: true })
+    expect(teams.props).toMatchObject({ openTeam: TEAM, chatOpen: true })
+    view.rerender({ currentFolder: TEAM })
+    expect(teams.props?.chatOpen).toBe(false)
+  })
+
+  it("a team's own link turns the column from Archive to Teams, where it is", () => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount({ currentFolder: OTHER, showFolder: true })
+    expect(title('Teams')).not.toBeNull()
+    expect(teams.props?.openTeam).toBe(OTHER)
   })
 })
 
 describe('the page only shows a file the column draws (Katerina, 5 October)', () => {
-  const title = (name: string) => screen.getByRole('button', { name })
-  const LIVE = { currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: false, selectedMine: true }
+  const LIVE = { currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: false }
   const ARCHIVED_FILE = { ...LIVE, selectedArchived: true }
 
   it('an archived file that arrives turns the column to Archive, for this visit only', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
     mount(ARCHIVED_FILE)
     expect(title('Archive')).not.toBeNull()
-    expect(window.localStorage.getItem('peek.tree.view')).toBe('mine')
+    expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
     expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
-  it('a live file that arrives while Archive is showing turns the column back to the person’s own view', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
+  it('a live file that arrives while Archive is showing turns the column back to Teams', () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount(LIVE)
-    expect(title('Folders')).not.toBeNull()
+    expect(title('Teams')).not.toBeNull()
   })
 
   it('judges nothing while the file is still resolving', () => {
@@ -555,49 +249,18 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
   })
 
   it('a file archived while it is open closes: it left the list it was in', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
     const { rerender } = mount(LIVE)
     rerender(ARCHIVED_FILE)
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
   })
 
   it('a file unarchived while it is open in Archive stays open, and the column goes where it now is', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     const { rerender } = mount(ARCHIVED_FILE)
     expect(title('Archive')).not.toBeNull()
     rerender(LIVE)
     expect(screen.getByTestId('url').textContent).toBe('/topics')
-    expect(title('Folders')).not.toBeNull()
-  })
-
-  it('a topic left while it is open in Topics leaves the list, and closes', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    const { rerender } = mount(LIVE)
-    rerender({ ...LIVE, selectedMine: false })
-    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
-  })
-
-  it('a file left while Folders is showing stays open: Folders draws every file', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    const { rerender } = mount(LIVE)
-    rerender({ ...LIVE, selectedMine: false })
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
-  })
-
-  it('a file not joined, opened from a link, is shown in Topics where it is', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    mount({ ...LIVE, selectedMine: false })
-    expect(title('Joined')).not.toBeNull()
-    expect(section(TEAM)).not.toBeNull()
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
-  })
-
-  it('the open file’s Folder opens though the person had closed it', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    window.localStorage.setItem(`peek.tree.folder.${TEAM}`, 'closed')
-    mount(LIVE)
-    expect(openOf(section(TEAM))).toBe('true')
+    expect(title('Teams')).not.toBeNull()
   })
 
   it('in Archive, the open file’s Folder opens, and a Folder opened there stays open on the next page', () => {
@@ -613,28 +276,11 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
   })
 })
 
-describe('a project reached by its channel’s link (5 October)', () => {
-  it('is selected and open, what is under it drawn', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS, expandSelected: true })
-    expect(rowsUnder(PROJECT_ADDRESS)).not.toBeNull()
-  })
-
-  it('stays closed when opened any other way', () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS })
-    expect(rowsUnder(PROJECT_ADDRESS)).toBeNull()
-  })
-})
-
 describe('the Archive view (Katerina, 5 October)', () => {
-  const title = (name: string) => screen.getByRole('button', { name })
-
-  it('is the title menu’s third view: every Folder, the archived too, each closed, and it makes nothing', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
+  it('is the title menu’s other view: every Folder, the archived too, each closed, and it makes nothing', async () => {
     mount()
     expect(section(ARCHIVED)).toBeNull()
-    await userEvent.click(title('Folders'))
+    await userEvent.click(title('Teams'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
     expect(title('Archive')).not.toBeNull()
     expect(section(ARCHIVED)).not.toBeNull()
@@ -644,32 +290,23 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(openOf(section(OTHER))).toBe('false')
     expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Filter' })).toBeNull()
-    // Never saved: the next visit opens on the person's own view.
-    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
+    // Never saved: the next visit opens on Teams.
+    expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
   })
 
   it('switching to it closes the open file: the page says No file selected', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
-    await userEvent.click(title('Folders'))
+    await userEvent.click(title('Teams'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
   })
 
-  it('an archived file open in Archive closes when the column turns to Topics or Folders', async () => {
+  it('an archived file open in Archive closes when the column turns to Teams', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
     await userEvent.click(title('Archive'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Teams' }))
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
-  })
-
-  it('switching between Topics and Folders keeps the open file', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
-    await userEvent.click(title('Folders'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Joined' }))
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   /*
@@ -739,40 +376,8 @@ describe('the Archive view (Katerina, 5 October)', () => {
   })
 
   it("an archived Folder's link opens Archive, with it open", () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
     mount({ currentFolder: ARCHIVED, showFolder: true })
     expect(title('Archive')).not.toBeNull()
     expect(openOf(section(ARCHIVED))).toBe('true')
-  })
-})
-
-describe("a Folder's own menu, on its heading", () => {
-  it('offers Start a topic to anyone in it, and nothing they may not do', async () => {
-    viewer.id = SHIP
-    mount()
-    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
-    expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).not.toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
-    // Every Folder the tree draws has state, and a Folder with state is never deleted (FOL-9).
-    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
-  })
-
-  it('offers Rename and Archive… to its owners and admins', async () => {
-    viewer.id = CATH
-    mount()
-    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
-    expect(await screen.findByRole('menuitem', { name: 'Rename' })).not.toBeNull()
-    expect(screen.getByRole('menuitem', { name: 'Archive…' })).not.toBeNull()
-  })
-
-  it('Rename opens the dialog with the name in it', async () => {
-    viewer.id = CATH
-    // A dialog reports a refused write in a toast: the app's provider, as it has at its root.
-    render(<ToastProvider>{page({})}</ToastProvider>)
-    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
-    expect(await screen.findByRole('dialog', { name: 'Rename folder' })).not.toBeNull()
-    expect((screen.getByRole('textbox', { name: 'Folder name' }) as HTMLInputElement).value).toBe('Zebra')
   })
 })

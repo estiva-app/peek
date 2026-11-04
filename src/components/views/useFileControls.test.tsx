@@ -36,6 +36,8 @@ vi.mock('@/api', () => ({
   },
   // Stable, as the app's seam is: a fresh function per render would hide a stale closure.
   useForeignObjects: () => foreign,
+  // No team is held: Move asks nothing about spaces (TEA-5; FilePage.test.tsx covers when it does).
+  useTeams: () => ({ teams: null, failed: false, reload: async () => {} }),
 }))
 const toast = vi.hoisted(() => ({ showToast: (shown: { label: string }) => void toasts.shown.push(shown) }))
 vi.mock('@/lib/toast', () => ({ useToast: () => toast }))

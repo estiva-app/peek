@@ -88,6 +88,12 @@ export type ConversationContainer =
       kind: 'channel'
       /** The channel — what every message in it carries as `h`, and all a read needs. */
       h: string
+      /**
+       * Only its general stream (§11.1): a team's chat (TEA-5), where a
+       * message that names a file in an `a` is that file's conversation, not
+       * the chat's. A DM's channel holds no file's talk and passes nothing.
+       */
+      general?: true
     }
 
 /** What names a conversation, whatever its kind: the file's address, or the channel. */
@@ -452,7 +458,7 @@ export function conversationAsViewer(
  * from what it holds, so a catch-up folds with no further request.
  */
 export function conversationWith(container: ConversationContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
-  return container.kind === 'file' ? fileConversationWith(container, rootIds, query) : channelConversationWith(container.h, query)
+  return container.kind === 'file' ? fileConversationWith(container, rootIds, query) : channelConversationWith(container.h, query, container.general)
 }
 
 /** Buzz clamps `limit` at 1,000 per filter; a page that comes back full is followed by the next. */
@@ -475,15 +481,23 @@ export function channelConversationAsViewer(h: string, relayUrl: string, token: 
   return channelConversationWith(h, viewerQuery(relayUrl, token))
 }
 
-async function channelConversationWith(h: string, query: QueryFn): Promise<FileConversation> {
+async function channelConversationWith(h: string, query: QueryFn, general = false): Promise<FileConversation> {
   const messages = new Map<string, SignedEvent>()
+  // Every message a page held, the ones left out too: paging stops on a page that brought nothing new, not nothing kept.
+  const seen = new Set<string>()
   let until: number | undefined
+  // A team's chat is the channel's messages about no file: the same reading as its stream's (`channelStreams.ts`).
+  const about = (event: SignedEvent) => event.tags.some((tag) => tag[0] === 'a' && !!tag[1])
   for (let page = 0; page < CHANNEL_PAGES; page += 1) {
     const filter = { kinds: [KIND.STREAM_MESSAGE], '#h': [h], limit: CHANNEL_PAGE, ...(until !== undefined ? { until } : {}) }
     const events = await query([filter])
-    const before = messages.size
-    for (const event of events) if (event.kind === KIND.STREAM_MESSAGE) messages.set(event.id, event)
-    if (events.length < CHANNEL_PAGE || messages.size === before) break
+    const before = seen.size
+    for (const event of events) {
+      if (event.kind !== KIND.STREAM_MESSAGE) continue
+      seen.add(event.id)
+      if (!general || !about(event)) messages.set(event.id, event)
+    }
+    if (events.length < CHANNEL_PAGE || seen.size === before) break
     until = Math.min(...events.map((e) => e.created_at))
   }
 

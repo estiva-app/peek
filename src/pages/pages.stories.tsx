@@ -11,10 +11,11 @@ import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { DeskPageView, type DeskRow } from './DeskPage'
 import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
-import { FolderColumn, FolderTreeView } from '@/components/views/FolderTree'
+import { ArchiveTreeView, FolderColumn } from '@/components/views/FolderTree'
+import { TeamsColumnView } from '@/components/views/TeamsColumn'
 import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
-import { treeFilterOf } from '@/components/views/treeFilter'
+import type { Team } from '@/api'
 import { ObjectPageView } from './ObjectPage'
 import { ArchivedNotice, Divider, EmptyState, Panel } from '@estiva-app/ui'
 import { ClosedBox } from '@/components/ui/ConversationBox'
@@ -259,55 +260,61 @@ export const DeskLoading: Story = {
   ),
 }
 
+/** The fixture's teams: you are in Peek, follow Ship, and the rest are other teams. Their places are relay reads. */
+const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
+  id: folder.id,
+  name: folder.name,
+  archived: false,
+  company: false,
+  private: false,
+  admins: [],
+  members: [],
+  isMember: i === 0,
+  isFollowing: i === 1,
+  listed: [],
+  chat: { kind: 'chat', in: i === 0, ways: i === 0 ? ['team'] : [], ...(i === 0 ? { level: 'important' as const } : {}) },
+}))
+
 /**
- * The Topics column with a fixture — `FolderColumn` and `FolderTreeView`, the
- * two halves the wired `FolderTree` puts together. Its title is the view, and
- * opens a menu of the views; its header holds New folder (in Folders only),
- * New topic and the filter (Katerina, 5 October). An open Folder's rows are a
- * relay read, so here every Folder is folded or reads as empty.
+ * The column with a fixture — `FolderColumn` and its body, the halves the
+ * wired `FolderTree` puts together: Teams (`TeamsColumnView`, TEA-5) or
+ * Archive (`ArchiveTreeView`). Its title is the view, and opens a menu of the
+ * views; its header holds New folder, New topic and the filter (Katerina,
+ * 5 October). An open Folder's rows in Archive are a relay read, so here
+ * every Folder is folded or reads as empty.
  */
-function Column({ view = 'mine', show = 'all', signedOut = false, folders = FOLDERS, unread = {}, member = {}, currentFolder }: {
+function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDERS, chatUnread = {}, currentFolder }: {
   view?: TreeView
   show?: TreeShow
   signedOut?: boolean
   folders?: FolderSummary[] | null
-  unread?: Record<string, boolean>
-  member?: Record<string, boolean>
+  chatUnread?: Record<string, boolean>
   currentFolder?: string
 }) {
   return (
     <FolderColumn view={view} onViewChange={noop} show={show} onShowChange={noop} railClosed={false} signedOut={signedOut} onNewFolder={noop} onNewTopic={noop}>
-      <FolderTreeView
-        folders={folders}
-        signedOut={signedOut}
-        unread={unread}
-        member={member}
-        view={view}
-        filter={treeFilterOf(view, show)}
-        currentFolder={currentFolder}
-        menuFor={() => null}
-      />
+      {view === 'archive' ? (
+        <ArchiveTreeView folders={folders} signedOut={signedOut} currentFolder={currentFolder} menuFor={() => null} />
+      ) : (
+        <TeamsColumnView
+          teams={TEAMS.filter((team) => folders?.some((folder) => folder.id === team.id))}
+          topics={new Map()}
+          chatUnread={chatUnread}
+          unread={{}}
+          show={show}
+          openTeam={currentFolder}
+        />
+      )}
     </FolderColumn>
   )
 }
 
-/** Every Folder the person is a member of something in. */
-const MINE = Object.fromEntries(FOLDERS.map((folder) => [folder.id, true]))
-
 /**
- * Topics, where the rail's Topics opens: what you are a member of, grouped by
- * Folder. Click "Topics ⌄" for the other view.
+ * Teams, where the rail's Teams opens: your teams with their chat, the ones
+ * you follow, then every other team. A team's own link lands here, with it open.
  */
-export const Topics: Story = {
-  render: () => <FoldersPageView nav={<Column member={MINE} />} rightPanel={<EmptyState message="No file selected" />} />,
-}
-
-/**
- * Folders: every Folder, each with the folder icon, the explorer. New folder
- * is in this view's header only. A Folder's own link lands here, with it open.
- */
-export const Folders: Story = {
-  render: () => <FoldersPageView nav={<Column view="all" />} rightPanel={<EmptyState message="No file selected" />} />,
+export const Teams: Story = {
+  render: () => <FoldersPageView nav={<Column />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
 /**
@@ -340,7 +347,7 @@ export const FoldersSignedOut: Story = {
 export const FoldersFiltered: Story = {
   render: () => (
     <FoldersPageView
-      nav={<Column view="all" show="unread" unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }} />}
+      nav={<Column show="unread" chatUnread={{ '925897ad-796e-4bc6-999c-ca19df26c4aa': true }} />}
       rightPanel={<EmptyState message="No file selected" />}
     />
   ),

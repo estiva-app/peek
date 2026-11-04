@@ -10,12 +10,48 @@
  */
 import { useOpenWork } from '@/api/internal/openWork'
 import { useScreener } from '@/api/internal/screener'
+import { heldToken } from '@/auth/heldSession'
+import {
+  addToTeamAsViewer,
+  followTeamAsViewer,
+  joinTeamAsViewer,
+  leaveTeamAsViewer,
+  markSpaceAsViewer,
+  type TeamWrite,
+} from '@/nostr/teams'
+import { RELAY_URL } from './relayUrl'
+import { reloadTeamsOnScreen } from './useTeams'
+
+/** A team write as the viewer, then the teams read again so the change shows; a throw is said, never lost. */
+async function asViewer(write: (relayUrl: string, token: NonNullable<ReturnType<typeof heldToken>>) => Promise<TeamWrite>): Promise<TeamWrite> {
+  const token = heldToken()
+  if (!RELAY_URL || !token) return { ok: false, reason: 'Sign in first.' }
+  const result = await write(RELAY_URL, token).catch((error: unknown) => ({
+    ok: false as const,
+    reason: `Nothing changed: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
+  }))
+  if (result.ok) await reloadTeamsOnScreen()
+  return result
+}
 
 export function usePeekActions() {
   const openWork = useOpenWork()
   const screener = useScreener()
 
   return {
+    // ── Teams (TEA-5): each answers what the relay said, for the page's toast ──
+    /** Join a team: a `kind:9021` (§3.3). */
+    joinTeam: (team: string) => asViewer((relayUrl, token) => joinTeamAsViewer(team, relayUrl, token)),
+    /** Leave a team: a `kind:9022`. */
+    leaveTeam: (team: string) => asViewer((relayUrl, token) => leaveTeamAsViewer(team, relayUrl, token)),
+    /** Add someone to a team the viewer is in: a `kind:9000`. */
+    addToTeam: (team: string, person: string) => asViewer((relayUrl, token) => addToTeamAsViewer(team, person, relayUrl, token)),
+    /** Follow a team, or stop: the viewer's private teams list. */
+    followTeam: (team: string, follow: boolean) => asViewer((relayUrl, token) => followTeamAsViewer(team, follow, relayUrl, token)),
+    /** Make a topic one of a team's spaces, or not: a `kind:1852 add` with or without the `space` role. */
+    markSpace: (team: string, address: string, space: boolean) =>
+      asViewer((relayUrl, token) => markSpaceAsViewer(team, address, space, relayUrl, token)),
+
     // ── Desk (pages keep their instant local hide; these persist it) ──
     /**
      * Dismiss — a watermark in the person's decisions blob, for a DM row and a

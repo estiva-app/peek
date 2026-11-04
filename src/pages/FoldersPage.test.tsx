@@ -1,9 +1,9 @@
 /**
- * `/app/folders` and `/app/folders/:id` — the Topics column with no file open
- * (Katerina, 5 October: the Folders page and its cards went; a Folder is
- * managed from its heading's ⋮, and a Folder's link opens the column on
- * Folders with it open). What the route still decides for itself is pinned
- * here: old topic channels, DM channels, a stateless channel's Delete, and an
+ * `/app/folders`, `/app/folders/:id` and `/app/folders/:id/chat` — the Teams
+ * column with no file open (TEA-5: a Folder with state is a team; its link
+ * opens the team's page, where its ⋮ manages it, and `/chat` its chat). What
+ * the route still decides for itself is pinned here: a team's page or chat,
+ * old topic channels, DM channels, a stateless channel's Delete, and an
  * archived Folder's notice.
  *
  * A file's conversation is a page, and this one is a way to it — FOL-19.
@@ -49,29 +49,6 @@ const topic: ForeignObject = {
 } as unknown as ForeignObject
 
 /*
-  A file and a topic started under it (SPEC §6.7) — the pair the filter's
-  "parents of a match are drawn" needs: `peersOf` hides the child at the top
-  level, and `listedChildrenOf` puts it back under its parent.
-*/
-const PARENT_ADDRESS = `30850:${ADDRESS.split(':')[0]}:1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d`
-const CHILD_ADDRESS = `30840:${ADDRESS.split(':')[0]}:2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e`
-const parent = {
-  ...topic,
-  ref: PARENT_ADDRESS,
-  address: PARENT_ADDRESS,
-  kind: 30850,
-  appName: 'Estiva Ship',
-  slots: { title: { value: 'A parent project' } },
-} as unknown as ForeignObject
-const child = {
-  ...topic,
-  ref: CHILD_ADDRESS,
-  address: CHILD_ADDRESS,
-  parentRef: PARENT_ADDRESS,
-  slots: { title: { value: 'A child topic' } },
-} as unknown as ForeignObject
-
-/*
   The listing is the only thing that varies between tests, so it is the one
   hoisted knob. Everything else the page reads is pinned to the quietest
   answer it accepts: a signed-in reader, no counts, no directory, a
@@ -85,26 +62,6 @@ const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
 */
 const TOPIC_CHANNEL = '3789d2ca-103c-40e5-906f-0490782db5fd'
 const RECORD_CHANNEL = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
-/*
-  What the team-unread hook answers per Folder — FOL-18. The judging is unit
-  tested in `teamUnread.test.ts`; here the question is only that a Folder row
-  draws the dot it is told to, and no dot for a Folder it was told nothing about.
-*/
-const teamUnread = vi.hoisted(() => ({
-  unread: {} as Record<string, boolean>,
-  /* And which hold a stream the person is a member of — the other half of the same read (FOL-41). */
-  member: {} as Record<string, boolean>,
-  /* Parents of joined files no listing holds — a project, for an issue of yours (5 October). */
-  holdsJoined: new Set<string>(),
-  /* The same files by their parent's address: Topics draws them flat (7 October). */
-  joinedUnder: {} as Record<string, string[]>,
-}))
-/* What a read by address answers — the joined files no listing holds (7 October). */
-const resolved = vi.hoisted(() => ({ objects: {} as Record<string, unknown> }))
-/* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
-const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
-/* The files the person is a member of, by address — the membership seam a row's Topics verdict reads (§11.8). */
-const members = vi.hoisted(() => ({ addresses: [] as string[] }))
 /* Who is signed in, and who the relay lists as the Folder's owners and admins (MAN-17). */
 const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] }))
 /*
@@ -160,6 +117,26 @@ const deletable = vi.hoisted(() => ({
       : { ok: false as const, reason: "This is a Ship project's folder." },
   ),
 }))
+/*
+  The teams (TEA-5): a Folder with state is a team, and its link opens the
+  team's page. Who is in which is the one knob; `null` is still being read.
+*/
+const teamsRead = vi.hoisted(() => ({ teams: null as unknown[] | null, failed: false }))
+const teamOf = (id: string, name: string, over: Record<string, unknown> = {}) => ({
+  id,
+  name,
+  archived: false,
+  company: false,
+  admins: [],
+  members: [],
+  isMember: false,
+  isFollowing: false,
+  listed: [],
+  chat: 'never',
+  ...over,
+})
+/* What the team's page lists among its places: topics this reader can read, by address. */
+const places = vi.hoisted(() => ({ topics: [] as unknown[] }))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
@@ -201,14 +178,31 @@ vi.mock('@/api', async () => ({
     resolveFolderProject: projects.resolve,
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
-  useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
-  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member, holdsJoined: teamUnread.holdsJoined, joinedUnder: teamUnread.joinedUnder }),
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
   useWorkspaceDirectory: () => undefined,
-  useMembership: () => ({ isMember: (address: string) => members.addresses.includes(address), setMember: async () => {} }),
+  useMembership: () => ({ isMember: () => false, setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
-  useResolvedReferences: () => resolved.objects,
+  useResolvedReferences: () => ({}),
+  useTeams: () => ({ teams: teamsRead.teams, failed: teamsRead.failed }),
+  // The team page's writes are `TeamPage.test.tsx`'s; here they are never pressed.
+  usePeekActions: () => ({}),
+  useMentionNames: () => [],
+  useTopicsColumn: () => ({ state: { mine: [], others: places.topics }, signedOut: false }),
+  useTeamTopics: () => ({ topics: new Map((places.topics as { address: string }[]).map((topic) => [topic.address, topic])), loading: false, signedOut: false }),
+  useTeamFiles: () => ({ files: [], failed: false }),
+}))
+/*
+  The column's Teams view and the team's chat, as what they were handed: their
+  own rows and conversation are `TeamsColumn.test.tsx`'s and the chat's.
+*/
+vi.mock('@/components/views/TeamsColumn', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/components/views/TeamsColumn')),
+  TeamsColumn: () => <div data-testid="teams-column" />,
+}))
+vi.mock('@/components/views/TeamChat', () => ({
+  TeamChat: ({ team }: { team: { name: string } }) => <div data-testid="team-chat">{team.name}</div>,
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
 // The frame mounts the rail, the top bar and the launcher, none of which is
@@ -230,17 +224,22 @@ function Probe() {
 
 beforeEach(() => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
+  teamsRead.teams = [teamOf(FOLDER, 'Folders'), teamOf(TOPIC_CHANNEL, 'For testing')]
+  teamsRead.failed = false
+  places.topics = []
 })
 afterEach(() => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
   viewer.admins.splice(0)
 })
 
-/** The column's title: the view, and the button that opens the views' menu (one Folder here is called Folders too). */
-const title = (name: string) => screen.getAllByRole('button', { name }).find((button) => button.getAttribute('aria-haspopup') === 'menu' && !button.closest('[data-nav-group]'))!
-/** A Folder heading's ⋮, opened. */
-async function folderMenu(name: string) {
-  await userEvent.click(screen.getByRole('button', { name: `More options for ${name}` }))
+/** The column's title: the view, and the button that opens the views' menu. */
+const title = (name: string) => screen.getAllByRole('button', { name }).find((button) => button.getAttribute('aria-haspopup') === 'menu')!
+/** The team page's ⋮, opened, once the page has drawn. */
+async function teamMenu() {
+  await userEvent.click(await screen.findByRole('button', { name: 'More' }))
 }
 
 /** Where the rail's Topics would lead now. */
@@ -258,6 +257,7 @@ function mount(url: string) {
         <Routes>
           <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
           <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
+          <Route path="/app/folders/:id/chat" element={<><FoldersPage chat /><Probe /></>} />
           {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
           <Route path="*" element={<Probe />} />
         </Routes>
@@ -283,36 +283,33 @@ describe('FoldersPage opens a file at its own address', () => {
     marks.thread.mockClear()
   })
 
-  it("a Folder's link opens the column on Folders, with it open, and a row leads to the file's own page", async () => {
-    relay.files = [topic]
+  it("a team's link opens the column on Teams and the team's page beside it, where a place leads to the file's own page", async () => {
+    teamsRead.teams = [teamOf(FOLDER, 'Folders', { listed: [{ address: FILE_ADDRESS, space: false }] })]
+    places.topics = [topic]
     mount(`/app/folders/${FOLDER}`)
-    expect(title('Folders')).toBeTruthy()
+    expect(title('Teams')).toBeTruthy()
+    expect(await screen.findByText(/^Members · /)).toBeTruthy()
+    expect(screen.queryByText('No file selected')).toBeNull()
     await userEvent.click(screen.getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
   })
 
-  it('names the open Folder in the browser tab, and leaving it does not leave its name behind (SFX-2)', async () => {
-    relay.files = [topic]
+  it('names the open team in the browser tab, and leaving it does not leave its name behind (SFX-2)', async () => {
+    teamsRead.teams = [teamOf(FOLDER, 'Folders', { listed: [{ address: FILE_ADDRESS, space: false }] })]
+    places.topics = [topic]
     // A channel drawn as a Folder page with no project (FOL-9): the tab names it as its heading does.
     mount(`/app/folders/${RECORD_CHANNEL}`)
     await waitFor(() => expect(document.title).toBe('project-0804b906 – Peek'))
     cleanup()
     mount(`/app/folders/${FOLDER}`)
-    await userEvent.click(screen.getByText('FOL-15 test topic 2'))
+    await waitFor(() => expect(document.title).toBe('Folders – Peek'))
+    await userEvent.click(await screen.findByText('FOL-15 test topic 2'))
     expect(document.title).toBe('Peek')
   })
 
-  it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
-    mount(`/app/folders/${FOLDER}`)
-    const listed = [...document.querySelectorAll('[data-nav-group]')].map((node) => (node as HTMLElement).dataset.navGroup)
-    expect(listed.sort()).toEqual([FOLDER, TOPIC_CHANNEL].sort())
-    expect(screen.queryByText('project-0804b906')).toBeNull()
-  })
-
-  it('draws no pane of its own and no cards: the right side waits for a file', () => {
-    relay.files = [topic]
-    mount(`/app/folders/${FOLDER}`)
+  it('with no team open, draws no pane of its own and no cards: the right side waits for a file', () => {
+    mount('/app/folders')
     expect(screen.getByText('No file selected')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Conversation/i })).toBeNull()
   })
@@ -337,22 +334,14 @@ describe('a Folder that was one of Peek’s topics', () => {
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL)))
   })
 
-  it('its heading offers Start a topic only — never the rename or the archive, even to its admins', async () => {
-    viewer.admins.push(viewer.me)
-    mount(`/app/folders/${FOLDER}`)
-    await folderMenu('For testing')
-    expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).toBeTruthy()
-    expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
-  })
 })
 
 // SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
 // The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
-describe("a Folder's heading offers its actions to who may take them", () => {
+describe("a team's page offers the team's own actions, in its ⋮, to who may take them (TEA-5)", () => {
   it('Start a topic to anyone; Rename and Archive… only to its owners and admins', async () => {
     const { unmount } = mount(`/app/folders/${FOLDER}`)
-    await folderMenu('Folders')
+    await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
@@ -360,15 +349,15 @@ describe("a Folder's heading offers its actions to who may take them", () => {
 
     viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
-    await folderMenu('Folders')
+    await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
   })
 
-  it('never Delete on a Folder with state, and never asks the relay about one (FOL-9)', async () => {
+  it('never Delete on a team, and never asks the relay about one (FOL-9)', async () => {
     viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
-    await folderMenu('Folders')
+    await teamMenu()
     await screen.findByRole('menuitem', { name: 'Rename' })
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
@@ -465,22 +454,44 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 })
 
 /*
-  A Folder carries no unread mark (Miky, 2026-10-03; Katerina, 5 October):
-  neither a dot nor bold. The union of its streams decides what Unread keeps.
+  A team's link and its chat's (TEA-5): `/app/folders/<id>` is the team's
+  page, `/app/folders/<id>/chat` its chat, which anyone in the company reads
+  until teams can be private; only its members are told about it.
 */
-describe('FoldersPage draws no unread mark on a Folder', () => {
-  afterEach(() => {
-    teamUnread.unread = {}
+describe("a team's page and its chat, at their own links (TEA-5)", () => {
+  it('the chat’s link opens the chat for a member of the team', async () => {
+    teamsRead.teams = [teamOf(FOLDER, 'Folders', { isMember: true })]
+    mount(`/app/folders/${FOLDER}/chat`)
+    expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
+    expect(screen.queryByText(/^Members · /)).toBeNull()
   })
 
-  it('draws none on a Folder the hook says is unread', () => {
-    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
-    const { container } = mount(`/app/folders/${FOLDER}`)
-    expect(container.querySelectorAll('[data-nav-group] > div > div:first-child [data-unread]')).toHaveLength(0)
+  it('the chat’s link opens the chat for someone not in the team too: a person named there can read it', async () => {
+    teamsRead.teams = [teamOf(FOLDER, 'Folders', { isFollowing: true })]
+    mount(`/app/folders/${FOLDER}/chat`)
+    expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
+    expect(screen.queryByText(/to read its chat/)).toBeNull()
+  })
+
+  it('draws a skeleton while the teams are read, and neither the page nor No file selected', async () => {
+    teamsRead.teams = null
+    mount(`/app/folders/${FOLDER}`)
+    await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
+    await waitFor(() => expect(document.querySelector('.animate-skeleton-in')).not.toBeNull())
+    expect(screen.queryByText(/^Members · /)).toBeNull()
+    expect(screen.queryByText('No file selected')).toBeNull()
+  })
+
+  it('says the team could not be read when the read failed, rather than waiting for ever', async () => {
+    teamsRead.teams = null
+    teamsRead.failed = true
+    mount(`/app/folders/${FOLDER}`)
+    expect(await screen.findByText('Couldn’t load this team. Reload to try again.')).toBeTruthy()
+    expect(document.querySelector('.animate-skeleton-in')).toBeNull()
   })
 })
 
-describe('FoldersPage makes a Folder from its name, in Folders', () => {
+describe('FoldersPage makes a Folder from its name, in Teams', () => {
   beforeEach(() => created.folder.mockClear())
 
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
@@ -492,158 +503,6 @@ describe('FoldersPage makes a Folder from its name, in Folders', () => {
     expect(created.folder).not.toHaveBeenCalled()
     await user.type(name, '{Enter}')
     expect(created.folder).toHaveBeenCalledWith('Launch notes')
-  })
-
-  it('offers no New folder in Topics — a Folder is made where Folders are', () => {
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    mount('/app/folders')
-    expect(title('Joined')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
-  })
-})
-
-/*
-  The header's filter and the two views — FOL-41, 5 October. What is judged is
-  unit tested in `treeFilter.test.ts`; here the question is that the controls
-  are wired to the column, and that the two verdicts come from the two maps.
-*/
-describe('FoldersPage filters the column', () => {
-  beforeEach(() => {
-    teamUnread.unread = {}
-    teamUnread.member = {}
-    badges.unread = {}
-    relay.files = []
-  })
-  afterEach(() => {
-    teamUnread.unread = {}
-    teamUnread.member = {}
-    badges.unread = {}
-    relay.files = []
-  })
-
-  async function choose(label: string, url = `/app/folders/${FOLDER}`) {
-    const user = userEvent.setup()
-    const view = mount(url)
-    await user.click(screen.getByRole('button', { name: 'Filter' }))
-    await user.click(await screen.findByRole('menuitem', { name: label }))
-    return view
-  }
-
-  it('shows every Folder in Folders until the filter says otherwise', () => {
-    mount(`/app/folders/${FOLDER}`)
-    expect(screen.getByRole('button', { name: 'For testing' })).toBeTruthy()
-  })
-
-  it('Unread keeps the Folders with a dot and drops the rest', async () => {
-    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
-    await choose('Unread')
-    expect(screen.queryByRole('button', { name: 'For testing' })).toBeNull()
-  })
-
-  it('Unread drops a Folder it was told nothing about', async () => {
-    teamUnread.unread = { [FOLDER]: true }
-    await choose('Unread')
-    expect(screen.queryByRole('button', { name: 'For testing' })).toBeNull()
-  })
-
-  it('Topics reads the other verdict, not the dots', async () => {
-    // Lit, but nothing in it is the person's — the two questions are not the same one.
-    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
-    teamUnread.member = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    mount('/app/folders')
-    expect(screen.getByRole('button', { name: 'For testing' })).toBeTruthy()
-    expect(document.querySelector(`[data-nav-group="${FOLDER}"]`)).toBeNull()
-  })
-
-  it('says the filter is hiding them, not that there are none', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    await choose('Unread', '/app/folders')
-    expect(screen.getByText('Nothing unread.')).toBeTruthy()
-  })
-
-  /*
-    The parents of a match are drawn (Miky, FOL-41). The parent row has no dot
-    of its own and would be hidden on its own account; it survives because the
-    child does, and it is expanded so the child is on screen without a click.
-  */
-  it('keeps and expands a row whose child is the match', async () => {
-    relay.files = [parent, child]
-    badges.unread = { [child.ref]: true }
-    teamUnread.unread = { [FOLDER]: true }
-    const { container } = await choose('Unread')
-    expect(container.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
-    expect(container.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
-  })
-
-  /*
-    Topics is flat (Katerina and Miky, 7 October): every file of yours is a
-    row of its own, on one level. A parent you are not a member of is not
-    drawn for its child's sake, and no row opens onto others.
-  */
-  it('in Topics, draws a child of yours as a row of its own, without its parent', () => {
-    relay.files = [parent, child]
-    members.addresses = [child.address!]
-    teamUnread.member = { [FOLDER]: true }
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    try {
-      const { container } = mount('/app/folders')
-      const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
-      expect(tree.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
-      expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeNull()
-      expect(tree.querySelector('[aria-label^="Show what is under"]')).toBeNull()
-    } finally {
-      members.addresses = []
-    }
-  })
-
-  it('in Topics, draws a parent and its child of yours on the same level', () => {
-    relay.files = [parent, child]
-    members.addresses = [parent.address!, child.address!]
-    teamUnread.member = { [FOLDER]: true }
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    try {
-      const { container } = mount('/app/folders')
-      // The Folder's section: its rows are straight under its heading.
-      const rows = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
-      const drawn = [...rows.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
-      expect(drawn).toEqual([parent.ref, child.ref])
-      expect(rows.querySelector('[aria-label^="Show what is under"]')).toBeNull()
-    } finally {
-      members.addresses = []
-    }
-  })
-
-  it('in Topics, draws an issue of yours the listing does not hold as a row of its own, after its project (7 October)', () => {
-    const ISSUE_ADDRESS = `30851:${ADDRESS.split(':')[0]}:3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f`
-    const issue = { ...topic, ref: ISSUE_ADDRESS, address: ISSUE_ADDRESS, kind: 30851, parentRef: PARENT_ADDRESS, slots: { title: { value: 'An issue of yours' } } }
-    relay.files = [parent, topic]
-    members.addresses = [ISSUE_ADDRESS, FILE_ADDRESS]
-    teamUnread.member = { [FOLDER]: true }
-    teamUnread.joinedUnder = { [PARENT_ADDRESS]: [ISSUE_ADDRESS] }
-    resolved.objects = { [ISSUE_ADDRESS]: issue }
-    window.localStorage.setItem('peek.tree.view', 'mine')
-    try {
-      const { container } = mount('/app/folders')
-      const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
-      const drawn = [...tree.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
-      // The project is not yours, so it is not drawn: the issue takes its place, then the topic.
-      expect(drawn).toEqual([ISSUE_ADDRESS, FILE_ADDRESS])
-    } finally {
-      members.addresses = []
-      teamUnread.joinedUnder = {}
-      resolved.objects = {}
-    }
-  })
-
-  it('drops the rows that hold no match', async () => {
-    relay.files = [parent, child, topic]
-    badges.unread = { [child.ref]: true }
-    teamUnread.unread = { [FOLDER]: true }
-    const { container } = await choose('Unread')
-    const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
-    expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
-    expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
   })
 })
 

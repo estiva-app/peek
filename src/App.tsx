@@ -47,6 +47,8 @@ function App() {
           not over them. §11.1's topic→file migration is a separate change. */}
       <Route path="/app/folders" element={<FoldersPage />} />
       <Route path="/app/folders/:id" element={<FoldersPage />} />
+      {/* A team's chat (TEA-5), beside its page. */}
+      <Route path="/app/folders/:id/chat" element={<FoldersPage chat />} />
       <Route path="/app/people" element={<PeoplePage />} />
       <Route path="/app/people/:id" element={<PeoplePage />} />
       {/* Where those pages were until FOL-39. */}

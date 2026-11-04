@@ -1,14 +1,13 @@
-import { useContext, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useState, type ReactNode } from 'react'
 import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { rememberFileAddress, useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
+import { rememberFileAddress, useConversationBadges, useForeignChildren, useMayMove, useMembership, useOpenWorkFiles } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
-import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
@@ -34,19 +33,14 @@ import { rememberOpenedFrom, TreeColumn } from '@/lib/openedFrom'
  */
 export function FileTreeView({
   state,
-  filter = 'all',
+  archive = false,
   selectedRef,
   expand,
   onControl,
-  holdsJoined,
 }: {
   state: FolderContentsState
-  /**
-   * What the column is showing (FOL-41). A peer survives when it matches or
-   * one of the children this same read listed does, and a peer kept for a
-   * child's sake starts expanded — the parents of a match are drawn.
-   */
-  filter?: TreeFilter
+  /** Archive's listing: what is archived in the Folder. Its rows' folds are not remembered. */
+  archive?: boolean
   /** `ref` of the file this page is showing. */
   selectedRef?: string
   /**
@@ -61,21 +55,9 @@ export function FileTreeView({
    * without this has no menus, exactly as before.
    */
   onControl?: (control: FileControl, file: ForeignObject) => void
-  /**
-   * Parents of joined files this listing does not hold — a Ship project, for
-   * an issue of yours (`useTeamUnread`): Topics keeps the row, closed.
-   */
-  holdsJoined?: ReadonlySet<string>
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
-  /*
-    The same seam the rows' own join controls read, so a row kept by the
-    `Mine` filter and the bell drawn on it cannot disagree in one render.
-  */
-  const membership = useMembership()
-  // Yours is a file you are a member of, or one that holds a file of yours the listing does not (5 October).
-  const isMember = (address: string) => membership.isMember(address) || !!holdsJoined?.has(address)
 
   if (state === 'loading') {
     return (
@@ -90,185 +72,23 @@ export function FileTreeView({
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <EmptyState scope="rows" message={filter === 'archive' ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
-  }
-
-  /*
-    Filtered here rather than inside the row, so the rows kept for a child's
-    sake can be started expanded in the same pass — a match one level down is
-    reached without a click, which is the point of the filter.
-  */
-  const peers = peersOf(folder.files)
-  // The open file, and every row above it, stay whatever the filter: the open
-  // file is where the tree says it is (FOL-4), in Topics too (5 October).
-  const kept = peers.filter((file) =>
-    file.ref === selectedRef ||
-    !!expand?.includes(file.ref) ||
-    fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, isMember),
-  )
-  /*
-    Opened for a child's sake only under Unread, so what is new is in view
-    without a click (FOL-41) — a closed row carries no dot for what is under it.
-    In Topics a row kept for a child's sake starts closed like any other
-    (Katerina, 5 October: a project opened for one topic of yours under it
-    showed every one of its issues). The open file's chain opens either way.
-  */
-  const openForChild =
-    filter !== 'unread' && filter !== 'mine-unread'
-      ? []
-      : kept
-          .filter((file) => !fileMatches(filter, file, [], unread, isMember))
-          .map((file) => file.ref)
-
-  /*
-    Empty because of the filter, not because the Folder is: the Folder-level
-    verdict sees the whole channel and this listing is only its first level, so
-    a Folder can survive the filter on something below the rows drawn here
-    (`treeFilter`'s "What it cannot reach"). Saying "nothing in this folder"
-    would be a lie about the Folder.
-  */
-  if (kept.length === 0) {
-    return <EmptyState scope="rows" message="Nothing here matches — the match is deeper in." />
+    return <EmptyState scope="rows" message={archive ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
   }
 
   // The rows straight into the Folder's section, which sets them 2px apart (`NavTreeSection`), or the Panel's body.
   return (
     <>
-      {kept.map((file) => (
+      {peersOf(folder.files).map((file) => (
         <TreeRow
           key={file.ref}
           file={file}
           listed={folder.files}
           unread={unread}
           selectedRef={selectedRef}
-          expand={[...(expand ?? []), ...openForChild]}
+          expand={expand}
           onControl={onControl}
-          remember={filter === 'all'}
+          remember={!archive}
         />
-      ))}
-    </>
-  )
-}
-
-/**
- * One Folder's files in Topics: every file the person is a member of, one row
- * each, none under another (Katerina and Miky, 7 October: "get rid of the
- * tree structure" — a topic, a Ship project and a Ship issue are on the same
- * level, however deep the issue is). The Folders view keeps the tree.
- *
- * **What is drawn.** The files this listing holds — at any depth, since a
- * sub-topic is in its parent's listing — that the person joined or made; and
- * the joined files no listing holds, a Ship issue under its project, read by
- * address in one request (`useResolvedReferences`) and drawn right after the
- * row of their parent, whether that row is drawn or not. The open file stays
- * whatever the filter, as everywhere in the column (5 October).
- *
- * **What it costs.** One more read per open Folder that holds an issue of
- * yours, for all of them at once — where Topics used to read the project's
- * every issue when its row was opened.
- */
-export function JoinedFileRows({
-  state,
-  filter,
-  joinedUnder = {},
-  selectedRef,
-  selectedParent,
-  onControl,
-}: {
-  state: FolderContentsState
-  /** `mine`, or `mine-unread`: Topics, or Topics filtered to Unread. */
-  filter: TreeFilter
-  /** Joined files no listing holds, by the address of the parent that does — `useTeamUnread`. */
-  joinedUnder?: Readonly<Record<string, readonly string[]>>
-  selectedRef?: string
-  /** The open file's parent: the open file is read with the rest when this listing holds its parent. */
-  selectedParent?: string | null
-  onControl?: (control: FileControl, file: ForeignObject) => void
-}) {
-  const listed = useMemo(() => (typeof state === 'object' && 'files' in state ? state.files : []), [state])
-  /* The joined files under this listing's rows, and the open file if it is one of those: read together. */
-  const asked = useMemo(() => {
-    const out = listed.flatMap((file) => (file.address ? (joinedUnder[file.address] ?? []) : []))
-    const opensHere = !!selectedParent && listed.some((file) => file.address === selectedParent)
-    if (selectedRef && opensHere && !listed.some((file) => file.ref === selectedRef)) out.push(selectedRef)
-    return [...new Set(out)]
-  }, [listed, joinedUnder, selectedParent, selectedRef])
-  const resolved = useResolvedReferences(asked)
-  /* In the listing's order, each read file after its parent's place. */
-  const candidates = useMemo(() => {
-    const out: ForeignObject[] = []
-    const seen = new Set<string>()
-    const add = (file: ForeignObject | null | undefined) => {
-      if (!file || seen.has(file.ref)) return
-      seen.add(file.ref)
-      out.push(file)
-    }
-    for (const file of listed) {
-      add(file)
-      if (!file.address) continue
-      for (const address of joinedUnder[file.address] ?? []) add(resolved[address])
-      if (selectedParent === file.address && selectedRef) add(resolved[selectedRef])
-    }
-    return out
-  }, [listed, joinedUnder, resolved, selectedParent, selectedRef])
-  const { unread } = useConversationBadges(candidates.length ? candidates : undefined)
-  const membership = useMembership()
-  return (
-    <JoinedFileRowsView
-      state={state}
-      files={candidates}
-      waiting={asked.some((address) => !(address in resolved))}
-      filter={filter}
-      isMember={membership.isMember}
-      unread={unread}
-      selectedRef={selectedRef}
-      onControl={onControl}
-    />
-  )
-}
-
-/** `JoinedFileRows` handed what it draws — the half a story can show. */
-export function JoinedFileRowsView({
-  state,
-  files,
-  waiting = false,
-  filter,
-  isMember,
-  unread,
-  selectedRef,
-  onControl,
-}: {
-  state: FolderContentsState
-  /** Every file that could be drawn, in order: the listing's, each read file after its parent's place. */
-  files: ForeignObject[]
-  /** A joined file no listing holds is still being read. */
-  waiting?: boolean
-  filter: TreeFilter
-  isMember: (address: string) => boolean
-  unread: Record<string, boolean>
-  selectedRef?: string
-  onControl?: (control: FileControl, file: ForeignObject) => void
-}) {
-  // Drawn only in a Folder's section, whose `pending` holds it shut while the listing is read, then draws the kit's skeleton (ui 0.99).
-  if (state === 'loading') return null
-  if ('failed' in state) return <EmptyState scope="rows" message="This folder could not be read." />
-
-  // An archived file is Archive's, joined or not (PEE-58): the listing leaves it out, and so does a joined issue read by address.
-  const rows = files.filter(
-    (file) =>
-      file.ref === selectedRef ||
-      (!file.archived && !!file.address && isMember(file.address) && (filter !== 'mine-unread' || unread[file.ref] === true)),
-  )
-  if (rows.length === 0) {
-    // A joined issue still on its way is a row coming, not an empty Folder.
-    if (waiting) return <SkeletonRow />
-    return <EmptyState scope="rows" message={filter === 'mine-unread' ? 'Nothing unread here.' : 'Nothing of yours here.'} />
-  }
-  return (
-    <>
-      {rows.map((file) => (
-        // `nested`: a row of its own, never one that opens onto others.
-        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} onControl={onControl} nested />
       ))}
     </>
   )
@@ -290,6 +110,7 @@ export function TreeRow({
   nested = false,
   remember = false,
   under,
+  space,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -311,6 +132,8 @@ export function TreeRow({
    * closes it, and kept on this browser apart from the Folder tree's.
    */
   under?: ReactNode
+  /** Make it one of its team's spaces, or not (TEA-5): the Teams column passes it to a member of the topic's team. */
+  space?: { action: 'mark' | 'unmark'; onToggle: () => void }
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -350,7 +173,9 @@ export function TreeRow({
   const controls = onControl ? fileControlsOf(file) : {}
   const renames = !readOnly && !!controls.rename
   const inside = !!onControl && !readOnly && canStartInside(file)
-  const moves = !!onControl && !readOnly && canMove(file)
+  // A space moves only by a member of its team (TEA-5, SPEC §3.3).
+  const mayMove = useMayMove(file.address)
+  const moves = !!onControl && !readOnly && canMove(file) && mayMove
   // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
   const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
@@ -378,7 +203,7 @@ export function TreeRow({
   */
   const archivedNow = file.archived
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
-  const hasMenu = offers || renames || inside || moves || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
+  const hasMenu = offers || renames || inside || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -420,6 +245,8 @@ export function TreeRow({
             onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
             archiveAction={archiveAction}
             onToggleArchive={archiveAction ? () => onControl?.(archiveAction, file) : undefined}
+            spaceAction={readOnly ? undefined : space?.action}
+            onToggleSpace={space?.onToggle}
           />
         ) : undefined
       }

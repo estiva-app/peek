@@ -94,6 +94,10 @@ export function useReadActions() {
       // Relay only (REM-3): nothing reads a DM's Convex watermark any more.
       if (hasRelay) recordContainerRead(dmChannelOf.current(dmId), newestAt !== undefined ? newestAt * 1000 : Date.now())
     },
+    /** A team's chat was read, up to `newestAt` (TEA-5): its context is the team's uuid, as a DM's is its channel's. */
+    markChannelRead(channelUuid: string, newestAt?: number) {
+      if (hasRelay) recordContainerRead(channelUuid, newestAt !== undefined ? newestAt * 1000 : Date.now())
+    },
     /** A thread was read, up to `newestAt` — its newest reply drawn, in unix seconds (PEE-44). */
     markThreadRead(messageKey: string, newestAt?: number) {
       // Relay only (REM-5): the NIP-RS blob is the only read state.

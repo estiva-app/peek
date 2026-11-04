@@ -71,6 +71,9 @@ export interface TopicMoreMenuProps {
    */
   archiveAction?: 'archive' | 'unarchive'
   onToggleArchive?: () => void
+  /** A topic's team marks it one of its spaces, or takes the mark off (TEA-5): offered to the team's members only. */
+  spaceAction?: 'mark' | 'unmark'
+  onToggleSpace?: () => void
 }
 
 export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
@@ -101,6 +104,8 @@ export function TopicMenuItems({
   onHideDm,
   archiveAction,
   onToggleArchive,
+  spaceAction,
+  onToggleSpace,
 }: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
   return (
     <>
@@ -110,6 +115,9 @@ export function TopicMenuItems({
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}
       {onMove && <MenuItem label="Move…" onClick={onMove} />}
+      {spaceAction && onToggleSpace && (
+        <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />
+      )}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
       {openWorkAction && onToggleOpenWork && (
         <MenuItem

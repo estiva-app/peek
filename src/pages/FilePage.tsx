@@ -268,13 +268,11 @@ export function FilePage() {
             currentFolder={navFile?.folder}
             selectedRef={selected?.ref}
             selectedParent={selected?.parentRef}
-            // Unknown until the file resolves, and until the relay has said what the person joined: the column judges nothing on a guess.
+            // Unknown until the file resolves: the column judges nothing on a guess.
             selectedArchived={file ? !!file.archived : undefined}
-            selectedMine={pane.member}
             // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
             expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
             onControl={pane.openControl}
-            currentContents={navFile?.folder ? team : undefined}
           />
           )
         }
@@ -343,7 +341,7 @@ function useFileColumn(address: string | null, settled: boolean): ListColumnName
 export function FilePageView({ nav, rightPanel, threadPanel }: {
   /**
    * The navigation column. The page hands over its wired `FolderTree`; a story
-   * hands over `FolderTreeView` with a fixture, which is the only way this
+   * hands over `ArchiveTreeView` with a fixture, which is the only way this
    * column can be drawn at all outside the app — the wired one reads a relay.
    */
   nav?: ReactNode

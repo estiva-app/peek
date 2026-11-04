@@ -749,7 +749,7 @@ export function useForeignObjects() {
    * source is read again here, at the move (FOL-45, SHI-37, SPEC §3.3).
    */
   const moveFile = useCallback(
-    async (file: MovableFile & { parentKind?: number }, from: readonly FolderRef[], to: FolderRef): Promise<MoveOutcome> => {
+    async (file: MovableFile & { parentKind?: number }, from: readonly FolderRef[], to: FolderRef, keepSpace = false): Promise<MoveOutcome> => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
       // Every source, a Folder with no state too: it lists the file by containment, and the planner
@@ -760,7 +760,7 @@ export function useForeignObjects() {
       )
       if (read.some((files) => files === null)) return { ok: false as const, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
       const listings = new Map(sources.map((folder, i) => [folder.id, read[i]!] as const))
-      return moveFileAsViewer(file, listings, from, to, v.relayUrl, v.token)
+      return moveFileAsViewer(file, listings, from, to, v.relayUrl, v.token, keepSpace)
     },
     [viewer],
   )
