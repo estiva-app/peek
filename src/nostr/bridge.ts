@@ -234,6 +234,24 @@ export async function queryRelay(
 }
 
 /**
+ * A search read that keeps what the relay found besides its events (SPEC §6.13): `matches` lists the files in rank
+ * order, which the events alone do not say. Over HTTP, for `[` and the launcher finding a project by the words of its
+ * current fields (ALO-6). Rejects on a refusal, for the search to answer no hits for a while.
+ */
+export async function queryRelayWithMatches(
+  relayUrl: string,
+  filters: Record<string, unknown>[],
+  token: string,
+  pubkey?: string,
+): Promise<{ events: SignedEvent[]; matches: NonNullable<ReturnType<typeof parseQueryResponse>['matches']> }> {
+  const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+  if (isRelayBusyResponse(status, text)) throw new Error(RELAY_BUSY_MESSAGE)
+  const result = parseQueryResponse(status, text)
+  if (!result.ok) throw new Error(`query failed: ${result.reason}`)
+  return { events: result.events, matches: result.matches ?? [] }
+}
+
+/**
  * Answers a read over the tab's open connection, or `null` to send it over
  * HTTP as before (OPT-2, `socketRead.ts`).
  *

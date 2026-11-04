@@ -35,6 +35,7 @@ import {
   conversationsAsViewer,
   createFolderAsViewer,
   deleteFileAsViewer,
+  restoreFileAsViewer,
   deleteFolderAsViewer,
   folderDeletableAsViewer,
   moveFileAsViewer,
@@ -809,6 +810,19 @@ export function useForeignObjects() {
   )
 
   /**
+   * Restore a deleted file: its Delete action with the empty value (SPEC §6.5, ALO-6), after the `deleted` change
+   * `prev` names where the relay keeps the file in order; see `restoreFileAsViewer`.
+   */
+  const restoreFile = useCallback(
+    async (args: { naddr: string; actionId: string; prev?: string }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to restore it.' }
+      return restoreFileAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /**
    * Archive a file, or restore it, through its manifest's archive action
    * (FOL-46) — see `archiveFileAsViewer`. `actionId` is
    * `fileControlsOf(file).archive.id`.
@@ -991,6 +1005,7 @@ export function useForeignObjects() {
     createTopic,
     renameFile,
     deleteFile,
+    restoreFile,
     archiveFile,
     archiveFolder,
     archiveImpact,
