@@ -7,7 +7,7 @@ import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard } from '@estiva-app/conversation'
 import { MessageBody } from './ui/MessageBody'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
-import { REACTION_OPTIONS, toggledReaction, useRefusedReaction } from '@/lib/reactions'
+import { REACTION_OPTIONS, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { formatReplyTimestamp } from '@/api/format'
@@ -78,7 +78,8 @@ interface ConversationCardProps {
   /** The message's card set after an edit changed it — OPT-17. `none` for each card taken away. */
   onEmbedsChange?: (embeds: Embed[]) => void
   onResolvedChange?: (resolved: boolean, resolvedBy?: string, message?: string) => void
-  onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
+  /** Your reaction on or off; answering with what the relay said lets the kit's card say why a refused one did not go through. */
+  onReactionsChange?: (reactions: ReactionData[], emoji: string) => void | Promise<ReactionAnswer | void>
   onDelete?: () => void
   /**
    * Marked as the one open, opened by a press, and Reply: for a card on its own (Activity's rows). In the kit's
@@ -151,11 +152,12 @@ export function ConversationCard({
 
   // Reactions, shown at once and handed on.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
-  const refusedReaction = useRefusedReaction(messageId)
   // Refused: the reaction drawn here at once goes, and the relay's view stands — even when that view never changed.
+  // The kit's card says why under the message (ONE-4).
+  const [reactionRefusals, setReactionRefusals] = useState(0)
   useEffect(() => {
-    if (refusedReaction) setReactionsState(reactions ?? [])
-  }, [refusedReaction]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (reactionRefusals) setReactionsState(reactions ?? [])
+  }, [reactionRefusals]) // eslint-disable-line react-hooks/exhaustive-deps
   // Sync local reaction state if the parent passes a different override (e.g. after navigation back).
   useEffect(() => {
     setReactionsState(reactions ?? [])
@@ -273,7 +275,10 @@ export function ConversationCard({
     // 2026-09-10 (PEEK-ADOPTION.md §11.5).
     const next = toggledReaction(reactionsState, emoji)
     setReactionsState(next)
-    onReactionsChange?.(next, emoji)
+    return Promise.resolve(onReactionsChange?.(next, emoji)).then((answer) => {
+      if (answer && !answer.accepted) setReactionRefusals((n) => n + 1)
+      return answer
+    })
   }
 
   return (
@@ -288,7 +293,6 @@ export function ConversationCard({
           : undefined
       }
       reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: (name) => name, viewer: CURRENT_USER_NAME, onToggle: onReactionsChange ? handleReact : undefined }}
-      reactionRefused={refusedReaction}
       isNew={hasNewMessage}
       urgent={isUrgent}
       own={isOwnMessage}

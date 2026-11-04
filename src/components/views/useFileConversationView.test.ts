@@ -159,8 +159,8 @@ describe('project', () => {
   })
 
   it('the last resolution decides: resolved with its rationale and the reply that carried it, or reopened', () => {
-    const resolved = { id: 'x1', action: 'resolved' as const, by: ME, at: T + 200, message: 'shipped', supportingEventId: reply.id }
-    const reopened = { id: 'x2', action: 'reopened' as const, by: CATH, at: T + 300 }
+    const resolved = { id: 'x1', action: 'resolved' as const, by: ME, at: T + 200, orderMs: (T + 200) * 1000, message: 'shipped', supportingEventId: reply.id }
+    const reopened = { id: 'x2', action: 'reopened' as const, by: CATH, at: T + 300, orderMs: (T + 300) * 1000 }
     const once = project(
       conversation({ decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved] } }, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false } }),
       ME,

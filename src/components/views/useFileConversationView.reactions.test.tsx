@@ -3,8 +3,8 @@
  *
  * The real view, `useFileConversation` and the real cards run over a mocked
  * relay read; the relay's answer to the `kind:7` is what each case sets. A
- * refused reaction is taken back and said under the message, "Not reacted: …",
- * as Ship and Leaf say it, with no toast (the project's Done when; record
+ * refused reaction is taken back and said under the message by the kit's card,
+ * "Not reacted: …", in the words Ship and Leaf say it, with no toast (ONE-4; record
  * a-refused-action-is-undone-and-your-text-comes-back).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -112,15 +112,17 @@ describe('a reaction in Peek', () => {
     expect(screen.queryByText(/Not reacted/)).toBeNull()
   })
 
-  it('refused, is said under the comment and not in a toast', async () => {
+  it('refused, is said under the comment in the shared words and not in a toast (ONE-4)', async () => {
     relay.read.mockResolvedValue(conversation())
-    relay.answer = { ok: false, reason: 'invalid: something the relay disliked' }
+    // The relay's words reach the kit's card as they came, through what the toggle answers.
+    relay.answer = { ok: false, reason: 'invalid: reaction target event not found' }
     open()
     await userEvent.click(await pill())
     // Answered: either way it is said somewhere, so the checks below see the answer, not a wait.
     await waitFor(() => expect(toast.show.mock.calls.length + screen.queryAllByText(/Not reacted/).length).toBeGreaterThan(0))
     expect(toast.show).not.toHaveBeenCalled()
-    expect(screen.getByText('Not reacted: the relay did not take it.')).toBeInTheDocument()
+    expect(screen.getByText('Not reacted: this message was deleted, or you can no longer write here.')).toBeInTheDocument()
+    expect(screen.queryByText(/relay/)).toBeNull()
     // Taken back: Cath's alone again.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toHaveAttribute('aria-pressed', 'false'))
   })

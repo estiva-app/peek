@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
+import { uploadRefusal } from '@estiva-app/conversation'
 
 vi.mock('./relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'p'.repeat(64) }), storedToken: () => ({ accessToken: 't', pubkey: 'p'.repeat(64) }) }))
@@ -61,6 +62,28 @@ describe('an upload', () => {
     const { result } = renderHook(() => useUploadActions())
 
     await expect(result.current.uploadFile(file())).rejects.toThrow('blob refused')
+    warn.mockRestore()
+  })
+
+  it('sends a file over Peek’s old 25 MB to the store: the limits are the server’s, checked by the box as it is picked', async () => {
+    const big = new File([new Uint8Array(1)], 'big.zip', { type: 'application/zip' })
+    Object.defineProperty(big, 'size', { value: 30 * 1024 * 1024 })
+    const { result } = renderHook(() => useUploadActions())
+    await result.current.uploadFile(big)
+    expect(uploadBlob).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the refusal over as it came, so the file’s card says it in the shared words (ONE-4)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { result } = renderHook(() => useUploadActions())
+    const refusal = (f: File) => result.current.uploadFile(f).then(() => undefined, (error: unknown) => error)
+
+    uploadBlob.mockRejectedValueOnce(new Error('upload failed: 413 file too large: 11534336 bytes (max 10485760)'))
+    expect(uploadRefusal(await refusal(file()), { type: 'image/gif' })).toBe('Too large: the most is 10 MB')
+
+    const mkv = new File([new Uint8Array(1)], 'movie.mkv', { type: 'video/x-matroska' })
+    expect(uploadRefusal(await refusal(mkv), mkv)).toBe('This type of file can’t be added')
+    expect(uploadBlob).toHaveBeenCalledTimes(1)
     warn.mockRestore()
   })
 

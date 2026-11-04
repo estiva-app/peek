@@ -12,8 +12,8 @@ import type { FileAttachment } from '@/api'
 export interface RefusedEdit {
   /** The text that was saved. */
   text: string
-  /** Why, as the line under the box says it ("Not saved: …"). */
-  reason: string
+  /** Why, as it came (the relay's words, or `{ cause }`): the box says it in the shared words ("Not saved: …", ONE-4). */
+  reason: unknown
   /** The files the save carried, when it changed them; absent, the message's own. */
   files?: FileAttachment[]
 }

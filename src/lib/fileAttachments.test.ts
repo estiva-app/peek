@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
-  validateFile,
+  acceptsFileType,
   fileExtension,
   isImageAttachment,
   formatBytes,
   fileTypeLabel,
   pastedImageName,
   pastedImages,
-  FILE_MAX_BYTES,
   type ClipboardSource,
 } from './fileAttachments'
 
@@ -25,21 +24,21 @@ describe('fileAttachments', () => {
 
   it('accepts the allowlisted types incl. md/json/zip', () => {
     for (const n of ['a.png', 'b.pdf', 'c.md', 'd.json', 'e.zip', 'f.docx', 'g.csv']) {
-      expect(validateFile(fakeFile(n))).toBeNull()
+      expect(acceptsFileType(fakeFile(n))).toBe(true)
     }
   })
 
   it('rejects executables even though they are not on the allowlist path', () => {
-    expect(validateFile(fakeFile('virus.exe'))).toMatch(/executable/)
-    expect(validateFile(fakeFile('script.sh'))).toMatch(/executable/)
+    expect(acceptsFileType(fakeFile('virus.exe'))).toBe(false)
+    expect(acceptsFileType(fakeFile('script.sh'))).toBe(false)
   })
 
   it('rejects unsupported types', () => {
-    expect(validateFile(fakeFile('movie.mkv'))).toMatch(/aren't supported/)
+    expect(acceptsFileType(fakeFile('movie.mkv'))).toBe(false)
   })
 
-  it('rejects oversized files', () => {
-    expect(validateFile(fakeFile('big.zip', FILE_MAX_BYTES + 1))).toMatch(/larger than/)
+  it('leaves size to the server’s limits, which the box checks: a 60 MB zip is not Peek’s to refuse', () => {
+    expect(acceptsFileType(fakeFile('big.zip', 60 * 1024 * 1024))).toBe(true)
   })
 
   it('detects images by extension or content type', () => {
@@ -79,7 +78,7 @@ describe('pasted images', () => {
   it('gives an unsupported image its own extension, so it refuses itself', () => {
     const name = pastedImageName('image/tiff', AT)
     expect(name).toBe('Screenshot 2026-09-07 14-32-05.tiff')
-    expect(validateFile(fakeFile(name))).toMatch(/TIFF files aren't supported/)
+    expect(acceptsFileType(fakeFile(name))).toBe(false)
   })
 
   it('attaches a screenshot, renamed', () => {
@@ -87,7 +86,7 @@ describe('pasted images', () => {
     expect(file.name).toBe('Screenshot 2026-09-07 14-32-05.png')
     expect(file.type).toBe('image/png')
     expect(file.size).toBe(3)
-    expect(validateFile(file)).toBeNull()
+    expect(acceptsFileType(file)).toBe(true)
   })
 
   /*

@@ -30,8 +30,9 @@ beforeAll(() => {
 const ID = 'e'.repeat(64)
 afterEach(() => takeRefusedEdit(ID))
 
-const REFUSED: RefusedEdit = { text: 'the new text', reason: 'the relay did not take it' }
-const LINE = 'Not saved: the relay did not take it. Your changes are still in the box.'
+// The relay's own words go to the card as they came; the box says them in the shared words (ONE-4).
+const REFUSED: RefusedEdit = { text: 'the new text', reason: 'invalid: content exceeds maximum size of 262144 bytes' }
+const LINE = 'Not saved: it is too long. Your changes are still in the box.'
 
 const wrap = (node: React.ReactNode) => (
   <MemoryRouter>

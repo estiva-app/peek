@@ -40,9 +40,9 @@ import {
 import { groupReactions, offersEditAndDelete, REACTION_HORIZON, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
-import { notSavedNote, notSentNote, notSentReason } from '@/lib/notSent'
+import { notSavedNote, notSentNote } from '@/lib/notSent'
 import { putBackEdit } from '@/lib/refusedEdits'
-import { clearRefusedReaction, refuseReaction } from '@/lib/reactions'
+import type { ReactionAnswer } from '@/lib/reactions'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -241,25 +241,24 @@ export function useFileConversationView({
     relay has no aggregate: it has this viewer's `kind:7`, or not. So the
     aggregate is ignored and the emoji decides — the viewer's own reaction
     with it is taken back (a `kind:5` on the reaction), or one is published.
+    The relay's answer goes back to the card as it came: the kit's card says a
+    refusal under the message, in the shared words, as Ship and Leaf do (ONE-4).
   */
-  const toggleReaction = (targetEventId: string, emoji: string) => {
+  const toggleReaction = async (targetEventId: string, emoji: string): Promise<ReactionAnswer> => {
     const mine = view?.reactionsById[targetEventId]?.find((r) => r.emoji === emoji && r.by === viewerPubkey)
-    clearRefusedReaction(targetEventId)
-    void (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji)).then((result) => {
-      // Said under the message, as Ship and Leaf say it; a note only when no card draws it any more.
-      if (!result.ok && !refuseReaction(targetEventId, notSentReason(noteName, result.reason))) notSaved('reaction', result)
-    })
+    const result = await (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji))
+    return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
 
   /*
-    A reaction, an edit or a delete is drawn as it is made and undone if the
-    relay refuses it (OPT-8), and this says so — which change, and where what
-    came back is — instead of `refuse`'s toast of the relay's own words. Built
-    as the change goes out, so the note names this conversation even when the
-    person has moved on by the time the relay answers.
+    An edit or a delete is drawn as it is made and undone if the relay refuses
+    it (OPT-8), and this says so — which change, why, and where what came back
+    is — instead of `refuse`'s toast of the relay's own words. Built as the
+    change goes out, so the note names this conversation even when the person
+    has moved on by the time the relay answers.
   */
-  const notSaved = (change: 'reaction' | 'edit' | 'delete', result: WriteResult) => {
-    if (!result.ok) showToast({ label: notSavedNote(change, noteName, noteName, result.reason), type: 'error' })
+  const notSaved = (change: 'edit' | 'delete', result: WriteResult | { ok: false; reason: unknown }) => {
+    if (!result.ok) showToast({ label: notSavedNote(change, noteName, result.reason), type: 'error' })
   }
 
   const setResolution = (targetEventId: string, resolved: boolean, message?: string, supportingEventId?: string) =>
@@ -297,7 +296,8 @@ export function useFileConversationView({
         // Unknown when the message is not in hand, so that edit is not sent.
         // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-edit-is-the-whole-new-message.md
         if (!current) {
-          const reason = 'The message could not be read, so the edit was not sent. Try again.'
+          // Peek's own cause, said in the shared words ("something went wrong, try again").
+          const reason = { cause: 'unknown' }
           if (!putBackEdit(targetEventId, { text: body, reason })) notSaved('edit', { ok: false, reason })
           return
         }
@@ -308,7 +308,7 @@ export function useFileConversationView({
         if (result.ok) return
         // The old text is back on the message; what was saved goes back in its edit box with why under it (Miky, 9 Oct;
         // PEEKM-4). A note only when no card of it is on screen to reopen.
-        if (!putBackEdit(targetEventId, { text: body, reason: notSentReason(noteName, result.reason), files: edit?.files })) notSaved('edit', result)
+        if (!putBackEdit(targetEventId, { text: body, reason: result.reason, files: edit?.files })) notSaved('edit', result)
       })
     })
   }
@@ -323,11 +323,12 @@ export function useFileConversationView({
     The composer's files are the relay's copies (CON-12): `UploadedFile` carries
     `sha256` and `mediaUrl`. A conversation has nowhere but the relay to keep
     the bytes, so a file the relay does not hold cannot be attached here — said
-    under the box, with the words kept in it.
+    under the box, with the words kept in it, in the shared words (Peek's own
+    cause, ONE-4).
   */
   const notOnTheRelay = (files: readonly FileAttachment[] | undefined): SendAnswer | undefined => {
     const missing = (files ?? []).find((f) => !f.sha256 || !f.mediaUrl)
-    return missing ? { accepted: false, reason: `${missing.name} is not on the relay, so it cannot be attached here` } : undefined
+    return missing ? { accepted: false, reason: { cause: 'unknown' } } : undefined
   }
   const outgoing = (files: readonly FileAttachment[] | undefined): OutgoingAttachment[] =>
     (files ?? []).map(({ name, contentType, size, sha256, mediaUrl, thumbUrl }) => ({
@@ -344,15 +345,17 @@ export function useFileConversationView({
     (OPT-7; Decided 2026-10-17: no toast). A message refused with its topic
     (PEE-6) tells the topic's own note instead, which waits for what came back.
     When the person has moved on before the relay answered, the box is gone and
-    its line cannot be seen: the note says it, naming where the text went back
-    to — its draft there (the record's "Not sent — text restored in <topic>").
+    its line cannot be seen: the note says it, with the box's reason, naming
+    where the text went back to — its draft there (the record's "Not sent —
+    text restored in <topic>"). The reason goes to the box as it came: the box
+    says it in the shared words (ONE-4).
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
   */
   const notSent = (where: string, payload: SendPayload, reason: string, away: () => boolean): SendAnswer => {
     const text = !!payload.text.trim()
     if (reason === TOPIC_NOT_CREATED && container?.kind === 'file') topicTextBack(container.address, text)
-    else if (away()) showToast({ label: notSentNote(where, noteName, reason, { text, files: false, filesLost: !!payload.files?.length }), type: 'error' })
-    return { accepted: false, reason: notSentReason(noteName, reason) }
+    else if (away()) showToast({ label: notSentNote(where, reason, { text, files: false, filesLost: !!payload.files?.length }), type: 'error' })
+    return { accepted: false, reason }
   }
 
   const handleSend = async (payload: SendPayload, away: () => boolean): Promise<SendAnswer> => {
@@ -373,7 +376,7 @@ export function useFileConversationView({
 
   const handleSendReply = async (payload: SendPayload, away: () => boolean): Promise<SendAnswer> => {
     const { text, resolution, files, urgent, embeds } = payload
-    if (!openRoot) return { accepted: false, reason: 'its thread is closed' }
+    if (!openRoot) return { accepted: false, reason: { cause: 'unknown' } }
     const missing = notOnTheRelay(files)
     if (missing) return missing
     const where = openView ? `your reply to ${openView.data.authorName}` : noteName
@@ -397,7 +400,7 @@ export function useFileConversationView({
   })
   const [rowActions] = useState<RowHandlers>(() => ({
     setResolution: (id, resolved, message) => latestRow.current?.setResolution(id, resolved, message),
-    toggleReaction: (id, emoji) => latestRow.current?.toggleReaction(id, emoji),
+    toggleReaction: async (id, emoji) => latestRow.current?.toggleReaction(id, emoji),
     editBody: (id, body) => latestRow.current?.editBody(id, body),
     editFiles: (id, files) => latestRow.current?.editFiles(id, files),
     editEmbeds: (id, embeds) => latestRow.current?.editEmbeds(id, embeds),

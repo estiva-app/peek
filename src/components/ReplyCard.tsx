@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { AttachmentCard, ReplyCard as KitReplyCard } from '@estiva-app/ui'
 import type { Embed } from '@estiva-app/protocol'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { REACTION_OPTIONS, toggledReaction, useRefusedReaction } from '@/lib/reactions'
+import { REACTION_OPTIONS, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
 import { CURRENT_USER_NAME, type ReactionData, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
@@ -49,7 +49,8 @@ interface ReplyCardProps {
   onEmbedsChange?: (embeds: Embed[]) => void
   /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
   writtenOn?: string
-  onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
+  /** Your reaction on or off; answering with what the relay said lets the kit's card say why a refused one did not go through. */
+  onReactionsChange?: (reactions: ReactionData[], emoji: string) => void | Promise<ReactionAnswer | void>
   /** True when this reply triggered the parent conv's resolution (compose `→ msg` in the
    *  thread panel). When set, edit mode surfaces the resolution as a resolutionBlock so
    *  the user can update or remove it inline. */
@@ -117,11 +118,12 @@ export function ReplyCard({
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
   // Sync local reactions state when the parent passes a new override (e.g. after navigation back).
   useEffect(() => { setReactionsState(reactions ?? []) }, [reactions])
-  const refusedReaction = useRefusedReaction(messageId)
   // Refused: the reaction drawn here at once goes, and the relay's view stands — even when that view never changed.
+  // The kit's card says why under the reply (ONE-4).
+  const [reactionRefusals, setReactionRefusals] = useState(0)
   useEffect(() => {
-    if (refusedReaction) setReactionsState(reactions ?? [])
-  }, [refusedReaction]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (reactionRefusals) setReactionsState(reactions ?? [])
+  }, [reactionRefusals]) // eslint-disable-line react-hooks/exhaustive-deps
   const [highlightState, setHighlightState] = useState<HighlightType | undefined>(highlightType)
 
   const [bodyState, setBodyState] = useState(body)
@@ -173,7 +175,10 @@ export function ReplyCard({
     // 2026-09-10 (PEEK-ADOPTION.md §11.5).
     const next = toggledReaction(reactionsState, emoji)
     setReactionsState(next)
-    onReactionsChange?.(next, emoji)
+    return Promise.resolve(onReactionsChange?.(next, emoji)).then((answer) => {
+      if (answer && !answer.accepted) setReactionRefusals((n) => n + 1)
+      return answer
+    })
   }
 
   return (
@@ -191,7 +196,6 @@ export function ReplyCard({
           : undefined
       }
       reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: (name) => name, viewer: CURRENT_USER_NAME, onToggle: readOnly || !onReactionsChange ? undefined : handleReact }}
-      reactionRefused={refusedReaction}
       isNew={isNew}
       urgent={isUrgent}
       own={isOwnMessage}

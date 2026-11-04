@@ -10,6 +10,7 @@ import { registerActiveConversation, unregisterActiveConversation } from '@/lib/
 import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
+import type { ReactionAnswer } from '@/lib/reactions'
 
 // ── Thread Panel ──
 
@@ -171,7 +172,7 @@ interface ThreadPanelProps {
     reactions: ReactionData[],
     prev: ReactionData[],
     emoji: string,
-  ) => void
+  ) => void | Promise<ReactionAnswer | void>
   /** What the view's `useSeenOnScreen` made for this thread: the kit's Thread watches its replies, and says which were seen (C2). */
   seen?: SeenOnScreen
 }
