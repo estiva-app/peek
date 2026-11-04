@@ -73,7 +73,7 @@ async function pick(to: string, onMoved = vi.fn()) {
     </ToastProvider>,
   )
   await userEvent.click(screen.getByRole('button', { name: 'Move…' }))
-  await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
   await userEvent.click(await screen.findByRole('option', { name: to }))
   return onMoved
 }
@@ -264,7 +264,7 @@ describe('moving an issue at the wire', () => {
       </ToastProvider>,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Move…' }))
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Team' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Gadgets' }))
