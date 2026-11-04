@@ -91,7 +91,10 @@ export interface SendPayload {
   embeds?: Embed[]
 }
 
-/** What the relay said about a send: `{ accepted: false, reason }` puts the words back with "Not sent: reason". */
+/**
+ * What the relay said about a send: `{ accepted: false, reason }` puts the words back with "Not sent: <reason>.", the
+ * reason as it came (the relay's words, or `{ cause }` for Peek's own), said by the box in the shared words (ONE-4).
+ */
 export type { SendAnswer }
 
 export type BoxKind = 'conversation' | 'reply'
@@ -250,7 +253,8 @@ function useUpload(): ((file: File) => Promise<UploadAnswer>) | undefined {
     try {
       return { accepted: true, value: await uploadFile(file) }
     } catch (error) {
-      return { accepted: false, reason: error instanceof Error ? error.message : String(error) }
+      // As it came: the file's card says it in the shared words (`uploadRefusal`, ONE-4).
+      return { accepted: false, reason: error }
     }
   }
 }
@@ -268,7 +272,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
     const { text, urgent } = composerText(withoutOwnNodes(doc) as EditorDocument)
     const uploaded = files.flatMap((f) => (f.value ? [f.value as UploadedFile] : []))
     // A highlight alone is no message.
-    if (!text && !resolution.hasResolution && uploaded.length === 0) return { accepted: false, reason: 'there is nothing to send' }
+    if (!text && !resolution.hasResolution && uploaded.length === 0) return { accepted: false, reason: { cause: 'unknown' } }
     const embeds = embedsToSend({ card: shown.card }, new Set())
     // Gone once the box hands its editor back (`onEditor(null)`): the editor itself may live on, kept warm for the next box.
     const handle = registered.current
@@ -435,7 +439,8 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
       }
     }
     const kept = files.flatMap((f) => (f.value ? [attachmentOf(f.value)] : []))
-    if (!text && kept.length === 0 && !resolution.hasResolution) return { accepted: false, reason: 'a message needs words or a file; Delete removes it' }
+    // The kit's Save is off while the box holds nothing (ONE-4); a box of only a highlight lands here.
+    if (!text && kept.length === 0 && !resolution.hasResolution) return { accepted: false, reason: { cause: 'unknown' } }
     // An edit makes nobody urgent (CON-24).
     text = withoutNewUrgency(text, message.body)
     const links = linksOfBox(body, here, edited)
@@ -473,7 +478,7 @@ export function EditBox({ kind = 'conversation', message, refused, here, onSave,
 }
 
 const NO_PEOPLE: readonly [] = []
-const SENDS_NOTHING = async (): Promise<SendAnswer> => ({ accepted: false, reason: 'nothing can be written here' })
+const SENDS_NOTHING = async (): Promise<SendAnswer> => ({ accepted: false, reason: { cause: 'no-access' } })
 
 /** The box's place where nothing can be written (an archived file): the line saying why, as the box draws it in every app. */
 export function ClosedBox({ reason }: { reason: string }) {

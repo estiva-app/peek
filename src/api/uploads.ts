@@ -14,7 +14,7 @@
  * only appears where it can succeed.
  */
 import { RELAY_URL, hasRelay } from './relayUrl'
-import { validateFile, isImageAttachment } from '@/lib/fileAttachments'
+import { acceptsFileType, isImageAttachment } from '@/lib/fileAttachments'
 import { validToken } from '@/auth/estivaId'
 import { uploadBlob } from '@estiva-app/protocol'
 import { signViaEstivaId } from '@/nostr/bridge'
@@ -41,14 +41,18 @@ export function useCanUpload(): boolean {
 
 export function useUploadActions() {
   return {
-    /** Upload one file and return its descriptor. Throws with a user-facing
-     *  message on a rejected type/size or a failed request. */
+    /**
+     * Upload one file and return its descriptor. Throws the refusal as it came
+     * (the store's `upload failed: <status> <body>`), or Peek's own as an
+     * error carrying a `cause`: the file's card says it in the shared words
+     * (`uploadRefusal`, ONE-4). The size limit is the box's, checked as the file
+     * is picked.
+     */
     async uploadFile(file: File): Promise<UploadedFile> {
-      const err = validateFile(file)
-      if (err) throw new Error(err)
+      if (!acceptsFileType(file)) throw new Error(`not an allowed type: ${file.name}`, { cause: 'type' })
       if (!RELAY_URL) throw new Error('File uploads need the live app.')
       const token = validToken()
-      if (!token) throw new Error('Sign in again to attach files.')
+      if (!token) throw new Error('no token to upload with', { cause: 'signed-out' })
 
       let blob: Awaited<ReturnType<typeof uploadBlob>>
       try {
@@ -62,7 +66,7 @@ export function useUploadActions() {
         })
       } catch (error) {
         console.warn('[nostr] attachment not uploaded to the relay:', error)
-        throw new Error(`Upload failed — ${error instanceof Error ? error.message : String(error)}`)
+        throw error
       }
       /*
         Size and type are the store's, not the picked file's. The store

@@ -2,11 +2,13 @@ import { memo } from 'react'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData, FileAttachment } from '@/api'
 import type { Embed } from '@estiva-app/protocol'
+import type { ReactionAnswer } from '@/lib/reactions'
 
 /** What a card in the list does, by the id of the message it draws. */
 export interface RowHandlers {
   setResolution: (id: string, resolved: boolean, message?: string) => void
-  toggleReaction: (id: string, emoji: string) => void
+  /** Answers with what the relay said, which the card says under the message when it refused. */
+  toggleReaction: (id: string, emoji: string) => Promise<ReactionAnswer | void>
   editBody: (id: string, body: string) => void
   editFiles: (id: string, files: FileAttachment[]) => void
   /** The card set after an edit, when it changed (OPT-17). */

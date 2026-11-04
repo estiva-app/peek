@@ -209,7 +209,16 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     expect(d.edit).toEqual({ body: 'First, corrected', edited: true, editedAt: edit.created_at * 1000, editedBy: CATH, attachments: [] })
     expect(d.reactions).toEqual([{ id: reaction.id, target: root.id, emoji: '👍', by: MIKY, at: reaction.created_at }])
     expect(d.resolutions).toEqual([
-      { id: resolved.id, action: 'resolved', by: MIKY, at: resolved.created_at, message: 'done', supportingEventId: reply.id },
+      {
+        id: resolved.id,
+        action: 'resolved',
+        by: MIKY,
+        at: resolved.created_at,
+        orderMs: resolved.created_at * 1000,
+        folder: FOLDER,
+        message: 'done',
+        supportingEventId: reply.id,
+      },
     ])
     // A reply is a target too, so a reaction on it would be found.
     expect(found.decorations.byId[reply.id]).toEqual({ reactions: [], resolutions: [] })

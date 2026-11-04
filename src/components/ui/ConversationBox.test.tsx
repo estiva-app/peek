@@ -127,11 +127,12 @@ describe('ConversationBox — what a send carries', () => {
     expect(onSend.mock.calls[0][0].text).toMatch(new RegExp(`^Filed it — ?nostr:${addrToNaddr(ISSUE, [])}`))
   })
 
-  it('says a refusal under the box, with the words back in it', async () => {
+  it('says a refusal under the box in the shared words, never the relay’s, with the words back in it (ONE-4)', async () => {
     const user = userEvent.setup()
     const { send } = await boxWith('Can we move it to Friday?', { accepted: false, reason: 'blocked: not a member' })
     await user.click(send)
-    expect(await screen.findByText(/blocked: not a member/)).toBeInTheDocument()
+    expect(await screen.findByText('Not sent: you can no longer write here. Your text is back in the box.')).toBeInTheDocument()
+    expect(screen.queryByText(/blocked: not a member/)).toBeNull()
     expect(screen.getByText('Can we move it to Friday?')).toBeInTheDocument()
   })
 

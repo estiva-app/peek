@@ -7,9 +7,6 @@
  * even if the allowlist broadens later, those never get through.
  */
 
-/** 25 MB — 5× the avatar limit; documents/zips are legitimately larger. */
-export const FILE_MAX_BYTES = 25 * 1024 * 1024
-
 /** Extensions we accept (see the product ruling 2026-07-17). */
 export const ALLOWED_EXTENSIONS = [
   // images
@@ -116,22 +113,14 @@ export function postedAttachment(file: {
 }
 
 /**
- * Client-side validation. Returns an error message to surface, or null when
- * the file is acceptable. The server trusts the client here (uploads are
- * viewer-gated) — this is UX, not a security boundary.
+ * Whether Peek attaches a file of this type: on the allowlist and not an
+ * executable. UX, not a security boundary. The words for a refused one, and
+ * the size limit, are the kit's: the box checks the server's limits as a file
+ * is picked, and the file's card says why (`uploadRefusal`, ONE-4).
  */
-export function validateFile(file: File): string | null {
+export function acceptsFileType(file: { name: string }): boolean {
   const ext = fileExtension(file.name)
-  if ((BLOCKED_EXTENSIONS as readonly string[]).includes(ext)) {
-    return `${file.name} is an executable and can't be attached.`
-  }
-  if (!(ALLOWED_EXTENSIONS as readonly string[]).includes(ext)) {
-    return `${fileTypeLabel(file.name)} files aren't supported.`
-  }
-  if (file.size > FILE_MAX_BYTES) {
-    return `${file.name} is larger than ${formatBytes(FILE_MAX_BYTES)}.`
-  }
-  return null
+  return !(BLOCKED_EXTENSIONS as readonly string[]).includes(ext) && (ALLOWED_EXTENSIONS as readonly string[]).includes(ext)
 }
 
 /** `accept` attribute for the <input type=file> (dot-prefixed extensions). */
@@ -140,5 +129,5 @@ export const FILE_ACCEPT_ATTR = ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(',')
 /* ── Pasting an image (PEE-20) ─────────────────────────────────────────────
    Moved into estiva-ui 0.63.0 (Katerina, 8 October), so Ship's editors attach
    a pasted picture the same way: text on the clipboard wins, and a screenshot
-   is named for the moment it was pasted before `validateFile` judges it. */
+   is named for the moment it was pasted before `acceptsFileType` judges it. */
 export { pastedImages, pastedImageName, type ClipboardSource } from '@estiva-app/ui/editor'
