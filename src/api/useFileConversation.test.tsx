@@ -4,7 +4,7 @@ import type { FileConversation, WriteResult } from '@/nostr/fileConversation'
 import { refusalReason } from '@estiva-app/conversation'
 import type { ConversationStore } from '@/platform/conversationStore'
 import { RelayReadError } from '@/nostr/relayRead'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { MAX_MESSAGE_BYTES, type SignedEvent } from '@estiva-app/protocol'
 
 /*
   The hook's contract with the held store (OPT-3) and the socket (FOL-32). The
@@ -65,7 +65,7 @@ vi.mock('@/nostr/conversationCatchUp', () => ({
 const idOf = (n: number) => String(n).repeat(64)
 /** What the protocol's builders throw for words over its 64 KB (`MAX_MESSAGE_BYTES`), before anything is signed. */
 const tooLong = (body: string) => {
-  if (body.length > 64 * 1024) throw new Error(`content is ${body.length} bytes, max ${64 * 1024}`)
+  if (body.length > MAX_MESSAGE_BYTES) throw new Error(`content is ${body.length} bytes, max ${MAX_MESSAGE_BYTES}`)
 }
 vi.mock('@/nostr/fileConversation', () => ({
   // A file with more than three comments is a long one here.
