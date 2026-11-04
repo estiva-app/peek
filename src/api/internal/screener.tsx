@@ -281,11 +281,12 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     // Nothing to seed from: the Convex snoozes that used to seed this were
     // topics' (`desk.topicSnoozes`), and went with them in FOL-23.
     if (sync.state === 'absent') return NO_PENDING
-    // The relay was asked and the answer is not coming. Render without the
-    // decisions rather than hold the Desk under a skeleton for the rest of the
-    // load — a Screener that never appears is a worse failure than one showing
-    // a row the person dismissed, and `useScreenerSync` refuses to publish in
-    // this state, so the decisions on the relay are not at risk.
+    // The relay was asked and refused. Render rather than hold the Desk under a
+    // skeleton until it answers — a Screener that never appears is a worse
+    // failure than one showing a row the person dismissed — with the copy on the
+    // device when there is one (`shown`), while `useScreenerSync` asks again
+    // (PEE-78). It refuses to publish in this state, so the decisions on the
+    // relay are not at risk.
     if (sync.state === 'unreachable') return NO_PENDING
     // `unknown`. Not asked at all is an empty pair the person can still act on;
     // asked and unanswered renders nothing yet, because pulling a dismissed row
@@ -296,12 +297,14 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   /**
    * Until the relay answers, the decisions the copy on the device holds are
    * drawn (PEE-2) — so a reload shows the rows as they were, not a skeleton.
-   * They are never published: only `settled` is.
+   * And while it refuses (PEE-78): without them every row the person dismissed
+   * and has not read came back for the rest of the load. They are never
+   * published: only `settled` is.
    */
   const shown = useMemo<Pending | undefined>(() => {
-    if (settled) return settled
-    if (sync.state !== 'unknown' || !sync.cachedBlob) return undefined
-    return { snoozed: sync.cachedBlob.snoozed, dismissed: sync.cachedBlob.dismissed }
+    const waiting = sync.state === 'unknown' || sync.state === 'unreachable'
+    if (waiting && sync.cachedBlob) return { snoozed: sync.cachedBlob.snoozed, dismissed: sync.cachedBlob.dismissed }
+    return settled
   }, [settled, sync.state, sync.cachedBlob])
 
   const effective = useMemo<Pending | undefined>(() => {

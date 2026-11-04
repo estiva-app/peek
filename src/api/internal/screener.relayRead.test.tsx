@@ -138,8 +138,9 @@ const publish = vi.fn<(next: { snoozed: Record<string, number>; dismissed: Recor
 let syncState: 'unknown' | 'unreachable' | 'absent' | 'present' = 'present'
 let asked = true
 let relayBlob: unknown = { v: 1, updatedAt: 1_787_142_018_561, snoozed: {}, dismissed: {} }
+let cachedBlob: unknown = undefined
 vi.mock('@/nostr/useScreenerSync', () => ({
-  useScreenerSync: () => ({ state: syncState, asked, relayBlob, publish }),
+  useScreenerSync: () => ({ state: syncState, asked, relayBlob, cachedBlob, publish }),
 }))
 
 const A = `30840:${'a'.repeat(64)}:a`
@@ -166,6 +167,7 @@ beforeEach(() => {
   syncState = 'present'
   asked = true
   relayBlob = { v: 1, updatedAt: 1_787_142_018_561, snoozed: {}, dismissed: {} }
+  cachedBlob = undefined
 })
 
 describe('followed files (FOL-34)', () => {
@@ -404,6 +406,39 @@ describe('the relay was asked and cannot answer', () => {
     // dismissed — and before `unreachable` existed, a relay that was down left
     // `state` at `unknown` and the Desk under its skeleton for the whole load.
     expect(result.current.items).toHaveLength(1)
+  })
+
+  /*
+    PEE-78 (Katerina, 3 November): a refused read drew every row she had
+    dismissed and not read, an August one among them, until a reload. The copy
+    on the device holds those decisions, and it is what a slow read already draws.
+  */
+  it('draws the decisions the copy on the device holds, so a dismissed row stays away', async () => {
+    syncState = 'unreachable'
+    asked = true
+    relayBlob = undefined
+    cachedBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`dm:${GREG}`]: 1_787_000_100 } }
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.items).toEqual([])
+  })
+
+  it('a row dismissed while refused is published once the read lands, over what the relay holds', async () => {
+    syncState = 'unreachable'
+    asked = true
+    relayBlob = undefined
+    const { result, rerender } = await setup()
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    act(() => result.current.dismiss(`sc_dm_${GREG}`, 1_787_100_000_000))
+    await waitFor(() => expect(result.current.items).toEqual([]))
+
+    // The re-read lands (PEE-78), holding a decision made on another device.
+    syncState = 'present'
+    relayBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`file:${A}`]: 1_787_000_000 } }
+    rerender()
+    await waitFor(() => expect(publish.mock.calls.at(-1)?.[0].dismissed[`dm:${GREG}`]).toBe(1_787_100_000))
+    expect(publish.mock.calls.at(-1)![0].dismissed[`file:${A}`]).toBe(1_787_000_000)
+    expect(result.current.items).toEqual([])
   })
 
   it('and publishes nothing, because those maps are missing the decisions', async () => {

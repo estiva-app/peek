@@ -19,17 +19,28 @@
  * - `unknown` — not asked (no relay origin, no token in this tab yet) or asked
  *   and not answered **yet**. Nothing may be published, and nothing may be
  *   rendered while a read is genuinely in flight.
- * - `unreachable` — asked, and the answer is not coming: the read failed, or
- *   the blob would not decrypt. Terminal, and that is its whole purpose. Left
- *   as `unknown` it would hold the Desk under a skeleton **for ever** any time
- *   the relay was down, which is a worse failure than the one the skeleton is
- *   there to prevent. So the caller renders without subtractions, and nothing
- *   is published — the decisions are intact on the relay and a blob assembled
- *   without them would erase every one on the next successful write.
+ * - `unreachable` — asked, and refused: the read failed, or the blob would not
+ *   decrypt. Left as `unknown` it would hold the Desk under a skeleton **for
+ *   ever** any time the relay was down, which is a worse failure than the one
+ *   the skeleton is there to prevent. So the caller renders — with the copy on
+ *   the device when there is one — and nothing is published: the decisions are
+ *   intact on the relay and a blob assembled without them would erase every one
+ *   on the next successful write.
  * - `absent` — answered, and holds nothing this version can read. The caller
  *   seeds it from the Convex rows that still carry every snooze, and a person
  *   with no decisions yet simply publishes their first one.
  * - `present` — answered. Those two maps are the truth.
+ *
+ * ## A refused read is read again (PEE-78)
+ *
+ * It was the only read a load made, so one refusal — the relay turning reads
+ * away while several apps load at once — drew every dismissed row that was
+ * still unread for the rest of the load, and a reload put them away again
+ * (Katerina, 3 November). It is read again after `READ_AGAIN_MS`, up to
+ * `READ_AGAIN_TIMES` in a row, read state's own pace since PEE-68, and then
+ * whenever the tab is focused or shown again while it is still refused. The
+ * answer that lands replaces `unreachable`, and the person's own choices made
+ * in the meantime are published over it then.
  *
  * ## The publish is best-effort and says so out loud
  *
@@ -42,11 +53,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { heldToken, useSessionResumed } from '@/auth/heldSession'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import type { RelaySeam } from './openWork'
-import { type InstantMap, type ScreenerBlob, fetchScreener, publishScreener, screenerToPublish } from './screener'
+import { type InstantMap, type ScreenerBlob, type ScreenerRead, fetchScreener, publishScreener, screenerToPublish } from './screener'
 
 /** Whether the relay has answered what decisions it holds, and what it said. */
 export type ScreenerState = 'unknown' | 'unreachable' | 'absent' | 'present'
+
+/** How soon a refused read is tried again: past a 429's burst. Read state's pace (`useReadStateSync`, PEE-68). */
+export const READ_AGAIN_MS = 10_000
+/** Timed re-reads in a row; after them, a refused read waits for the tab to be focused or shown. */
+export const READ_AGAIN_TIMES = 3
 
 export interface ScreenerSync {
   /** The decisions the relay holds. Defined exactly when `state` is `present`. */
@@ -91,48 +108,77 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
   const [asked, setAsked] = useState(false)
   /** Guards against two publishes racing on one coordinate from one tab. */
   const publishing = useRef(false)
+  /** Ask the relay again while it refuses — the current load's read, so a focus never revives a cancelled one. */
+  const readAgain = useRef<(() => void) | undefined>(undefined)
 
   useEffect(() => {
     const seam = seamFrom(relayUrl)
     if (!seam) return
     let cancelled = false
-    // The copy beside the relay: drawn until the relay answers (PEE-2).
+    /** The relay answered: nothing in this load asks again. */
+    let answered = false
+    let inFlight = false
+    let refusals = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // The copy beside the relay: drawn until the relay answers (PEE-2), and while it refuses (PEE-78).
     void fetchScreener(seam, 'copy').then((read) => {
       if (!cancelled && read.state === 'present') setCachedBlob(read.blob)
     })
-    void (async () => {
+    const read = async () => {
+      if (cancelled || answered || inFlight) return
+      inFlight = true
+      clearTimeout(timer)
+      timer = undefined
       // Set inside the async body, not in the effect's synchronous part: a bare
       // `setState` in an effect body is the pattern the React Compiler lint
       // refuses, and every other state write in this hook is already a commit
       // from the same promise.
       setAsked(true)
+      let answer: ScreenerRead | undefined
+      let error: unknown
       try {
-        const read = await fetchScreener(seam)
-        if (cancelled) return
-        if (read.state === 'present') {
-          setRelayBlob(read.blob)
-          setState('present')
-        } else if (read.state === 'absent') {
-          setState('absent')
-        } else {
-          // Terminal, not "still waiting": this read is the only one this load
-          // makes, so the Screener must stop waiting on it and render.
-          setState('unreachable')
-          console.warn(
-            '[screener] the relay did not say what screener decisions it holds — dismissed and snoozed rows will appear until it does',
-          )
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setState('unreachable')
-          console.warn('[screener] could not read screener decisions from the relay:', error)
-        }
+        // The token asked again at call time, as `seamFrom` says: a re-read must not carry the one the load began with.
+        answer = await fetchScreener(seamFrom(relayUrl) ?? seam)
+      } catch (thrown) {
+        error = thrown
+      } finally {
+        inFlight = false
       }
-    })()
+      if (cancelled) return
+      if (answer?.state === 'present') {
+        answered = true
+        setRelayBlob(answer.blob)
+        setState('present')
+        return
+      }
+      if (answer?.state === 'absent') {
+        answered = true
+        setState('absent')
+        return
+      }
+      // Refused. The Screener stops waiting on it and renders, and it is asked
+      // again (PEE-78): `unreachable` is "not yet", never "not coming".
+      setState('unreachable')
+      refusals += 1
+      if (refusals === 1) {
+        console.warn(
+          '[screener] the relay did not say what screener decisions it holds — reading again; until it answers, only the copy on this device keeps dismissed and snoozed rows away',
+          ...(error === undefined ? [] : [error]),
+        )
+      }
+      if (refusals <= READ_AGAIN_TIMES) timer = setTimeout(() => void read(), READ_AGAIN_MS)
+    }
+    readAgain.current = () => void read()
+    void read()
     return () => {
       cancelled = true
+      clearTimeout(timer)
+      readAgain.current = undefined
     }
   }, [relayUrl, resumed])
+
+  // Still refused after the timed re-reads: ask again when the person comes back to the tab.
+  useRefreshTriggers(() => readAgain.current?.(), { enabled: state === 'unreachable', interval: false })
 
   const publish = useCallback(
     async (next: { snoozed: InstantMap; dismissed: InstantMap }) => {
