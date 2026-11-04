@@ -2102,6 +2102,17 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
+  it('opens at once while the teams are read, saying so, with no team to pick and nothing to move yet', async () => {
+    teamsHeld.teams = null as never
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Reading…')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('option')).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Move' })).toBeDisabled()
+  })
+
   it('a space of a team the person is not in offers no Move at all, in the header or on its row', () => {
     holdTeams({ inSource: false })
     // Followed, so its section — and the space's row — is drawn for them.

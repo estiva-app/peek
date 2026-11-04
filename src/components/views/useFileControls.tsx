@@ -186,8 +186,9 @@ export function useFileControls({
   /*
     Which team marks a file a space, and which teams the person is in (TEA-5):
     read once Move is pressed, beside the Folder's own read, since from the
-    Topics rail or a link none may be held yet. A topic's Move is drawn once
-    they are, so its "Keep it a space" box opens ticked, never late.
+    Topics rail or a link none may be held yet. A topic's Move opens at once
+    and says "Reading…" until they are, so no team can be picked before its
+    "Keep it a space" box is there, ticked.
   */
   const [teamsWanted, setTeamsWanted] = useState(false)
   const { teams, failed: teamsFailed } = useTeams({ read: teamsWanted })
@@ -602,7 +603,7 @@ export function useFileControls({
         onArchive={(resolution) => setArchived(dialog.file, true, resolution || undefined)}
         onClose={() => setDialog(null)}
       />
-    ) : dialog.kind === 'move' && !teams && !teamsFailed && isTopic(dialog.file) ? null : dialog.kind === 'move' ? (
+    ) : dialog.kind === 'move' ? (
       /*
         The kit's Move (C11): the Folder first, then what it goes under there,
         read when a Folder is picked. Only a file that may sit under any file
@@ -614,7 +615,11 @@ export function useFileControls({
         title={dialog.file.slots.title?.value ?? 'this file'}
         description="Everyone who can read it now still can."
         from={dialog.from}
-        folders={dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled team' }))}
+        folders={
+          !teams && !teamsFailed && isTopic(dialog.file)
+            ? undefined
+            : dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled team' }))
+        }
         places={dialog.targets?.map(placeOf)}
         placesIn={dialog.nests ? async (folder) => (await targetsIn(dialog, folder)).map(placeOf) : undefined}
         startAtTop={dialog.file.parentKind === undefined}
