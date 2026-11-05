@@ -385,10 +385,10 @@ export function IntelligenceNext({
 
                   {prompt && phase !== 'working' && phase !== 'acted' && (
                     <div className="flex flex-wrap gap-2 px-3 pb-2">
-                      <Button variant="outlined" size="small" type="button" onClick={() => finish('project')}>
+                      <Button variant="outlined" size="small" type="button" leadingIcon={<span aria-hidden>🚢</span>} onClick={() => finish('project')}>
                         Create project
                       </Button>
-                      <Button variant="outlined" size="small" type="button" onClick={() => finish('document')}>
+                      <Button variant="outlined" size="small" type="button" leadingIcon={<span aria-hidden>🍃</span>} onClick={() => finish('document')}>
                         Draft document
                       </Button>
                     </div>
