@@ -23,7 +23,7 @@ import { PeekLogoMark } from '@/components/ui/PeekLogo'
  * any of it replaces Cmd+K.
  *
  * One field. Up to two words it is a search. More than that, it is a prompt:
- * the field grows, the topic's files stay as reference, and two suggested
+ * the field grows and the search results leave. Two suggested
  * actions sit at the bottom. A file, and only a file, opens a preview beside
  * the box. The box itself stays the same width.
  * Escape hides the box and keeps an unfinished sentence. While it is working,
@@ -120,17 +120,15 @@ export function IntelligenceNext({
   const [open, setOpen] = useState(!hidden)
   const [phase, setPhase] = useState<Phase>(initialPhase)
   const [litId, setLitId] = useState(initialLit)
-  const [pointed, setPointed] = useState(false)
   const [action, setAction] = useState<'project' | 'document' | null>(null)
   const [landed, setLanded] = useState<Row | null>(null)
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const modKey = isApplePlatform() ? 'Cmd' : 'Ctrl'
 
   const prompt = wordsOf(query).length > 2
-  const visible = useMemo(() => (prompt ? ROWS.filter((row) => row.lines) : ROWS.filter((row) => matches(row, query))), [prompt, query])
+  const visible = useMemo(() => (prompt ? [] : ROWS.filter((row) => matches(row, query))), [prompt, query])
   const lit = visible.find((row) => row.id === litId) ?? visible[0]
-  // A prompt keeps the files as reference. The pane opens when a file is the one you are on: the highlighted row while searching, the row under the pointer while prompting.
-  const preview = lit?.lines && (!prompt || pointed) ? lit : null
+  const preview = !prompt && lit?.lines ? lit : null
   const dot = !open && (phase === 'working' || phase === 'answered')
 
   useEffect(() => {
@@ -366,15 +364,12 @@ export function IntelligenceNext({
                           key={row.id}
                           type="button"
                           role="option"
-                          aria-selected={row.id === lit?.id && (!prompt || pointed)}
-                          onMouseEnter={() => {
-                            setLitId(row.id)
-                            setPointed(true)
-                          }}
+                          aria-selected={row.id === lit?.id}
+                          onMouseEnter={() => setLitId(row.id)}
                           onClick={() => choose(row)}
                           className={cn(
                             'flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left',
-                            row.id === lit?.id && (!prompt || pointed) && 'bg-bg-hover',
+                            row.id === lit?.id && 'bg-bg-hover',
                           )}
                         >
                           <Leading row={row} />
@@ -386,7 +381,7 @@ export function IntelligenceNext({
                       ))}
                     </div>
                   )}
-                  {visible.length === 0 && phase === 'idle' && <p className="px-3 py-2 text-caption text-text-muted">Nothing under that name.</p>}
+                  {visible.length === 0 && !prompt && phase === 'idle' && <p className="px-3 py-2 text-caption text-text-muted">Nothing under that name.</p>}
 
                   {prompt && phase !== 'working' && phase !== 'acted' && (
                     <div className="flex flex-wrap gap-2 px-3 pb-2">

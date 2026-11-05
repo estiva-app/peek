@@ -25,7 +25,7 @@ export const TryIt: Story = {}
 /** A file is highlighted, so the pane shows enough to know it is the right one. A topic or a person in the same list has no pane. */
 export const AFile: Story = { args: { query: 'leaf', litId: 'leaf' } }
 
-/** The sentence is a prompt: the field has grown, the topic's files stay as reference, and two actions are suggested. */
+/** The sentence is a prompt: the field has grown, the results are gone, and two actions are suggested. */
 export const APrompt: Story = { args: { query: "what's the latest on this" } }
 
 /** Hidden while it works. The dot on the search control is the only sign. Click the search to bring the box back. */
