@@ -24,7 +24,8 @@ import { PeekLogoMark } from '@/components/ui/PeekLogo'
  *
  * One field. Up to two words it is a search. More than that, it is a prompt:
  * the field grows, the topic's files stay as reference, and two suggested
- * actions sit at the bottom. A file, and only a file, opens a preview.
+ * actions sit at the bottom. A file, and only a file, opens a preview beside
+ * the box. The box itself stays the same width.
  * Escape hides the box and keeps an unfinished sentence. While it is working,
  * or an answer is waiting and the box is hidden, a dot sits on the top-bar search.
  */
@@ -296,6 +297,7 @@ export function IntelligenceNext({
       {open && (
         <div className="absolute inset-0 z-40 bg-scrim" onMouseDown={hide}>
           <div className="flex w-full items-start justify-center pt-[12vh]" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="relative w-[640px] max-w-[calc(100vw-32px)]">
             <div
               role="dialog"
               aria-label="Intelligence"
@@ -305,13 +307,19 @@ export function IntelligenceNext({
                   hide()
                 }
               }}
-              className="flex max-h-[min(640px,72vh)] w-max max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-border-default bg-bg-elevated shadow-lg"
+              className="flex max-h-[min(640px,72vh)] w-full flex-col overflow-hidden rounded-lg border border-border-default bg-bg-elevated shadow-lg"
             >
-              <div className="flex w-[640px] max-w-full min-w-0 flex-col">
-                <div className={cn('flex gap-3 border-b border-border-subtle px-5', prompt ? 'items-start py-3' : 'h-12 items-center')}>
-                  <IconSearch size={16} stroke={1.5} className={cn('shrink-0 text-text-secondary', prompt && 'mt-1.5')} />
-                  <div className="flex min-w-0 flex-1 items-start gap-2">
-                    <Chip label={TOPIC} className={cn('shrink-0', prompt && 'mt-1')} />
+              <div className="flex min-w-0 flex-col">
+                <div className="flex flex-col gap-2 px-4 pb-3 pt-4">
+                  <Chip label={TOPIC} className="self-start" />
+                  <div
+                    className={cn(
+                      'flex gap-2 rounded-lg border border-border-field bg-bg-field px-3 py-2 shadow-field transition-colors',
+                      'hover:border-border-strong focus-within:border-border-focus signal:focus-within:shadow-focus-ring',
+                      prompt ? 'items-start' : 'items-center',
+                    )}
+                  >
+                    <IconSearch size={16} stroke={1.5} className={cn('shrink-0 text-text-secondary', prompt && 'mt-1')} />
                     <textarea
                       ref={fieldRef}
                       value={query}
@@ -388,8 +396,7 @@ export function IntelligenceNext({
                   )}
                 </div>
 
-                <div className="flex h-9 shrink-0 items-center gap-4 border-t border-border-subtle px-5 text-caption text-text-secondary">
-                  <span className="min-w-0 flex-1 truncate">{TOPIC}</span>
+                <div className="flex h-9 shrink-0 items-center justify-end gap-4 border-t border-border-subtle px-5 text-caption text-text-secondary">
                   {!prompt && visible.length > 1 && (
                     <span className="flex shrink-0 items-center gap-1.5">
                       <Kbd>↑↓</Kbd> move
@@ -404,8 +411,9 @@ export function IntelligenceNext({
                 </div>
               </div>
 
+            </div>
               {preview && (
-                <aside className="flex w-[280px] shrink-0 flex-col gap-3 border-l border-border-subtle p-5">
+                <aside className="absolute bottom-0 left-full top-0 ml-3 flex w-[280px] flex-col gap-3 overflow-y-auto rounded-lg border border-border-default bg-bg-elevated p-5 shadow-lg">
                   <span className="flex items-center gap-2 text-caption text-text-secondary">
                     <KindIcon kind={preview.kind === 'person' ? 'file' : preview.kind} />
                     {preview.app}
