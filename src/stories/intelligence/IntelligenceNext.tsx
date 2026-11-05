@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { IconSearch } from '@tabler/icons-react'
+import { IconSearch, IconSparkles } from '@tabler/icons-react'
 import {
   Avatar,
   Button,
@@ -319,7 +319,11 @@ export function IntelligenceNext({
                       prompt ? 'items-start' : 'items-center',
                     )}
                   >
-                    <IconSearch size={16} stroke={1.5} className={cn('shrink-0 text-text-secondary', prompt && 'mt-1')} />
+                    {prompt ? (
+                      <IconSparkles size={16} stroke={1.5} className="mt-1 shrink-0 text-text-secondary" />
+                    ) : (
+                      <IconSearch size={16} stroke={1.5} className="shrink-0 text-text-secondary" />
+                    )}
                     <textarea
                       ref={fieldRef}
                       value={query}
