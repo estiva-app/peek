@@ -1,0 +1,77 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Prototype/Topics level-up/Read me" />
+
+# Topics: level up the topic experience
+
+A prototype on the `concept/topics-level-up` branch of each app. It never merges. It draws Miky's notes of 3, 4 and 6 November and the calls he made while the project was shaped, **on each app as it ships today**: each app's own frame and screens, fed made-up content, with only this project's changes on top.
+
+## The three previews
+
+| App | Start here | All its stories |
+| --- | --- | --- |
+| Peek | [A topic's files](https://concept-topics-level-up.estiva-peek-storybook.pages.dev/?path=/story/prototype-topics-level-up-screens--peek-a-topics-files) | this Storybook, *Prototype / Topics level-up / Screens* |
+| Ship | [A topic's page](https://concept-topics-level-up.estiva-ship-storybook.pages.dev/?path=/story/prototype-topics-level-up-ship--a-topics-page) | *Prototype / Topics level-up / Ship* |
+| Leaf | [Five topics](https://concept-topics-level-up.estiva-leaf-storybook.pages.dev/?path=/story/prototype-topics-level-up-leaf-topics--five-topics) | *Prototype / Topics level-up / Leaf: Topics* |
+
+Every screen has its loading, failed and empty stories, and the topic you're not in, can't open, or that is archived.
+
+## Peek
+
+**Changed from today**
+- **The Topics column is one flat list**, newest activity first: a message by anyone (the agent's too), a file added, or a save, status or comment on a file the topic lists. Today it is A to Z. No files under a topic, no *Other topics* or *Archived* sections; **Explore topics** (no icon) ends the list. Open *Peek: a new message moves a topic*: two seconds in, Katerina writes in *Onboarding* and it jumps to the top with its dot.
+- **A topic's "…" in the column** has *Add to Open work* (Ctrl+O, Cmd+O on a Mac), *Copy link*, *Make it a space* where it applies, and *Leave*. Today it also has Details, Rename, New topic inside, Move, Join, Archive and Delete.
+- **The topic's own "⋮"** has *Rename*, *Move*, *Copy link*, *Archive*, *Delete* (an archived one: Copy link, Unarchive, Delete). Details, New topic inside, Make it a space and Add to Open work leave it.
+- **Add to Open work** is a button in the topic's header. Ctrl/Cmd+O anywhere on the page adds it or takes it out, and a toast says which.
+- **A topic's files in the Overview:** drag the file itself, a line shows where it lands; a "…" floats over the file's top-right corner on hover, where the ✕ is today, with *Show as row*, *Show as card* and *Remove* (with Undo). Each file is a row or a card (projects start as cards, the rest as rows); today every file is a card. *Files* has no count. Archived files sit at the end behind one *Archived · 2* line. Someone who can't add a file can't drag one and gets no "…".
+- **Explore topics** is a new page, in the shape of Ship's Topics page: All, Your topics, Other topics and Archived, a search, *Join*. All, Other and Archived are A to Z; Your topics keeps the column's order. An archived topic opens read-only.
+- With no topics, the column says "You're in no topics yet." above Explore topics (today: "No topics yet. Your files are in your teams.").
+
+**New here**
+
+| New here | What it could have been |
+| --- | --- |
+| Dragging a whole file, with a drop line | The document's block handle and its drop line, without the grip (Miky, 6 Nov) |
+| The "…" floating over a file's corner | The ✕ badge it replaces; the kit has no menu badge |
+| Ctrl/Cmd+O, the first key for an action | The launcher's Ctrl+K, the only key today (Miky chose it, 6 Nov) |
+| *Join* on an Explore row | Peek's Join button on a topic; Ship's Topics page has none |
+
+**Rougher than the app:** Desk, Teams and People don't open their screens; New topic, Add file, Rename, Move, Leave and Make it a space do nothing; every topic but *Widgets* shows the same two messages; Activity is always empty.
+
+## Ship
+
+**Changed from today**
+- **The sidebar's *Topics* row at the top goes.** Under Projects and Issues, your **five newest topics**, each folding to its projects and issues in the topic's order, then **Explore topics** (no icon), which opens today's Topics page; Teams below as today. The order is set when Ship opens, so a row never moves under your pointer.
+- **The Topics page** gains a search and *Join* on a topic you're not in. *Your topics* is newest first (today A to Z). It lists every topic you can open, also those holding no project or issue (today it hides those).
+- **A topic's page** gets the page header a project has: the members, a button to hide or show the conversation, and a "…" with *Copy link* and *Open in Peek*. *Projects* are drawn as the Projects page draws them (status, lead, progress, under All, Planned, Active and Completed); then *Issues* and *Documents*, each with who edited it last and when; *Widgets spec* folds open to its two pages. **The topic's conversation is in the right panel**, where a project's sits, and replaces the "Conversation in Peek" link.
+
+**New here**
+
+| New here | What it could have been |
+| --- | --- |
+| A document row that folds to its pages, in a page | The sidebar's fold, which lives only in a sidebar |
+| *Join* on a Topics row | Peek's Join button on a topic |
+
+**Rougher than the app:** projects and issues in the sidebar fold open a line of text; teams go nowhere; Projects and Issues have made-up counts; the conversation panel's heading says "Comments".
+
+## Leaf
+
+**Changed from today**
+- **The sidebar shows your five newest topics**, newest activity first (today your own newest save or comment, then A to Z), folding to their pages, projects and issues as today. **Explore topics** (no icon) takes the place of *More*. Teams as today. The order is set when Leaf opens.
+- **Explore topics** is a new page, Ship's Topics page with a search and *Join*, in a Leaf panel like Home.
+- With no topics, the sidebar shows "You're in no topics yet." above Explore topics; today Leaf leaves Topics out, so there would be no way in.
+
+**New here:** *Join* and the search on Explore, as in Peek and Ship.
+
+**Rougher than the app:** the identity menu shows a made-up name; teams are three made-up ones; a page opened from a topic says it is in no topic.
+
+## Still to judge
+
+- **Explore's columns differ.** Ship and Leaf show Ship's columns (projects done of all, conversations); Peek's shows team, members and last active. One of them, everywhere?
+- **Ship's topic "…"** has no Archive or Delete, as today; Peek's has them.
+- **When a joined topic appears** in Ship's and Leaf's five: drawn on the next open.
+- **A topic you're not in:** Ship lets you reply in its conversation; Leaf has *Join* only on Explore, not on the topic's page.
+
+## Not drawn
+
+Which topics are "yours" stays membership, until "Teams and following". Main and All belongs to its own project. The earlier prototype in the kit's Storybook (`concept/topics-level-up` in estiva-ui) is superseded by these three.
