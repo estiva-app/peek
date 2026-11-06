@@ -69,6 +69,7 @@ import {
 } from '@estiva-app/protocol'
 import {
   anchorsOf,
+  byOrder,
   decorationsOf,
   foldEmbeds,
   foldThreads,
@@ -405,33 +406,45 @@ async function threadsWithGoneRoots(address: string, rootIds: readonly string[],
   // which `#e` still returns, would hang from a root that is not drawn.
   const known = new Set(Object.keys(threads.roots))
   for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
-  const withNested = nestedRepliesFiled(threads, onFile, known, address)
+  const nested = nestedRepliesOf(threads, onFile, address)
+  // Filed in their thread, so not taken for the replies of a gone comment below.
+  for (const list of Object.values(nested)) for (const event of list) known.add(event.id)
   const gone = await goneRootsOf(onFile, known, address, query).catch(() => NONE_GONE)
-  return { threads: withNested, gone }
+  const replies = { ...threads.replies }
+  for (const [rootId, more] of Object.entries(nested)) replies[rootId] = [...(replies[rootId] ?? []), ...more].sort(byOrder)
+  return { threads: { ...threads, replies }, gone }
 }
 
 /**
- * `threads` with each reply to a reply filed in the thread it belongs to, and its id added to `known` (ONE-9).
+ * The replies to a reply in `onFile`, by the root of the thread they belong to (ONE-9).
  *
  * A NIP-22 reply names only its parent in its lowercase `e` (SPEC §6.4), so a reply to a reply never answers the
- * `#e` read on the roots. The file's `A` read (`onFile`) already holds it: walking parents
- * (`groupThreads`) finds the thread, at any depth, with no further read. A reply whose thread's `A` is another page
- * is left out, as in {@link goneRootsOf}.
+ * `#e` read on the roots. The file's `A` read already holds it, so it is filed here with no further read: a reply
+ * whose parent is in a thread is in that thread, at any depth. Only from a root or reply the thread read returned,
+ * so a root this conversation does not draw adds nothing, and only a reply whose thread's `A` is this file, as in
+ * {@link goneRootsOf}.
  */
-function nestedRepliesFiled(threads: Threads, onFile: readonly SignedEvent[], known: Set<string>, address: string): Threads {
-  const drawn = [...Object.values(threads.roots), ...Object.values(threads.replies).flat()]
-  const extra = onFile.filter((event) => !known.has(event.id) && anchorsOf(event).includes(address))
-  if (extra.length === 0) return threads
-  const grouped = groupThreads([...drawn, ...extra]).replies
-  const replies = { ...threads.replies }
-  for (const rootId of Object.keys(threads.roots)) {
-    const more = (grouped[rootId] ?? []).filter((event) => !known.has(event.id))
-    if (more.length === 0) continue
-    for (const event of more) known.add(event.id)
-    // Oldest first, ties by id — interop's order for the direct replies.
-    replies[rootId] = [...(replies[rootId] ?? []), ...more].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
+function nestedRepliesOf(threads: Threads, onFile: readonly SignedEvent[], address: string): Record<string, SignedEvent[]> {
+  // Each drawn event's thread: a root is its own, a direct reply is the root interop filed it under.
+  const threadOf = new Map<string, string>(Object.keys(threads.roots).map((id) => [id, id]))
+  for (const [rootId, list] of Object.entries(threads.replies)) if (threadOf.has(rootId)) for (const e of list) threadOf.set(e.id, rootId)
+  const nested: Record<string, SignedEvent[]> = {}
+  let waiting = onFile.filter((event) => !threadOf.has(event.id) && anchorsOf(event).includes(address))
+  // A child can come before its parent in the answer: file in rounds until one files nothing.
+  for (let filed = true; filed && waiting.length > 0; ) {
+    filed = false
+    waiting = waiting.filter((event) => {
+      if (threadOf.has(event.id)) return false
+      const parent = parentOf(event)
+      const rootId = parent === null ? undefined : threadOf.get(parent)
+      if (rootId === undefined) return true
+      threadOf.set(event.id, rootId)
+      ;(nested[rootId] ??= []).push(event)
+      filed = true
+      return false
+    })
   }
-  return { ...threads, replies }
+  return nested
 }
 
 /** A gone comment's state: the fold's, but never "missing" when the deletion read was refused (§6.5). */

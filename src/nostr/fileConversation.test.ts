@@ -266,6 +266,21 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.decorations.byId[deeper.id]).toEqual({ reactions: [], resolutions: [] })
     })
 
+    it('is left out when its thread’s `A` is another page, even if a loose relay returns it (§6.4)', async () => {
+      // Two `A`s naming different files: the relay's `#A` matches it, the thread is not this file's.
+      const crossed = event({
+        kind: COMMENT,
+        content: 'About another page',
+        pubkey: CATH,
+        created_at: reply.created_at + 30,
+        tags: [['A', `${BARE_FILE}:${CATH}:another-page`], ['A', ADDRESS], ['K', String(BARE_FILE)], ['P', CATH], ['e', reply.id], ['k', String(COMMENT)], ['p', MIKY], ['h', FOLDER]],
+      })
+      queryRelay.mockImplementation(relayOver([...world, crossed]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed', 'Thanks', 'Welcome'])
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+    })
+
     it('is in the read-only pane’s thread too', async () => {
       queryRelay.mockImplementation(relayOver(world))
       const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
