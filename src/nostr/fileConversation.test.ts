@@ -267,7 +267,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       const standIn = found.roots.find((r) => r.id === GONE)
       expect(standIn).toMatchObject({ deleted: true, author: '', body: '', createdAt: earlier.created_at })
       expect(standIn?.unseen).toBeUndefined()
-      expect(found.threads[GONE]?.state).toBe('deleted')
+      expect((found.threads ?? {})[GONE]?.state).toBe('deleted')
       expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
       expect(found.decorations.byId[later.id]).toEqual({ reactions: [], resolutions: [] })
     })
@@ -294,7 +294,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       })
       queryRelay.mockImplementation(relayOver([...world, resolvedGone]))
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
-      expect(found.threads[GONE]?.resolution).toMatchObject({ action: 'resolved', by: CATH, message: 'shipped' })
+      expect((found.threads ?? {})[GONE]?.resolution).toMatchObject({ action: 'resolved', by: CATH, message: 'shipped' })
     })
 
     it('files a reply to a reply under the gone comment’s thread, not as a thread of its own (§6.4)', async () => {
