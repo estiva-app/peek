@@ -74,6 +74,8 @@ export interface TopicMoreMenuProps {
   /** A topic's team marks it one of its spaces, or takes the mark off (TEA-5): offered to the team's members only. */
   spaceAction?: 'mark' | 'unmark'
   onToggleSpace?: () => void
+  /** A topic, a space or a team's chat: opens Who follows on its add layer (TEA-6). They join at Important, and can leave. */
+  onAddSomeone?: () => void
 }
 
 export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
@@ -106,11 +108,13 @@ export function TopicMenuItems({
   onToggleArchive,
   spaceAction,
   onToggleSpace,
+  onAddSomeone,
 }: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
   return (
     <>
       {/* The object is the one the menu hangs off, so its items do not name it:
           a Ship issue is not a topic, and "Delete" is true of both (PEE-41). */}
+      {onAddSomeone && <MenuItem label="Add someone…" onClick={onAddSomeone} />}
       {onOpenDetails && <MenuItem label="Details" onClick={onOpenDetails} />}
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}

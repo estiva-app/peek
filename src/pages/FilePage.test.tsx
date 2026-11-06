@@ -1553,7 +1553,6 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       'Move…',
       'Make it a space',
       'Add to Open work',
-      'Join',
       'Delete',
     ])
   })
@@ -1808,15 +1807,15 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
-  it('a member row’s menu says Leave — and no mark when idle, the bell is gone (Katerina, 2 October)', () => {
+  it('a topic’s row offers no Join or Leave: it is followed with the switch on its header (TEA-6) — and no mark when idle', () => {
     follows.keys = new Set([TOPIC_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     expect(row.parentElement!.querySelector('[data-member]')).toBeNull()
     fireEvent.mouseEnter(row)
     fireEvent.click(within((row).parentElement!).getByRole('button', { name: 'More options' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
-    expect(follows.setMember).toHaveBeenCalledWith(TOPIC_ADDRESS, FOLDER, false)
+    for (const name of ['Join', 'Leave']) expect(screen.queryByRole('menuitem', { name })).toBeNull()
+    expect(follows.setMember).not.toHaveBeenCalled()
   })
 })
 

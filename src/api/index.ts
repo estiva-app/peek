@@ -105,3 +105,4 @@ export {
 } from './useNewReplyThreads'
 export { chatMessagesOf, entryNames, listingOf, mayMove, spaceTeamOf, teamFolders, teamOf, teamPlaces, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'
+export { usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'

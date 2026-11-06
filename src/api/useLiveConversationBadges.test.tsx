@@ -42,6 +42,8 @@ vi.mock('./useChannelStreams', () => ({
   },
   useHeldChannelEvents: () => api.events,
 }))
+// No team holds these files: the teams read is the Teams column's, and its own tests cover it.
+vi.mock('./useTeams', () => ({ useTeams: () => ({ teams: null, failed: false, reload: async () => {} }), listingOf: () => undefined }))
 
 const ADDRESS = '30851:aa:one'
 const OTHER = '30851:aa:two'
