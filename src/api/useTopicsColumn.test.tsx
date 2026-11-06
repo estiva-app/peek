@@ -63,6 +63,7 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { useTeamTopics } from './useTeams'
 
 const d = (address: string) => address.split(':')[2]!
 const event = (kind: number, tags: string[][], at = 100): Event => ({ id: `${kind}-${tags[0]?.[1]}-${at}`, kind, pubkey: VIEWER, created_at: at, tags, content: '', sig: '' })
@@ -357,5 +358,20 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     expect(result.current.column(WIDGETS)).toBe('topics')
     expect(result.current.column(BUILD_1)).toBe('folders')
     expect(result.current.column(STRANGER)).toBe('folders')
+  })
+})
+
+describe('the Teams column’s topics (TEA-5)', () => {
+  it('draws every active topic you can read while the topics’ lists are still unanswered, and asks for no list', async () => {
+    list(WIDGETS, BUILD_1)
+    const answer = relay.queryRelay.getMockImplementation()!
+    // A topic's list never answers: the Topics screen's heaviest read, which no team row draws.
+    relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
+      filters.some((f) => f['#O']) ? new Promise(() => {}) : answer(url, filters),
+    )
+    const { result } = renderHook(() => useTeamTopics())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect([...result.current.topics.values()].map((topic) => topic.slots.title?.value)).toEqual(['alpha', 'Somebody else’s', 'Widgets'])
+    expect(listReads()).toEqual([])
   })
 })

@@ -234,8 +234,7 @@ export function useTopicsColumn(): {
   /** Nobody is signed in: nothing is read, and the column says so. */
   signedOut: boolean
 } {
-  const viewer = useRelayViewer()
-  const { pubkey, mineHeld, topicsResolved, objectOf, live, archived } = useReadableTopicsHeld()
+  const { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived } = useReadableTopicsHeld()
   const membership = useMembership()
   const { isMember, judges } = membership
   const known = membership.state !== 'unknown'
@@ -362,5 +361,5 @@ function useReadableTopicsHeld() {
   const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
   const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
   const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
-  return { pubkey, mineHeld, topicsResolved, objectOf, live, archived }
+  return { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived }
 }
