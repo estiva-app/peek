@@ -268,10 +268,11 @@ vi.mock('@/api', async () => ({
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
   useTopicsColumn: () => topicsColumnNow(),
 }))
-// The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same answer there.
+// The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same topics there.
 vi.mock('@/api/useTopicsColumn', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useTopicsColumn: () => topicsColumnNow(),
+  useReadableTopics: () => ({ topics: [...topicsColumn.mine.map(({ topic }) => topic), ...topicsColumn.others], loading: false, failed: false, signedOut: false }),
 }))
 const topicsColumnNow = vi.hoisted(() => () => ({
   // The topics the Teams column titles its rows from: every bare file a test opens.
