@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconFilter, IconFolderPlus, IconRestore, IconTrash } from '@tabler/icons-react'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { teamFolders, topLevelFolders, useFolderContents, useFolders, useForeignObjects } from '@/api'
+import {
+  formatDateLabel,
+  reloadFoldersOnScreen,
+  teamFolders,
+  topLevelFolders,
+  useDeletedFiles,
+  useFolderContents,
+  useFolders,
+  useForeignObjects,
+  useWorkspaceDirectory,
+} from '@/api'
+import { fileControlsOf } from '@/lib/fileControls'
+import { filePath } from '@/lib/objectUrl'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
@@ -442,6 +454,7 @@ export function ArchiveTreeView({
     Three states, not two: "not signed in", "still loading" and "there are
     genuinely none" are different sentences — the Folders page's lesson.
   */
+  const [shown, setShown] = useState<'archived' | 'deleted'>('archived')
   if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
   if (folders === null) return <SkeletonList />
   if (folders.length === 0) return <EmptyState scope="section" message="No teams yet." />
@@ -450,23 +463,109 @@ export function ArchiveTreeView({
   const ordered = [...folders].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
 
   return (
-    // The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
-    // given the Folder a link opened, to that Folder's heading (ui 0.99).
-    <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
-      {ordered.map((folder) => (
-        <ArchiveSection
-          key={folder.id}
-          folder={folder}
-          current={folder.id === currentFolder}
-          selectedRef={selectedRef}
-          selectedParent={selectedParent}
-          expandSelected={expandSelected}
-          // Only an archived Folder has a menu here: its Unarchive.
-          menu={folder.archived ? menuFor?.(folder) : undefined}
-          onControl={onControl}
-        />
-      ))}
-    </NavTree>
+    <>
+      {/*
+        Archived / Deleted (ALO-6, the story `Project changes` › Archived view): a deleted file is in no list, so this is
+        where it can be found again. No count on the tab: each team is read only when it opens here.
+      */}
+      <Tabs
+        size="small"
+        aria-label="Show"
+        className="mb-2"
+        tabs={[
+          { id: 'archived', label: 'Archived' },
+          { id: 'deleted', label: 'Deleted' },
+        ]}
+        active={shown}
+        onChange={setShown}
+      />
+      {/* The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
+          given the Folder a link opened, to that Folder's heading (ui 0.99). */}
+      <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
+        {ordered.map((folder) =>
+          shown === 'deleted' ? (
+            <DeletedSection key={folder.id} folder={folder} selectedRef={selectedRef} />
+          ) : (
+            <ArchiveSection
+              key={folder.id}
+              folder={folder}
+              current={folder.id === currentFolder}
+              selectedRef={selectedRef}
+              selectedParent={selectedParent}
+              expandSelected={expandSelected}
+              // Only an archived Folder has a menu here: its Unarchive.
+              menu={folder.archived ? menuFor?.(folder) : undefined}
+              onControl={onControl}
+            />
+          ),
+        )}
+      </NavTree>
+    </>
+  )
+}
+
+/**
+ * One team on Archive's Deleted tab: a fold, and its deleted files once it is open, newest deleted first (ALO-6). A
+ * row opens the file's page, which says who deleted it; who deleted it and when is the row's tooltip too, since the
+ * column holds one line. Restore is the file's own Delete action with the empty value, offered where it declares one.
+ */
+function DeletedSection({ folder, selectedRef }: { folder: FolderSummary; selectedRef?: string }) {
+  const [open, setOpen] = useState(false)
+  const { state, reload } = useDeletedFiles(open ? folder.id : null)
+  const people = useWorkspaceDirectory()
+  const { restoreFile } = useForeignObjects()
+  const { showToast } = useToast()
+
+  const restore = async (file: ForeignObject, actionId: string) => {
+    const result = await restoreFile({ naddr: file.naddr!, actionId })
+    if (!result.ok) {
+      showToast({ label: result.reason, type: 'error' })
+      return
+    }
+    // Back in its team's list, and off this one.
+    await Promise.all([reload(), reloadFoldersOnScreen()])
+  }
+
+  return (
+    <NavTreeSection
+      id={`deleted:${folder.id}`}
+      title={folder.name ?? folder.id}
+      open={open}
+      pending={open && state === 'loading'}
+      onOpenChange={setOpen}
+      icon={<TopicState type="folder" />}
+    >
+      {open &&
+        (state === 'loading' ? null : state === 'error' ? (
+          <EmptyState scope="rows" message="This team could not be read." />
+        ) : state.length === 0 ? (
+          <EmptyState scope="rows" message="Nothing deleted in this team." />
+        ) : (
+          state.map((file) => {
+            const title = file.slots.title?.value || 'Untitled'
+            const deleted = file.deleted!
+            // A dash for a person nobody has named, as the kit's Person draws one: never their key.
+            const by = people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'
+            const action = fileControlsOf(file).delete
+            return (
+              <NavItem
+                key={file.ref}
+                data-file={file.ref}
+                href={file.address ? filePath(file.address, title) : '#'}
+                label={title}
+                tooltip={`Deleted by ${by} · ${formatDateLabel(deleted.at * 1000)}`}
+                icon={<IconTrash size={16} stroke={1.5} />}
+                active={file.ref === selectedRef}
+                action={
+                  action?.field && file.naddr
+                    ? { icon: <IconRestore size={16} stroke={1.5} />, tooltip: 'Restore', onClick: () => void restore(file, action.id) }
+                    : undefined
+                }
+              />
+            )
+          })
+        ))}
+    </NavTreeSection>
   )
 }
 

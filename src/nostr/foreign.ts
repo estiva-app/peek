@@ -62,6 +62,7 @@ import {
   createProjectionCache,
   resolveFolderProject,
   resolveFolderContents,
+  resolveDeletedFiles,
   listFolders,
   resolveForeignEvent,
   resolveForeignObject,
@@ -504,6 +505,8 @@ function drawOnly(object: ForeignObject | null): ForeignObject | null {
     !!action.field &&
     !action.format &&
     action.field !== ARCHIVED_FIELD &&
+    // A delete declared as a change of `deleted` (ALO-6) waits for the relay, as an archive does.
+    action.field !== DELETED_FIELD &&
     action.field !== object.parentField
   const drawn = { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment' || pick(action)) }
   drawnFromCopy.add(drawn)
@@ -1040,7 +1043,15 @@ export async function moveFileAsViewer(
   // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
   if (file.parentKind !== undefined && !sources.length) return { ok: true }
   // Interop's planner, the one Ship and the agent move by: one move per source, each changing both lists or neither.
-  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from: sources, to, listings, ...(keepSpace ? { keepSpace } : {}) })
+  const plan = planMoveFromFolders(token.pubkey, Date.now(), {
+    file,
+    from: sources,
+    to,
+    listings,
+    ...(keepSpace ? { keepSpace } : {}),
+    // A moved project is named by its id once the relay keeps projects in order (ALO-6, SPEC §3.3).
+    ...(await inOrderOption()),
+  })
   if (!plan.ok) {
     return {
       ok: false,
@@ -1133,6 +1144,18 @@ export async function resolveFolderContentsAsViewer(
   const { listRead } = await listReadOption()
   const contents = await resolveFolderContents(folder, query, cachedPeople(query), manifests, listRead ? { ...options, listRead } : options)
   return contents.files.every(live) ? contents : { ...contents, files: contents.files.filter(live) }
+}
+
+/**
+ * A team's deleted files, newest deleted first, each with who deleted it and when (SPEC §6.5, ALO-6): Archive's
+ * Deleted tab, read when a team opens there and nowhere else. Interop's `resolveDeletedFiles`; once switched, the
+ * team's files are listed by their fields first and only the ones that answer nothing are read whole.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
+ */
+export async function deletedFilesAsViewer(folder: string, relayUrl: string, token: StoredToken): Promise<ForeignObject[]> {
+  const query = folderLoadAsViewer(relayUrl, token, 'relay')
+  const files = await resolveDeletedFiles(folder, query, cachedPeople(query), manifests, await listReadOption())
+  return [...files].sort((a, b) => (b.deleted?.at ?? 0) - (a.deleted?.at ?? 0))
 }
 
 /**

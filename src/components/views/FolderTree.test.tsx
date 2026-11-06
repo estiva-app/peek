@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { FolderTree } from './FolderTree'
 import { PeekSetup } from '@/lib/PeekSetup'
+import { ToastProvider } from '@/lib/toast'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -89,6 +90,10 @@ const reads = vi.hoisted(() => ({
   contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
   /** More rows in the team's listing, for one test. */
   extra: [] as ForeignObject[],
+  /** Which team's deleted files were read, on the Deleted tab. */
+  deleted: vi.fn<(folder: string | null) => unknown>(),
+  /** The team's deleted files, newest deleted first, as the seam answers them. */
+  deletedFiles: [] as ForeignObject[],
 }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 
@@ -104,6 +109,10 @@ vi.mock('@/api', async () => ({
         : 'loading',
       reload: async () => {},
     }
+  },
+  useDeletedFiles: (folder: string | null) => {
+    reads.deleted(folder)
+    return { state: folder ? (folder === TEAM ? reads.deletedFiles : []) : 'loading', reload: async () => {} }
   },
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -135,7 +144,7 @@ function page(props: Parameters<typeof FolderTree>[0]) {
     <MemoryRouter initialEntries={['/topics']}>
       <Routes>
         {/* Peek's router given to every kit link, as main.tsx does: a row's plain click changes page through it. */}
-        <Route path="*" element={<PeekSetup><FolderTree {...props} /><Probe /></PeekSetup>} />
+        <Route path="*" element={<PeekSetup><ToastProvider><FolderTree {...props} /><Probe /></ToastProvider></PeekSetup>} />
       </Routes>
     </MemoryRouter>
   )
@@ -354,6 +363,36 @@ describe('the Archive view (Katerina, 5 October)', () => {
     const items = await menuOf('Old topic')
     expect(items).toContain('Delete')
     for (const gone of ['Unarchive', 'Rename', 'New topic inside', 'Move…']) expect(items).not.toContain(gone)
+  })
+
+  it('its Deleted tab reads no team until one opens, then lists its deleted files with Restore where declared (ALO-6)', async () => {
+    const deletedAt = (title: string, at: number, restorable: boolean) =>
+      foreign({
+        ref: `30850:${SHIP}:${title}`,
+        address: `30850:${SHIP}:${title}`,
+        kind: 30850,
+        slots: { title: { value: title } },
+        deleted: { by: CATH, at },
+        actions: restorable ? [{ id: 'delete-project', label: 'Delete', control: 'select', field: 'deleted' }] : [],
+      } as Partial<ForeignObject>)
+    reads.deletedFiles = [deletedAt('Roadmap', 2_000, true), deletedAt('Launch', 1_000, false)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    reads.deleted.mockClear()
+    await userEvent.click(screen.getByRole('tab', { name: 'Deleted' }))
+    // Every team is a closed fold: nothing is read until one opens.
+    expect(reads.deleted.mock.calls.filter(([folder]) => folder !== null)).toEqual([])
+
+    fireEvent.click(within(section(`deleted:${TEAM}`)).getByRole('button', { name: /Peek/ }))
+    const rows = within(section(`deleted:${TEAM}`)).getAllByRole('link')
+    expect(rows.map((row) => row.textContent)).toEqual(['Roadmap', 'Launch'])
+    // Restore only on the file whose app declares its delete as a change it can undo.
+    expect(within(section(`deleted:${TEAM}`)).getAllByRole('button', { name: /^Restore/ }).map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Restore: Roadmap',
+    ])
+
+    fireEvent.click(within(section(`deleted:${OTHER}`)).getByRole('button', { name: /Zebra/ }))
+    expect(within(section(`deleted:${OTHER}`)).getByText('Nothing deleted in this team.')).not.toBeNull()
   })
 
   it('a Folder opened there reads what is archived in it', async () => {

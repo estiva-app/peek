@@ -18,7 +18,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 // A build with a relay, so the switch asks it; tests have none by default.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes } from './foreign'
+import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, moveFileAsViewer } from './foreign'
 import { forgetProjectFields } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -266,6 +266,26 @@ describe('A change to a project, with the switch on', () => {
       ['Launch 3', nameChange.id],
       ['Launch 3', crossing.id],
     ])
+  })
+
+  it('a move to another team names it by its id', async () => {
+    relayInfo(true)
+    queryRelay.mockImplementation(relayOver(world()))
+    const OTHER_TEAM = '9c69f247-0000-4000-8000-0000000000ff'
+    const file = { ref: ADDRESS, address: ADDRESS }
+    const result = await moveFileAsViewer(
+      file,
+      new Map([[FOLDER, [file]]]),
+      [{ id: FOLDER, hasState: true, addresses: [ADDRESS] }],
+      { id: OTHER_TEAM, hasState: true },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(true)
+    const [move] = sent()
+    expect([move.kind, tag(move, 'op'), tag(move, 'from'), tag(move, 'h')]).toEqual([1852, 'move', FOLDER, OTHER_TEAM])
+    expect(move.tags.filter((t) => t[0] === 'o').map((t) => t[1])).toEqual([ID])
   })
 
   it('a comment on it names it by its id as well as its address', async () => {

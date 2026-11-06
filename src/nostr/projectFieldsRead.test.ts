@@ -17,6 +17,7 @@ vi.mock('./bridge', () => ({ queryRelay, queryRelayWithMatches, publishSigned, s
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import {
+  deletedFilesAsViewer,
   fileCandidatesAsViewer,
   forgetUrlShapes,
   resolveFolderContentsAsViewer,
@@ -154,5 +155,30 @@ describe('a deleted project, whichever way the switch is', () => {
     const offered = await fileCandidatesAsViewer([read[A]!, read[B]!], 0, 'https://relay.test', token)
 
     expect(offered.map((candidate) => candidate.id)).toEqual([A])
+  })
+
+  it('is on its team’s Deleted tab with who deleted it and when, newest deleted first', async () => {
+    relayInfo(false)
+    // A, listed first, was deleted before B, by somebody else: the tab's order is B, then A.
+    const OTHER = 'ef'.repeat(32)
+    const deletingA = {
+      ...event(1851, [['a', A], ['O', A.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]], OTHER),
+      created_at: deleting.created_at - 60,
+    }
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, deletingA], filters))
+    const deleted = await deletedFilesAsViewer(FOLDER, 'https://relay.test', token)
+
+    expect(deleted.map((file) => [file.address, file.deleted?.by, file.deleted?.at])).toEqual([
+      [B, AUTHOR, deleting.created_at],
+      [A, OTHER, deletingA.created_at],
+    ])
+  })
+
+  it('is not on the Deleted tab once restored', async () => {
+    relayInfo(false)
+    const restoring = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', ''], ['h', FOLDER]])
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, restoring], filters))
+
+    expect(await deletedFilesAsViewer(FOLDER, 'https://relay.test', token)).toEqual([])
   })
 })

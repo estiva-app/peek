@@ -36,6 +36,7 @@ import {
   createFolderAsViewer,
   deleteFileAsViewer,
   restoreFileAsViewer,
+  deletedFilesAsViewer,
   deleteFolderAsViewer,
   folderDeletableAsViewer,
   moveFileAsViewer,
@@ -822,6 +823,15 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /** A team's deleted files, newest deleted first — Archive's Deleted tab; see `deletedFilesAsViewer`. */
+  const deletedFiles = useCallback(
+    async (folder: string): Promise<ForeignObject[]> => {
+      const v = viewer()
+      return v ? deletedFilesAsViewer(folder, v.relayUrl, v.token) : []
+    },
+    [viewer],
+  )
+
   /**
    * Archive a file, or restore it, through its manifest's archive action
    * (FOL-46) — see `archiveFileAsViewer`. `actionId` is
@@ -1006,6 +1016,7 @@ export function useForeignObjects() {
     renameFile,
     deleteFile,
     restoreFile,
+    deletedFiles,
     archiveFile,
     archiveFolder,
     archiveImpact,
