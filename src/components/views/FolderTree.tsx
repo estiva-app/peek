@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconFilter, IconFolderPlus, IconRestore, IconTrash } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import type { FolderContentsState } from '@/api'
+import type { DeletedProjectsState } from '@/api'
 import {
-  formatDateLabel,
   reloadFoldersOnScreen,
   teamFolders,
   topLevelFolders,
-  useDeletedFiles,
+  useDeletedProjects,
   useFolderContents,
   useFolders,
   useForeignObjects,
-  useWorkspaceDirectory,
 } from '@/api'
-import { fileControlsOf } from '@/lib/fileControls'
-import { filePath } from '@/lib/objectUrl'
+import { DeletedProjects } from '@/components/views/DeletedProjects'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
@@ -63,6 +60,7 @@ export function FolderTree({
   selectedRef,
   selectedParent,
   selectedArchived,
+  selectedDeleted,
   expandSelected = false,
   onControl,
   chatOpen = false,
@@ -89,6 +87,11 @@ export function FolderTree({
    * `undefined` while the file is still resolving — nothing is judged on a guess.
    */
   selectedArchived?: boolean
+  /**
+   * The open file is deleted (ALO-6): Archive draws it, on its Deleted tab, and Teams does not — as an archived one.
+   * `undefined` while the file is still resolving.
+   */
+  selectedDeleted?: boolean
   /** Open the selected row too, showing what is under it — a Ship project reached by its channel's link. */
   expandSelected?: boolean
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
@@ -132,7 +135,7 @@ export function FolderTree({
   */
   const openArchived =
     selectedRef && selectedArchived !== undefined && folders
-      ? selectedArchived || !!folders.find((folder) => folder.id === section)?.archived
+      ? selectedArchived || !!selectedDeleted || !!folders.find((folder) => folder.id === section)?.archived
       : undefined
   const draws = (which: TreeView, file: { archived: boolean }) => (which === 'archive' ? file.archived : !file.archived)
   /*
@@ -161,6 +164,39 @@ export function FolderTree({
   }, [closing, navigate])
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
+  // Archive → Deleted: read while Archive shows, in the background (ALO-6).
+  const { state: deleted, reload: reloadDeleted, retry: retryDeleted } = useDeletedProjects(view === 'archive' && !signedOut)
+  const { restoreFile } = useForeignObjects()
+  const { showToast } = useToast()
+  const restore = useCallback(
+    async (file: ForeignObject, actionId: string, prev: string | undefined) => {
+      const result = await restoreFile({ naddr: file.naddr!, actionId, ...(prev ? { prev } : {}) }).catch(() => ({
+        ok: false as const,
+        reason: 'That project could not be restored just now. Try again.',
+      }))
+      if (!result.ok) {
+        showToast({ label: result.reason, type: 'error' })
+        return
+      }
+      // Back in its team's list, and off this one.
+      await Promise.all([reloadDeleted(), reloadFoldersOnScreen()])
+    },
+    [restoreFile, showToast, reloadDeleted],
+  )
+  /*
+    A project's team, by the name the Teams column gives it. A Ship project's Folder may be its own record channel,
+    listed in its team (SID-2): then the team it is listed in.
+  */
+  const teamOf = useCallback(
+    (file: ForeignObject) => {
+      const own = folders?.find((folder) => folder.id === file.folder)
+      if (!own) return undefined
+      if (topLevel?.some((top) => top.id === own.id)) return own.name
+      const team = own.listedIn?.map((id) => topLevel?.find((top) => top.id === id)).find(Boolean)
+      return team?.name ?? own.name
+    },
+    [folders, topLevel],
+  )
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
   const [making, setMaking] = useState<'folder' | 'topic' | null>(null)
 
@@ -203,9 +239,14 @@ export function FolderTree({
             currentFolder={section}
             selectedRef={selectedRef}
             selectedParent={selectedParent}
+            selectedDeleted={!!selectedDeleted}
             expandSelected={expandSelected}
             menuFor={signedOut ? undefined : menuFor}
             onControl={onControl}
+            deleted={deleted}
+            teamOf={teamOf}
+            onRestore={restore}
+            onRetryDeleted={retryDeleted}
           />
         )}
       </FolderColumn>
@@ -432,9 +473,14 @@ export function ArchiveTreeView({
   currentFolder,
   selectedRef,
   selectedParent,
+  selectedDeleted = false,
   expandSelected = false,
   menuFor,
   onControl,
+  deleted = 'unavailable',
+  teamOf = () => undefined,
+  onRestore = async () => undefined,
+  onRetryDeleted = async () => undefined,
 }: {
   /** Every top-level Folder, the archived included. `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
@@ -444,48 +490,70 @@ export function ArchiveTreeView({
   currentFolder?: string | null
   selectedRef?: string
   selectedParent?: string | null
+  /** The open file is deleted: the Deleted tab draws it, and turns to it when it arrives. */
+  selectedDeleted?: boolean
   /** Open the selected row too — see `FolderTree`. */
   expandSelected?: boolean
   /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
   menuFor?: (folder: FolderSummary) => ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** Every deleted project the viewer can see (`useDeletedProjects`); `'unavailable'` draws no Deleted tab. */
+  deleted?: DeletedProjectsState
+  teamOf?: (file: ForeignObject) => string | undefined
+  onRestore?: (file: ForeignObject, actionId: string, prev: string | undefined) => Promise<void>
+  /** Read the deleted projects again, after a read that failed. */
+  onRetryDeleted?: () => Promise<void>
 }) {
+  /*
+    Archived / Deleted (ALO-6; Miky, 6 Nov; the story `Project changes` › Archived view): a deleted project is in no
+    list, so this is where it can be found again. The tab chosen is held for the visit, as a team opened here is; a
+    deleted project arriving (a link, a click on its row) turns it to Deleted, where its row is.
+  */
+  const [shown, setShownState] = useState<ArchiveTab>(() => (selectedDeleted ? 'deleted' : archiveTabHeld()))
+  const setShown = (tab: ArchiveTab) => {
+    setShownState(tab)
+    holdArchiveTab(tab)
+  }
+  const [followed, setFollowed] = useState(selectedDeleted ? selectedRef : undefined)
+  if (selectedDeleted && selectedRef && followed !== selectedRef) {
+    setFollowed(selectedRef)
+    if (shown !== 'deleted') setShown('deleted')
+  }
   /*
     Three states, not two: "not signed in", "still loading" and "there are
     genuinely none" are different sentences — the Folders page's lesson.
   */
-  const [shown, setShown] = useState<'archived' | 'deleted'>('archived')
   if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
   if (folders === null) return <SkeletonList />
   if (folders.length === 0) return <EmptyState scope="section" message="No teams yet." />
 
   // Alphabetical: the relay's order is arrival order, which tells the person nothing.
   const ordered = [...folders].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
+  const tab = deleted === 'unavailable' ? 'archived' : shown
 
   return (
     <>
-      {/*
-        Archived / Deleted (ALO-6, the story `Project changes` › Archived view): a deleted file is in no list, so this is
-        where it can be found again. No count on the tab: each team is read only when it opens here.
-      */}
-      <Tabs
-        size="small"
-        aria-label="Show"
-        className="mb-2"
-        tabs={[
-          { id: 'archived', label: 'Archived' },
-          { id: 'deleted', label: 'Deleted' },
-        ]}
-        active={shown}
-        onChange={setShown}
-      />
-      {/* The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
-          given the Folder a link opened, to that Folder's heading (ui 0.99). */}
-      <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
-        {ordered.map((folder) =>
-          shown === 'deleted' ? (
-            <DeletedSection key={folder.id} folder={folder} selectedRef={selectedRef} />
-          ) : (
+      {deleted !== 'unavailable' && (
+        <Tabs
+          size="small"
+          aria-label="Show"
+          className="mb-2"
+          tabs={[
+            { id: 'archived', label: 'Archived' },
+            // The count once read: a number while loading would be a guess.
+            { id: 'deleted', label: 'Deleted', ...(Array.isArray(deleted) ? { count: deleted.length } : {}) },
+          ]}
+          active={tab}
+          onChange={setShown}
+        />
+      )}
+      {tab === 'deleted' && deleted !== 'unavailable' ? (
+        <DeletedProjects state={deleted} teamOf={teamOf} selectedRef={selectedRef} onRestore={onRestore} onRetry={onRetryDeleted} />
+      ) : (
+        /* The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
+           given the Folder a link opened, to that Folder's heading (ui 0.99). */
+        <NavTree selected={selectedRef} selectedGroup={linkedFolder ?? undefined}>
+          {ordered.map((folder) => (
             <ArchiveSection
               key={folder.id}
               folder={folder}
@@ -497,76 +565,30 @@ export function ArchiveTreeView({
               menu={folder.archived ? menuFor?.(folder) : undefined}
               onControl={onControl}
             />
-          ),
-        )}
-      </NavTree>
+          ))}
+        </NavTree>
+      )}
     </>
   )
 }
 
-/**
- * One team on Archive's Deleted tab: a fold, and its deleted files once it is open, newest deleted first (ALO-6). A
- * row opens the file's page, which says who deleted it; who deleted it and when is the row's tooltip too, since the
- * column holds one line. Restore is the file's own Delete action with the empty value, offered where it declares one.
- */
-function DeletedSection({ folder, selectedRef }: { folder: FolderSummary; selectedRef?: string }) {
-  const [open, setOpen] = useState(false)
-  const { state, reload } = useDeletedFiles(open ? folder.id : null)
-  const people = useWorkspaceDirectory()
-  const { restoreFile } = useForeignObjects()
-  const { showToast } = useToast()
+type ArchiveTab = 'archived' | 'deleted'
 
-  const restore = async (file: ForeignObject, actionId: string) => {
-    const result = await restoreFile({ naddr: file.naddr!, actionId })
-    if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
-      return
-    }
-    // Back in its team's list, and off this one.
-    await Promise.all([reload(), reloadFoldersOnScreen()])
+/** Archive's tab, held for this visit as the teams opened there are. */
+const ARCHIVE_TAB_KEY = 'peek.tree.archive.tab'
+function archiveTabHeld(): ArchiveTab {
+  try {
+    return window.sessionStorage.getItem(ARCHIVE_TAB_KEY) === 'deleted' ? 'deleted' : 'archived'
+  } catch {
+    return 'archived'
   }
-
-  return (
-    <NavTreeSection
-      id={`deleted:${folder.id}`}
-      title={folder.name ?? folder.id}
-      open={open}
-      pending={open && state === 'loading'}
-      onOpenChange={setOpen}
-      icon={<TopicState type="folder" />}
-    >
-      {open &&
-        (state === 'loading' ? null : state === 'error' ? (
-          <EmptyState scope="rows" message="This team could not be read." />
-        ) : state.length === 0 ? (
-          <EmptyState scope="rows" message="Nothing deleted in this team." />
-        ) : (
-          state.map((file) => {
-            const title = file.slots.title?.value || 'Untitled'
-            const deleted = file.deleted!
-            // A dash for a person nobody has named, as the kit's Person draws one: never their key.
-            const by = people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'
-            const action = fileControlsOf(file).delete
-            return (
-              <NavItem
-                key={file.ref}
-                data-file={file.ref}
-                href={file.address ? filePath(file.address, title) : '#'}
-                label={title}
-                tooltip={`Deleted by ${by} · ${formatDateLabel(deleted.at * 1000)}`}
-                icon={<IconTrash size={16} stroke={1.5} />}
-                active={file.ref === selectedRef}
-                action={
-                  action?.field && file.naddr
-                    ? { icon: <IconRestore size={16} stroke={1.5} />, tooltip: 'Restore', onClick: () => void restore(file, action.id) }
-                    : undefined
-                }
-              />
-            )
-          })
-        ))}
-    </NavTreeSection>
-  )
+}
+function holdArchiveTab(tab: ArchiveTab): void {
+  try {
+    window.sessionStorage.setItem(ARCHIVE_TAB_KEY, tab)
+  } catch {
+    // A browser that blocks storage still turns the tab; it forgets on the next page.
+  }
 }
 
 /** One Folder in Archive: a fold, and what is archived in it once it is open. */

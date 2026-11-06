@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
-  publishSigned: vi.fn(async (..._args: unknown[]): Promise<{ ok: boolean; reason?: string }> => ({ ok: true })),
+  publishSigned: vi.fn<(...args: unknown[]) => Promise<{ ok: boolean; reason?: string }>>(async () => ({ ok: true })),
   signViaEstivaId: vi.fn(async (event: unknown) => event),
 }))
 
@@ -18,7 +18,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 // A build with a relay, so the switch asks it; tests have none by default.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, moveFileAsViewer } from './foreign'
+import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, moveFileAsViewer, restoreFileAsViewer } from './foreign'
 import { forgetProjectFields } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -214,6 +214,17 @@ describe('Delete, declared as a change of the deleted field', () => {
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'delete-project', value: '' }, 'https://relay.test', token)
 
     expect(result.ok).toBe(true)
+    expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([[1851, 'deleted', '', deleting.id]])
+  })
+
+  it('Restore from Archive → Deleted or a deleted card sends deleted = empty after the deleting change', async () => {
+    relayInfo(true)
+    const deleting = change('deleted', 'true')
+    queryRelay.mockImplementation(relayOver(world(deleting), { deletedHidden: true }))
+    // What the tab's row and the card call: the project's Delete action, by its id, after the change they hold.
+    const result = await restoreFileAsViewer({ naddr: ADDRESS, actionId: 'delete-project', prev: deleting.id }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: true })
     expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([[1851, 'deleted', '', deleting.id]])
   })
 })

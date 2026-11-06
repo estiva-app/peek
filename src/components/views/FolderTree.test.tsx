@@ -75,6 +75,21 @@ const PROJECT_CHANNEL = '5b2e7c90-3d4a-4f1b-9c8e-7a6b5c4d3e2f'
 // Archived by its admin: in no list but the Archive view's (5 October).
 const ARCHIVED = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2918'
 
+/** A project Cath deleted at `at`, in `team`; `restorable` when its app declares Delete as a change it can undo. */
+function deletedProject(title: string, at: number, restorable: boolean, team = TEAM): ForeignObject {
+  return foreign({
+    ref: `30850:${SHIP}:${title}`,
+    address: `30850:${SHIP}:${title}`,
+    naddr: `naddr-${title}`,
+    kind: 30850,
+    folder: team,
+    slots: { title: { value: title } },
+    deleted: { by: CATH, at },
+    people: { [CATH]: { displayName: 'Cath' } },
+    actions: restorable ? [{ id: 'delete-project', label: 'Delete', control: 'select', field: 'deleted' }] : [],
+  } as Partial<ForeignObject>)
+}
+
 const folders: FolderSummary[] = [
   // Its owners and admins may rename and archive it (SPEC §3.2); its channel is what an archive names.
   { id: OTHER, name: 'Zebra', hasState: true, admins: [CATH], channel: `39000:relay:${OTHER}` },
@@ -90,10 +105,10 @@ const reads = vi.hoisted(() => ({
   contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
   /** More rows in the team's listing, for one test. */
   extra: [] as ForeignObject[],
-  /** Which team's deleted files were read, on the Deleted tab. */
-  deleted: vi.fn<(folder: string | null) => unknown>(),
-  /** The team's deleted files, newest deleted first, as the seam answers them. */
-  deletedFiles: [] as ForeignObject[],
+  /** Whether every deleted project was asked for: while Archive shows. */
+  deleted: vi.fn<(enabled: boolean) => unknown>(),
+  /** Every deleted project, newest deleted first, as the seam answers them. */
+  deletedProjects: [] as ForeignObject[],
 }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 
@@ -110,9 +125,9 @@ vi.mock('@/api', async () => ({
       reload: async () => {},
     }
   },
-  useDeletedFiles: (folder: string | null) => {
-    reads.deleted(folder)
-    return { state: folder ? (folder === TEAM ? reads.deletedFiles : []) : 'loading', reload: async () => {} }
+  useDeletedProjects: (enabled: boolean) => {
+    reads.deleted(enabled)
+    return { state: enabled ? reads.deletedProjects : 'loading', reload: async () => {} }
   },
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -244,6 +259,15 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
     expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
+  it('a deleted file that arrives turns the column to Archive, on its Deleted tab, and its row is current (ALO-6)', () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    mount({ ...LIVE, selectedRef: reads.deletedProjects[0].ref, selectedDeleted: true })
+    expect(title('Archive')).not.toBeNull()
+    expect(screen.getByRole('tab', { name: /Deleted/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('link', { name: 'Roadmap' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
   it('a live file that arrives while Archive is showing turns the column back to Teams', () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount(LIVE)
@@ -364,36 +388,42 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(items).toContain('Delete')
     for (const gone of ['Unarchive', 'Rename', 'New topic inside', 'Move…']) expect(items).not.toContain(gone)
   })
-
-  it('its Deleted tab reads no team until one opens, then lists its deleted files with Restore where declared (ALO-6)', async () => {
-    const deletedAt = (title: string, at: number, restorable: boolean) =>
-      foreign({
-        ref: `30850:${SHIP}:${title}`,
-        address: `30850:${SHIP}:${title}`,
-        kind: 30850,
-        slots: { title: { value: title } },
-        deleted: { by: CATH, at },
-        actions: restorable ? [{ id: 'delete-project', label: 'Delete', control: 'select', field: 'deleted' }] : [],
-      } as Partial<ForeignObject>)
-    reads.deletedFiles = [deletedAt('Roadmap', 2_000, true), deletedAt('Launch', 1_000, false)]
+  it('its Deleted tab is one list of every deleted project, counted, each with its team, who and when, and Restore where declared (ALO-6)', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true), deletedProject('Launch', 1_000, false, OTHER)]
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount()
-    reads.deleted.mockClear()
-    await userEvent.click(screen.getByRole('tab', { name: 'Deleted' }))
-    // Every team is a closed fold: nothing is read until one opens.
-    expect(reads.deleted.mock.calls.filter(([folder]) => folder !== null)).toEqual([])
+    // Read as Archive opens, not team by team: the tab carries the count before it is chosen.
+    expect(reads.deleted).toHaveBeenLastCalledWith(true)
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    expect(screen.getByRole('tab', { name: /Deleted/ }).textContent).toContain('2')
 
-    fireEvent.click(within(section(`deleted:${TEAM}`)).getByRole('button', { name: /Peek/ }))
-    const rows = within(section(`deleted:${TEAM}`)).getAllByRole('link')
-    expect(rows.map((row) => row.textContent)).toEqual(['Roadmap', 'Launch'])
-    // Restore only on the file whose app declares its delete as a change it can undo.
-    expect(within(section(`deleted:${TEAM}`)).getAllByRole('button', { name: /^Restore/ }).map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Restore: Roadmap',
-    ])
-
-    fireEvent.click(within(section(`deleted:${OTHER}`)).getByRole('button', { name: /Zebra/ }))
-    expect(within(section(`deleted:${OTHER}`)).getByText('Nothing deleted in this team.')).not.toBeNull()
+    const rows = screen.getAllByRole('listitem')
+    expect(rows.map((row) => within(row).getByRole('link').textContent)).toEqual(['Roadmap', 'Launch'])
+    expect(rows[0].textContent).toMatch(/Peek · Deleted by Cath · /)
+    expect(rows[1].textContent).toMatch(/Zebra · Deleted by Cath · /)
+    // Restore only on the project whose app declares its delete as a change it can undo.
+    expect(within(rows[0]).getByRole('button', { name: 'Restore' })).not.toBeNull()
+    expect(within(rows[1]).queryByRole('button', { name: 'Restore' })).toBeNull()
   })
+
+  it('holds the Deleted tab for the visit, as it holds the teams opened there', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const { unmount } = mount()
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    unmount()
+    mount()
+    expect(screen.getByRole('tab', { name: /Deleted/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('says so when nothing is deleted', async () => {
+    reads.deletedProjects = []
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    expect(screen.getByText('Nothing deleted.')).not.toBeNull()
+  })
+
 
   it('a Folder opened there reads what is archived in it', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')

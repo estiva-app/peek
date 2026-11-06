@@ -62,7 +62,6 @@ import {
   createProjectionCache,
   resolveFolderProject,
   resolveFolderContents,
-  resolveDeletedFiles,
   listFolders,
   resolveForeignEvent,
   resolveForeignObject,
@@ -114,7 +113,7 @@ import {
   writeChange,
   TEXT_FIELD,
 } from '@estiva-app/interop'
-import { inOrderTypes, listReadOption, projectFields, PROJECT_KIND, withOpenRead } from './projectFields'
+import { inOrderTypes, listReadOffered, listReadOption, projectFields, PROJECT_KIND, withOpenRead } from './projectFields'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
 
 export interface ActResult {
@@ -1147,15 +1146,37 @@ export async function resolveFolderContentsAsViewer(
 }
 
 /**
- * A team's deleted files, newest deleted first, each with who deleted it and when (SPEC §6.5, ALO-6): Archive's
- * Deleted tab, read when a team opens there and nowhere else. Interop's `resolveDeletedFiles`; once switched, the
- * team's files are listed by their fields first and only the ones that answer nothing are read whole.
+ * Every deleted project the viewer can see, newest deleted first, each with its team, who deleted it and when (SPEC
+ * §6.5, ALO-6; Miky, 6 Nov): Archive's Deleted tab, one list across teams. Projects are stored workspace-wide (§3.1),
+ * so two reads find them all, whatever the number of teams: every project's first record, and the relay's list read,
+ * which leaves a deleted one out (§6.13). Only the projects the second misses are read whole, and kept when their
+ * `deleted` folds to set — a project whose changes this reader cannot read is missed too, and is not deleted.
+ * Measured on production, 6 Nov, as QA-1: 160 projects, 214 KB + 403 KB, then 22 read whole for 147 KB; ~3 s.
+ *
+ * `null` where the relay has no list read: there, finding them means reading every project's whole history.
+ *
+ * **Throws {@link RelayReadError} when a read failed.**
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
  */
-export async function deletedFilesAsViewer(folder: string, relayUrl: string, token: StoredToken): Promise<ForeignObject[]> {
+export async function deletedProjectsAsViewer(relayUrl: string, token: StoredToken): Promise<ForeignObject[] | null> {
+  if (!(await listReadOffered())) return null
   const query = folderLoadAsViewer(relayUrl, token, 'relay')
-  const files = await resolveDeletedFiles(folder, query, cachedPeople(query), manifests, await listReadOption())
-  return [...files].sort((a, b) => (b.deleted?.at ?? 0) - (a.deleted?.at ?? 0))
+  const [roots, listed] = await Promise.all([
+    query([{ kinds: [PROJECT_KIND] }]),
+    query([{ fields: 'newest', kinds: [PROJECT_KIND] }]),
+  ])
+  const addressOf = (e: { kind: number; pubkey: string; tags: string[][] }) =>
+    `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1] ?? ''}`
+  const live = new Set(listed.filter((e) => e.kind === PROJECT_KIND).map(addressOf))
+  const missed = [...new Set(roots.filter((e) => e.kind === PROJECT_KIND).map(addressOf))].filter((address) => !live.has(address))
+  if (!missed.length) return []
+  const objects = await resolveForeignObjects(missed, query, cachedPeople(query), manifests)
+  return missed
+    .flatMap((address) => {
+      const object = objects[address]
+      return object && !object.unreachable && object.deleted ? [object] : []
+    })
+    .sort((a, b) => b.deleted!.at - a.deleted!.at)
 }
 
 /**
@@ -1983,7 +2004,9 @@ export async function applyActionAsViewer(
       current: async (field) => (await open(field))?.fields[field]?.event,
     })
     if (written.ok) return { ok: true, id: written.id }
-    return fail('refused' in written ? written.refused : 'Someone changed this text at the same time. Reload and try again.')
+    // Said of the field changed: a crossed title or status is not "this text".
+    const what = changedField === TEXT_FIELD ? 'this text' : 'this'
+    return fail('refused' in written ? written.refused : `Someone changed ${what} at the same time. Reload and try again.`)
   }
 
   const built = buildActionEvents({ ...common, value, contentFormat: args.contentFormat, createdAtMs: Date.now() })

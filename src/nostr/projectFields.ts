@@ -35,9 +35,11 @@ async function relayInfo(): Promise<unknown> {
 interface Switch {
   fields: ProjectFields | undefined
   inOrder: readonly string[]
+  /** The relay answers the list read (NIP-11 `file_list.newest`), switched or not. */
+  list: boolean
 }
 
-const OFF: Switch = { fields: undefined, inOrder: [] }
+const OFF: Switch = { fields: undefined, inOrder: [], list: false }
 
 let held: Promise<Switch> | undefined
 
@@ -52,7 +54,7 @@ function relaySwitch(): Promise<Switch> {
           return OFF
         }
         const reads: RelayFileReads = relayFileReadsOf(info)
-        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder }
+        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list }
       },
       () => {
         held = undefined
@@ -108,6 +110,14 @@ export async function withOpenRead<T extends object>(options: T | undefined): Pr
 /** The list read, for interop's `listRead`: once switched. */
 export async function listReadOption(): Promise<{ listRead?: true }> {
   return (await projectFields()) ? { listRead: true } : {}
+}
+
+/**
+ * Whether the relay answers the list read (SPEC §6.13), whether or not this tab is switched: it leaves a deleted file
+ * out, which is how Archive → Deleted finds every deleted project in two reads.
+ */
+export async function listReadOffered(): Promise<boolean> {
+  return (await relaySwitch()).list
 }
 
 /** Forget the relay's answer, so a test can switch it. */

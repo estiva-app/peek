@@ -66,7 +66,7 @@ export {
   useFolders,
   type FolderContentsState,
 } from './useFolderContents'
-export { useDeletedFiles, type DeletedFilesState } from './useDeletedFiles'
+export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
 export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
 export type { StartTopicArgs } from './startTopic'
 export {

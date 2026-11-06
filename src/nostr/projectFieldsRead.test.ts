@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { queryRelay, queryRelayWithMatches, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
-  queryRelayWithMatches: vi.fn(async (..._args: unknown[]) => ({ events: [], matches: [] })),
+  queryRelayWithMatches: vi.fn<(...args: unknown[]) => Promise<{ events: unknown[]; matches: unknown[] }>>(async () => ({ events: [], matches: [] })),
   publishSigned: vi.fn(async () => ({ ok: true })),
   signViaEstivaId: vi.fn(async (event: unknown) => event),
 }))
@@ -17,7 +17,7 @@ vi.mock('./bridge', () => ({ queryRelay, queryRelayWithMatches, publishSigned, s
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import {
-  deletedFilesAsViewer,
+  deletedProjectsAsViewer,
   fileCandidatesAsViewer,
   forgetUrlShapes,
   resolveFolderContentsAsViewer,
@@ -32,15 +32,21 @@ const A = `30850:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000aaaa`
 const B = `30850:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000bbbb`
 const token = { accessToken: 't', pubkey: AUTHOR } as never
 
-/** The relay's NIP-11: keeping projects in order and finding them by their words (on), or saying nothing (off). */
-function relayInfo(on: boolean) {
-  const info = on
-    ? {
-        files: { requires_prev: ['osnova.project'] },
-        file_list: { newest: true, text: true },
-        file_search: { types: ['osnova.project'] },
-      }
-    : { supported_nips: [1, 11] }
+/**
+ * The relay's NIP-11: keeping projects in order and finding them by their words (on), or saying nothing (off), or —
+ * as production on 6 Nov — offering the list read without keeping projects in order (`'list'`).
+ */
+function relayInfo(on: boolean | 'list') {
+  const info =
+    on === 'list'
+      ? { file_list: { newest: true, text: true } }
+      : on
+        ? {
+            files: { requires_prev: ['osnova.project'] },
+            file_list: { newest: true, text: true },
+            file_search: { types: ['osnova.project'] },
+          }
+        : { supported_nips: [1, 11] }
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
 }
 
@@ -77,8 +83,19 @@ const world = [
 const answer = (_url: string, filters: Record<string, unknown>[]) => answerFrom(world, filters)
 
 async function answerFrom(events: readonly ReturnType<typeof event>[], filters: Record<string, unknown>[]) {
+  // The list read leaves out a file whose newest `deleted` change is `true`, with its changes (SPEC §6.13).
+  const addressOf = (e: ReturnType<typeof event>) => `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1]}`
+  const isDeleted = (address: string) =>
+    events
+      .filter((c) => c.kind === 1851 && c.tags.some((t) => t[0] === 'a' && t[1] === address) && c.tags.some((t) => t[0] === 'field' && t[1] === 'deleted'))
+      .sort((x, y) => y.created_at - x.created_at)[0]
+      ?.tags.find((t) => t[0] === 'value')?.[1] === 'true'
   return { ok: true, events: events.filter((e) =>
     filters.some((f) => {
+      if (f.fields === 'newest') {
+        const aimedAt = e.kind === 1851 ? e.tags.find((t) => t[0] === 'a')?.[1] : addressOf(e)
+        if (aimedAt && isDeleted(aimedAt)) return false
+      }
       if (f.kinds && !(f.kinds as number[]).includes(e.kind)) return false
       if (f.authors && !(f.authors as string[]).includes(e.pubkey)) return false
       if (f.ids && !(f.ids as string[]).includes(e.id)) return false
@@ -157,28 +174,42 @@ describe('a deleted project, whichever way the switch is', () => {
     expect(offered.map((candidate) => candidate.id)).toEqual([A])
   })
 
-  it('is on its team’s Deleted tab with who deleted it and when, newest deleted first', async () => {
-    relayInfo(false)
-    // A, listed first, was deleted before B, by somebody else: the tab's order is B, then A.
+  it('is on Archive’s Deleted tab — one list across teams, each with its team, who deleted it and when, newest first', async () => {
+    relayInfo('list')
+    // C is in another team, which lists nothing; it was deleted before B, by somebody else: the order is B, then C.
     const OTHER = 'ef'.repeat(32)
-    const deletingA = {
-      ...event(1851, [['a', A], ['O', A.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]], OTHER),
+    const SECOND = '9c69f247-0000-4000-8000-000000000002'
+    const C = `30850:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000cccc`
+    const deletingC = {
+      ...event(1851, [['a', C], ['O', C.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', SECOND]], OTHER),
       created_at: deleting.created_at - 60,
     }
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, deletingA], filters))
-    const deleted = await deletedFilesAsViewer(FOLDER, 'https://relay.test', token)
+    const elsewhere = [
+      event(39000, [['d', SECOND], ['name', 'Second team']], RELAY),
+      event(30850, [['d', C.split(':')[2]], ['name', 'Elsewhere'], ['h', SECOND]]),
+      deletingC,
+    ]
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, ...elsewhere], filters))
+    const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
-    expect(deleted.map((file) => [file.address, file.deleted?.by, file.deleted?.at])).toEqual([
-      [B, AUTHOR, deleting.created_at],
-      [A, OTHER, deletingA.created_at],
+    expect(deleted?.map((file) => [file.address, file.folder, file.deleted?.by, file.deleted?.at])).toEqual([
+      [B, FOLDER, AUTHOR, deleting.created_at],
+      [C, SECOND, OTHER, deletingC.created_at],
     ])
   })
 
   it('is not on the Deleted tab once restored', async () => {
-    relayInfo(false)
+    relayInfo('list')
     const restoring = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', ''], ['h', FOLDER]])
     queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, restoring], filters))
 
-    expect(await deletedFilesAsViewer(FOLDER, 'https://relay.test', token)).toEqual([])
+    expect(await deletedProjectsAsViewer('https://relay.test', token)).toEqual([])
+  })
+
+  it('has no Deleted tab where the relay has no list read to find it by', async () => {
+    relayInfo(false)
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
+
+    expect(await deletedProjectsAsViewer('https://relay.test', token)).toBeNull()
   })
 })
