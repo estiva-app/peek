@@ -14,6 +14,8 @@ export interface FollowTarget {
   folder: string
   /** Its team is archived: the switch shows Not following and cannot be changed (§3.2). */
   archived: boolean
+  /** The place itself is archived in a live team: the switch shows the level and cannot be changed, and nobody is added. */
+  fileArchived?: boolean
 }
 
 export interface PlaceFollow {

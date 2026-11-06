@@ -127,8 +127,11 @@ describe('a mention', () => {
 
 describe('the author of a topic', () => {
   it('is in it at Important with no change at all: their own topic lights a new conversation', () => {
-    const mine = topicFollowingOf({ address: `30840:${ME}:x`, folder: TEAM, me: ME, changes: [], floor: FLOOR })
+    const address = `30840:${ME}:x`
+    const mine = topicFollowingOf({ address, folder: TEAM, me: ME, changes: [], floor: FLOOR })
     expect(mine).toMatchObject({ in: true, level: 'important' })
+    const judge = { context: address, me: ME, following: mine, muted: false, merged: {}, floor: FLOOR, isMentioned: () => false }
+    expect(placeHasUnread([said('new', T0 + 50)], judge)).toBe(true)
   })
 })
 

@@ -153,7 +153,9 @@ export function useConversationBadges(
   const live = useHeldChannelEvents()
   // A space lights by its team's default: the teams read, one per tab, shared with the Teams column (TEA-6).
   const hasTopic = (files ?? []).some((file) => Number(file.address?.split(':')[0]) === KIND_BARE_FILE)
-  const { teams } = useTeams({ read: hasTopic })
+  const { teams, failed: teamsFailed } = useTeams({ read: hasTopic })
+  // Until the teams are read, a space's default is unknown: judged without it, the space would read dark, then light.
+  const teamsKnown = !!teams || teamsFailed
 
   /*
     Keyed on the addresses, not the array.
@@ -284,6 +286,7 @@ export function useConversationBadges(
         teams read. Every other file keeps the membership rule below.
       */
       if (me && file?.address && file.folder && Number(file.address.split(':')[0]) === KIND_BARE_FILE) {
+        if (!teamsKnown) continue
         const listed = listingOf(teams, file.address)
         const team = listed?.team
         const following = topicFollowingOf({
@@ -321,7 +324,7 @@ export function useConversationBadges(
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, key])
+  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key])
 }
 
 /**
