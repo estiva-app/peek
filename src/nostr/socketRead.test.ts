@@ -158,6 +158,19 @@ describe('socket reads', () => {
     expect(await read('https://elsewhere', [{ kinds: [9] }], ME)).toBeNull()
   })
 
+  it('sends the list read and the open read over HTTP: a REQ would ignore `fields` and answer every first record (ALO-6)', async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    for (const filter of [{ fields: 'newest', kinds: [30850] }, { fields: 'newest', kinds: [30850], '#d': ['x'], text: true }]) {
+      let answered = false
+      const answer = read('https://relay', [filter], ME).then((result) => ((answered = true), result))
+      // Either it is handed to HTTP, or a REQ goes out on the socket: whichever comes first is the answer.
+      await vi.waitFor(() => expect(answered || subs.length > 0).toBe(true))
+      expect(subs).toHaveLength(0)
+      expect(await answer).toBeNull()
+    }
+  })
+
   it('answers a Folder the reader is not in with nothing, as /query does, not with an error', async () => {
     const { client, subs } = fakeClient()
     const answer = reader(client).read('https://relay', [{ '#h': ['other'] }], ME)

@@ -178,8 +178,8 @@ export function FolderTree({
         showToast({ label: result.reason, type: 'error' })
         return
       }
-      // Back in its team's list, and off this one.
-      await Promise.all([reloadDeleted(), reloadFoldersOnScreen()])
+      // Back in its team's list, and off this one. A re-read that fails leaves the lists as they were.
+      await Promise.all([reloadDeleted(), reloadFoldersOnScreen()]).catch(() => undefined)
     },
     [restoreFile, showToast, reloadDeleted],
   )
@@ -191,11 +191,12 @@ export function FolderTree({
     (file: ForeignObject) => {
       const own = folders?.find((folder) => folder.id === file.folder)
       if (!own) return undefined
-      if (topLevel?.some((top) => top.id === own.id)) return own.name
-      const team = own.listedIn?.map((id) => topLevel?.find((top) => top.id === id)).find(Boolean)
+      // Archive's teams, the archived included: a project in an archived team is named by it too.
+      if (archiveLevel?.some((top) => top.id === own.id)) return own.name
+      const team = own.listedIn?.map((id) => archiveLevel?.find((top) => top.id === id)).find(Boolean)
       return team?.name ?? own.name
     },
-    [folders, topLevel],
+    [folders, archiveLevel],
   )
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
   const [making, setMaking] = useState<'folder' | 'topic' | null>(null)
@@ -514,10 +515,11 @@ export function ArchiveTreeView({
     setShownState(tab)
     holdArchiveTab(tab)
   }
+  // The last file seen, whatever its state: coming back to a deleted one (Back) turns the tab again.
   const [followed, setFollowed] = useState(selectedDeleted ? selectedRef : undefined)
-  if (selectedDeleted && selectedRef && followed !== selectedRef) {
+  if (selectedRef !== followed) {
     setFollowed(selectedRef)
-    if (shown !== 'deleted') setShown('deleted')
+    if (selectedDeleted && shown !== 'deleted') setShown('deleted')
   }
   /*
     Three states, not two: "not signed in", "still loading" and "there are

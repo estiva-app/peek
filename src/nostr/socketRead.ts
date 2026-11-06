@@ -89,6 +89,9 @@ const TRANSIENT = /^(rate-limited|auth-required|error):/
 /** NIP-01's fields that `matchesSnapshotFilter` judges exactly: a read asking only these can share a REQ (PEE-5). */
 const PACKABLE = new Set(['ids', 'kinds', 'authors', 'since', 'until', 'limit'])
 
+/** The keys only the relay's `/query` reads (SPEC §6.13): a filter carrying one never goes over the socket. */
+const QUERY_ONLY = ['fields', 'text']
+
 function packable(filters: Record<string, unknown>[]): boolean {
   return filters.every((filter) => Object.keys(filter).every((key) => PACKABLE.has(key) || /^#.$/.test(key)))
 }
@@ -368,6 +371,9 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
       return null
     }
     if (filters.length === 0) return lane === 'ahead' ? { ok: true, events: [] } : null
+    // The list read and the open read (`fields`, `text`; SPEC §6.13) are `/query`'s alone: a REQ ignores them and
+    // answers every first record, so a deleted project reads as listed and a list as its first records (ALO-6).
+    if (filters.some((filter) => QUERY_ONLY.some((key) => key in filter))) return overHttp('query-only read')
     if (options.budget.pausedForMs() > 0) return overHttp('socket paused')
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')

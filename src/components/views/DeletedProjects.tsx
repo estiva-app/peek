@@ -4,7 +4,7 @@ import { EmptyState, MetaText, NavItem, SkeletonList } from '@estiva-app/ui'
 import { prevOf, type ForeignObject } from '@estiva-app/interop'
 import { formatDateLabel, useWorkspaceDirectory, type DeletedProjectsState } from '@/api'
 import { Button } from '@/components/ui/Button'
-import { fileControlsOf } from '@/lib/fileControls'
+import { DELETED_FIELD } from '@/lib/fileControls'
 import { filePath } from '@/lib/objectUrl'
 
 /**
@@ -40,7 +40,8 @@ export function DeletedProjects({
         const deleted = file.deleted!
         // A dash for a person nobody has named, as the kit's Person draws one: never their key.
         const by = people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'
-        const action = fileControlsOf(file).delete
+        // The Delete that is a change of `deleted`, even beside a confirm-style one: only it can be undone.
+        const action = file.actions.find((candidate) => candidate.field === DELETED_FIELD)
         return (
           <DeletedRow
             key={file.ref}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { useForeignObjects } from './foreign'
 
@@ -21,11 +21,15 @@ export function useDeletedProjects(enabled: boolean): {
 } {
   const { deletedProjects } = useForeignObjects()
   const [state, setState] = useState<DeletedProjectsState>('loading')
+  // Only the newest read's answer is drawn: two Restores close together, or Archive shown again, must not let an
+  // older answer bring a restored project back.
+  const latest = useRef(0)
 
   const reload = useCallback(async () => {
     if (!enabled) return
+    const asked = ++latest.current
     const projects = await deletedProjects().catch((): 'error' => 'error')
-    setState(projects === null ? 'unavailable' : projects)
+    if (asked === latest.current) setState(projects === null ? 'unavailable' : projects)
   }, [enabled, deletedProjects])
 
   const retry = useCallback(async () => {
