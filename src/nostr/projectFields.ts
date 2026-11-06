@@ -101,10 +101,25 @@ export async function openReadOption(): Promise<{ openRead?: readonly number[] }
   return (await projectFields()) ? { openRead: [PROJECT_KIND] } : {}
 }
 
-/** `options` with interop's `openRead` once switched, else `options` as handed: off reads exactly as before. */
-export async function withOpenRead<T extends object>(options: T | undefined): Promise<T | (T & { openRead: readonly number[] }) | undefined> {
-  const { openRead } = await openReadOption()
-  return openRead ? ({ ...options, openRead } as T & { openRead: readonly number[] }) : options
+/**
+ * `options` with interop's `openRead` once switched, and, for an `archivedWith` read, its `listRead` as soon as the
+ * relay offers the list read, switched or not: each parent the walk reads costs its current values, not every change
+ * (ALO-15). Otherwise `options` as handed: off reads exactly as before.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
+export async function withOpenRead<T extends { archivedWith?: boolean }>(
+  options: T | undefined,
+): Promise<T | (T & { openRead?: readonly number[]; listRead?: true }) | undefined> {
+  const [{ openRead }, listRead] = await Promise.all([
+    openReadOption(),
+    options?.archivedWith ? listReadOffered() : Promise.resolve(false),
+  ])
+  if (!openRead && !listRead) return options
+  return { ...options, ...(openRead ? { openRead } : {}), ...(listRead ? { listRead: true as const } : {}) } as T & {
+    openRead?: readonly number[]
+    listRead?: true
+  }
 }
 
 /** The list read, for interop's `listRead`: once switched. */
