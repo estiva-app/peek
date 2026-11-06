@@ -362,6 +362,19 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.replies[GONE]).toBeUndefined()
     })
 
+    it('adds no thread for a crossed reply, one naming this file and another, under a comment that is gone (§6.4)', async () => {
+      const OTHER_GONE = '9'.repeat(64)
+      const crossed = event({
+        kind: COMMENT,
+        content: 'About two pages',
+        tags: [['A', ADDRESS], ['A', `30851:${CATH}:another-page`], ['e', OTHER_GONE], ['p', CATH], ['h', FOLDER]],
+      })
+      queryRelay.mockImplementation(relayOver([...world, crossed]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).not.toContain(OTHER_GONE)
+      expect(found.replies[OTHER_GONE]).toBeUndefined()
+    })
+
     it('leaves alone a reply whose parent the relay still holds', async () => {
       const toHeld = event({ kind: COMMENT, content: 'On a root not asked about', tags: [['A', ADDRESS], ['e', withPicture.id], ['h', FOLDER]] })
       queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))
