@@ -8,7 +8,7 @@ import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
 import { useFolderContents, useFolders } from './useFolderContents'
-import { useTopicsColumn } from './useTopicsColumn'
+import { useReadableTopics } from './useTopicsColumn'
 
 export { entryNames, type ListedEntry }
 
@@ -187,18 +187,15 @@ export function spaceTeamOf(teams: readonly Team[] | null, address: string | und
   return teams.find((team) => team.listed.some((entry) => entry.space && entryNames(entry, address)))
 }
 
-/** Every topic this viewer can read, by address: a team's list names them, the Topics column holds their titles. */
+/**
+ * Every active topic this viewer can read, by address: a team's list names
+ * them, and this draws their titles. Only the topics: never the files they
+ * list, whose read is the Topics screen's heaviest and which no team row draws.
+ */
 export function useTeamTopics(): { topics: ReadonlyMap<string, ForeignObject>; loading: boolean; signedOut: boolean } {
-  const { state, signedOut } = useTopicsColumn()
-  const topics = useMemo(() => {
-    const out = new Map<string, ForeignObject>()
-    if (typeof state === 'object' && 'mine' in state) {
-      for (const { topic } of state.mine) if (topic.address) out.set(topic.address, topic)
-      for (const topic of state.others) if (topic.address) out.set(topic.address, topic)
-    }
-    return out
-  }, [state])
-  return { topics, loading: state === 'loading', signedOut }
+  const { topics: live, loading, signedOut } = useReadableTopics()
+  const topics = useMemo(() => new Map(live.flatMap((topic) => (topic.address ? [[topic.address, topic] as const] : []))), [live])
+  return { topics, loading, signedOut }
 }
 
 /** A team's spaces and the topics it leads, in its list's order, from the topics this viewer can read; archived ones left out. */

@@ -235,38 +235,8 @@ export function useTopicsColumn(): {
   signedOut: boolean
 } {
   const viewer = useRelayViewer()
-  const pubkey = viewer()?.token.pubkey
-  const now = useSyncExternalStore(subscribe, snapshot, snapshot)
-  const mineHeld = now.pubkey === pubkey ? now : EMPTY
-
-  useEffect(() => {
-    const v = viewer()
-    if (!hasRelay || !v) return
-    lastViewer = v
-    if (held.pubkey !== v.token.pubkey) put({ ...EMPTY, pubkey: v.token.pubkey })
-    if (held.pastFailed.size) put({ ...held, pastFailed: new Set() })
-    if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)
-  }, [viewer, pubkey])
-
-  // `archivedWith`: a topic under an archived project is archived with it, and its own `archived` does not say so.
-  const topicObjects = useResolvedReferences(mineHeld.topics ?? [], ARCHIVED_WITH)
-  const { rearchived } = mineHeld
-  const objectOf = useCallback(
-    (address: string, objects: Record<string, ForeignObject | null>) => (rearchived.has(address) ? rearchived.get(address) : objects[address]),
-    [rearchived],
-  )
+  const { pubkey, mineHeld, topicsResolved, objectOf, live, archived } = useReadableTopicsHeld()
   const membership = useMembership()
-  const readable = useMemo(
-    () =>
-      (mineHeld.topics ?? [])
-        .map((address) => objectOf(address, topicObjects))
-        .filter((topic): topic is ForeignObject => !!topic && !!topic.address)
-        .sort(byTitle),
-    [mineHeld.topics, topicObjects, objectOf],
-  )
-  const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
-  const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
-  const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
   const { isMember, judges } = membership
   const known = membership.state !== 'unknown'
   const { past, pastFailed } = mineHeld
@@ -336,4 +306,61 @@ export function useTopicsColumn(): {
   )
 
   return { state, column, signedOut: !pubkey }
+}
+
+/**
+ * Every active topic this viewer can read, with its title — and nothing about
+ * the files the topics list. For a screen that names topics but not their
+ * files (Peek's Teams column, TEA-5): it is ready once the topics resolve, and
+ * it never waits for, or starts, the read of every listed file's fields, which
+ * is the Topics screen's heaviest read (44 MB on QA-1's workspace, 6 Nov).
+ * Shares the Topics screen's held topics, so neither reads them twice.
+ */
+export function useReadableTopics(): {
+  topics: ForeignObject[]
+  /** The topics' first answer has not come back yet. */
+  loading: boolean
+  failed: boolean
+  signedOut: boolean
+} {
+  const { pubkey, mineHeld, topicsResolved, live } = useReadableTopicsHeld()
+  const failed = mineHeld.failed && mineHeld.topics === null
+  return { topics: live, loading: !failed && (mineHeld.topics === null || !topicsResolved), failed, signedOut: !pubkey }
+}
+
+/** The part both hooks share: the topics read (once per `FRESH_MS`), each resolved, archived ones apart. */
+function useReadableTopicsHeld() {
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const now = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const mineHeld = now.pubkey === pubkey ? now : EMPTY
+
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v) return
+    lastViewer = v
+    if (held.pubkey !== v.token.pubkey) put({ ...EMPTY, pubkey: v.token.pubkey })
+    if (held.pastFailed.size) put({ ...held, pastFailed: new Set() })
+    if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)
+  }, [viewer, pubkey])
+
+  // `archivedWith`: a topic under an archived project is archived with it, and its own `archived` does not say so.
+  const topicObjects = useResolvedReferences(mineHeld.topics ?? [], ARCHIVED_WITH)
+  const { rearchived } = mineHeld
+  const objectOf = useCallback(
+    (address: string, objects: Record<string, ForeignObject | null>) => (rearchived.has(address) ? rearchived.get(address) : objects[address]),
+    [rearchived],
+  )
+  const readable = useMemo(
+    () =>
+      (mineHeld.topics ?? [])
+        .map((address) => objectOf(address, topicObjects))
+        .filter((topic): topic is ForeignObject => !!topic && !!topic.address)
+        .sort(byTitle),
+    [mineHeld.topics, topicObjects, objectOf],
+  )
+  const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
+  const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
+  const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
+  return { pubkey, mineHeld, topicsResolved, objectOf, live, archived }
 }

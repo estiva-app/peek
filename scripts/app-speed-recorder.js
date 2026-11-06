@@ -60,6 +60,8 @@
     const url = new URL(typeof input === 'string' ? input : input.url ?? String(input), location.href)
     const method = init?.method || (typeof input === 'object' && input.method) || 'GET'
     const entry = { at: now(), method, host: url.host, path: url.pathname }
+    // What was asked, so the biggest reads name their filter (TEA-5's 44 MB read).
+    if (typeof init?.body === 'string') entry.filter = init.body.slice(0, 200000)
     sp.http.push(entry)
     try {
       const response = await nativeFetch(input, init)
@@ -141,7 +143,7 @@
       failed: sp.failed,
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
-      biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at })),
+      biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at, filter: h.filter })),
     })
   }
 })()
