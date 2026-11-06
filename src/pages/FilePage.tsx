@@ -274,6 +274,10 @@ export function FilePage() {
             // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
             expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
             onControl={pane.openControl}
+            // Restored while open: the page re-reads it, rather than go on saying Deleted.
+            onRestored={(restored) => {
+              if (restored.ref === file?.ref) void view.reload()
+            }}
           />
           )
         }

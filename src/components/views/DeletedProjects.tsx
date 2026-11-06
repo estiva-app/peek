@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { IconTrash } from '@tabler/icons-react'
 import { EmptyState, MetaText, NavItem, SkeletonList } from '@estiva-app/ui'
 import { prevOf, type ForeignObject } from '@estiva-app/interop'
-import { formatDateLabel, useWorkspaceDirectory, type DeletedProjectsState } from '@/api'
+import { formatShortDate, useWorkspaceDirectory, type DeletedProjectsState } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { DELETED_FIELD } from '@/lib/fileControls'
 import { filePath } from '@/lib/objectUrl'
@@ -46,7 +46,7 @@ export function DeletedProjects({
           <DeletedRow
             key={file.ref}
             file={file}
-            caption={[teamOf(file), `Deleted by ${by} · ${formatDateLabel(deleted.at * 1000)}`].filter(Boolean).join(' · ')}
+            caption={[teamOf(file), `Deleted by ${by} · ${formatShortDate(deleted.at * 1000)}`].filter(Boolean).join(' · ')}
             active={file.ref === selectedRef}
             restore={action?.field && file.naddr ? () => onRestore(file, action.id, prevOf(file, action.field!)) : undefined}
           />

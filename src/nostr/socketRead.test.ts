@@ -171,6 +171,16 @@ describe('socket reads', () => {
     }
   })
 
+  it('sends a list read loaded ahead over HTTP within the ahead allowance, so a team preloads with the switch on (ALO-6)', async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const list = [{ fields: 'newest', kinds: [30850], '#h': ['team'] }]
+    for (let i = 0; i < AHEAD_HTTP_PER_MINUTE; i++) expect(await read('https://relay', list, ME, { lane: 'ahead' })).toBeNull()
+    // Past it, refused: the loader stops, and a later open reads for itself.
+    expect(await read('https://relay', list, ME, { lane: 'ahead' })).toMatchObject({ ok: false })
+    expect(subs).toHaveLength(0)
+  })
+
   it('answers a Folder the reader is not in with nothing, as /query does, not with an error', async () => {
     const { client, subs } = fakeClient()
     const answer = reader(client).read('https://relay', [{ '#h': ['other'] }], ME)

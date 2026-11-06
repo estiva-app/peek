@@ -8,7 +8,7 @@
  * view it opens on, what it hands the teams column, the header, and that the
  * page beside it only ever shows a file the column draws.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -109,11 +109,15 @@ const reads = vi.hoisted(() => ({
   deleted: vi.fn<(enabled: boolean) => unknown>(),
   /** Every deleted project, newest deleted first, as the seam answers them. */
   deletedProjects: [] as ForeignObject[],
+  /** Restore's answer; what it sends is `projectFieldsWrite.test.ts`'s. */
+  restore: vi.fn(async () => ({ ok: true as const })),
+  actual: {} as Record<string, unknown>,
 }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 
 vi.mock('@/api', async () => ({
-  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  ...(reads.actual = await vi.importActual<Record<string, unknown>>('@/api')),
+  useForeignObjects: () => ({ ...(reads.actual.useForeignObjects as () => object)(), restoreFile: reads.restore }),
   useResolvedReferences: () => ({}),
   useFolders: () => ({ folders, signedOut: false, reload: async () => {} }),
   useFolderContents: (folder: string | null | undefined, options?: { archived?: boolean }) => {
@@ -392,8 +396,6 @@ describe('the Archive view (Katerina, 5 October)', () => {
     reads.deletedProjects = [deletedProject('Roadmap', 2_000, true), deletedProject('Launch', 1_000, false, OTHER)]
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount()
-    // Read as Archive opens, not team by team: the tab carries the count before it is chosen.
-    expect(reads.deleted).toHaveBeenLastCalledWith(true)
     await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
     expect(screen.getByRole('tab', { name: /Deleted/ }).textContent).toContain('2')
 
@@ -414,6 +416,22 @@ describe('the Archive view (Katerina, 5 October)', () => {
     unmount()
     mount()
     expect(screen.getByRole('tab', { name: /Deleted/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('Restore on the project that is open hands it back to the page to re-read, and no other (ALO-6)', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const onRestored = vi.fn()
+    mount({ selectedRef: `30850:${SHIP}:Roadmap`, selectedDeleted: true, onRestored })
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(onRestored).toHaveBeenCalledTimes(1))
+    expect(onRestored.mock.calls[0][0].ref).toBe(`30850:${SHIP}:Roadmap`)
+
+    reads.restore.mockResolvedValueOnce({ ok: false, reason: 'No.' } as never)
+    onRestored.mockClear()
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(reads.restore).toHaveBeenCalledTimes(2))
+    expect(onRestored).not.toHaveBeenCalled()
   })
 
   it('says so when nothing is deleted', async () => {

@@ -373,7 +373,9 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     if (filters.length === 0) return lane === 'ahead' ? { ok: true, events: [] } : null
     // The list read and the open read (`fields`, `text`; SPEC §6.13) are `/query`'s alone: a REQ ignores them and
     // answers every first record, so a deleted project reads as listed and a list as its first records (ALO-6).
-    if (filters.some((filter) => QUERY_ONLY.some((key) => key in filter))) return overHttp('query-only read')
+    // Loaded ahead, it takes the ahead allowance at once, since no wait would put it on the socket; past it, refused.
+    if (filters.some((filter) => QUERY_ONLY.some((key) => key in filter)))
+      return overHttp(lane === 'ahead' && aheadSpill.allowed() ? 'spilled' : 'query-only read')
     if (options.budget.pausedForMs() > 0) return overHttp('socket paused')
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')

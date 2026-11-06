@@ -43,6 +43,17 @@ export function formatDateLabel(createdAt: number, now: number = Date.now()): st
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+/** A day short enough for a narrow column's second line: `'Today'`,
+ *  `'Yesterday'`, `'Nov 4'` this year, `'Nov 4, 2025'` before it. */
+export function formatShortDate(createdAt: number, now: number = Date.now()): string {
+  const d = new Date(createdAt)
+  const n = new Date(now)
+  if (sameLocalDay(d, n)) return 'Today'
+  if (sameLocalDay(d, previousLocalDay(n))) return 'Yesterday'
+  const monthDay = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
+  return d.getFullYear() === n.getFullYear() ? monthDay : `${monthDay}, ${d.getFullYear()}`
+}
+
 /** Timestamp for anywhere a time stands with NO date divider above it —
  *  thread reply cards, the thread's pinned root message, the resolve/reopen
  *  bullets, the screener.

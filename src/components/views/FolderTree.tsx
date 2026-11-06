@@ -63,8 +63,11 @@ export function FolderTree({
   selectedDeleted,
   expandSelected = false,
   onControl,
+  onRestored,
   chatOpen = false,
 }: {
+  /** A project restored from Archive → Deleted: the page holding it open re-reads it, so it stops saying Deleted. */
+  onRestored?: (file: ForeignObject) => void
   /** The open page is `currentFolder`'s team chat (TEA-5): its row is current. */
   chatOpen?: boolean
   /** The Folder holding the open page. Its section starts open. */
@@ -179,9 +182,10 @@ export function FolderTree({
         return
       }
       // Back in its team's list, and off this one. A re-read that fails leaves the lists as they were.
+      onRestored?.(file)
       await Promise.all([reloadDeleted(), reloadFoldersOnScreen()]).catch(() => undefined)
     },
-    [restoreFile, showToast, reloadDeleted],
+    [restoreFile, showToast, reloadDeleted, onRestored],
   )
   /*
     A project's team, by the name the Teams column gives it. A Ship project's Folder may be its own record channel,
