@@ -245,6 +245,35 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     expect(found.roots.map((r) => r.id)).toEqual([root.id])
   })
 
+  describe('a reply to a reply (NIP-22: its `e` names only its parent, ONE-9)', () => {
+    const nested = (content: string, parent: string, at: number) =>
+      event({
+        kind: COMMENT,
+        content,
+        pubkey: CATH,
+        created_at: at,
+        tags: [['A', ADDRESS], ['K', String(BARE_FILE)], ['P', CATH], ['e', parent], ['k', String(COMMENT)], ['p', MIKY], ['h', FOLDER]],
+      })
+    const answer = nested('Thanks', reply.id, reply.created_at + 10)
+    const deeper = nested('Welcome', answer.id, reply.created_at + 20)
+    const world = [manifest, peekManifest, file, linked, root, withPicture, reply, edit, reaction, resolved, answer, deeper]
+
+    it('is filed in its thread at any depth, oldest first, and adds no thread of its own', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed', 'Thanks', 'Welcome'])
+      expect(found.decorations.byId[deeper.id]).toEqual({ reactions: [], resolutions: [] })
+    })
+
+    it('is in the read-only pane’s thread too', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed', 'Thanks', 'Welcome'])
+      expect(found.deleted).toEqual([])
+    })
+  })
+
   describe('a deleted comment whose replies stay (PER-24)', () => {
     const GONE = 'd'.repeat(64)
     const orphan = (content: string, at: number) =>
