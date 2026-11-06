@@ -44,7 +44,7 @@ export * from './uploads'
 export * from './screener'
 export { knownCardValue, askLinks, knownBlockOfUrl, knownLinkTarget, onLinksChanged, linksVersion, isFromCopy, folderLoad, useLinkResolver, useLinksIn, useDeleted, useForeignObjects, useHeldObject, useReloadHeldObject, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, useFileSearch, type MessageHit } from './foreign'
 export { usePart, type PartView } from './part'
-export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
+export { formatDateLabel, formatReplyTimestamp, formatShortDate, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionsVersion, personByPubkey, subscribeMentions } from './mentions'
 export { fileChoices, referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
@@ -66,6 +66,7 @@ export {
   useFolders,
   type FolderContentsState,
 } from './useFolderContents'
+export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
 export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
 export type { StartTopicArgs } from './startTopic'
 export {

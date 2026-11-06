@@ -148,7 +148,11 @@ describe('resolveObjectsAsViewer', () => {
       content: JSON.stringify({
         name: 'Ship',
         records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
-        vocabularies: { issueStatuses: [{ value: 'todo', label: 'Todo' }], archived: [{ value: '', label: 'No' }, { value: 'true', label: 'Yes' }] },
+        vocabularies: {
+          issueStatuses: [{ value: 'todo', label: 'Todo' }],
+          archived: [{ value: '', label: 'No' }, { value: 'true', label: 'Yes' }],
+          deleted: [{ value: '', label: 'Restored' }, { value: 'true', label: 'Deleted' }],
+        },
         projections: { [ISSUE]: { widget: 'row', slots: { title: { tag: 'title' } } } },
         actions: [
           { id: 'comment', label: 'Comment', appliesTo: String(ISSUE), emits: { kind: 1111, scope: 'address' } },
@@ -156,6 +160,8 @@ describe('resolveObjectsAsViewer', () => {
           { id: 'archive-issue', label: 'Archive', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'archived' }, input: { type: 'string', enum: 'archived' } },
           { id: 'rename-issue', label: 'Rename', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'title' }, input: { type: 'string' } },
           { id: 'delete-issue', label: 'Delete', appliesTo: String(ISSUE), emits: { kind: 5 } },
+          // A delete declared as a change of `deleted`, as Ship's delete-project is since ALO-6: a select, like archive.
+          { id: 'delete-by-field', label: 'Delete', appliesTo: String(ISSUE), emits: { kind: 1851, field: 'deleted' }, input: { type: 'string', enum: 'deleted' } },
         ],
       }),
     })
@@ -165,7 +171,7 @@ describe('resolveObjectsAsViewer', () => {
       const fromRelay = await resolveObjectsAsViewer([addresses[0]], 'https://relay.test', token)
 
       // The control: the relay's answer offers every action, so the copy's is a filter, not a missing manifest.
-      expect(fromRelay[addresses[0]]?.actions.map((a) => a.id).sort()).toEqual(['archive-issue', 'comment', 'delete-issue', 'rename-issue', 'set-issue-status'])
+      expect(fromRelay[addresses[0]]?.actions.map((a) => a.id).sort()).toEqual(['archive-issue', 'comment', 'delete-by-field', 'delete-issue', 'rename-issue', 'set-issue-status'])
       expect(fromCopy[addresses[0]]?.actions.map((a) => a.id).sort()).toEqual(['comment', 'set-issue-status'])
     } finally {
       events[0] = manifest

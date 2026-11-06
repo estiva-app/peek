@@ -8,13 +8,14 @@
  * view it opens on, what it hands the teams column, the header, and that the
  * page beside it only ever shows a file the column draws.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { FolderTree } from './FolderTree'
 import { PeekSetup } from '@/lib/PeekSetup'
+import { ToastProvider } from '@/lib/toast'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -74,6 +75,21 @@ const PROJECT_CHANNEL = '5b2e7c90-3d4a-4f1b-9c8e-7a6b5c4d3e2f'
 // Archived by its admin: in no list but the Archive view's (5 October).
 const ARCHIVED = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2918'
 
+/** A project Cath deleted at `at`, in `team`; `restorable` when its app declares Delete as a change it can undo. */
+function deletedProject(title: string, at: number, restorable: boolean, team = TEAM): ForeignObject {
+  return foreign({
+    ref: `30850:${SHIP}:${title}`,
+    address: `30850:${SHIP}:${title}`,
+    naddr: `naddr-${title}`,
+    kind: 30850,
+    folder: team,
+    slots: { title: { value: title } },
+    deleted: { by: CATH, at },
+    people: { [CATH]: { displayName: 'Cath' } },
+    actions: restorable ? [{ id: 'delete-project', label: 'Delete', control: 'select', field: 'deleted' }] : [],
+  } as Partial<ForeignObject>)
+}
+
 const folders: FolderSummary[] = [
   // Its owners and admins may rename and archive it (SPEC §3.2); its channel is what an archive names.
   { id: OTHER, name: 'Zebra', hasState: true, admins: [CATH], channel: `39000:relay:${OTHER}` },
@@ -89,11 +105,19 @@ const reads = vi.hoisted(() => ({
   contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
   /** More rows in the team's listing, for one test. */
   extra: [] as ForeignObject[],
+  /** Whether every deleted project was asked for: while Archive shows. */
+  deleted: vi.fn<(enabled: boolean) => unknown>(),
+  /** Every deleted project, newest deleted first, as the seam answers them. */
+  deletedProjects: [] as ForeignObject[],
+  /** Restore's answer; what it sends is `projectFieldsWrite.test.ts`'s. */
+  restore: vi.fn(async () => ({ ok: true as const })),
+  actual: {} as Record<string, unknown>,
 }))
 const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 
 vi.mock('@/api', async () => ({
-  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  ...(reads.actual = await vi.importActual<Record<string, unknown>>('@/api')),
+  useForeignObjects: () => ({ ...(reads.actual.useForeignObjects as () => object)(), restoreFile: reads.restore }),
   useResolvedReferences: () => ({}),
   useFolders: () => ({ folders, signedOut: false, reload: async () => {} }),
   useFolderContents: (folder: string | null | undefined, options?: { archived?: boolean }) => {
@@ -104,6 +128,10 @@ vi.mock('@/api', async () => ({
         : 'loading',
       reload: async () => {},
     }
+  },
+  useDeletedProjects: (enabled: boolean) => {
+    reads.deleted(enabled)
+    return { state: enabled ? reads.deletedProjects : 'loading', reload: async () => {} }
   },
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -135,7 +163,7 @@ function page(props: Parameters<typeof FolderTree>[0]) {
     <MemoryRouter initialEntries={['/topics']}>
       <Routes>
         {/* Peek's router given to every kit link, as main.tsx does: a row's plain click changes page through it. */}
-        <Route path="*" element={<PeekSetup><FolderTree {...props} /><Probe /></PeekSetup>} />
+        <Route path="*" element={<PeekSetup><ToastProvider><FolderTree {...props} /><Probe /></ToastProvider></PeekSetup>} />
       </Routes>
     </MemoryRouter>
   )
@@ -232,6 +260,15 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
     mount(ARCHIVED_FILE)
     expect(title('Archive')).not.toBeNull()
     expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  it('a deleted file that arrives turns the column to Archive, on its Deleted tab, and its row is current (ALO-6)', () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    mount({ ...LIVE, selectedRef: reads.deletedProjects[0].ref, selectedDeleted: true })
+    expect(title('Archive')).not.toBeNull()
+    expect(screen.getByRole('tab', { name: /Deleted/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('link', { name: 'Roadmap' }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
@@ -355,6 +392,56 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(items).toContain('Delete')
     for (const gone of ['Unarchive', 'Rename', 'New topic inside', 'Move…']) expect(items).not.toContain(gone)
   })
+  it('its Deleted tab is one list of every deleted project, counted, each with its team, who and when, and Restore where declared (ALO-6)', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true), deletedProject('Launch', 1_000, false, OTHER)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    expect(screen.getByRole('tab', { name: /Deleted/ }).textContent).toContain('2')
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows.map((row) => within(row).getByRole('link').textContent)).toEqual(['Roadmap', 'Launch'])
+    expect(rows[0].textContent).toMatch(/Peek · Deleted by Cath · /)
+    expect(rows[1].textContent).toMatch(/Zebra · Deleted by Cath · /)
+    // Restore only on the project whose app declares its delete as a change it can undo.
+    expect(within(rows[0]).getByRole('button', { name: 'Restore' })).not.toBeNull()
+    expect(within(rows[1]).queryByRole('button', { name: 'Restore' })).toBeNull()
+  })
+
+  it('holds the Deleted tab for the visit, as it holds the teams opened there', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const { unmount } = mount()
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    unmount()
+    mount()
+    expect(screen.getByRole('tab', { name: /Deleted/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('Restore on the project that is open hands it back to the page to re-read, and no other (ALO-6)', async () => {
+    reads.deletedProjects = [deletedProject('Roadmap', 2_000, true)]
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const onRestored = vi.fn()
+    mount({ selectedRef: `30850:${SHIP}:Roadmap`, selectedDeleted: true, onRestored })
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(onRestored).toHaveBeenCalledTimes(1))
+    expect(onRestored.mock.calls[0][0].ref).toBe(`30850:${SHIP}:Roadmap`)
+
+    reads.restore.mockResolvedValueOnce({ ok: false, reason: 'No.' } as never)
+    onRestored.mockClear()
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(reads.restore).toHaveBeenCalledTimes(2))
+    expect(onRestored).not.toHaveBeenCalled()
+  })
+
+  it('says so when nothing is deleted', async () => {
+    reads.deletedProjects = []
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    await userEvent.click(screen.getByRole('tab', { name: /Deleted/ }))
+    expect(screen.getByText('Nothing deleted.')).not.toBeNull()
+  })
+
 
   it('a Folder opened there reads what is archived in it', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')

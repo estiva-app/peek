@@ -51,6 +51,9 @@ export interface FileControls {
   summarize?: ResolvedAction
 }
 
+/** The field a file is deleted by (SPEC §6.5): `true` deletes it, the empty value restores it. */
+export const DELETED_FIELD = 'deleted'
+
 export function fileControlsOf(
   file: Pick<ForeignObject, 'actions' | 'slots' | 'naddr' | 'parentField'> | null | undefined,
 ): FileControls {
@@ -60,7 +63,8 @@ export function fileControlsOf(
   if (!file?.naddr) return {}
   const titleField = file.slots.title?.field
   const rename = titleField ? file.actions.find((a) => a.control === 'text' && a.field === titleField) : undefined
-  const remove = file.actions.find((a) => a.control === 'confirm')
+  // A `kind:5` asks to confirm; a delete declared as a change of `deleted` (SPEC §6.5, ALO-6) is found by field.
+  const remove = file.actions.find((a) => a.control === 'confirm') ?? file.actions.find((a) => a.field === DELETED_FIELD)
   const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
   const archive = file.actions.find((a) => a.field === ARCHIVED_FIELD)
   const summarize = file.actions.find((a) => a.control === 'text' && a.field === SUMMARY_FIELD)

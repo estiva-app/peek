@@ -270,9 +270,14 @@ export function FilePage() {
             selectedParent={selected?.parentRef}
             // Unknown until the file resolves: the column judges nothing on a guess.
             selectedArchived={file ? !!file.archived : undefined}
+            selectedDeleted={file ? !!file.deleted : undefined}
             // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
             expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
             onControl={pane.openControl}
+            // Restored while open: the page re-reads it, rather than go on saying Deleted.
+            onRestored={(restored) => {
+              if (restored.ref === file?.ref) void view.reload()
+            }}
           />
           )
         }
