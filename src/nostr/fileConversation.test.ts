@@ -184,11 +184,11 @@ beforeEach(() => {
 })
 
 describe('fileConversationAsViewer reads the whole conversation below the roots', () => {
-  it('returns the roots in the order asked, their replies, and their tags', async () => {
+  it('returns the roots oldest first (§6.3), their replies, and their tags', async () => {
     const found = await fileConversationAsViewer(container, [withPicture.id, root.id], 'https://relay.test', token)
-    expect(found.roots.map((r) => r.id)).toEqual([withPicture.id, root.id])
+    expect(found.roots.map((r) => r.id)).toEqual([root.id, withPicture.id])
     expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
-    expect(found.roots[0].files).toMatchObject([
+    expect(found.roots[1].files).toMatchObject([
       {
         name: 'shot.png',
         contentType: 'image/png',
@@ -199,7 +199,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       },
     ])
     // The file's own address is the container, not a reference.
-    expect(found.roots[0].references).toEqual([`30851:${CATH}:some-issue`])
+    expect(found.roots[1].references).toEqual([`30851:${CATH}:some-issue`])
   })
 
   it('carries what was done to each root and reply: the edit, the reactions, the resolution', async () => {
@@ -257,17 +257,57 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       })
     const later = orphan('Still here', 1_800_000_200)
     const earlier = orphan('Me too', 1_800_000_100)
-    const world = [manifest, peekManifest, file, linked, root, withPicture, reply, edit, reaction, resolved, later, earlier]
+    // Its author took it back: the replies name Cath as the comment's author (§6.4), and Cath signed the kind:5 (§6.5).
+    const deletion = event({ kind: 5, pubkey: CATH, created_at: 1_800_000_300, tags: [['e', GONE]] })
+    const world = [manifest, peekManifest, file, linked, root, withPicture, reply, edit, reaction, resolved, later, earlier, deletion]
 
     it('draws them under a stand-in for the deleted root, dated by its first reply', async () => {
       queryRelay.mockImplementation(relayOver(world))
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
       const standIn = found.roots.find((r) => r.id === GONE)
       expect(standIn).toMatchObject({ deleted: true, author: '', body: '', createdAt: earlier.created_at })
+      expect(standIn?.unseen).toBeUndefined()
+      expect((found.threads ?? {})[GONE]?.state).toBe('deleted')
       expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
-      // Nothing is asked about the stand-in itself; its replies are targets as usual.
-      expect(found.decorations.byId[GONE]).toBeUndefined()
       expect(found.decorations.byId[later.id]).toEqual({ reactions: [], resolutions: [] })
+    })
+
+    it('says it can’t be shown, not that it was deleted, when no kind:5 from its author came back (§6.5, ONE-9)', async () => {
+      const notTheAuthors = event({ kind: 5, pubkey: MIKY, created_at: 1_800_000_300, tags: [['e', GONE]] })
+      for (const extra of [[], [notTheAuthors]]) {
+        queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== deletion), ...extra]))
+        const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+        const standIn = found.roots.find((r) => r.id === GONE)
+        expect(standIn).toMatchObject({ unseen: true, author: '', body: '' })
+        expect(standIn?.deleted).toBeUndefined()
+        expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+      }
+    })
+
+    it('stays resolved when it was resolved before it was deleted (§6.5, ONE-9)', async () => {
+      const resolvedGone = event({
+        kind: 9101,
+        pubkey: CATH,
+        created_at: 1_800_000_250,
+        content: 'shipped',
+        tags: [['h', FOLDER], ['e', GONE], ['t', 'resolution'], ['action', 'resolved']],
+      })
+      queryRelay.mockImplementation(relayOver([...world, resolvedGone]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect((found.threads ?? {})[GONE]?.resolution).toMatchObject({ action: 'resolved', by: CATH, message: 'shipped' })
+    })
+
+    it('files a reply to a reply under the gone comment’s thread, not as a thread of its own (§6.4)', async () => {
+      const nested = event({
+        kind: COMMENT,
+        content: 'Answering Me too',
+        created_at: 1_800_000_150,
+        tags: [['A', ADDRESS], ['K', String(BARE_FILE)], ['E', GONE], ['e', earlier.id], ['k', String(COMMENT)], ['p', MIKY], ['h', FOLDER]],
+      })
+      queryRelay.mockImplementation(relayOver([...world, nested]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id, GONE])
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Answering Me too', 'Still here'])
     })
 
     it('draws them when the deleted comment was the file’s only one', async () => {
@@ -281,6 +321,17 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       const found = await fileConversationAsViewer(container, [root.id, GONE], 'https://relay.test', token)
       expect(found.roots.map((r) => r.id)).toEqual([root.id, GONE])
       expect(found.roots[1].deleted).toBe(true)
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+    })
+
+    it('keeps the thread, drawn deleted, never "can’t be shown", when only the deletion read is refused (§6.5)', async () => {
+      const relay = relayOver(world.filter((e) => e !== deletion))
+      queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
+        filters.some((f) => (f.kinds as number[] | undefined)?.includes(5)) ? { ok: false as const, reason: 'rate-limited: slow down' } : relay(url, filters),
+      )
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.find((r) => r.id === GONE)).toMatchObject({ deleted: true })
+      expect(found.roots.find((r) => r.id === GONE)?.unseen).toBeUndefined()
       expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
     })
 
@@ -311,6 +362,19 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.replies[GONE]).toBeUndefined()
     })
 
+    it('adds no thread for a crossed reply, one naming this file and another, under a comment that is gone (§6.4)', async () => {
+      const OTHER_GONE = '9'.repeat(64)
+      const crossed = event({
+        kind: COMMENT,
+        content: 'About two pages',
+        tags: [['A', ADDRESS], ['A', `30851:${CATH}:another-page`], ['e', OTHER_GONE], ['p', CATH], ['h', FOLDER]],
+      })
+      queryRelay.mockImplementation(relayOver([...world, crossed]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).not.toContain(OTHER_GONE)
+      expect(found.replies[OTHER_GONE]).toBeUndefined()
+    })
+
     it('leaves alone a reply whose parent the relay still holds', async () => {
       const toHeld = event({ kind: COMMENT, content: 'On a root not asked about', tags: [['A', ADDRESS], ['e', withPicture.id], ['h', FOLDER]] })
       queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))
@@ -323,6 +387,9 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       queryRelay.mockImplementation(relayOver(world))
       const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
       expect(found.deleted).toEqual([{ id: GONE, createdAt: earlier.created_at }])
+      queryRelay.mockImplementation(relayOver(world.filter((e) => e !== deletion)))
+      const unseen = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
+      expect(unseen.deleted).toEqual([{ id: GONE, createdAt: earlier.created_at, unseen: true }])
       expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
       expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
       expect(Object.keys(found.roots)).toEqual([root.id])
@@ -599,6 +666,13 @@ describe('the decorations are written as the suite agrees them', () => {
     expect(published.tags).toContainEqual(['h', FOLDER])
     expect(published.tags).toContainEqual(['e', root.id])
     expect(published.tags).toContainEqual(['e', reply.id, '', 'support'])
+  })
+
+  it('a resolution is filed in its comment’s own Folder, not the file’s, when the two differ (§6.4, C51, ONE-9)', async () => {
+    const COMMENTS_TEAM = 'e'.repeat(32)
+    await resolveAsViewer({ container, targetEventId: root.id, action: 'resolved', folder: COMMENTS_TEAM }, 'https://relay.test', token)
+    const tags = signed().tags
+    expect(tags.filter((t) => t[0] === 'h')).toEqual([['h', COMMENTS_TEAM]])
   })
 
   it('a deletion is a kind:5 naming the event, whichever kind it was', async () => {

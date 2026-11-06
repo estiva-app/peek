@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { AttachmentCard, ReplyCard as KitReplyCard } from '@estiva-app/ui'
 import type { Embed } from '@estiva-app/protocol'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { REACTION_OPTIONS, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
+import { REACTION_OPTIONS, reactorNameIn, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
 import { CURRENT_USER_NAME, type ReactionData, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
@@ -195,7 +195,7 @@ export function ReplyCard({
           ? files.map((f, i) => <AttachmentCard key={`${f.sha256 ?? f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />)
           : undefined
       }
-      reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: (name) => name, viewer: CURRENT_USER_NAME, onToggle: readOnly || !onReactionsChange ? undefined : handleReact }}
+      reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: reactorNameIn(reactionsState), viewer: CURRENT_USER_NAME, onToggle: readOnly || !onReactionsChange ? undefined : handleReact }}
       isNew={isNew}
       urgent={isUrgent}
       own={isOwnMessage}

@@ -67,7 +67,24 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, foldEmbeds, groupThreads, isCommentOn, KIND_EDIT, mentionTagsFor, parentOf, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
+import {
+  anchorsOf,
+  decorationsOf,
+  foldEmbeds,
+  foldThreads,
+  groupThreads,
+  isCommentOn,
+  KIND_EDIT,
+  mentionTagsFor,
+  parentOf,
+  resolutionOf,
+  URGENT_TAG,
+  urgentTagsFor,
+  type Decorations,
+  type Resolution,
+  type RootState,
+  type Thread,
+} from '@estiva-app/conversation'
 import type { QueryFn, Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
@@ -125,10 +142,25 @@ export interface ConversationEvent extends FileComment {
   /** The cards its author asked for — its `embed` tags (SPEC §13.6.2). Absent: none. */
   embeds?: Embed[]
   /**
-   * A root that was deleted while replies to it stay (PER-24): a stand-in with
-   * the deleted event's id, no author and no body, dated by its first reply.
+   * A root that was deleted while replies to it stay (PER-24, SPEC §6.5): its
+   * author's `kind:5` came back. A stand-in with the deleted event's id, no
+   * author and no body, dated by its first reply.
    */
   deleted?: true
+  /** A root the read did not return, with nothing saying it was deleted (SPEC §6.5's "not returned", ONE-9): the same stand-in, "can't be shown". */
+  unseen?: true
+}
+
+/** A stand-in for a root that is gone: deleted, or not returned. Nobody wrote it, so it has nothing to edit, delete, react to or resolve. */
+export const isGone = (event: Pick<ConversationEvent, 'deleted' | 'unseen'>): boolean => !!(event.deleted || event.unseen)
+
+/** What the shared fold says of one thread (`foldThreads`, SPEC §6.4–§6.5, ONE-9). */
+export interface ThreadFold {
+  state: RootState
+  /** The thread's Folder: its comment's `h`, else its replies'. A resolve is written there (§6.4, C51). */
+  folder?: string
+  /** The resolve or reopen that counts (§6.4, C51), whoever's state it is; absent when none does. */
+  resolution?: Resolution
 }
 
 /** Everything the view draws, after the three reads. */
@@ -143,6 +175,8 @@ export interface FileConversation {
    * could not reach (`@estiva-app/conversation`'s `decorationsOf`, CON-5).
    */
   decorations: Decorations
+  /** Each root's thread as the shared fold reads it, by the root's id: its state, its Folder and the resolve that counts. */
+  threads: Record<string, ThreadFold>
   /**
    * The cards an edit chose instead, by lowercase id — the latest edit carrying
    * an `embed` replaces the message's own set (§6.8, `foldEmbeds`). A message no
@@ -289,14 +323,8 @@ export function fileConversationAsViewer(
 
 /** {@link fileConversationAsViewer} over any query: the relay's, or the conversation store's (OPT-3). */
 async function fileConversationWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
-  const { threads, orphaned } = await threadsWithDeletedRoots(container.address, rootIds, query)
-  const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
-  const { roots, replies } = threadsDrawn(container, rootIds, threads)
-  for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
-  // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
-  const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
-
-  return decorate(allRoots, replies, query)
+  const { threads, gone } = await threadsWithGoneRoots(container.address, rootIds, query)
+  return folded([...threadsDrawn(container, rootIds, threads), ...gone.events], query, (event) => withTags(fileCommentOf(event), event, container.address), undefined, gone)
 }
 
 /**
@@ -313,18 +341,17 @@ export const FIRST_PAGE = 30
  */
 export async function firstPageWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
   const newest = rootIds.slice(-FIRST_PAGE)
-  const { roots, replies } = threadsDrawn(container, newest, await threadEventsWith(container.address, newest, query))
-  const messages = rootIds.length + Object.values(replies).reduce((n, list) => n + list.length, 0)
-  return { ...(await decorate(roots, replies, query)), earlier: { messages } }
+  const drawn = threadsDrawn(container, newest, await threadEventsWith(container.address, newest, query))
+  const conversation = await folded(drawn, query, (event) => withTags(fileCommentOf(event), event, container.address))
+  const messages = rootIds.length + Object.values(conversation.replies).reduce((n, list) => n + list.length, 0)
+  return { ...conversation, earlier: { messages } }
 }
 
-/** The roots `rootIds` names that the thread read reached, and their replies, as the view draws them. */
-function threadsDrawn(
-  container: FileContainer,
-  rootIds: readonly string[],
-  threads: Threads,
-): { roots: ConversationEvent[]; replies: Record<string, ConversationEvent[]> } {
-  const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
+/**
+ * The roots `rootIds` names that the thread read reached, and the replies under them: the events the view folds. A
+ * reply under a root this conversation does not draw (a mention of the file, say) is not one of its threads.
+ */
+function threadsDrawn(container: FileContainer, rootIds: readonly string[], threads: Threads): SignedEvent[] {
   const roots = rootIds
     .map((id) => threads.roots[id])
     .filter((root): root is SignedEvent => !!root)
@@ -335,12 +362,7 @@ function threadsDrawn(
     // a `kind:9` among them is one the owner declares, so both are allowed here
     // and this re-reads only the tags.
     .filter((root) => isCommentOn(root, container.address, DECLARABLE_COMMENT_KINDS))
-    .map(conversationEvent)
-  const replies: Record<string, ConversationEvent[]> = {}
-  for (const [rootId, list] of Object.entries(threads.replies)) {
-    replies[rootId] = list.map(conversationEvent)
-  }
-  return { roots, replies }
+  return [...roots, ...roots.flatMap((root) => threads.replies[root.id] ?? [])]
 }
 
 /**
@@ -354,22 +376,25 @@ export async function fileThreadsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileThreads> {
-  const { threads, orphaned } = await threadsWithDeletedRoots(address, rootIds, viewerQuery(relayUrl, token))
+  const { threads, gone } = await threadsWithGoneRoots(address, rootIds, viewerQuery(relayUrl, token))
   const replies: Record<string, FileComment[]> = {}
-  for (const [rootId, list] of [...Object.entries(threads.replies), ...Object.entries(orphaned.replies)]) replies[rootId] = list.map(fileCommentOf)
+  for (const [rootId, list] of Object.entries(threads.replies)) replies[rootId] = list.map(fileCommentOf)
+  // The gone comments, by the shared fold (§6.5): deleted by their author, or not returned.
+  const deleted: NonNullable<FileThreads['deleted']> = []
+  for (const thread of foldThreads(gone.events)) {
+    if (thread.state === 'present' || thread.replies.length === 0) continue
+    replies[thread.id] = thread.replies.map((reply) => fileCommentOf(reply.event))
+    deleted.push({ id: thread.id, createdAt: thread.replies[0].event.created_at, ...(goneState(thread.state, gone.deletionsRead) === 'unseen' ? { unseen: true as const } : {}) })
+  }
   return {
     roots: Object.fromEntries(Object.entries(threads.roots).map(([id, event]) => [id, fileCommentOf(event)])),
     replies,
-    deleted: orphaned.roots.map(({ id, createdAt }) => ({ id, createdAt })),
+    deleted,
   }
 }
 
-/** interop's thread read, and beside it the replies whose comment was deleted — both file panes' read. */
-async function threadsWithDeletedRoots(
-  address: string,
-  rootIds: readonly string[],
-  query: QueryFn,
-): Promise<{ threads: Threads; orphaned: Awaited<ReturnType<typeof deletedRootsOf>> }> {
+/** interop's thread read, and beside it the replies whose comment is gone and what says whether it was deleted — both file panes' read. */
+async function threadsWithGoneRoots(address: string, rootIds: readonly string[], query: QueryFn): Promise<{ threads: Threads; gone: GoneRoots }> {
   const [threads, onFile] = await Promise.all([
     threadEventsWith(address, rootIds, query),
     // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
@@ -380,9 +405,22 @@ async function threadsWithDeletedRoots(
   // which `#e` still returns, would hang from a root that is not drawn.
   const known = new Set(Object.keys(threads.roots))
   for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
-  const orphaned = await deletedRootsOf(onFile, known, address, query).catch(() => ({ roots: [], replies: {} }))
-  return { threads, orphaned }
+  const gone = await goneRootsOf(onFile, known, address, query).catch(() => NONE_GONE)
+  return { threads, gone }
 }
+
+/** A gone comment's state: the fold's, but never "missing" when the deletion read was refused (§6.5). */
+const goneState = (state: RootState, deletionsRead: boolean): 'deleted' | 'unseen' => (state === 'missing' && deletionsRead ? 'unseen' : 'deleted')
+
+/**
+ * The replies under comments that are gone and the `kind:5`s read for them. `deletionsRead` false: that read was
+ * refused, so "not returned" is unproven and a gone comment is drawn deleted, as before ONE-9, never "can't be shown".
+ */
+interface GoneRoots {
+  events: SignedEvent[]
+  deletionsRead: boolean
+}
+const NONE_GONE: GoneRoots = { events: [], deletionsRead: true }
 
 /** How many of a file's comments the `#A` read asks for — Buzz's clamp per filter. */
 const FILE_COMMENTS_LIMIT = 1_000
@@ -393,48 +431,43 @@ function commentsOnFile(address: string, query: QueryFn): Promise<SignedEvent[]>
 }
 
 /**
- * The replies whose comment was deleted, each set under a stand-in for it (PER-24).
+ * The replies whose comment the thread read did not reach, and the `kind:5`s
+ * that say whether it was deleted: the events the shared fold needs to draw
+ * each such thread (PER-24, SPEC §6.5, ONE-9).
  *
  * Deleting a comment deletes that one event: NIP-09 lets an author delete only
  * their own, the relay deletes exactly what is named, and `ConfirmDelete` tells
  * the person deleting that the replies stay. They do — but the `#e` thread read
  * asks about the roots it knows, and the deleted one is no longer among them,
  * so they are found by NIP-22's `A` instead (the same answer at any `limit`
- * since PER-9) and drawn under a deleted root, as Buzz draws a thread whose
- * first message was deleted.
+ * since PER-9). `foldThreads` files them under their thread's comment, a reply
+ * to a reply too, and its author's `kind:5` makes that comment "deleted";
+ * without one it "can't be shown".
  *
- * A parent counts as deleted only when a read by its id returns nothing: a
- * parent this conversation did not ask about but the relay still holds is not
- * a deleted one, and a reply to a reply here is left where it was.
+ * A comment is gone only when a read by its id returns nothing: one this
+ * conversation did not ask about but the relay still holds is not, and its
+ * replies are left out. Only a reply whose thread's `A` is this file counts,
+ * so a reply filed about another page adds no thread to this one.
  */
-async function deletedRootsOf(
-  onFile: readonly SignedEvent[],
-  known: ReadonlySet<string>,
-  address: string,
-  query: QueryFn,
-): Promise<{ roots: ConversationEvent[]; replies: Record<string, SignedEvent[]> }> {
-  const byParent = new Map<string, SignedEvent[]>()
-  for (const event of onFile) {
-    // A reply is never a comment (SPEC §6.4); what places it on this file is its thread's `A`.
-    if (known.has(event.id) || !anchorsOf(event).includes(address)) continue
-    const parent = parentOf(event)
-    if (!parent || known.has(parent)) continue
-    byParent.set(parent, [...(byParent.get(parent) ?? []), event])
-  }
-  if (byParent.size === 0) return { roots: [], replies: {} }
+async function goneRootsOf(onFile: readonly SignedEvent[], known: ReadonlySet<string>, address: string, query: QueryFn): Promise<GoneRoots> {
+  // A reply is never a comment (SPEC §6.4); what places it on this file is its thread's `A`.
+  const candidates = onFile.filter((event) => !known.has(event.id) && anchorsOf(event).includes(address))
+  const { replies, missingRoots } = groupThreads(candidates)
+  const ids = missingRoots.filter((id) => !known.has(id))
+  if (ids.length === 0) return NONE_GONE
 
-  const ids = [...byParent.keys()]
-  const held = new Set((await query([{ ids, limit: ids.length }])).map((e) => e.id))
-
-  const roots: ConversationEvent[] = []
-  const replies: Record<string, SignedEvent[]> = {}
-  for (const [parent, list] of byParent) {
-    if (held.has(parent)) continue
-    const thread = [...list].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
-    replies[parent] = thread
-    roots.push({ id: parent, author: '', body: '', createdAt: thread[0].created_at, kind: KIND.COMMENT, files: [], references: [], urgent: [], deleted: true })
+  // Apart, so a refused deletion read costs only the deleted-or-not answer, not the threads.
+  const [found, deletions] = await Promise.all([
+    query([{ ids, limit: ids.length }]),
+    query([{ kinds: [KIND.DELETION], '#e': ids, limit: FILE_COMMENTS_LIMIT }]).catch(() => null),
+  ])
+  const asked = new Set(ids)
+  const held = new Set(found.filter((e) => asked.has(e.id)).map((e) => e.id))
+  const gone = ids.filter((id) => !held.has(id))
+  return {
+    events: [...gone.flatMap((id) => replies[id] ?? []), ...(deletions ?? []).filter((e) => e.kind === KIND.DELETION)],
+    deletionsRead: deletions !== null,
   }
-  return { roots, replies }
 }
 
 type FileContainer = Extract<ConversationContainer, { kind: 'file' }>
@@ -513,35 +546,104 @@ async function channelConversationWith(h: string, query: QueryFn, general = fals
     parts: partsAndAnchorOf(event),
     embeds: embedsOf(event),
   })
-  const threaded = groupThreads([...messages.values()])
-  const roots = threaded.roots.map(asEvent)
-  const replies: Record<string, ConversationEvent[]> = {}
   // A reply whose thread's root this channel does not hold is dropped rather
   // than stranded under a stand-in: a DM's messages are never deleted from under replies.
-  for (const root of threaded.roots) {
-    const list = threaded.replies[root.id]
-    if (list) replies[root.id] = list.map(asEvent)
-  }
-  return decorate(roots, replies, query)
+  return folded([...messages.values()], query, asEvent, (thread) => thread.state === 'present')
 }
 
-/** What has been done to every root and reply: the third read, whichever container they came from — or none, for a file's mentions. */
-export async function decorate(roots: ConversationEvent[], replies: Record<string, ConversationEvent[]>, query: QueryFn): Promise<FileConversation> {
-  // A deleted root's stand-in has nothing done to it that anyone can see.
-  // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8).
-  const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))
-  // The edits that read fetches carry the cards an edit re-chose too, so they are
-  // kept on the way past rather than asked for a second time.
-  const edits: SignedEvent[] = []
+/**
+ * A conversation's events read through the one shared fold (`foldThreads`, SPEC §6.4–§6.6, ONE-9): its threads in
+ * order, every reply under its thread's comment (a reply to a reply too), whether a gone comment was deleted or
+ * can't be shown, and the resolve that counts. `events` are its messages and the `kind:5`s read for a gone comment;
+ * what was done to them is read here, a gone comment's resolutions among it. `keep` leaves a thread out.
+ */
+async function folded(
+  events: readonly SignedEvent[],
+  query: QueryFn,
+  asEvent: (event: SignedEvent) => ConversationEvent,
+  keep: (thread: Thread) => boolean = () => true,
+  gone: Pick<GoneRoots, 'deletionsRead'> = NONE_GONE,
+): Promise<FileConversation> {
+  const messages = events.filter((event) => event.kind !== KIND.DELETION)
+  const { replies: byRoot, missingRoots } = groupThreads(messages)
+  // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8). A gone comment is a target too,
+  // for its thread's resolution (§6.5: still resolved when it was), dated by its first reply.
+  const targets = [
+    ...messages.map((e) => ({ id: e.id, at: e.created_at, body: e.content })),
+    ...missingRoots.flatMap((id) => (byRoot[id]?.length ? [{ id, at: byRoot[id][0].created_at }] : [])),
+  ]
+  const { decorations, editedEmbeds, read } = await decorationsWith(targets, query)
+
+  const roots: ConversationEvent[] = []
+  const replies: Record<string, ConversationEvent[]> = {}
+  const threads: Record<string, ThreadFold> = {}
+  for (const thread of foldThreads([...events, ...read]).filter(keep)) {
+    const root: ConversationEvent = thread.root
+      ? asEvent(thread.root.event)
+      : {
+          id: thread.id,
+          author: '',
+          body: '',
+          // Dated by its first reply: the nearest time the relay still holds.
+          createdAt: thread.replies[0].event.created_at,
+          kind: thread.replies[0].kind,
+          files: [],
+          references: [],
+          urgent: [],
+          ...(goneState(thread.state, gone.deletionsRead) === 'deleted' ? { deleted: true as const } : { unseen: true as const }),
+        }
+    roots.push(root)
+    if (thread.replies.length) replies[root.id] = thread.replies.map((reply) => asEvent(reply.event))
+    threads[root.id] = { state: thread.state, ...(thread.folder ? { folder: thread.folder } : {}), ...(thread.resolution ? { resolution: thread.resolution } : {}) }
+  }
+  return { roots, replies, decorations, editedEmbeds, threads }
+}
+
+/**
+ * What has been done to every message: the third read (`decorationsOf`), and every event it brought, for the fold.
+ * The edits it fetches carry the cards an edit re-chose too, so they are kept on the way past rather than asked for a
+ * second time.
+ */
+async function decorationsWith(
+  targets: readonly { id: string; at: number; body?: string }[],
+  query: QueryFn,
+): Promise<{ decorations: Decorations; editedEmbeds: Record<string, Embed[]>; read: SignedEvent[] }> {
+  const read: SignedEvent[] = []
   const recording: QueryFn = async (filters) => {
     const answer = await query(filters)
-    for (const event of answer) if (event.kind === KIND_EDIT) edits.push(event)
+    read.push(...answer)
     return answer
   }
   const decorations = await decorationsOf(targets, recording)
   const ids = new Set(targets.map((t) => t.id.toLowerCase()))
+  const edits = read.filter((event) => event.kind === KIND_EDIT)
   const editedEmbeds = Object.fromEntries(Object.entries(foldEmbeds(edits)).filter(([id]) => ids.has(id)))
-  return { roots, replies, decorations, editedEmbeds }
+  return { decorations, editedEmbeds, read }
+}
+
+/**
+ * A file's mentions as one conversation: each mention a root of its own, its replies under it, and what was done to
+ * them (`fileMentions`). A mention may itself be a reply, so these are not folded into threads: each thread's
+ * resolution is still the one §6.4 counts, in the Folder the mention was said in (`resolutionOf`).
+ */
+export async function decorate(
+  roots: ConversationEvent[],
+  replies: Record<string, ConversationEvent[]>,
+  query: QueryFn,
+  folderOf: (root: ConversationEvent) => string | undefined,
+): Promise<FileConversation> {
+  const targets = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))
+  const { decorations, editedEmbeds } = await decorationsWith(targets, query)
+  const threads: Record<string, ThreadFold> = {}
+  for (const root of roots) {
+    const folder = folderOf(root)
+    const resolution = resolutionOf(decorations.byId[root.id.toLowerCase()]?.resolutions ?? [], {
+      folder,
+      replies: (replies[root.id] ?? []).map((reply) => reply.id),
+    })
+    threads[root.id] = { state: 'present', ...(folder ? { folder } : {}), ...(resolution ? { resolution } : {}) }
+  }
+  return { roots, replies, decorations, editedEmbeds, threads }
 }
 
 /** What a write reports: the relay's answer, and the event's id when it took it. */
@@ -837,12 +939,15 @@ export async function resolveAsViewer(
     message?: string
     /** The reply that carried the resolution, when it was written in the thread. */
     supportingEventId?: string
+    /** The comment's `h`, as read (`ThreadFold.folder`). Absent, the container's: a comment not read yet is one just written there. */
+    folder?: string
   },
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
   const unsigned = buildResolution(token.pubkey, Date.now(), {
-    channelUuid: args.container.h,
+    // The comment's own Folder (§6.4, C51): only a resolve filed in its thread's Folder counts.
+    channelUuid: args.folder ?? args.container.h,
     targetEventId: args.targetEventId,
     action: args.action,
     ...(args.message ? { rationale: args.message } : {}),

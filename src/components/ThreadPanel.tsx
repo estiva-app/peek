@@ -284,6 +284,7 @@ export function ThreadPanel({
         at: conversation.createdAtMs,
         words: previewText(conversation.body).replace(/\n/g, ' '),
         deleted: conversation.isDeleted,
+        unseen: conversation.isUnseen,
       }}
       // An archived thread with no notice has nothing under it; a deleted first message says why instead of the box.
       notice={readOnlyNotice ?? (readOnlyProp ? undefined : composerNotice)}

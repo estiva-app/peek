@@ -13,6 +13,11 @@ export const REACTION_OPTIONS = REACTION_EMOJI.map(({ emoji, name }) => ({ emoji
  */
 export type ReactionAnswer = Exclude<Awaited<ReturnType<NonNullable<ReactionRowProps['onToggle']>>>, void>
 
+/** A reactor's name, as `ReactionRow`'s `nameOf` asks it: what a pill's `names` says, else the id itself (a name already, or "You"). */
+export function reactorNameIn(reactions: readonly ReactionData[]): (id: string) => string {
+  return (id) => reactions.find((r) => r.names?.[id] !== undefined)?.names?.[id] ?? id
+}
+
 /** Your reaction with `emoji` on or off, drawn at once (OPT-8): your name added to it, or taken off, and an emptied pill dropped. */
 export function toggledReaction(reactions: readonly ReactionData[], emoji: string): ReactionData[] {
   const existing = reactions.find((r) => r.emoji === emoji)

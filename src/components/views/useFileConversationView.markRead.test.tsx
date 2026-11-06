@@ -86,6 +86,7 @@ const conversation: FileConversation = {
   roots: [root],
   replies: { [root.id]: [reply] },
   decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  threads: {},
 }
 
 function View({ openThreadId }: { openThreadId: string | undefined }) {

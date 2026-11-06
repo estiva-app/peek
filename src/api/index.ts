@@ -84,6 +84,7 @@ export {
 export {
   useFileConversation,
   conversationKeyOf,
+  isGone,
   relayAttachmentOf,
   type FileConversationState,
   type FileConversationActions,

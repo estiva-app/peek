@@ -139,7 +139,7 @@ import { conversationKey, conversationsFor } from './conversations'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const container = { kind: 'file' as const, address: '30850:abc:d', h: FOLDER }
-const empty = { roots: [], replies: {}, decorations: { byId: {}, reactionTargetsOmitted: 0 } } as unknown as FileConversation
+const empty = { roots: [], replies: {}, decorations: { byId: {}, reactionTargetsOmitted: 0 }, threads: {} } as unknown as FileConversation
 const withRoots = (...ids: string[]) => ({ ...empty, roots: ids.map((id) => ({ id })) }) as unknown as FileConversation
 const one = withRoots('r1')
 const two = withRoots('r1', 'r2')
