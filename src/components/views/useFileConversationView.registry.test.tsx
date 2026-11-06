@@ -46,6 +46,7 @@ const conversation: FileConversation = {
   roots: [rootB, rootA],
   replies: { [rootA.id]: [reply] },
   decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  threads: {},
 }
 
 function mount(openThreadId?: string) {

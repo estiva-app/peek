@@ -67,6 +67,7 @@ const conversation = (): FileConversation => ({
   roots: [root],
   replies: {},
   decorations: { byId: { [ROOT]: { reactions: [cathReacted] } } as never, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  threads: {},
 })
 
 function View() {

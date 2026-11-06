@@ -43,7 +43,7 @@ import { useLiveFile } from '@/nostr/useLiveFile'
 import { TOPIC_NOT_CREATED, waitOnTopic } from './pendingTopics'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
-export { conversationKeyOf, relayAttachmentOf } from '@/nostr/fileConversation'
+export { conversationKeyOf, isGone, relayAttachmentOf } from '@/nostr/fileConversation'
 
 /** What a file's conversation is, once asked: the events, or why not. */
 export type FileConversationState = FileConversation | 'loading' | { failed: RelayFailureKind }
@@ -97,6 +97,11 @@ type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 function parentIn(key: string, v: Viewer, id: string): string | undefined {
   const replies = conversationsFor(v.relayUrl, v.token.pubkey).value(key)?.replies ?? {}
   return Object.keys(replies).find((root) => replies[root].some((reply) => reply.id === id))
+}
+
+/** The Folder of the thread `id` opens, as the shared fold read it: where its resolve is written (§6.4, C51). */
+function folderIn(key: string, relayUrl: string, pubkey: string, id: string): string | undefined {
+  return conversationsFor(relayUrl, pubkey).value(key)?.threads[id]?.folder
 }
 
 /** Your own messages drawn and not yet answered by the relay, by id, with the answer to come. */
@@ -625,7 +630,11 @@ export function useFileConversation(
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>
-            resolveAsViewer({ container, targetEventId, action, message, supportingEventId }, url, token),
+            resolveAsViewer(
+              { container, targetEventId, action, message, supportingEventId, folder: key ? folderIn(key, url, token.pubkey, targetEventId) : undefined },
+              url,
+              token,
+            ),
           )
         : Promise.resolve(SIGNED_OUT),
   }

@@ -66,6 +66,7 @@ export const ConversationRow = memo(
         parts={c.parts}
         embeds={c.embeds}
         deleted={c.isDeleted}
+        unseen={c.isUnseen}
         onResolvedChange={(resolved, _by, message) => actions.setResolution(c.id, resolved, message)}
         onReactionsChange={(_next, emoji) => actions.toggleReaction(c.id, emoji)}
         onBodyChange={(b) => actions.editBody(c.id, b)}

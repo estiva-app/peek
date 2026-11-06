@@ -67,7 +67,7 @@ export function ForeignConversationView({
    * as a line saying so, with its thread still there to open. From the thread
    * read — the conversation no longer holds them.
    */
-  deletedRoots?: readonly { id: string; createdAt: number }[]
+  deletedRoots?: readonly { id: string; createdAt: number; unseen?: true }[]
 }) {
   if (state === 'loading') {
     return (
@@ -113,7 +113,7 @@ export function ForeignConversationView({
   const live = new Set(object.comments.map((c) => c.id))
   const standIns: DrawableComment[] = (deletedRoots ?? [])
     .filter((d) => !live.has(d.id))
-    .map((d) => ({ id: d.id, author: '', body: '', createdAt: d.createdAt, deleted: true }))
+    .map((d) => ({ id: d.id, author: '', body: '', createdAt: d.createdAt, ...(d.unseen ? { unseen: true } : { deleted: true }) }))
   const comments: DrawableComment[] = [...object.comments, ...standIns].sort((a, b) => a.createdAt - b.createdAt)
 
   if (comments.length === 0) {

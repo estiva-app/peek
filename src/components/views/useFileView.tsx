@@ -185,7 +185,7 @@ export function useFileView({
   const openThread = !openThreadId
     ? undefined
     : (comments.find((c) => c.id === openThreadId) ??
-      (openStandIn && { id: openStandIn.id, author: '', body: '', createdAt: openStandIn.createdAt, deleted: true }))
+      (openStandIn && { id: openStandIn.id, author: '', body: '', createdAt: openStandIn.createdAt, ...(openStandIn.unseen ? { unseen: true } : { deleted: true }) }))
 
   /*
     The middle column under the page's bar. Peek's own view, and a file still resolving, are the kit's

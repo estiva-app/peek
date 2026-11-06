@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Divider, EmptyState, MetaText, ReactionHorizon, SkeletonConversation, useLeftAt, useSeenOnScreen, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
+import { Divider, EmptyState, GONE_CLOSED, MetaText, ReactionHorizon, SkeletonConversation, useLeftAt, useSeenOnScreen, type ConversationItem, type ConversationLayoutProps } from '@estiva-app/ui'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
@@ -12,6 +12,7 @@ import { useToast } from '@/lib/toast'
 import {
   CURRENT_USER_NAME,
   conversationKeyOf,
+  isGone,
   relayAttachmentOf,
   formatDateLabel,
   formatReplyTimestamp,
@@ -225,7 +226,7 @@ export function useFileConversationView({
   const replyOnlyThread = useReplyOnlyThread(stream, conversation?.roots, conversation?.replies, viewerPubkey)
   // What was new as it was drawn keeps the unread look until it is seen; urgent for you, in its urgent tone.
   const unseen = (id: string, seen: { ids: ReadonlySet<string> }) => !!newWhenDrawn?.has(id) && !seen.ids.has(id)
-  const urgentRoots = new Set(conversation?.roots.filter((r) => !r.deleted && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
+  const urgentRoots = new Set(conversation?.roots.filter((r) => !isGone(r) && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -416,7 +417,7 @@ export function useFileConversationView({
   const leftAt = useLeftAt(address)
   const firstNew =
     leftAt !== null && conversation
-      ? conversation.roots.find((r) => !r.deleted && r.createdAt > Math.floor(leftAt / 1000) && r.author !== viewerPubkey)?.id
+      ? conversation.roots.find((r) => !isGone(r) && r.createdAt > Math.floor(leftAt / 1000) && r.author !== viewerPubkey)?.id
       : undefined
 
   /*
@@ -445,7 +446,7 @@ export function useFileConversationView({
         conversationId: root.id,
       })
       // A deleted root has no author or words to cite; its replies still do.
-      return [...(root.isDeleted ? [] : [asMessage(root)]), ...projected.byId[root.id].replies.map(asMessage)]
+      return [...(root.isDeleted || root.isUnseen ? [] : [asMessage(root)]), ...projected.byId[root.id].replies.map(asMessage)]
     })
     registerTopicConversation({ references: [], messages, ...(fileFolder ? { folder: fileFolder } : {}) })
     return unregisterTopicConversation
@@ -494,9 +495,10 @@ export function useFileConversationView({
         readOnly={readOnly}
         readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
         // MetaText, as before the adoption (in Signal the mono micro-type); it is one line, and a sentence in a narrow panel has to wrap.
-        composerNotice={openView.data.isDeleted ? (
+        // Its comment gone, the kit's one sentence for it, as Leaf and Ship say it (SPEC §6.5): the pinned card above says why.
+        composerNotice={openView.data.isDeleted || openView.data.isUnseen ? (
           // @estiva-escape(no-restyled-part): a sentence, not a time: it wraps in the narrow thread column, as it did before the adoption (audit A17); the kit's MetaText has no way to wrap yet
-          <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText>
+          <MetaText className="whitespace-normal">{GONE_CLOSED}</MetaText>
         ) : undefined}
         onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
@@ -635,9 +637,9 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   const roots = [...conversation.roots].sort((a, b) => a.createdAt - b.createdAt)
 
   // SPEC §6.5 (SHI-29): only the viewer's own message — not another person's,
-  // not an agent's. Nothing on a deleted root, which has no author.
+  // not an agent's. Nothing on a gone root, which has no author.
   const offersControls = (event: ConversationEvent): boolean =>
-    !event.deleted && offersEditAndDelete({ viewer: viewerPubkey, author: event.author })
+    !isGone(event) && offersEditAndDelete({ viewer: viewerPubkey, author: event.author })
 
   const decorate = (event: ConversationEvent) => {
     const decoration = conversation.decorations.byId[event.id.toLowerCase()]
@@ -679,8 +681,10 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   const rootData = roots.map((root): ConversationData => {
     const d = decorate(root)
     const replies = (conversation.replies[root.id] ?? []).map(asReply)
-    const last = d.resolutions[d.resolutions.length - 1]
+    // The resolve that counts (§6.4, C51), as the shared fold read it — also under a comment that is gone (§6.5).
+    const last = conversation.threads[root.id]?.resolution
     const isResolved = last?.action === 'resolved'
+    const gone = isGone(root)
     const seen = new Set<string>()
     const replyAuthors = (conversation.replies[root.id] ?? [])
       .filter((r) => !seen.has(r.author) && seen.add(r.author))
@@ -688,10 +692,11 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     const lastReply = replies[replies.length - 1]
     const data: ConversationData = {
       id: root.id,
-      authorName: root.deleted ? '' : nameOf(root.author),
-      authorAvatarSrc: root.deleted ? undefined : avatarOf(root.author),
-      authorBot: root.deleted ? undefined : botOf(root.author),
+      authorName: gone ? '' : nameOf(root.author),
+      authorAvatarSrc: gone ? undefined : avatarOf(root.author),
+      authorBot: gone ? undefined : botOf(root.author),
       isDeleted: root.deleted,
+      isUnseen: root.unseen,
       timestamp: formatTimestamp(root.createdAt * 1000),
       body: d.body,
       editedAt: d.editedAt,
@@ -738,10 +743,17 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   }
 }
 
-/** One pill per emoji (`@estiva-app/conversation`'s `groupReactions`, SPEC §6.6), reactors in reaction order. */
+/**
+ * One pill per emoji (`@estiva-app/conversation`'s `groupReactions`, SPEC §6.6), reactors in reaction order, each
+ * known by their key, so two people with the same name are two reactors (ONE-9). The viewer is `CURRENT_USER_NAME`,
+ * which is what a toggle adds and takes away; `names` says each one's name.
+ */
 function pillsOf(target: string, reactions: readonly ReactionEvent[], viewerPubkey: string | null, nameOf: (pubkey: string) => string): ReactionData[] {
   const grouped = groupReactions(reactions, viewerPubkey ?? undefined)[target.toLowerCase()] ?? []
-  return grouped.map((r) => ({ emoji: r.emoji, by: r.by.map(nameOf) }))
+  return grouped.map((r) => {
+    const by = r.by.map((key) => (key === viewerPubkey ? CURRENT_USER_NAME : key))
+    return { emoji: r.emoji, by, names: Object.fromEntries(r.by.map((key, i) => [by[i], nameOf(key)])) }
+  })
 }
 
 const messageOf = (conversation: FileConversation, id: string): ConversationEvent | undefined =>

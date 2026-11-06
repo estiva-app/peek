@@ -12,6 +12,8 @@ export interface DrawableComment {
   createdAt: number
   /** A comment deleted under its replies (PER-24): drawn as a line saying so, no author and no body. */
   deleted?: boolean
+  /** A comment not read, with nothing saying it was deleted (SPEC §6.5, ONE-9): "can't be shown", its replies stay. */
+  unseen?: boolean
 }
 
 /**
@@ -55,13 +57,14 @@ export function CommentRow({
 }) {
   return (
     // One article per comment, its id on it, and the one whose thread is open marked current, as the row always was.
-    <article data-comment={comment.id} data-deleted={comment.deleted ? '' : undefined} aria-current={selected || undefined}>
+    <article data-comment={comment.id} data-deleted={comment.deleted || comment.unseen ? '' : undefined} aria-current={selected || undefined}>
       <ConversationCard
         author={authorOf(comment, people)}
         // Its time, short; with its moment the kit's card says the whole date and time in its tooltip (§4.9, B10), as the row always said it.
         time={whenLabel(msOf(comment))}
         at={msOf(comment)}
         deleted={comment.deleted}
+        unseen={comment.unseen}
         readOnly={!onOpen}
         // The replies row is a button of its own, as the count was: reached by the keyboard, it opens the thread.
         replies={replies ? { count: replies, isNew, onOpen } : undefined}

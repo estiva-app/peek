@@ -1271,7 +1271,7 @@ export interface FileThreads {
    * is the id its replies still name and the time of its first reply, and the
    * replies are in `replies` under that id. Only the file pane's read asks.
    */
-  deleted?: { id: string; createdAt: number }[]
+  deleted?: { id: string; createdAt: number; /** Not read, and nothing says it was deleted: "can't be shown" (SPEC §6.5, ONE-9). */ unseen?: true }[]
 }
 
 /**

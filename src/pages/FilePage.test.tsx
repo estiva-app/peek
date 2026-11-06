@@ -1096,6 +1096,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
         reactionEventsCut: false,
         editEventsCut: false,
       },
+      threads: {},
     },
   })
 

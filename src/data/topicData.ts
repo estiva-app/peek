@@ -66,10 +66,14 @@ export const HIGHLIGHT_TEXT_CLASSES: Record<HighlightType, string> = {
 }
 
 /** One emoji on one message, as the shared `ReactionRow` takes it: who chose
- *  it by name, in reaction order, the viewer as `CURRENT_USER_NAME`. */
+ *  it, in reaction order, the viewer as `CURRENT_USER_NAME`. Each reactor is
+ *  their key when `names` says their name (one person, one reactor: ONE-9), else
+ *  their name. */
 export interface ReactionData {
   emoji: string
   by: string[]
+  /** Each reactor's name, by the id in `by`. Absent: `by` holds names. */
+  names?: Record<string, string>
 }
 
 /** A real uploaded file attached to a message/reply (Phase 5). `previewUrl` is
@@ -159,6 +163,8 @@ export interface ConversationData {
   nostrEventId?: string
   /** It was deleted and its replies stay (PER-24): drawn as a placeholder, with nothing to act on. */
   isDeleted?: boolean
+  /** It was not read, and nothing says it was deleted (SPEC §6.5, ONE-9): "can't be shown", its replies stay, nothing to act on. */
+  isUnseen?: boolean
 }
 
 export interface ConvGroup {

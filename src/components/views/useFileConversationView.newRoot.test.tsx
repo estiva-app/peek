@@ -88,6 +88,7 @@ const conversationOf = (...roots: ReturnType<typeof event>[]): FileConversation 
   roots: [...roots].reverse(),
   replies: {},
   decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  threads: {},
 })
 
 type Props = { address: string; rootIds: string[] }

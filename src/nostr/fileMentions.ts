@@ -216,7 +216,8 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
   const replies: Record<string, ConversationEvent[]> = {}
   for (const [id, list] of Object.entries(mentionRepliesOf(events, threadIds))) replies[id] = list.map(asEvent)
 
-  return decorate(roots, replies, query)
+  const folders = new Map(mentions.map((m) => [m.id, m.folder]))
+  return decorate(roots, replies, query, (root) => folders.get(root.id))
 }
 
 /** {@link mentionConversationWith} as the viewer. */

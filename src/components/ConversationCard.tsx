@@ -7,7 +7,7 @@ import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard } from '@estiva-app/conversation'
 import { MessageBody } from './ui/MessageBody'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
-import { REACTION_OPTIONS, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
+import { REACTION_OPTIONS, reactorNameIn, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { formatReplyTimestamp } from '@/api/format'
@@ -94,6 +94,8 @@ interface ConversationCardProps {
   /** It was deleted and its replies stay (PER-24): said in place of the author
    *  and body, read-only, and still opens its thread. */
   deleted?: boolean
+  /** It was not read, and nothing says it was deleted (SPEC §6.5, ONE-9): "This comment can't be shown.", drawn as a deleted one is. */
+  unseen?: boolean
   /** What the delete question calls it: Peek's "message", everywhere, as it always said (Katerina, 1 November: keep Peek's words). */
   noun?: string
   className?: string
@@ -145,10 +147,13 @@ export function ConversationCard({
   onClick,
   readOnly: readOnlyProp = false,
   deleted = false,
+  unseen = false,
   noun = 'message',
   className,
 }: ConversationCardProps) {
-  const readOnly = readOnlyProp || deleted
+  // Its comment gone, nothing on it is anyone's to change: no Resolve or Reopen either (SPEC §6.5).
+  const gone = deleted || unseen
+  const readOnly = readOnlyProp || gone
 
   // Reactions, shown at once and handed on.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
@@ -292,12 +297,13 @@ export function ConversationCard({
           ? files.map((f, i) => <AttachmentCard key={`${f.sha256 ?? f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />)
           : undefined
       }
-      reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: (name) => name, viewer: CURRENT_USER_NAME, onToggle: onReactionsChange ? handleReact : undefined }}
+      reactions={{ reactions: reactionsState, options: REACTION_OPTIONS, nameOf: reactorNameIn(reactionsState), viewer: CURRENT_USER_NAME, onToggle: onReactionsChange ? handleReact : undefined }}
       isNew={hasNewMessage}
       urgent={isUrgent}
       own={isOwnMessage}
       readOnly={readOnlyProp}
       deleted={deleted}
+      unseen={unseen}
       editing={isEditing}
       onEditingChange={(next) => (next ? handleEditStart() : setEditing(null))}
       editor={(done) =>
@@ -330,8 +336,8 @@ export function ConversationCard({
       replies={replyCount ? { count: replyCount, faces: replyAuthors?.map((who) => ({ name: who.name, picture: who.avatarSrc, bot: who.bot })), last: lastReplyTime, isNew: hasNewReply } : undefined}
       onReply={onReply}
       resolved={resolved ? { by: resolvedBy || 'Someone', note: resolutionMsg || undefined } : undefined}
-      onResolve={handleResolve}
-      onReopen={handleReopen}
+      onResolve={gone ? undefined : handleResolve}
+      onReopen={gone ? undefined : handleReopen}
       selected={isSelected}
       onClick={onClick}
       className={className}

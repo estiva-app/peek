@@ -81,6 +81,7 @@ const conversationOf = (r: ReturnType<typeof root>, byId: FileConversation['deco
   roots: [r],
   replies: {},
   decorations: { byId, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  threads: {},
 })
 
 function View({ openThreadId }: { openThreadId?: string }) {

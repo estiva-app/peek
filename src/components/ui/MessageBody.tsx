@@ -1,6 +1,6 @@
 import type { FC, ReactNode } from 'react'
 import { MessageCard, MessageChip, MessagePart, MessageRow } from './MessageLinks'
-import { placeLines, ROW_BLOCK, type RowLine } from '@/lib/messageLines'
+import { placeLines, ROW_BLOCK, urlNames, type RowLine } from '@estiva-app/conversation'
 import {
   IconFile,
   IconFileTypePdf,
@@ -87,19 +87,6 @@ const MAX_PARTS_PER_MESSAGE = 6
 const MAX_LINKS_PER_MESSAGE = 8
 
 const FOLLOW = { live: true }
-
-/**
- * Whether a pasted app link names this address: its path ends in the address's
- * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
- * to be one. A `d` comes from somebody's tag, so a short one would otherwise
- * match half the links in the body.
- */
-function urlNames(url: string, address: string): boolean {
-  const d = address.split(':')[2] ?? ''
-  if (d.length < 8) return false
-  const path = url.split(/[?#]/)[0].replace(/\/+$/, '')
-  return path.endsWith(`-${d}`) || path.endsWith(`/${d}`)
-}
 
 function addressOf(ref: string): string {
   try {
