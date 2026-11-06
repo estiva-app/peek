@@ -324,6 +324,17 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
     })
 
+    it('keeps the thread, drawn deleted, never "can’t be shown", when only the deletion read is refused (§6.5)', async () => {
+      const relay = relayOver(world.filter((e) => e !== deletion))
+      queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
+        filters.some((f) => (f.kinds as number[] | undefined)?.includes(5)) ? { ok: false as const, reason: 'rate-limited: slow down' } : relay(url, filters),
+      )
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.find((r) => r.id === GONE)).toMatchObject({ deleted: true })
+      expect(found.roots.find((r) => r.id === GONE)?.unseen).toBeUndefined()
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+    })
+
     it('still draws the conversation when the read for them is refused', async () => {
       const relay = relayOver(world)
       queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>

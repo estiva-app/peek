@@ -171,17 +171,24 @@ describe('project', () => {
     const resolved = { id: 'x1', action: 'resolved' as const, by: ME, at: T + 200, orderMs: (T + 200) * 1000, message: 'shipped', supportingEventId: reply.id }
     const reopened = { id: 'x2', action: 'reopened' as const, by: CATH, at: T + 300, orderMs: (T + 300) * 1000 }
     // A later resolve the fold did not count (§6.4, C51: filed outside the thread's Folder, say) is in the history, and decides nothing.
-    const uncounted = { id: 'x3', action: 'reopened' as const, by: STRANGER, at: T + 250, orderMs: (T + 250) * 1000 }
+    const uncounted = { id: 'x3', action: 'reopened' as const, by: STRANGER, at: T + 250, orderMs: (T + 250) * 1000, folder: 'elsewhere' }
     const once = project(
       conversation({
-        decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved, uncounted] } }, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
-        threads: { [rootA.id]: { state: 'present', resolution: resolved } },
+        decorations: {
+          byId: { [rootA.id]: { reactions: [], resolutions: [{ ...resolved, folder: 'team' }, uncounted] } },
+          reactionTargetsOmitted: 0,
+          reactionEventsCut: false,
+          editEventsCut: false,
+        },
+        threads: { [rootA.id]: { state: 'present', folder: 'team', resolution: resolved } },
       }),
       ME,
       people,
     )
     expect(once.roots[0]).toMatchObject({ isResolved: true, resolvedBy: 'You', resolutionMessage: 'shipped' })
     expect(once.byId[rootA.id].resolvedByReplyId).toBe(reply.id)
+    // The reopen filed in another Folder is not in the timeline either: it would contradict "Resolved" above.
+    expect(once.byId[rootA.id].resolutionEvents.map((e) => e.key)).toEqual(['x1'])
     expect(once.byId[rootA.id].resolutionEvents[0]).toEqual({
       kind: 'resolved',
       by: 'You',

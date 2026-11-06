@@ -324,7 +324,7 @@ export function fileConversationAsViewer(
 /** {@link fileConversationAsViewer} over any query: the relay's, or the conversation store's (OPT-3). */
 async function fileConversationWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
   const { threads, gone } = await threadsWithGoneRoots(container.address, rootIds, query)
-  return folded([...threadsDrawn(container, rootIds, threads), ...gone], query, (event) => withTags(fileCommentOf(event), event, container.address))
+  return folded([...threadsDrawn(container, rootIds, threads), ...gone.events], query, (event) => withTags(fileCommentOf(event), event, container.address), undefined, gone)
 }
 
 /**
@@ -381,10 +381,10 @@ export async function fileThreadsAsViewer(
   for (const [rootId, list] of Object.entries(threads.replies)) replies[rootId] = list.map(fileCommentOf)
   // The gone comments, by the shared fold (§6.5): deleted by their author, or not returned.
   const deleted: NonNullable<FileThreads['deleted']> = []
-  for (const thread of foldThreads(gone)) {
+  for (const thread of foldThreads(gone.events)) {
     if (thread.state === 'present' || thread.replies.length === 0) continue
     replies[thread.id] = thread.replies.map((reply) => fileCommentOf(reply.event))
-    deleted.push({ id: thread.id, createdAt: thread.replies[0].event.created_at, ...(thread.state === 'missing' ? { unseen: true as const } : {}) })
+    deleted.push({ id: thread.id, createdAt: thread.replies[0].event.created_at, ...(goneState(thread.state, gone.deletionsRead) === 'unseen' ? { unseen: true as const } : {}) })
   }
   return {
     roots: Object.fromEntries(Object.entries(threads.roots).map(([id, event]) => [id, fileCommentOf(event)])),
@@ -394,7 +394,7 @@ export async function fileThreadsAsViewer(
 }
 
 /** interop's thread read, and beside it the replies whose comment is gone and what says whether it was deleted — both file panes' read. */
-async function threadsWithGoneRoots(address: string, rootIds: readonly string[], query: QueryFn): Promise<{ threads: Threads; gone: SignedEvent[] }> {
+async function threadsWithGoneRoots(address: string, rootIds: readonly string[], query: QueryFn): Promise<{ threads: Threads; gone: GoneRoots }> {
   const [threads, onFile] = await Promise.all([
     threadEventsWith(address, rootIds, query),
     // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
@@ -405,9 +405,22 @@ async function threadsWithGoneRoots(address: string, rootIds: readonly string[],
   // which `#e` still returns, would hang from a root that is not drawn.
   const known = new Set(Object.keys(threads.roots))
   for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
-  const gone = await goneRootsOf(onFile, known, address, query).catch(() => [])
+  const gone = await goneRootsOf(onFile, known, address, query).catch(() => NONE_GONE)
   return { threads, gone }
 }
+
+/** A gone comment's state: the fold's, but never "missing" when the deletion read was refused (§6.5). */
+const goneState = (state: RootState, deletionsRead: boolean): 'deleted' | 'unseen' => (state === 'missing' && deletionsRead ? 'unseen' : 'deleted')
+
+/**
+ * The replies under comments that are gone and the `kind:5`s read for them. `deletionsRead` false: that read was
+ * refused, so "not returned" is unproven and a gone comment is drawn deleted, as before ONE-9, never "can't be shown".
+ */
+interface GoneRoots {
+  events: SignedEvent[]
+  deletionsRead: boolean
+}
+const NONE_GONE: GoneRoots = { events: [], deletionsRead: true }
 
 /** How many of a file's comments the `#A` read asks for — Buzz's clamp per filter. */
 const FILE_COMMENTS_LIMIT = 1_000
@@ -436,21 +449,25 @@ function commentsOnFile(address: string, query: QueryFn): Promise<SignedEvent[]>
  * replies are left out. Only a reply whose thread's `A` is this file counts,
  * so a reply filed about another page adds no thread to this one.
  */
-async function goneRootsOf(onFile: readonly SignedEvent[], known: ReadonlySet<string>, address: string, query: QueryFn): Promise<SignedEvent[]> {
+async function goneRootsOf(onFile: readonly SignedEvent[], known: ReadonlySet<string>, address: string, query: QueryFn): Promise<GoneRoots> {
   // A reply is never a comment (SPEC §6.4); what places it on this file is its thread's `A`.
   const candidates = onFile.filter((event) => !known.has(event.id) && anchorsOf(event).includes(address))
   const { replies, missingRoots } = groupThreads(candidates)
   const ids = missingRoots.filter((id) => !known.has(id))
-  if (ids.length === 0) return []
+  if (ids.length === 0) return NONE_GONE
 
-  const answer = await query([
-    { ids, limit: ids.length },
-    { kinds: [KIND.DELETION], '#e': ids, limit: FILE_COMMENTS_LIMIT },
+  // Apart, so a refused deletion read costs only the deleted-or-not answer, not the threads.
+  const [found, deletions] = await Promise.all([
+    query([{ ids, limit: ids.length }]),
+    query([{ kinds: [KIND.DELETION], '#e': ids, limit: FILE_COMMENTS_LIMIT }]).catch(() => null),
   ])
   const asked = new Set(ids)
-  const held = new Set(answer.filter((e) => e.kind !== KIND.DELETION && asked.has(e.id)).map((e) => e.id))
+  const held = new Set(found.filter((e) => asked.has(e.id)).map((e) => e.id))
   const gone = ids.filter((id) => !held.has(id))
-  return [...gone.flatMap((id) => replies[id] ?? []), ...answer.filter((e) => e.kind === KIND.DELETION)]
+  return {
+    events: [...gone.flatMap((id) => replies[id] ?? []), ...(deletions ?? []).filter((e) => e.kind === KIND.DELETION)],
+    deletionsRead: deletions !== null,
+  }
 }
 
 type FileContainer = Extract<ConversationContainer, { kind: 'file' }>
@@ -545,6 +562,7 @@ async function folded(
   query: QueryFn,
   asEvent: (event: SignedEvent) => ConversationEvent,
   keep: (thread: Thread) => boolean = () => true,
+  gone: Pick<GoneRoots, 'deletionsRead'> = NONE_GONE,
 ): Promise<FileConversation> {
   const messages = events.filter((event) => event.kind !== KIND.DELETION)
   const { replies: byRoot, missingRoots } = groupThreads(messages)
@@ -572,7 +590,7 @@ async function folded(
           files: [],
           references: [],
           urgent: [],
-          ...(thread.state === 'deleted' ? { deleted: true as const } : { unseen: true as const }),
+          ...(goneState(thread.state, gone.deletionsRead) === 'deleted' ? { deleted: true as const } : { unseen: true as const }),
         }
     roots.push(root)
     if (thread.replies.length) replies[root.id] = thread.replies.map((reply) => asEvent(reply.event))

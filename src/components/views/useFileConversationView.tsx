@@ -682,7 +682,8 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     const d = decorate(root)
     const replies = (conversation.replies[root.id] ?? []).map(asReply)
     // The resolve that counts (§6.4, C51), as the shared fold read it — also under a comment that is gone (§6.5).
-    const last = conversation.threads[root.id]?.resolution
+    const thread = conversation.threads[root.id]
+    const last = thread?.resolution
     const isResolved = last?.action === 'resolved'
     const gone = isGone(root)
     const seen = new Set<string>()
@@ -720,7 +721,8 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       data,
       replies,
       resolvedByReplyId: isResolved ? last.supportingEventId : undefined,
-      resolutionEvents: d.resolutions.map((r) => ({
+      // Only the resolves filed in the thread's Folder, as the state above counts them (§6.4, C51): the timeline never says otherwise.
+      resolutionEvents: d.resolutions.filter((r) => !thread?.folder || r.folder === thread.folder).map((r) => ({
         kind: r.action,
         by: nameOf(r.by),
         byId: r.by,
