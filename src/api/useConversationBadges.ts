@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type ConversationMessage, type ForeignObject } from '@estiva-app/interop'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { useForeignObjects, useMembership } from '@/api'
 import { heldToken, useSessionResumed } from '@/auth/heldSession'
@@ -7,6 +7,8 @@ import { fileContext, isCommentOn, isReply, streamHasUnread, THREAD_RULE_FROM } 
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
+import { placeHasUnread, topicFollowingOf } from './placeDots'
+import { listingOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
 
 /** How long a held answer is trusted without asking — the five minutes `HELD_OBJECT_FRESH_MS` holds an object. */
@@ -149,6 +151,9 @@ export function useConversationBadges(
   const frontier = useReadFrontier()
   const membership = useMembership()
   const live = useHeldChannelEvents()
+  // A space lights by its team's default: the teams read, one per tab, shared with the Teams column (TEA-6).
+  const hasTopic = (files ?? []).some((file) => Number(file.address?.split(':')[0]) === KIND_BARE_FILE)
+  const { teams } = useTeams({ read: hasTopic })
 
   /*
     Keyed on the addresses, not the array.
@@ -272,6 +277,37 @@ export function useConversationBadges(
       // is. The count above is not gated — "how much is here" is the file's,
       // not the reader's.
       if (!context) continue
+      const file = byRef.get(ref)
+      /*
+        A topic or a space (TEA-6): the shared place rule at the level the
+        viewer follows it at — its team's default for a space, held by the
+        teams read. Every other file keeps the membership rule below.
+      */
+      if (me && file?.address && file.folder && Number(file.address.split(':')[0]) === KIND_BARE_FILE) {
+        const listed = listingOf(teams, file.address)
+        const team = listed?.team
+        const following = topicFollowingOf({
+          address: file.address,
+          folder: file.folder,
+          me,
+          changes: membership.changesOf(file.address),
+          floor: membership.floor,
+          ...(team?.facts ? { team: { team: team.id, roster: team.facts.roster, listing: team.facts.listing, archived: team.archived, ...(team.facts.teams ? { teams: team.facts.teams } : {}) } } : {}),
+        })
+        unread[ref] = placeHasUnread(
+          messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
+          {
+            context,
+            me,
+            following,
+            muted: membership.termsOf(file.address).muted,
+            merged: frontier.merged,
+            floor: nowSeconds - PEEK_HORIZON_DAYS * 24 * 60 * 60,
+            isMentioned: membership.isMentioned,
+          },
+        )
+        continue
+      }
       unread[ref] = streamHasUnread(
         // A reply from before the thread rule's cut-over never lit a row, and
         // stays dark (CON-34's Done-when: lit rows the same before and after).
@@ -285,7 +321,7 @@ export function useConversationBadges(
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, key])
+  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, key])
 }
 
 /**

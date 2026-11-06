@@ -272,6 +272,7 @@ const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   isMember: i === 0,
   isFollowing: i === 1,
   listed: [],
+  chatAddress: `39000::${folder.id}`,
   chat: { kind: 'chat', in: i === 0, ways: i === 0 ? ['team'] : [], ...(i === 0 ? { level: 'important' as const } : {}) },
 }))
 

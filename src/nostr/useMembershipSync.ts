@@ -55,6 +55,8 @@ export interface MembershipSync {
   muted: ReadonlySet<string>
   /** Unix seconds a created file's membership starts at. */
   floor: number
+  /** The changes naming the viewer, by the place they name: what a topic's or space's level is folded from (TEA-6). */
+  changes: ReadonlyMap<string, readonly SignedEvent[]>
   /** Join a file, or leave it: local at once, then published. Resolves when the relay has answered. */
   /** `true` once the relay holds the change; otherwise why nothing changed, in words a toast can show. `person` adds somebody else (only `member: true` counts for them, §11.8). */
   setMember: (file: string, folder: string, member: boolean, person?: string) => Promise<true | string>
@@ -86,6 +88,7 @@ const FOLDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a
 
 const EMPTY_FILES: ReadonlyMap<string, Membership> = new Map()
 const EMPTY_SET: ReadonlySet<string> = new Set()
+const EMPTY_CHANGES: ReadonlyMap<string, readonly SignedEvent[]> = new Map()
 
 export function useMembershipSync(relayUrl: string | null | undefined): MembershipSync {
   const [state, setState] = useState<MembershipState>('unknown')
@@ -94,6 +97,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
   const [urgent, setUrgent] = useState<ReadonlySet<string>>(EMPTY_SET)
   const [muted, setMutedSet] = useState<ReadonlySet<string>>(EMPTY_SET)
   const [floor, setFloor] = useState(0)
+  const [changes, setChanges] = useState<ReadonlyMap<string, readonly SignedEvent[]>>(EMPTY_CHANGES)
   /** Whether each read has answered at least once — `state` leaves `unknown` only when both have. */
   const landed = useRef({ membership: false, mutes: false })
   /** Publishes in flight, chained so none is dropped and none overtakes another. */
@@ -133,6 +137,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       setMentioned(membership.mentioned)
       setUrgent(membership.urgent)
       setFloor(membership.floor)
+      setChanges(membership.changes)
     } else console.warn('[membership] the relay did not say which files the viewer is a member of')
     if (mutesRead.state !== 'unreachable') {
       landed.current.mutes = true
@@ -152,6 +157,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
           setMentioned(membership.mentioned)
           setUrgent(membership.urgent)
           setFloor(membership.floor)
+          setChanges(membership.changes)
           setMutedSet(new Set(mutesRead.keys))
           setState((now) => (now === 'unknown' ? 'cached' : now))
         })
@@ -261,7 +267,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
     [relayUrl, state, files],
   )
 
-  return { state, files, mentioned, urgent, muted, floor, setMember, refresh: read }
+  return { state, files, mentioned, urgent, muted, floor, changes, setMember, refresh: read }
 }
 
 /**

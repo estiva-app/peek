@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { followingOf, teamMembersOf, unreadOnPlace, type Following, type TeamMember, type TeamsList } from '@estiva-app/conversation'
 import { KIND_BARE_FILE, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import type { SignedEvent } from '@estiva-app/protocol'
 import { heldToken } from '@/auth/heldSession'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { dOfAddress, entryNames, listedByTopicsAsViewer, listedOf, readTeamsAsViewer, type ListedEntry, type TeamsRead } from '@/nostr/teams'
@@ -31,8 +32,16 @@ export interface Team {
   isFollowing: boolean
   /** What its list holds, in its order, each with whether it is one of its spaces. */
   listed: readonly ListedEntry[]
-  /** How the viewer is in its chat: by the team's default for a member, never for anyone else (`a-teams-chat-is-followed-like-a-space`). */
+  /** Its chat's address: the team's own `39000`, as a level on the chat names it. */
+  chatAddress: string
+  /**
+   * How the viewer is in its chat (`a-teams-chat-is-followed-like-a-space`):
+   * by the team's default for a member, at the level they chose on it, or
+   * added to it — the chat's changes naming them are in the teams read.
+   */
   chat: Following
+  /** What the shared fold reads for a space's default (TEA-6): its roster, its list, and the viewer's teams list. */
+  facts?: { roster: readonly SignedEvent[]; listing: readonly SignedEvent[]; teams?: TeamsList }
 }
 
 /*
@@ -115,10 +124,11 @@ export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): 
   const members = teamMembersOf(folder.id, roster)
   const isMember = members.some((member) => member.pubkey === viewer)
   const archived = !!folder.archived
+  const chatAddress = folder.channel ?? `39000::${folder.id}`
   const chat = followingOf(
-    { address: folder.channel ?? `39000::${folder.id}`, team: folder.id },
+    { address: chatAddress, team: folder.id },
     viewer,
-    { events: [], roster, listing, ...(list ? { teams: list } : {}), archived },
+    { events: read.changes?.[folder.id] ?? [], roster, listing, ...(list ? { teams: list } : {}), archived },
   )
   return {
     id: folder.id,
@@ -131,7 +141,9 @@ export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): 
     isMember,
     isFollowing: !isMember && list?.teams[folder.id] !== undefined,
     listed: listedOf(listing),
+    chatAddress,
     chat,
+    facts: { roster, listing, ...(list ? { teams: list } : {}) },
   }
 }
 
@@ -272,9 +284,9 @@ const asPlaceMessage = (message: StreamMessage) => ({
 /** A team chat's messages from a Folder's channel stream: those about no file (§11.1's general stream). */
 export const chatMessagesOf = (messages: readonly StreamMessage[]) => messages.filter((message) => message.about.length === 0)
 
-/** Whether a team's chat has something new for `viewer` in its channel's stream (§11.8): only ever a member's. */
+/** Whether a team's chat has something new for `viewer` in its channel's stream (§11.8): only for someone in it. */
 export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merged: Readonly<Record<string, number>>, viewer: string): boolean {
-  if (!team.isMember) return false
+  if (!team.chat.in) return false
   const messages = chatMessagesOf(stream).map(asPlaceMessage)
   return unreadOnPlace(messages, merged, { stream: team.id, me: viewer, following: team.chat }).length > 0
 }
@@ -282,20 +294,22 @@ export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merg
 /**
  * Whether each team's chat has something new for the viewer, by the shared
  * rule (§11.8): at Important, a new conversation, and a reply in one they are
- * in; a mention always. Only a member's chat can light — nobody else is in it.
- * The messages are the tab's channel store's, already read for the Folders'
- * own dots: no read of its own. A team not judged yet is absent.
+ * in; at All every message since they chose it; a mention always. Only a chat
+ * the viewer is in can light: a member's by default, or one they chose a level
+ * on or were added to. The messages are the tab's channel store's, already
+ * read for the Folders' own dots: no read of its own. A team not judged yet is
+ * absent.
  */
 export function useTeamChatUnread(teams: readonly Team[] | null): Record<string, boolean> {
   const viewer = heldToken()?.pubkey
-  const ids = useMemo(() => (teams ?? []).filter((team) => team.isMember).map((team) => team.id), [teams])
+  const ids = useMemo(() => (teams ?? []).filter((team) => team.chat.in).map((team) => team.id), [teams])
   const { streams } = useChannelStreams(ids)
   const { merged, ready } = useReadFrontier()
   return useMemo(() => {
     const out: Record<string, boolean> = {}
     if (!viewer || !ready) return out
     for (const team of teams ?? []) {
-      const stream = team.isMember ? streams[team.id] : []
+      const stream = team.chat.in ? streams[team.id] : []
       if (stream) out[team.id] = chatHasUnread(team, stream, merged, viewer)
     }
     return out

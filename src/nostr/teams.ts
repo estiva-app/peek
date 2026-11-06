@@ -33,13 +33,18 @@ const KIND_CHANGE = 1851
 /** Buzz's ceiling per filter; a team's commands over its whole life stay far below it (54 across 13 teams, 3 Nov). */
 const COMMANDS_LIMIT = 1_000
 
-/** One read for every team listed: rosters, the commands behind them, each team's list, and the viewer's teams list. */
+/**
+ * One read for every team listed: rosters, the commands behind them, each
+ * team's list, the viewer's teams list, and the changes naming the viewer
+ * filed in those teams — their level on each team's chat among them (TEA-6).
+ */
 export function teamsFilters(teams: readonly string[], viewer: string): Record<string, unknown>[] {
   return [
     { kinds: [KIND_ROSTER], '#d': [...teams] },
     { kinds: ROSTER_COMMANDS, '#h': [...teams], limit: COMMANDS_LIMIT },
     { kinds: [KIND_FOLDER_STATE], '#d': [...teams] },
     teamsFilter(viewer),
+    { kinds: [KIND_CHANGE], '#h': [...teams], '#p': [viewer], limit: COMMANDS_LIMIT },
   ]
 }
 
@@ -51,6 +56,8 @@ export interface TeamsRead {
   rosters: Record<string, SignedEvent[]>
   /** Per team: its `30890` — what it lists, and which of those are its spaces. */
   listings: Record<string, SignedEvent[]>
+  /** Per team: the `kind:1851` changes filed in it that name the viewer — a level or an Add on its chat among them. */
+  changes?: Record<string, SignedEvent[]>
   teamsList: TeamsListRead
 }
 
@@ -65,11 +72,13 @@ export async function readTeams(
 ): Promise<TeamsRead> {
   const rosters: Record<string, SignedEvent[]> = {}
   const listings: Record<string, SignedEvent[]> = {}
+  const changes: Record<string, SignedEvent[]> = {}
   for (const team of teams) {
     rosters[team] = []
     listings[team] = []
+    changes[team] = []
   }
-  if (teams.length === 0) return { rosters, listings, teamsList: await readTeamsList(viewer, query, decrypt) }
+  if (teams.length === 0) return { rosters, listings, changes, teamsList: await readTeamsList(viewer, query, decrypt) }
   const events = await query(teamsFilters(teams, viewer))
   let own: SignedEvent | undefined
   for (const event of events) {
@@ -80,9 +89,10 @@ export async function readTeams(
     const team = event.kind === KIND_ROSTER || event.kind === KIND_FOLDER_STATE ? tagOf(event, 'd') : tagOf(event, 'h')
     if (!team) continue
     if (event.kind === KIND_FOLDER_STATE) listings[team]?.push(event)
+    else if (event.kind === KIND_CHANGE) changes[team]?.push(event)
     else rosters[team]?.push(event)
   }
-  return { rosters, listings, teamsList: await listOf(own, decrypt) }
+  return { rosters, listings, changes, teamsList: await listOf(own, decrypt) }
 }
 
 async function readTeamsList(viewer: string, query: QueryFn, decrypt: (ciphertext: string) => Promise<string | undefined>): Promise<TeamsListRead> {
@@ -190,6 +200,11 @@ export async function listedByTopics(fileIds: readonly string[], query: QueryFn)
 /** {@link listedByTopics} as the viewer. */
 export function listedByTopicsAsViewer(fileIds: readonly string[], relayUrl: string, token: StoredToken): Promise<Set<string>> {
   return listedByTopics(fileIds, viewerQuery(relayUrl, token))
+}
+
+/** The viewer's teams list alone, read now: what a write of it starts from. */
+export function readTeamsListAsViewer(relayUrl: string, token: StoredToken): Promise<TeamsListRead> {
+  return readTeamsList(token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
 }
 
 /** {@link readTeams} as the viewer. */

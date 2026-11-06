@@ -30,6 +30,7 @@
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
 import { membershipJudges, streamTermsOf, type StreamTerms } from '@estiva-app/conversation'
+import type { SignedEvent } from '@estiva-app/protocol'
 import { heldToken } from '@/auth/heldSession'
 import { type MembershipState, useMembershipSync } from '@/nostr/useMembershipSync'
 import { RELAY_URL } from '@/api/relayUrl'
@@ -54,6 +55,10 @@ export interface MembershipSeam {
   isUrgent: (messageId: string) => boolean
   /** File addresses the viewer is a member of — what the Screener asks the relay about. */
   memberFiles: readonly string[]
+  /** The changes naming the viewer on one place — a level, an Add, a join, a leave — for the shared `followingOf` (TEA-6). */
+  changesOf: (address: string) => readonly SignedEvent[]
+  /** Unix seconds the read reaches back to: a place the viewer made is theirs from here. */
+  floor: number
   /** Join or leave a file; local at once, then published. */
   /** Resolves `true` once the relay holds the change; otherwise why nothing changed — no seam, no answer yet, no Folder, or the relay's refusal — in words a toast can show. */
   setMember: (file: string, folder: string, member: boolean, person?: string) => Promise<true | string>
@@ -62,6 +67,7 @@ export interface MembershipSeam {
 }
 
 const NOT_A_MEMBER: StreamTerms = { member: false, muted: false }
+const NO_CHANGES: readonly SignedEvent[] = []
 
 const INERT: MembershipSeam = {
   state: 'unknown',
@@ -72,6 +78,8 @@ const INERT: MembershipSeam = {
   isMentioned: () => false,
   isUrgent: () => false,
   memberFiles: [],
+  changesOf: () => [],
+  floor: 0,
   setMember: async () => 'Peek is not connected to the relay here.',
   refresh: async () => {},
 }
@@ -122,10 +130,12 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       isMentioned,
       isUrgent,
       memberFiles,
+      changesOf: (address) => sync.changes.get(address) ?? NO_CHANGES,
+      floor: sync.floor,
       setMember: sync.setMember,
       refresh: sync.refresh,
     }),
-    [sync.state, sync.setMember, sync.refresh, me, termsOf, judges, isMentioned, isUrgent, memberFiles],
+    [sync.state, sync.setMember, sync.refresh, sync.changes, sync.floor, me, termsOf, judges, isMentioned, isUrgent, memberFiles],
   )
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>
 }

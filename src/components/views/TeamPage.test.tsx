@@ -52,6 +52,7 @@ vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 const team = (over: Partial<Team> = {}): Team => ({
   id: 'eng',
   name: 'Engineering',
+  chatAddress: '39000::eng',
   archived: false,
   company: false,
   private: false,

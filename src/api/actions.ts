@@ -19,6 +19,8 @@ import {
   markSpaceAsViewer,
   type TeamWrite,
 } from '@/nostr/teams'
+import { addToPlaceAsViewer, choosePlaceLevelAsViewer, type PlaceRead } from '@/nostr/places'
+import type { Place, SwitchChoice } from '@estiva-app/conversation'
 import { RELAY_URL } from './relayUrl'
 import { reloadTeamsOnScreen } from './useTeams'
 
@@ -51,6 +53,14 @@ export function usePeekActions() {
     /** Make a topic one of a team's spaces, or not: a `kind:1852 add` with or without the `space` role. */
     markSpace: (team: string, address: string, space: boolean) =>
       asViewer((relayUrl, token) => markSpaceAsViewer(team, address, space, relayUrl, token)),
+
+    // ── Following a place (TEA-6): a topic, a space or a team's chat ──
+    /** One pick on the place's switch: Not following, Important, All, or back to the team's default (§11.8). */
+    choosePlaceLevel: (args: { place: Place; folder: string; choice: SwitchChoice; read: PlaceRead; archived: boolean; muted: boolean }) =>
+      asViewer((relayUrl, token) => choosePlaceLevelAsViewer(args, relayUrl, token)),
+    /** Add someone to the place: they join it at Important, and can leave. */
+    addToPlace: (args: { place: Place; folder: string; person: string; read: PlaceRead }) =>
+      asViewer((relayUrl, token) => addToPlaceAsViewer(args, relayUrl, token)),
 
     // ── Desk (pages keep their instant local hide; these persist it) ──
     /**

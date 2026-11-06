@@ -187,7 +187,9 @@ export function TreeRow({
   const membership = useMembership()
   const followKey = file.address
   const isMember = followKey ? membership.isMember(followKey) : false
-  const memberAction = followKey && file.folder && !readOnly ? (isMember ? 'leave' : 'join') : undefined
+  // A topic or a space is followed with the switch on its header (TEA-6): its row offers no Join or Leave.
+  const isPlace = Number(followKey?.split(':')[0]) === KIND_BARE_FILE
+  const memberAction = followKey && file.folder && !readOnly && !isPlace ? (isMember ? 'leave' : 'join') : undefined
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
