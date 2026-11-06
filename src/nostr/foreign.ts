@@ -2120,7 +2120,10 @@ export async function deleteFileAsViewer(
     readers hide it, and Restore brings it back whole — so nothing is unlisted.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
   */
-  if ((await declaredFieldOf(args.naddr, args.actionId, relayUrl, token)) === DELETED_FIELD) {
+  const declaredField = await declaredFieldOf(args.naddr, args.actionId, relayUrl, token)
+  // Unread is not "a kind:5": that path writes the empty value and unlists, which for a `deleted` field is a restore.
+  if (declaredField === null) return { ok: false, reason: 'It could not be read just now, so it was not deleted. Try again.' }
+  if (declaredField === DELETED_FIELD) {
     const result = await applyActionAsViewer(
       { naddr: args.naddr, actionId: args.actionId, value: 'true', ...(args.prev ? { prev: args.prev } : {}) },
       relayUrl,
@@ -2162,8 +2165,11 @@ async function inOrderOption(): Promise<{ inOrder?: readonly string[] }> {
   return inOrder.length > 0 ? { inOrder } : {}
 }
 
-/** The field the declared action sets, or undefined for one that sets none (a `kind:5`, a comment). */
-async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string, token: StoredToken): Promise<string | undefined> {
+/**
+ * The field the declared action sets, undefined for one that sets none (a `kind:5`, a comment), or `null` when the
+ * manifest could not be read: a caller must not take an unread action for a `kind:5`.
+ */
+async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string, token: StoredToken): Promise<string | undefined | null> {
   let pointer
   try {
     pointer = referenceToPointer(naddr)
@@ -2171,7 +2177,8 @@ async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string
     return undefined
   }
   const resolved = await resolveActingManifest(pointer, undefined, viewerQuery(relayUrl, token), manifests).catch(() => null)
-  const declared = resolved?.manifest.actions?.find((action) => action.id === actionId)
+  if (!resolved) return null
+  const declared = resolved.manifest.actions?.find((action) => action.id === actionId)
   return declared && declared.emits.kind !== KIND.DELETION ? declared.emits.field : undefined
 }
 

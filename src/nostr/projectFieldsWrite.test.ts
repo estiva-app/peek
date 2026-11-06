@@ -238,6 +238,29 @@ describe('Delete, declared as a kind:5', () => {
   })
 })
 
+describe('Delete, when the manifest cannot be read', () => {
+  it('sends nothing and says so, rather than a restore and a team remove', async () => {
+    relayInfo(true)
+    // The manifest read fails once (a busy relay); the next read would answer Ship's deleted-field Delete.
+    const relay = relayOver([shipManifest('deleted field'), project, channel, state])
+    queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) => {
+      if (filters.some((f) => (f.kinds as number[] | undefined)?.includes(31990)) && !relay.mock.calls.length) {
+        relay.mock.calls.push([url, filters])
+        throw new Error('relay busy')
+      }
+      return relay(url, filters)
+    })
+    const result = await deleteFileAsViewer(
+      { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(sent()).toEqual([])
+  })
+})
+
 describe('A change to a project, with the switch on', () => {
   const world = () => [shipManifest('deleted field'), project, channel, state, nameChange]
 
