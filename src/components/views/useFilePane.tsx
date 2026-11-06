@@ -192,7 +192,8 @@ export function useFilePane(
       ? {
           place: { address: file.address, team: listing?.team.id ?? file.folder },
           folder: file.folder,
-          archived: !!(listing?.team.archived ?? teams?.find((team) => team.id === file.folder)?.archived) || readOnly,
+          archived: !!(listing?.team.archived ?? teams?.find((team) => team.id === file.folder)?.archived),
+          fileArchived: readOnly,
         }
       : undefined
   const follow = usePlaceFollowControls({

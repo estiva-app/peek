@@ -22,7 +22,7 @@ export interface PlaceFollowControls {
  * The follow switch and Who follows for one place — a topic, a space or a
  * team's chat (TEA-6, from the approved prototype's FollowSwitch and
  * WhoFollowsDialog). Peek's part is which people, their names and faces, and
- * the writes. Add opens the standard add layer with its Add button (Miky, 6
+ * the writes. Add opens the standard add layer with its Invite button (Miky, 6
  * November); whoever is added joins at Important and can leave. In an archived
  * team the switch cannot change and nobody is added; the list still opens.
  *
@@ -51,6 +51,9 @@ export function usePlaceFollowControls({
   const { showToast } = useToast()
   const [open, setOpen] = useState<'list' | 'add' | null>(null)
   const archived = target?.archived ?? false
+  // Read-only: an archived team holds nobody; an archived topic keeps who follows it, but changes nothing.
+  const frozen = archived || (target?.fileArchived ?? false)
+  const readOnlyReason = archived ? 'This team is archived' : frozen ? 'This topic is archived' : undefined
   const chat = target?.place.address.startsWith('39000:') ?? false
 
   const person = (pubkey: string) => directory?.[pubkey] ?? people?.[pubkey] ?? {}
@@ -78,9 +81,9 @@ export function usePlaceFollowControls({
         level={archived ? undefined : level}
         label={title}
         people={chat}
-        onChoose={archived ? undefined : choose}
-        readOnlyReason={archived ? 'This team is archived' : undefined}
-        backTo={!archived && state.againstDefault ? teamName : undefined}
+        onChoose={frozen ? undefined : choose}
+        readOnlyReason={readOnlyReason}
+        backTo={!frozen && state.againstDefault ? teamName : undefined}
       />
     ) : undefined
 
@@ -104,11 +107,11 @@ export function usePlaceFollowControls({
       all={listed.filter((l) => l.level === 'all').map((l) => row(l.pubkey))}
       important={listed.filter((l) => l.level === 'important').map((l) => row(l.pubkey))}
       candidates={candidates}
-      onAdd={archived ? undefined : add}
+      onAdd={frozen ? undefined : add}
       initialView={open}
       onClose={() => setOpen(null)}
     />
   ) : undefined
 
-  return { switcher, pill, dialog, openAdd: target && follow.listed && !archived ? () => setOpen('add') : undefined }
+  return { switcher, pill, dialog, openAdd: target && follow.listed && !frozen ? () => setOpen('add') : undefined }
 }

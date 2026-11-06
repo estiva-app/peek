@@ -3,7 +3,7 @@
  * and who Important by name, the viewer as "You", and Add offers the
  * workspace's people but never the viewer — they join with the switch.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { PlaceFollow } from '@/api'
@@ -38,19 +38,23 @@ const directory = {
   [QA2]: { displayName: 'QA Two' },
 }
 
-/** The header's pill and dialog, and a stand-in for the ⋮ menu's "Add someone…". */
-function Harness() {
+/** The header's switch, pill and dialog, and a stand-in for the ⋮ menu's "Add someone…", shown only when it is offered. */
+function Harness({ archived = false, fileArchived = false }: { archived?: boolean; fileArchived?: boolean }) {
+  const team = '33333333-3333-4333-8333-333333333333'
   const controls = usePlaceFollowControls({
-    target: { place: { address: `30840:${MIKY}:brief`, team: '33333333-3333-4333-8333-333333333333' }, folder: '33333333-3333-4333-8333-333333333333', archived: false },
+    target: { place: { address: `30840:${MIKY}:brief`, team }, folder: team, archived, fileArchived },
     title: 'Brief',
     me: ME,
     directory,
   })
   return (
     <>
-      <button type="button" onClick={controls.openAdd}>
-        Add someone…
-      </button>
+      {controls.switcher}
+      {controls.openAdd && (
+        <button type="button" onClick={controls.openAdd}>
+          Add someone…
+        </button>
+      )}
       {controls.pill}
       {controls.dialog}
     </>
@@ -68,7 +72,11 @@ describe('Who follows', () => {
   })
 
   it('Add offers the workspace’s people, never the viewer, even one who does not follow it', async () => {
+    const listed = follow.listed
     follow.listed = [{ pubkey: MIKY, level: 'all', ways: ['level'] }]
+    onTestFinished(() => {
+      follow.listed = listed
+    })
     render(<Harness />)
     await userEvent.click(screen.getByRole('button', { name: 'Add someone…' }))
     await userEvent.type(await screen.findByPlaceholderText('Search people...'), 'QA')
@@ -76,5 +84,26 @@ describe('Who follows', () => {
     const offered = screen.getAllByRole('option').map((option) => option.textContent ?? '')
     expect(offered.some((text) => text.endsWith('QA Two'))).toBe(true)
     expect(offered.some((text) => text.endsWith('QA One'))).toBe(false)
+  })
+})
+
+describe('the switch on an archived place', () => {
+  // The package's disabled button keeps focus for its reason, so it says so with aria-disabled.
+  const isDisabled = (el: HTMLElement) => (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true'
+
+  it('an archived topic in a live team keeps its level, cannot be changed, and offers no Add', () => {
+    render(<Harness fileArchived />)
+    const switcher = screen.getByRole('button', { name: /change how you follow Brief/ })
+    expect(switcher.getAttribute('aria-label')).toMatch(/at Important/)
+    expect(isDisabled(switcher)).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Add someone…' })).toBeNull()
+  })
+
+  it('in an archived team it shows Not following and offers no Add', () => {
+    render(<Harness archived />)
+    const switcher = screen.getByRole('button', { name: /change how you follow Brief/ })
+    expect(switcher.getAttribute('aria-label')).not.toMatch(/at Important/)
+    expect(isDisabled(switcher)).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Add someone…' })).toBeNull()
   })
 })
