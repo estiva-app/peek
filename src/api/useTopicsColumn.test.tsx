@@ -89,9 +89,6 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
-
-/** Your topics' listed files' news (TOPI-3). */
-const listedNews = () => useListedNews()
 import { forgetProjectFields } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
@@ -426,7 +423,7 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     relay.queryRelay.mockClear()
     socket.subs = []
 
-    const { result } = renderHook(() => ({ column: useTopicsColumn(), news: listedNews() }))
+    const { result } = renderHook(() => ({ column: useTopicsColumn(), news: useListedNews() }))
     await waitFor(() => expect(result.current.news.get(ALPHA)?.map((one) => one.file)).toEqual([TESTING]))
     expect(result.current.news.get(ALPHA)![0]!.events.map((e) => e.id)).toEqual(['said-before'])
     expect(relay.queryRelay.mock.calls.length).toBe(requests)
