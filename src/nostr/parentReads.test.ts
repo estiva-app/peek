@@ -154,4 +154,11 @@ describe('where the relay does not offer the list read', () => {
     expect(page?.archived?.with).toBe(PROJECT)
     expect(projectHistoryReads().length).toBeGreaterThan(0)
   })
+
+  it('a project card’s parent is still found, by the project’s changes as before', async () => {
+    const parents = await resolveParentsAsViewer([PROJECT], 'https://relay.test', token)
+
+    expect(parents[PROJECT]).toBeNull()
+    expect(projectHistoryReads().length).toBeGreaterThan(0)
+  })
 })
