@@ -88,16 +88,10 @@ vi.mock('@/api/internal/membership', () => ({
   }),
 }))
 
-import * as topicsColumnModule from './useTopicsColumn'
-import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
-import type { ListedNews } from './placeDots'
+import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
 
-/**
- * Your topics' listed files' news (TOPI-3), read off the module so that on code without it this file still loads and
- * the test says, on its assertion, that nothing reached it.
- */
-const listedNews = (): ReadonlyMap<string, ListedNews> =>
-  (topicsColumnModule as { useListedNews?: () => ReadonlyMap<string, ListedNews> }).useListedNews?.() ?? new Map()
+/** Your topics' listed files' news (TOPI-3). */
+const listedNews = () => useListedNews()
 import { forgetProjectFields } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'

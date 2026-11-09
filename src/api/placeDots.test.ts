@@ -12,8 +12,7 @@ import { buildLevelChange, buildMembershipChange, fileContext, threadContext, ty
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { signed } from '@/test/wireRelay'
-import * as dots from './placeDots'
-import { placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
+import { listedHaveUnread, placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
 
 const ME = 'c'.repeat(64)
 const MIKY = 'a'.repeat(64)
@@ -164,14 +163,13 @@ describe('a file the topic lists (TOPI-3)', () => {
     signed({ kind: 1111, created_at: at, content: 'reply', tags: [['A', ISSUE], ['K', '30851'], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ['h', SHIP_TEAM]] }, by)
   /** Whether the topic lights for news on the issue it lists, with ME's markers `merged`. */
   const listedLights = (events: SignedEvent[], changes: SignedEvent[], merged: Record<string, number> = {}) =>
-    // Read off the module, so on code without it this file still loads and the test fails on its assertion.
-    ((dots as { listedHaveUnread?: (news: unknown, judge: unknown) => boolean }).listedHaveUnread?.([{ file: ISSUE, events }], {
+    listedHaveUnread([{ file: ISSUE, events }], {
       me: ME,
       following: following(changes),
       muted: false,
       merged,
       floor: FLOOR,
-    }) ?? false)
+    })
   const atAll = [added(T0 + 10), level(T0 + 15, 'all')]
   const ISSUE_CONTEXT = fileContext(ISSUE) as string
 
