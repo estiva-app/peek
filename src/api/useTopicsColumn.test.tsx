@@ -90,11 +90,11 @@ vi.mock('@/api/internal/membership', () => ({
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
 import { forgetRelayInfo } from '@/nostr/relayInfo'
+import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
+import { useTeamTopics } from './useTeams'
 
 /** The relay's NIP-11 document, as the tab reads it once per page. */
 let nip11: Record<string, unknown> = {}
-import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
-import { useTeamTopics } from './useTeams'
 
 const d = (address: string) => address.split(':')[2]!
 const event = (kind: number, tags: string[][], at = 100): Event => ({ id: `${kind}-${tags[0]?.[1]}-${at}`, kind, pubkey: VIEWER, created_at: at, tags, content: '', sig: '' })
