@@ -1,5 +1,5 @@
 import { fieldsOptedIn, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
-import { RELAY_URL } from '@/api/relayUrl'
+import { forgetRelayInfo, relayInfo } from './relayInfo'
 
 /** The kind a project is written as: the type the switch names, protocol's `PROJECT_TYPE` (TYPES.md). */
 export const PROJECT_KIND = 30850
@@ -21,14 +21,6 @@ function tabStorage(): Storage | undefined {
  */
 export function fieldsOptIn(search = ''): boolean {
   return fieldsOptedIn(search, tabStorage(), OPT_IN_KEY)
-}
-
-/** The relay's NIP-11 document, which needs no sign-in; `null` in a build with no relay (tests, Storybook). */
-async function relayInfo(): Promise<unknown> {
-  if (!RELAY_URL) return null
-  const res = await fetch(RELAY_URL, { headers: { accept: 'application/nostr+json' } })
-  if (!res.ok) throw new Error(`relay information failed: ${res.status}`)
-  return res.json()
 }
 
 /** What the switch reads off NIP-11: on or off, and the types the relay keeps in order. */
@@ -138,4 +130,5 @@ export async function listReadOffered(): Promise<boolean> {
 /** Forget the relay's answer, so a test can switch it. */
 export function forgetProjectFields(): void {
   held = undefined
+  forgetRelayInfo()
 }
