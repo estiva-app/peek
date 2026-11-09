@@ -70,6 +70,8 @@ function topicMore(props: Partial<ComponentProps<typeof TopicMoreMenu>>) {
            been drawn: Copy link, and Rename (23 September). */
         onCopyLink={noop}
         onRename={noop}
+        /* A topic or space in a live team offers Add someone… (TEA-6). */
+        onAddSomeone={noop}
         openWorkAction="add"
         {...props}
       />
@@ -110,6 +112,7 @@ export const TopicMoreDm: Story = {
       onToggleOpenWork: undefined,
       openWorkAction: undefined,
       onDeleteTopic: undefined,
+      onAddSomeone: undefined,
       onHideDm: noop,
     }),
 }
@@ -256,6 +259,7 @@ export const TopicMenuOnATreeRow: Story = {
             archiveAction="archive"
             onToggleArchive={noop}
             onDeleteTopic={noop}
+            onAddSomeone={noop}
           />
         }
       />
