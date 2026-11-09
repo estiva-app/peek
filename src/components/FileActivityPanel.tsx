@@ -129,7 +129,7 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     place — a DM, a topic, a file's thread — and opens the thread on it. A
     link to the place alone landed beside the message, or on nothing.
   */
-  return { conv, about: m.saidIn, relation: 'mention', href: `/message/${m.id}` }
+  return { conv, about: m.saidIn, href: `/message/${m.id}` }
 }
 
 /**
@@ -154,12 +154,8 @@ export function FileActivityPanelView({
     <div className="flex flex-col">
       {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge, on the heading itself. The count beside the title (7 October). */}
       <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} className="mx-2 mt-4" />
-      {/*
-        Every row has an `href` — its thread is on another file's page — so
-        nothing here is ever selected and the thread opener is never reached;
-        both props are the component's.
-      */}
-      <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} here={here} />
+      {/* Every row opens where it was said (`href`): its thread is on another file's page. */}
+      <TopicActivity items={items} labelFor={labelFor} here={here} />
     </div>
   )
 }

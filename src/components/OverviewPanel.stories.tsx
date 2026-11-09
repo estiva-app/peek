@@ -93,7 +93,6 @@ const project: ForeignObject = {
 
 /** One mention elsewhere, for the column with both parts. */
 const MENTION: TopicActivityItem = {
-  relation: 'mention',
   about: '30840:aa:roadmap',
   href: '/topic/30840:aa:roadmap?thread=m1',
   conv: {
