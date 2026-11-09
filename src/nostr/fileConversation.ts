@@ -72,6 +72,7 @@ import {
   byOrder,
   decorationsOf,
   foldEmbeds,
+  ownFileOf,
   foldThreads,
   groupThreads,
   isCommentOn,
@@ -216,13 +217,6 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   embeds: event ? embedsOf(event) : [],
   ownFile: event ? ownFileOf(event) : undefined,
 })
-
-/** The values naming the file a comment is on: its NIP-22 `A` and its `O` id (SPEC §6.4) — none on chat. */
-export function ownFileOf(event: Pick<SignedEvent, 'kind' | 'tags'>): string[] | undefined {
-  if (event.kind !== KIND.COMMENT) return undefined
-  const values = event.tags.filter((t) => (t[0] === 'A' || t[0] === 'O') && t[1]).map((t) => t[1])
-  return values.length ? values : undefined
-}
 
 /**
  * The blocks a message shows (`part`, SPEC §13.6.1) and, for a comment anchored
