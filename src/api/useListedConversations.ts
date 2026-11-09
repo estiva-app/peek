@@ -6,13 +6,15 @@ import {
   watchListedConversations,
   type ForeignObject,
   type ListedConversation,
+  type ListedConversations,
   type ListedWatch,
   type QueryFn,
 } from '@estiva-app/interop'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { viewerQuery } from '@/nostr/foreign'
 import { heldOrRelay, readConversation } from '@/nostr/conversationCatchUp'
-import { getLiveClient } from '@/nostr/liveTopics'
+import { getLiveClient, getLiveTopics } from '@/nostr/liveTopics'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { peekRelay } from '@/nostr/relayInfo'
 import { RelayReadError, classifyRelayFailure, isOutage, type RelayFailureKind } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
@@ -82,6 +84,8 @@ export function useListedConversations(
     latest.current = listed
   })
   const [read, setRead] = useState<Read>()
+  /** Read the files again: the open read's, set while it is open. */
+  const refreshNow = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const files = latest.current
@@ -92,57 +96,114 @@ export function useListedConversations(
     let watch: ListedWatch | undefined
     const query = viewerQuery(at.relayUrl, at.token)
     const store = conversationsFor(at.relayUrl, at.token.pubkey)
-    void (async () => {
+
+    /** Hear each file's new events live, from what `answer` holds: opened again after every read, for the ids it found. */
+    const listen = (answer: ListedConversations, held: readonly HeldFile[]) => {
+      watch?.stop()
+      watch = undefined
+      const client = getLiveClient(at.relayUrl)
+      if (!client || stopped) return
+      const byFile = new Map(held.map((file) => [file.file, file]))
+      watch = watchListedConversations(
+        client.relay,
+        answer,
+        (file: string, event: SignedEvent) => {
+          const source = byFile.get(file)
+          if (source?.container) void syncHeld(source.container, source.roots, at, event)
+        },
+        {
+          // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-request-kept-open-hears-what-asking-again-would-return.md
+          namesTeams: relayNamesTeams(peekRelay()),
+          onClosed: (reason) => console.warn('[nostr] listed conversations watch closed:', reason),
+        },
+      )
+    }
+
+    /*
+      The read, and every read after it. The first holds each file's conversation as read; a later one — on focus,
+      on becoming visible, on the socket coming back, and on the slow tick while it is down, as a file's own pane
+      catches up — asks the same one `listedConversationsOf` again (about three requests for all the files, never one
+      catch-up per file) and merges what it returns into each held conversation through the path live events take,
+      so what the watch missed while the socket was down is drawn. One at a time; one asked for meanwhile runs after.
+    */
+    let reading = false
+    let again = false
+    const readAll = async (first: boolean): Promise<void> => {
+      if (reading) {
+        again = true
+        return
+      }
+      reading = true
       try {
-        const startedAt = Date.now()
-        const answer = await listedConversationsOf(
-          query,
-          files.map((file) => file.listed),
-        )
-        const held: HeldFile[] = []
-        for (const one of answer.files) {
-          const container: ConversationContainer | null = one.folder ? { kind: 'file', address: one.address, h: one.folder } : null
-          const roots = rootsOf(one)
-          // Its own events answer the fold; only what is not a conversation's (an owner's manifest) goes to the relay.
-          const local: QueryFn = async (filters) => one.events.filter((event) => filters.some((filter) => matchesFilter(event, filter)))
-          const { value, events } = await readConversation(container ?? { kind: 'file', address: one.address, h: '' }, roots, heldOrRelay(local, query))
-          if (container) {
-            const at = conversationKey(container)
-            store.replace(at, value, events, startedAt)
-            store.touch(at)
+        do {
+          again = false
+          const startedAt = Date.now()
+          const answer = await listedConversationsOf(
+            query,
+            files.map((file) => file.listed),
+          )
+          if (stopped) return
+          const held: HeldFile[] = []
+          for (const one of answer.files) {
+            const container: ConversationContainer | null = one.folder ? { kind: 'file', address: one.address, h: one.folder } : null
+            const roots = rootsOf(one)
+            const storeKey = container ? conversationKey(container) : null
+            if (container && storeKey && !first && store.since(storeKey) !== undefined) {
+              await syncHeld(container, roots, at, one.events)
+            } else {
+              // Its own events answer the fold; only what is not a conversation's (an owner's manifest) goes to the relay.
+              const local: QueryFn = async (filters) => one.events.filter((event) => filters.some((filter) => matchesFilter(event, filter)))
+              const { value, events } = await readConversation(container ?? { kind: 'file', address: one.address, h: '' }, roots, heldOrRelay(local, query))
+              if (container && storeKey) {
+                store.replace(storeKey, value, events, startedAt)
+                store.touch(storeKey)
+              }
+              held.push({ file: one.file, address: one.address, folder: one.folder, container, roots, ...(container ? {} : { fixed: value }) })
+              continue
+            }
+            held.push({ file: one.file, address: one.address, folder: one.folder, container, roots })
           }
-          held.push({ file: one.file, address: one.address, folder: one.folder, container, roots, ...(container ? {} : { fixed: value }) })
-        }
-        if (stopped) return
-        setRead({ key, files: held })
-        const client = getLiveClient(at.relayUrl)
-        if (!client) return
-        const byFile = new Map(held.map((file) => [file.file, file]))
-        watch = watchListedConversations(
-          client.relay,
-          answer,
-          (file: string, event: SignedEvent) => {
-            const source = byFile.get(file)
-            if (source?.container) void syncHeld(source.container, source.roots, at, event)
-          },
-          {
-            // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-request-kept-open-hears-what-asking-again-would-return.md
-            namesTeams: relayNamesTeams(peekRelay()),
-            onClosed: (reason) => console.warn('[nostr] listed conversations watch closed:', reason),
-          },
-        )
+          if (stopped) return
+          setRead({ key, files: held })
+          listen(answer, held)
+        } while (again && !stopped)
       } catch (error) {
         const kind = error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')
         if (isOutage(kind)) recordReadFailure(kind)
         console.warn('[nostr] listed conversations read failed:', error)
-        if (!stopped) setRead({ key, failed: kind })
+        // A later read that fails keeps what is drawn, as a file's own pane keeps its conversation.
+        if (!stopped && first) setRead({ key, failed: kind })
+      } finally {
+        reading = false
       }
-    })()
+    }
+    void readAll(true)
+    refreshNow.current = () => void readAll(false)
+
+    // The socket coming back: what was said while it was down is read again.
+    let unwatchState: (() => void) | undefined
+    try {
+      const live = getLiveTopics(at.relayUrl)
+      let wasLive = live.state() === 'live'
+      unwatchState = live.onState((next) => {
+        if (next === 'live' && !wasLive) void readAll(false)
+        wasLive = next === 'live'
+      })
+    } catch (error) {
+      console.warn('[nostr] listed conversations cannot hear the socket come back:', error)
+    }
+
     return () => {
       stopped = true
+      refreshNow.current = null
+      unwatchState?.()
       watch?.stop()
     }
   }, [key, relayUrl, pubkey, viewer])
+
+  // Focus and becoming visible always; the slow tick only while the socket is not live, as a file's own pane does.
+  const socketLive = useSocketLive(key !== null ? relayUrl : undefined)
+  useRefreshTriggers(() => refreshNow.current?.(), { enabled: key !== null, interval: !socketLive })
 
   /*
     A list changed in this tab (Add file, Remove) is read again; meanwhile the files still listed stay drawn, so the
@@ -222,6 +283,22 @@ export function useListedConversations(
 }
 
 const NO_FILES: readonly HeldFile[] = []
+
+const NOT_LIVE = () => () => {}
+
+/** Whether the tab's socket is live, as it changes; false with no relay. */
+function useSocketLive(relayUrl: string | undefined): boolean {
+  const live = useMemo(() => {
+    if (!relayUrl) return null
+    try {
+      return getLiveTopics(relayUrl)
+    } catch {
+      return null
+    }
+  }, [relayUrl])
+  const subscribe = useMemo(() => (live ? (listener: () => void) => live.onState(() => listener()) : NOT_LIVE), [live])
+  return useSyncExternalStore(subscribe, () => live?.state() === 'live')
+}
 
 /**
  * A listed file's comments, oldest first: the roots its own pane would be handed by its resolve. A `1111` filed in any

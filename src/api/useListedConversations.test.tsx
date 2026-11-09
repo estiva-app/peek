@@ -26,9 +26,23 @@ vi.mock('@/nostr/relayInfo', async (importOriginal) => ({
 /** The tab's socket: each live subscription opened, to deliver an event to as the relay would. */
 const socket = vi.hoisted(() => ({
   subs: [] as Array<{ filters: Record<string, unknown>[]; onEvent: (event: unknown) => void; closed: boolean }>,
+  state: 'live' as string,
+  listeners: new Set<(state: string) => void>(),
+  /** The socket drops or comes back, as the tab's client reports it. */
+  set(state: string) {
+    this.state = state
+    this.listeners.forEach((listener) => listener(state))
+  },
 }))
 vi.mock('@/nostr/liveTopics', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  getLiveTopics: () => ({
+    state: () => socket.state,
+    onState: (listener: (state: string) => void) => {
+      socket.listeners.add(listener)
+      return () => socket.listeners.delete(listener)
+    },
+  }),
   getLiveClient: () => ({
     relay: {
       subscribe: (filters: Record<string, unknown>[], onEvent: (event: unknown) => void) => {
@@ -93,6 +107,8 @@ let relay: WireRelay
 beforeEach(() => {
   resetConversationsForTests()
   socket.subs = []
+  socket.state = 'live'
+  socket.listeners.clear()
   relay = installWireRelay()
   relay.seed(manifest, fileEvent('launch-notes', NOTES_TEAM), fileEvent('launch-plan', PLAN_TEAM), fileEvent('loose'), onNotes, onPlan, onLoose)
 })
@@ -142,6 +158,20 @@ describe("a topic's listed conversations (TOPI-3)", () => {
     await waitFor(() => expect(bodiesOf(result, PLAN)).toEqual(['Budget is in', 'Signed off']))
     expect(bodiesOf(result, NOTES)).toEqual(['Is this date right?'])
     expect(queries().length).toBe(before)
+  })
+
+  it('a comment the watch missed while the socket was down is drawn once it comes back, in one read for every file', async () => {
+    const { result } = renderHook(() => useListedConversations([NOTES_LISTED, PLAN_LISTED]))
+    await waitFor(() => expect(filesOf(result)).toHaveLength(2))
+    act(() => socket.set('offline'))
+    // Said while the socket was down: the relay holds it, and no subscription heard it.
+    relay.seed(commentOn(PLAN, PLAN_TEAM, 'Signed off while you were away', 1_700_000_500))
+    const before = queries().filter((filters) => filters.some((filter) => '#A' in filter)).length
+
+    act(() => socket.set('live'))
+    await waitFor(() => expect(bodiesOf(result, PLAN)).toEqual(['Budget is in', 'Signed off while you were away']))
+    expect(bodiesOf(result, NOTES)).toEqual(['Is this date right?'])
+    expect(queries().filter((filters) => filters.some((filter) => '#A' in filter)).length).toBe(before + 1)
   })
 
   it('a file whose root names no team is drawn with nothing to write through', async () => {

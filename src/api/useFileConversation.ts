@@ -423,20 +423,24 @@ export function conversationActions({
 
 /**
  * A held conversation brought up to date as its own pane's sync does it, and with it (`want` and `coalesced`, so the
- * two never run beside each other): one event a watch filed under it, applied with no read (`applyHeardEvents`), or,
- * with none, one catch-up. What a topic at All runs for each file it lists (TOPI-3). Failures are logged; what is
+ * two never run beside each other): the events a watch or a re-read filed under it, applied with no read
+ * (`applyHeardEvents`), or, with none, one catch-up. What a topic at All runs for each file it lists (TOPI-3). Failures are logged; what is
  * held stays, and nothing is drawn as failed.
  */
 export function syncHeld(
   container: ConversationContainer,
   rootIds: readonly string[],
   at: { relayUrl: string; token: StoredToken },
-  event?: SignedEvent,
+  /** What a watch filed under it, or a re-read of the topic's files found for it (TOPI-3); none, a catch-up. */
+  events?: SignedEvent | readonly SignedEvent[],
 ): Promise<void> {
   const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
   const key = conversationKey(container)
   const query = viewerQuery(at.relayUrl, at.token)
-  want(key, event)
+  if (Array.isArray(events)) {
+    if (events.length === 0) return Promise.resolve()
+    for (const event of events) want(key, event)
+  } else want(key, events as SignedEvent | undefined)
   return coalesced(key, async () => {
     const asked = wanted.get(key)
     wanted.delete(key)
