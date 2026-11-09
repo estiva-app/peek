@@ -50,7 +50,10 @@ interface HeldFile {
   container: ConversationContainer | null
   /** Its comment ids as first read: the fold's roots, to which the held events add the newer ones. */
   roots: string[]
-  /** A file with no team has no key in the tab's store: its conversation as read, never live. */
+  /**
+   * A file with no team has no key in the tab's store: its conversation as read, never live. A file with one keeps
+   * its last read here too, drawn if the tab's store let it go before anything subscribed to it.
+   */
   fixed?: FileConversation
 }
 
@@ -135,7 +138,10 @@ export function useListedConversations(
       }
       reading = true
       try {
+        let pass = 0
         do {
+          // A read asked for while the first was out is a later read: it merges, and a failure keeps what is drawn.
+          if (pass++ > 0) first = false
           again = false
           const startedAt = Date.now()
           const answer = await listedConversationsOf(
@@ -151,17 +157,30 @@ export function useListedConversations(
             if (container && storeKey && !first && store.since(storeKey) !== undefined) {
               await syncHeld(container, roots, at, one.events)
             } else {
-              // Its own events answer the fold; only what is not a conversation's (an owner's manifest) goes to the relay.
-              const local: QueryFn = async (filters) => one.events.filter((event) => filters.some((filter) => matchesFilter(event, filter)))
+              /*
+                Its own events answer the fold; what is not a conversation's (an owner's manifest) goes to the relay,
+                and so does an id its events do not hold: whether a reply's parent still exists is the relay's answer,
+                as in the file's own pane, never "not among this file's events, so deleted".
+              */
+              const local: QueryFn = async (filters) => {
+                const found = one.events.filter((event) => filters.some((filter) => matchesFilter(event, filter)))
+                const have = new Set(found.map((event) => event.id))
+                const ask = filters.flatMap((filter) => {
+                  if (!Array.isArray(filter.ids)) return []
+                  const missing = (filter.ids as string[]).filter((id) => !have.has(id))
+                  return missing.length ? [{ ...filter, ids: missing }] : []
+                })
+                return ask.length ? [...found, ...(await query(ask))] : found
+              }
               const { value, events } = await readConversation(container ?? { kind: 'file', address: one.address, h: '' }, roots, heldOrRelay(local, query))
               if (container && storeKey) {
                 store.replace(storeKey, value, events, startedAt)
                 store.touch(storeKey)
               }
-              held.push({ file: one.file, address: one.address, folder: one.folder, container, roots, ...(container ? {} : { fixed: value }) })
+              held.push({ file: one.file, address: one.address, folder: one.folder, container, roots, fixed: value })
               continue
             }
-            held.push({ file: one.file, address: one.address, folder: one.folder, container, roots })
+            held.push({ file: one.file, address: one.address, folder: one.folder, container, roots, fixed: storeKey ? store.value(storeKey) : undefined })
           }
           if (stopped) return
           setRead({ key, files: held })
@@ -246,8 +265,8 @@ export function useListedConversations(
     const conversations = new Map(storeKeys.map((one, i) => [one, values[i]]))
     const files: ListedSource[] = []
     for (const file of current.files) {
-      const conversation = file.container ? conversations.get(conversationKey(file.container)) : file.fixed
-      // Evicted from the tab's store: drawn again on the next read, never as an empty conversation.
+      // Let go by the tab's store before anything subscribed (a topic listing more files than it holds): its last read.
+      const conversation = (file.container ? conversations.get(conversationKey(file.container)) : undefined) ?? file.fixed
       if (!conversation) continue
       const input = byAddress.get(file.address)
       files.push({

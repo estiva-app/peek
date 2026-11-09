@@ -110,15 +110,18 @@ export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefin
   const marked = useRef(new Map<string, number>())
   // By value: the view builds the map on every render.
   const seen = seenAtOf ? [...seenAtOf].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : []
-  const signature = seen.map(([address, at]) => `${address}@${at}`).join(',')
+  // A newline: no address holds one, where a `d` may hold a comma.
+  const signature = seen.map(([address, at]) => `${address}@${at}`).join('\n')
   useEffect(() => {
     if (!signature) return
-    const wanted = signature.split(',').map((one) => {
+    const wanted = signature.split('\n').map((one) => {
       const at = one.lastIndexOf('@')
       return [one.slice(0, at), Number(one.slice(at + 1))] as const
     })
     let t: ReturnType<typeof setTimeout> | undefined
     const fire = () => {
+      // Hidden since it was armed (the clock catching up on a comment ahead of it): marked once shown again.
+      if (document.hidden) return
       const now = Math.floor(Date.now() / 1000)
       let ahead: number | undefined
       for (const [address, newestAt] of wanted) {

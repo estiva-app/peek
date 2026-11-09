@@ -184,6 +184,28 @@ describe("a topic's listed conversations (TOPI-3)", () => {
     expect(result.current.actionsFor(NOTES)).toBeDefined()
   })
 
+  it("a reply on one file naming another file's comment as its parent draws no stand-in for that comment: the relay still holds it", async () => {
+    // Somebody comments on the notes with `e` = the plan's comment, which is alive on the relay.
+    relay.seed(
+      signed(
+        {
+          kind: 1111,
+          created_at: 1_700_000_150,
+          content: 'Pretend reply',
+          tags: [['A', NOTES], ['K', String(BARE_FILE)], ['P', CATH], ['e', onPlan.id, '', CATH], ['k', '1111'], ['p', CATH], ['h', NOTES_TEAM]],
+        },
+        CATH,
+      ),
+    )
+    const { result } = renderHook(() => useListedConversations([NOTES_LISTED, PLAN_LISTED]))
+    await waitFor(() => expect(filesOf(result)).toHaveLength(2))
+
+    const notes = filesOf(result).find((file) => file.address === NOTES)!.conversation
+    expect(notes.roots.map((root) => root.id)).not.toContain(onPlan.id)
+    expect(notes.replies[onPlan.id]).toBeUndefined()
+    expect(bodiesOf(result, PLAN)).toEqual(['Budget is in'])
+  })
+
   it('a changed list is read again, and its new file drawn', async () => {
     const { result, rerender } = renderHook(({ listed }) => useListedConversations(listed), { initialProps: { listed: [NOTES_LISTED] } })
     await waitFor(() => expect(filesOf(result)).toHaveLength(1))

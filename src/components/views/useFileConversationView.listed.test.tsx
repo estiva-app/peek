@@ -153,6 +153,29 @@ describe('a topic at All draws its files’ threads with its own (TOPI-3)', () =
     expect(thread.textContent).toBe('Archived. Unarchive it to comment.')
   })
 
+  it("a file's stand-in under the topic's own message's id (a reply on the file naming it) never takes that message over", async () => {
+    relay.read.mockResolvedValue(conversationOf([first, last]))
+    // A comment on the issue whose parent is the topic's kick-off: the issue's fold draws a stand-in under that id.
+    const forged = { ...event('9', 'Pretend reply', T + 90), parentId: first.id }
+    const standIn = { ...first, body: '', isDeleted: true }
+    const withStandIn: ListedSource = {
+      ...issue(),
+      conversation: { ...conversationOf([standIn, onIssue]), replies: { [first.id]: [forged] } },
+    }
+    render(<Topic listed={listedWith({ files: [withStandIn] })} openThreadId={first.id} />)
+    await waitFor(() => expect(screen.getByText('Blocked on review')).toBeInTheDocument())
+
+    // The kick-off is drawn once, as the topic's own: its text, under no file's heading, and open to write in.
+    expect(screen.getAllByText('Kick-off notes')).toHaveLength(1)
+    expect(screen.getByText('Kick-off notes').closest('article')!.querySelector('h3')).toBeNull()
+    expect(screen.getAllByRole('article').map((card) => card.querySelector('p')!.textContent)).toEqual([
+      'Kick-off notes',
+      'Blocked on review',
+      'Shipping Friday',
+    ])
+    expect((await screen.findByTestId('thread')).getAttribute('data-read-only')).toBe('false')
+  })
+
   it("the New line waits for the files' read, then sits over the first new message of either", async () => {
     // Left between the kick-off and the issue's comment: the issue's is the first new one.
     left.at = (T + 30) * 1000

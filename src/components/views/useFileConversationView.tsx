@@ -254,14 +254,35 @@ export function useFileConversationView({
   */
   const listedLoading = listed?.state === 'loading'
   const sources = listed && typeof listed.state === 'object' && 'files' in listed.state ? listed.state.files : NO_SOURCES
+  /*
+    An id the topic's own conversation holds is the topic's, and one an earlier file holds is that file's: a file's
+    fold can draw a stand-in under any id one of its replies names, and that must never take over another thread, its
+    replies or where a reply to it is written.
+  */
   const sourceOf = new Map<string, ListedSource>()
-  for (const source of sources) {
-    for (const root of source.conversation.roots) sourceOf.set(root.id, source)
-    for (const [root, replies] of Object.entries(source.conversation.replies)) {
-      sourceOf.set(root, source)
-      for (const reply of replies) sourceOf.set(reply.id, source)
+  const ownIds = new Set<string>()
+  if (conversation && sources.length) {
+    for (const root of conversation.roots) ownIds.add(root.id)
+    for (const [root, replies] of Object.entries(conversation.replies)) {
+      ownIds.add(root)
+      for (const reply of replies) ownIds.add(reply.id)
     }
   }
+  const claim = (id: string, source: ListedSource) => {
+    if (ownIds.has(id)) return false
+    const holder = sourceOf.get(id)
+    if (holder && holder !== source) return false
+    sourceOf.set(id, source)
+    return true
+  }
+  for (const source of sources) {
+    for (const root of source.conversation.roots) claim(root.id, source)
+    for (const [root, replies] of Object.entries(source.conversation.replies)) {
+      if (!claim(root, source)) continue
+      for (const reply of replies) claim(reply.id, source)
+    }
+  }
+  const owns = (source: ListedSource, id: string) => sourceOf.get(id) === source
   const conversationOf = (id: string): FileConversation | null => sourceOf.get(id)?.conversation ?? conversation
   const streamOfRoot = sources.length
     ? (root: string): ReplyStream | undefined => {
@@ -269,8 +290,18 @@ export function useFileConversationView({
         return source ? { kind: 'file', address: source.address } : undefined
       }
     : undefined
-  const allRoots = conversation && sources.length ? [...conversation.roots, ...sources.flatMap((s) => s.conversation.roots)].sort((a, b) => a.createdAt - b.createdAt) : conversation?.roots
-  const allReplies = conversation && sources.length ? Object.assign({}, conversation.replies, ...sources.map((s) => s.conversation.replies)) as FileConversation['replies'] : conversation?.replies
+  const allRoots =
+    conversation && sources.length
+      ? [...conversation.roots, ...sources.flatMap((s) => s.conversation.roots.filter((r) => owns(s, r.id)))].sort((a, b) => a.createdAt - b.createdAt)
+      : conversation?.roots
+  const allReplies =
+    conversation && sources.length
+      ? (Object.assign(
+          {},
+          conversation.replies,
+          ...sources.map((s) => Object.fromEntries(Object.entries(s.conversation.replies).filter(([root]) => owns(s, root)))),
+        ) as FileConversation['replies'])
+      : conversation?.replies
 
   const newWhenDrawn = useNewWhenDrawn(stream, listedLoading ? undefined : allRoots, allReplies, viewerPubkey, streamOfRoot)
   // The kit's watch (ConversationLayout's and Thread's `seen`): its messages by the layout, its replies by the thread.
@@ -297,7 +328,14 @@ export function useFileConversationView({
   const urgentRoots = new Set(allRoots?.filter((r) => !isGone(r) && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
   const ownView = conversation ? project(conversation, viewerPubkey, people) : null
-  const view = ownView && sources.length ? merged(ownView, sources.map((s) => project(s.conversation, viewerPubkey, people))) : ownView
+  const view =
+    ownView && sources.length
+      ? merged(
+          ownView,
+          sources.map((s) => project(s.conversation, viewerPubkey, people)),
+          (i, id) => owns(sources[i], id),
+        )
+      : ownView
 
   /** Nothing can be written on it: the topic is read-only, or the file it belongs to is archived or has no team. */
   const readOnlyOf = (id: string) => {
@@ -735,13 +773,23 @@ const READ_ONLY_ACTIONS: FileConversationActions = {
 /**
  * A topic's own conversation and its listed files', as one list (TOPI-3): every root in time order, the open thread
  * found by its root whichever conversation holds it. The reaction horizon is said for all of them together: what was
- * not asked about in any, and whether any read came back cut.
+ * not asked about in any, and whether any read came back cut. A file's root counts only when `owns` gives it to that
+ * file: the topic's own, and an earlier file's, are never replaced by a stand-in under the same id.
  */
-function merged(own: ProjectedConversation, files: readonly ProjectedConversation[]): ProjectedConversation {
+function merged(
+  own: ProjectedConversation,
+  files: readonly ProjectedConversation[],
+  owns: (file: number, id: string) => boolean,
+): ProjectedConversation {
   const all = [own, ...files]
+  const kept = files.map((one, i) => ({
+    ...one,
+    roots: one.roots.filter((root) => owns(i, root.id)),
+    byId: Object.fromEntries(Object.entries(one.byId).filter(([id]) => owns(i, id))) as ProjectedConversation['byId'],
+  }))
   return {
-    roots: all.flatMap((one) => one.roots).sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0)),
-    byId: Object.assign({}, ...all.map((one) => one.byId)) as ProjectedConversation['byId'],
+    roots: [...own.roots, ...kept.flatMap((one) => one.roots)].sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0)),
+    byId: Object.assign({}, ...kept.map((one) => one.byId), own.byId) as ProjectedConversation['byId'],
     reactionsById: Object.assign({}, ...all.map((one) => one.reactionsById)) as ProjectedConversation['reactionsById'],
     reactionTargetsOmitted: all.reduce((n, one) => n + one.reactionTargetsOmitted, 0),
     reactionEventsCut: all.some((one) => one.reactionEventsCut),
