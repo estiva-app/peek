@@ -25,10 +25,6 @@ const follow: PlaceFollow = {
   add: vi.fn(async () => ({ ok: true as const })),
 }
 
-vi.mock('@/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/api')>()),
-  usePlaceFollow: () => follow,
-}))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 
 const directory = {
@@ -42,6 +38,7 @@ const directory = {
 function Harness({ archived = false, fileArchived = false, place }: { archived?: boolean; fileArchived?: boolean; place?: string }) {
   const team = '33333333-3333-4333-8333-333333333333'
   const controls = usePlaceFollowControls({
+    follow,
     target: { place: { address: place ?? `30840:${MIKY}:brief`, team }, folder: team, archived, fileArchived },
     title: 'Brief',
     me: ME,

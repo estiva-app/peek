@@ -1,24 +1,31 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
 import { Panel } from '@estiva-app/ui'
+import { ListedFileHeading } from '@/components/views/ListedFileHeading'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { conversationPlaceholder, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
+import { conversationPlaceholder, useFileConversationView, type ConversationParts, type ListedView } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { OverviewPanel } from '@/components/OverviewPanel'
 import { TopicFiles } from '@/components/TopicFiles'
 import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
 import {
   listedFile,
+  topicFollowTarget,
   useFileThreads,
   useForeignConversation,
+  useListedConversations,
   useNewReplyThreads,
+  usePlaceFollow,
   useReplyOnlyThread,
+  useTeams,
+  useTopicFiles,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ReplyStream,
   type ForeignConversationState,
+  type TopicFile,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { referenceLink } from '@/lib/referenceLink'
@@ -100,6 +107,44 @@ export function useFileView({
     canComment && writable?.address && writable.folder ? { kind: 'file', address: writable.address, h: writable.folder } : null
   const ownView = container !== null
   const title = (file ?? listed)?.slots.title?.value ?? titleHint ?? 'File'
+
+  /*
+    A topic's level is its view's too (TOPI-3): one control, the follow switch. Followed at All, its middle column
+    draws its own conversation and every thread on each file it lists (not files under them) in one time order, each
+    file's under its heading; at Important, Not following or muted, its own only. The place is read here, once, and the
+    header's switch draws the same read (`useFilePane`). A mute shows as Not following, so it draws the topic's own.
+  */
+  const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
+  const { teams, failed: teamsFailed } = useTeams({ read: isTopic })
+  const followTarget = topicFollowTarget(file, teams, teamsFailed)
+  const follow = usePlaceFollow(followTarget)
+  const atAll = !!followTarget && follow.state?.shown === 'all'
+  const sidePanel = useSidePanel(file?.address)
+  /*
+    A topic's files (TOP-3): read once for both the Overview's Files and, at All, their conversations. Filed in the
+    topic's own Folder, the one its root names.
+  */
+  const topic = isTopic && file?.address && file.folder ? file.address : null
+  const topicFiles = useTopicFiles(topic && (atAll || sidePanel.open) ? topic : null, file?.folder)
+  const listedFiles = topic && atAll && typeof topicFiles.state === 'object' && 'files' in topicFiles.state ? topicFiles.state.files : null
+  const listedConversations = useListedConversations(listedFiles)
+  // One node per file, kept across renders, so a card whose message did not change is not drawn again.
+  const headings = useMemo(() => new Map((listedFiles ?? []).map((f) => [f.address, <ListedFileHeading key={f.address} file={f} />])), [listedFiles])
+  const listedView: ListedView | undefined =
+    topic && atAll
+      ? {
+          // The list itself is still being read: the files' conversations are as good as loading.
+          state: listedFiles ? listedConversations.state : 'loading',
+          actionsFor: listedConversations.actionsFor,
+          headingOf: (address) => headings.get(address),
+          nameOf: (address) => nameOf(listedFiles?.find((f) => f.address === address)),
+          closedOf: (address) => {
+            const f = listedFiles?.find((one) => one.address === address)
+            return f?.archived ? archivedLineOf(f.object?.archived ?? {}) : undefined
+          },
+        }
+      : undefined
+
   const peek = useFileConversationView({
     container,
     // The listing's copy of a file lists no comments: the read waits for the file's own.
@@ -111,6 +156,7 @@ export function useFileView({
     // An archived file is read-only until it is unarchived (Katerina, 7 October).
     readOnly: !!file?.archived,
     closed: archivedLineOf(file?.archived),
+    listed: listedView,
   })
   const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
 
@@ -127,8 +173,7 @@ export function useFileView({
   */
   const replies = threads === 'loading' || 'failed' in threads ? undefined : threads.replies
   useMarkFileRead(file?.address, ownView ? peek.seenAt : newestMessageAt(comments), ownView ? 0 : undefined)
-  useMarkThreadRead(ownView ? null : openThreadId, openThreadId && replies ? newestMessageAt(replies[openThreadId] ?? []) : undefined)
-  // The read-only pane's "new reply", by the dot's own rule; Peek's own view works out its own (CON-34).
+  useMarkThreadRead(ownView ? null : openThreadId, openThreadId && replies ? newestMessageAt(replies[openThreadId] ?? []) : undefined)  // The read-only pane's "new reply", by the dot's own rule; Peek's own view works out its own (CON-34).
   const readOnlyStream: ReplyStream | null = !ownView && file?.address ? { kind: 'file', address: file.address } : null
   const newReplies = useNewReplyThreads(readOnlyStream, replies, peek.viewerPubkey)
   const readOnlyReplyThread = useReplyOnlyThread(readOnlyStream, file ? comments : undefined, replies, peek.viewerPubkey)
@@ -159,20 +204,15 @@ export function useFileView({
   */
   const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
   const cardFile = file && home?.place === 'app' && (file.naddr ?? file.address) ? file : undefined
-  const sidePanel = useSidePanel(file?.address)
   const canShow = !!cardFile || ownView
   /*
     A topic's files (TOP-3), above Activity: a topic keeps its own list, and
-    only topics' lists are read in this stage (Miky, 30 Oct). Filed in the
-    topic's own Folder, the one its root names.
+    only topics' lists are read in this stage (Miky, 30 Oct).
   */
-  const topicFiles =
-    file?.address?.startsWith(`${KIND_BARE_FILE}:`) && file.folder ? (
-      <TopicFiles key={file.address} topic={file.address} folder={file.folder} title={title} readOnly={!!file.archived} />
-    ) : undefined
+  const topicFilesPanel = topic ? <TopicFiles key={topic} topic={topic} files={topicFiles} title={title} readOnly={!!file?.archived} /> : undefined
   const aside =
     sidePanel.open && canShow ? (
-      <OverviewPanel file={cardFile} files={topicFiles} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
+      <OverviewPanel file={cardFile} files={topicFilesPanel} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
     ) : undefined
   const replyCounts =
     threads === 'loading' || 'failed' in threads
@@ -256,5 +296,11 @@ export function useFileView({
      * a read-only file with no card.
      */
     sidePanel: canShow ? sidePanel : undefined,
+    /** A topic's place as read, for the header's switch: the same read the middle column's level comes from (TOPI-3). */
+    follow,
+    followTarget,
   }
 }
+
+/** A listed file's name, as its heading draws it (`ListedFileHeading`), for a note that says where a change was not saved. */
+const nameOf = (f: TopicFile | undefined): string => f?.object?.slots.title?.value || 'File'

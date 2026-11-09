@@ -10,29 +10,51 @@ const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 /** The stream a conversation's thread markers fall back to (§11.3): a DM's channel, or a file. */
 export type ReplyStream = { kind: 'channel'; h: string } | { kind: 'file'; address: string }
 
+/**
+ * The stream a thread belongs to when one list holds several: a topic at All draws its files' threads beside its own,
+ * and each is judged by its own file's marker (TOPI-3). Undefined or null for the conversation's own stream.
+ */
+export type StreamOfRoot = (root: string) => ReplyStream | null | undefined
+
 type Message = { id: string; author: string; createdAt: number }
 
+type Judge = Parameters<typeof fileHasUnread>[1]
+
+const contextOf = (stream: ReplyStream) => (stream.kind === 'file' ? fileContext(stream.address) : channelContext(stream.h))
+
 /**
- * The dot's own judge for one stream, or undefined until the first merge has
- * landed — an unfetched marker is not an absent one.
+ * The dot's own judge for each thread, by its root: the conversation's stream's, or the stream `streamOfRoot` names
+ * for it. Undefined until the first merge has landed — an unfetched marker is not an absent one.
  */
-function useStreamJudge(stream: ReplyStream | null, me: string | null): Parameters<typeof fileHasUnread>[1] | undefined {
+function useStreamJudge(stream: ReplyStream | null, me: string | null, streamOfRoot?: StreamOfRoot): ((root: string) => Judge) | undefined {
   const frontier = useReadFrontier()
   // The clock places only the 90-day absent-marker horizon, so the mount's is
   // close enough — and a render must not consult `Date.now()`.
   const [nowSeconds] = useState(() => Math.floor(Date.now() / 1000))
-  const context = !stream ? undefined : stream.kind === 'file' ? fileContext(stream.address) : channelContext(stream.h)
+  const context = stream ? contextOf(stream) : undefined
   return useMemo(() => {
     if (!context || !frontier.ready) return undefined
-    return {
-      file: frontier.marker(context),
+    const judgeAt = (marker: string): Judge => ({
+      file: frontier.marker(marker),
       thread: (root: string) => frontier.marker(threadContext(root)),
       floor: frontier.marker(REPLY_FLOOR_CONTEXT),
       me: me ?? undefined,
       nowSeconds,
       horizonSeconds: HORIZON_SECONDS,
+    })
+    const own = judgeAt(context)
+    if (!streamOfRoot) return () => own
+    const byContext = new Map<string, Judge>([[context, own]])
+    return (root: string) => {
+      const elsewhere = streamOfRoot(root)
+      if (!elsewhere) return own
+      const at = contextOf(elsewhere)
+      if (!at) return own
+      let judge = byContext.get(at)
+      if (!judge) byContext.set(at, (judge = judgeAt(at)))
+      return judge
     }
-  }, [context, me, frontier, nowSeconds])
+  }, [context, me, frontier, nowSeconds, streamOfRoot])
 }
 
 const asReplies = (root: string, list: readonly Message[]) => list.map((reply) => ({ id: reply.id, root, by: reply.author, at: reply.createdAt }))
@@ -46,20 +68,22 @@ const asReplies = (root: string, list: readonly Message[]) => list.map((reply) =
  * is what says which thread: judged by the dot's own rule (`fileHasUnread`,
  * the later of the stream's marker and the thread's), so the two cannot
  * disagree. Nothing is new until the first merge has landed — an unfetched
- * marker is not an absent one.
+ * marker is not an absent one. A thread `streamOfRoot` places in another
+ * stream is judged by that stream's marker.
  */
 export function useNewReplyThreads(
   stream: ReplyStream | null,
   replies: Readonly<Record<string, readonly Message[]>> | undefined,
   me: string | null,
+  streamOfRoot?: StreamOfRoot,
 ): ReadonlySet<string> {
-  const judge = useStreamJudge(stream, me)
+  const judge = useStreamJudge(stream, me, streamOfRoot)
   return useMemo(() => {
     const lit = new Set<string>()
     if (!judge || !replies) return lit
     for (const [root, list] of Object.entries(replies)) {
       const messages = asReplies(root, list)
-      if (messages.length > 0 && fileHasUnread(messages, judge)) lit.add(root)
+      if (messages.length > 0 && fileHasUnread(messages, judge(root))) lit.add(root)
     }
     return lit
   }, [judge, replies])
@@ -86,14 +110,17 @@ export function isUrgentForViewer(message: { body: string; urgent?: readonly str
  * while the conversation is open is judged as it arrives. Undefined until the
  * first merge has landed — an unfetched marker is not an absent one — and
  * nothing should be read before then, or it is judged against its own read.
+ * A message in a thread `streamOfRoot` places elsewhere is judged by that
+ * stream's marker (TOPI-3).
  */
 export function useNewWhenDrawn(
   stream: ReplyStream | null,
   roots: readonly Message[] | undefined,
   replies: Readonly<Record<string, readonly Message[]>> | undefined,
   me: string | null,
+  streamOfRoot?: StreamOfRoot,
 ): ReadonlySet<string> | undefined {
-  const judge = useStreamJudge(stream, me)
+  const judge = useStreamJudge(stream, me, streamOfRoot)
   const key = !stream ? null : stream.kind === 'file' ? stream.address : stream.h
   const [judged, setJudged] = useState<{ key: string | null; verdicts: ReadonlyMap<string, boolean> } | undefined>()
   const verdicts = judged?.key === key ? judged.verdicts : undefined
@@ -106,7 +133,7 @@ export function useNewWhenDrawn(
     const fresh = drawn.filter((m) => !verdicts?.has(m.id))
     if (fresh.length > 0 || !verdicts) {
       const next = new Map(verdicts)
-      for (const message of fresh) next.set(message.id, fileHasUnread([message], judge))
+      for (const message of fresh) next.set(message.id, fileHasUnread([message], judge(message.root)))
       setJudged({ key, verdicts: next })
     }
   }
@@ -122,14 +149,15 @@ export function useUrgentReplyThreads(
   stream: ReplyStream | null,
   replies: Readonly<Record<string, readonly DrawnMessage[]>> | undefined,
   me: string | null,
+  streamOfRoot?: StreamOfRoot,
 ): ReadonlySet<string> {
-  const judge = useStreamJudge(stream, me)
+  const judge = useStreamJudge(stream, me, streamOfRoot)
   return useMemo(() => {
     const lit = new Set<string>()
     if (!judge || !replies) return lit
     for (const [root, list] of Object.entries(replies)) {
       const urgent = list.filter((reply) => isUrgentForViewer(reply, me))
-      if (urgent.length > 0 && fileHasUnread(asReplies(root, urgent), judge)) lit.add(root)
+      if (urgent.length > 0 && fileHasUnread(asReplies(root, urgent), judge(root))) lit.add(root)
     }
     return lit
   }, [judge, replies, me])
@@ -146,8 +174,9 @@ export function useReplyOnlyThread(
   roots: readonly Message[] | undefined,
   replies: Readonly<Record<string, readonly Message[]>> | undefined,
   me: string | null,
+  streamOfRoot?: StreamOfRoot,
 ): string | null | undefined {
-  const judge = useStreamJudge(stream, me)
+  const judge = useStreamJudge(stream, me, streamOfRoot)
   return useMemo(() => {
     if (!judge || !roots || !replies) return undefined
     const top = roots.map((root) => ({ id: root.id, root: root.id, by: root.author, at: root.createdAt }))

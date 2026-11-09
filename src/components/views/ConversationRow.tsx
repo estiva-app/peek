@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData, FileAttachment } from '@/api'
 import type { Embed } from '@estiva-app/protocol'
@@ -28,6 +28,11 @@ interface ConversationRowProps {
   actions: RowHandlers
   /** The file whose conversation this is: an edit linking it adds no card (§13.6.2). */
   writtenOn?: string
+  /**
+   * Where it was said, when the list mixes places: a topic at All draws each of its files' threads under the file's
+   * `ConversationHeading` (TOPI-3). Built once per file by the view, so it is the same node across renders.
+   */
+  heading?: ReactNode
 }
 
 /**
@@ -40,9 +45,10 @@ interface ConversationRowProps {
  * its replies row or Reply asks the layout, which marks the open one (B1).
  */
 export const ConversationRow = memo(
-  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, readOnly, actions, writtenOn }: ConversationRowProps) {
+  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, readOnly, actions, writtenOn, heading }: ConversationRowProps) {
     return (
       <ConversationCard
+        heading={heading}
         authorName={c.authorName}
         authorAvatarSrc={c.authorAvatarSrc}
         authorBot={c.authorBot}
@@ -86,5 +92,6 @@ export const ConversationRow = memo(
     before.readOnly === after.readOnly &&
     before.actions === after.actions &&
     before.writtenOn === after.writtenOn &&
+    before.heading === after.heading &&
     (before.c === after.c || JSON.stringify(before.c) === JSON.stringify(after.c)),
 )

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import type { Embed } from '@estiva-app/protocol'
 import { AttachmentCard, ConversationCard as KitConversationCard } from '@estiva-app/ui'
 import { CURRENT_USER_NAME, type ReactionData, type HighlightType, type FileAttachment } from '@/api'
@@ -98,6 +98,8 @@ interface ConversationCardProps {
   unseen?: boolean
   /** What the delete question calls it: Peek's "message", everywhere, as it always said (Katerina, 1 November: keep Peek's words). */
   noun?: string
+  /** Where it was said, at the top of the card, when one list mixes several places: a `ConversationHeading` (TOPI-3). */
+  heading?: ReactNode
   className?: string
 }
 
@@ -149,6 +151,7 @@ export function ConversationCard({
   deleted = false,
   unseen = false,
   noun = 'message',
+  heading,
   className,
 }: ConversationCardProps) {
   // Its comment gone, nothing on it is anyone's to change: no Resolve or Reopen either (SPEC §6.5).
@@ -340,6 +343,7 @@ export function ConversationCard({
       onReopen={gone ? undefined : handleReopen}
       selected={isSelected}
       onClick={onClick}
+      heading={heading}
       className={className}
     >
       <MessageBody

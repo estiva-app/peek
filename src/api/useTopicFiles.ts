@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isArchived } from '@estiva-app/interop'
+import { isArchived, type ForeignObject, type ListedFile } from '@estiva-app/interop'
 import { setTopicFileAsViewer, topicFilesAsViewer } from '@/nostr/foreign'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
@@ -13,6 +13,10 @@ export interface TopicFile {
   address: string
   /** Archived, on its own or with a file above it: behind the Overview's Archived line. Absent on a read not yet resolved. */
   archived?: boolean
+  /** The list's entry as read, with the file's team from its root: what a topic at All reads the files' conversations by (TOPI-3). */
+  listed: ListedFile
+  /** The file as resolved: its title and kind, for its heading over its threads at All. Absent while unknown. */
+  object?: ForeignObject
 }
 
 export type TopicFilesState = 'loading' | { failed: true } | { files: TopicFile[] }
@@ -52,7 +56,7 @@ export function useTopicFiles(
     if (!address || !v) return null
     try {
       const listed = await topicFilesAsViewer(address, v.relayUrl, v.token)
-      return { files: listed.map(({ file, address: at }) => ({ file, address: at })) }
+      return { files: listed.map((entry) => ({ file: entry.file, address: entry.address, listed: entry })) }
     } catch (error) {
       const kind = error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')
       if (isOutage(kind)) recordReadFailure(kind)
@@ -120,7 +124,7 @@ export function useTopicFiles(
     return {
       files: read.files.map((file) => {
         const object = rearchived.has(file.address) ? rearchived.get(file.address) : objects[file.address]
-        return { ...file, archived: !!object && isArchived(object) }
+        return { ...file, archived: !!object && isArchived(object), ...(object ? { object } : {}) }
       }),
     }
   }, [read, objects, rearchived])

@@ -65,7 +65,7 @@ export function useFilePane(
     a link offers both; any other file reads none.
   */
   const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
-  const { teams, failed: teamsFailed } = useTeams({ read: isTopic })
+  const { teams } = useTeams({ read: isTopic })
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
@@ -183,21 +183,12 @@ export function useFilePane(
     A topic or a space (TEA-6): one switch before its title — Not following,
     Important or All — and Who follows in the members pill's place, with Add
     there and in ⋮. They take the place of the Members pill and Join/Leave;
-    every other file keeps those. Its place is named by the team whose list
-    holds it, else its own Folder; read once the teams are, so it is read once.
-    An archived file keeps the switch read-only, as its archived team's does.
+    every other file keeps those. The place is read by the view
+    (`topicFollowTarget`), whose middle column follows the same level (TOPI-3).
   */
-  const followTarget =
-    isTopic && file?.address && file.folder && (teams || teamsFailed)
-      ? {
-          place: { address: file.address, team: listing?.team.id ?? file.folder },
-          folder: file.folder,
-          archived: !!(listing?.team.archived ?? teams?.find((team) => team.id === file.folder)?.archived),
-          fileArchived: readOnly,
-        }
-      : undefined
   const follow = usePlaceFollowControls({
-    target: followTarget,
+    follow: view.follow,
+    target: view.followTarget,
     title,
     teamName: listing?.team.name,
     me,

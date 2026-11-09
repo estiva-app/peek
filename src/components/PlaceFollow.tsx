@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { FollowSwitch, MembersPill, WhoFollowsDialog, type FollowChoice, type MembersDialogCandidate, type MembersDialogMember } from '@estiva-app/ui'
 import type { People } from '@estiva-app/interop'
-import { usePlaceFollow, type FollowTarget } from '@/api'
+import type { FollowTarget, PlaceFollow } from '@/api'
 import { useToast } from '@/lib/toast'
 
 /** How many faces the pill draws; the count says the rest. */
@@ -31,6 +31,7 @@ export interface PlaceFollowControls {
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-place-lists-who-chose-a-level-and-its-teams-members.md
  */
 export function usePlaceFollowControls({
+  follow,
   target,
   title,
   teamName,
@@ -38,6 +39,8 @@ export function usePlaceFollowControls({
   directory,
   people,
 }: {
+  /** The place as read (`usePlaceFollow(target)`): the caller's, so a topic's view reads its level from the same read. */
+  follow: PlaceFollow
   target: FollowTarget | undefined
   /** The place's name: the switch's accessible name and the dialog's title. */
   title: string
@@ -49,7 +52,6 @@ export function usePlaceFollowControls({
   /** Names and faces the file itself carries, for anyone the directory lacks. */
   people?: People
 }): PlaceFollowControls {
-  const follow = usePlaceFollow(target)
   const { showToast } = useToast()
   const [open, setOpen] = useState<'list' | 'add' | null>(null)
   const archived = target?.archived ?? false

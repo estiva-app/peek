@@ -6,7 +6,7 @@ import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { browserDrafts, draftKeys } from '@/lib/drafts'
 import type { Embed } from '@estiva-app/protocol'
-import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
+import { newestMessageAt, useMarkFilesRead, useMarkThreadRead } from '@/lib/useMarkRead'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
@@ -30,6 +30,9 @@ import {
   type ConversationEvent,
   type FileAttachment,
   type FileConversation,
+  type FileConversationActions,
+  type ListedSource,
+  type ListedState,
   type OutgoingAttachment,
   type ReactionData,
   type ResolutionEvent,
@@ -82,6 +85,24 @@ interface UseFileConversationViewArgs {
   readOnly?: boolean
   /** Why nothing can be written, said in the thread's box's place ("Archived. Unarchive it to comment."). */
   closed?: string
+  /**
+   * A topic followed at All (TOPI-3): the conversations of the files it lists, drawn in its list with its own, in one
+   * time order, each file's threads under its heading. Absent, or `off`, everywhere else.
+   */
+  listed?: ListedView
+}
+
+/** What a topic at All hands its view about the files it lists (TOPI-3). */
+export interface ListedView {
+  state: ListedState
+  /** The writes on one file's conversation; undefined when it has no team to write in. */
+  actionsFor: (address: string) => FileConversationActions | undefined
+  /** The file's `ConversationHeading`, the same node on every render, so a card whose message did not change is not drawn again. */
+  headingOf: (address: string) => ReactNode
+  /** The file's name, for a note that says where a change was not saved. */
+  nameOf: (address: string) => string
+  /** Why nothing can be written in the file's threads, when it is archived. */
+  closedOf: (address: string) => string | undefined
 }
 
 /**
@@ -113,6 +134,11 @@ interface ViewSlots {
    * (Katerina, 30 October). It moves as more is seen, and with it the mark (PEE-44).
    */
   seenAt: number | undefined
+  /**
+   * At All, each listed file's newest top-level comment seen on screen, by its address: what that file's own stream
+   * is marked read up to (TOPI-3). `seenAt` stays the topic's own.
+   */
+  seenAtOf: ReadonlyMap<string, number> | undefined
   /** Who is reading, for the read-only pane's own unread rule (CON-34). */
   viewerPubkey: string | null
   /** The thread to open when only a reply is new (`useReplyOnlyThread`): what a Desk click opens (CON-34). */
@@ -185,6 +211,7 @@ export function useFileConversationView({
   empty,
   readOnly = false,
   closed,
+  listed,
 }: UseFileConversationViewArgs): ViewSlots {
   const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
     onActivity: () => void onCommented?.(),
@@ -217,24 +244,90 @@ export function useFileConversationView({
   */
   const stream: ReplyStream | null =
     container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null
-  const newWhenDrawn = useNewWhenDrawn(stream, conversation?.roots, conversation?.replies, viewerPubkey)
+
+  /*
+    A topic at All (TOPI-3): its own conversation and every listed file's, one list in time order. Each message
+    belongs to one of them — `sourceOf`, by id — and a write on it goes to that file's conversation, a reply as a
+    comment on that file in its own team. What was new is judged by each file's own marker, and what is seen there
+    marks that file read. While the files' read is out nothing is judged new yet, so a message drawn first is not
+    taken as read before the rest arrive; the New line waits for both.
+  */
+  const listedLoading = listed?.state === 'loading'
+  const sources = listed && typeof listed.state === 'object' && 'files' in listed.state ? listed.state.files : NO_SOURCES
+  const sourceOf = new Map<string, ListedSource>()
+  for (const source of sources) {
+    for (const root of source.conversation.roots) sourceOf.set(root.id, source)
+    for (const [root, replies] of Object.entries(source.conversation.replies)) {
+      sourceOf.set(root, source)
+      for (const reply of replies) sourceOf.set(reply.id, source)
+    }
+  }
+  const conversationOf = (id: string): FileConversation | null => sourceOf.get(id)?.conversation ?? conversation
+  const streamOfRoot = sources.length
+    ? (root: string): ReplyStream | undefined => {
+        const source = sourceOf.get(root)
+        return source ? { kind: 'file', address: source.address } : undefined
+      }
+    : undefined
+  const allRoots = conversation && sources.length ? [...conversation.roots, ...sources.flatMap((s) => s.conversation.roots)].sort((a, b) => a.createdAt - b.createdAt) : conversation?.roots
+  const allReplies = conversation && sources.length ? Object.assign({}, conversation.replies, ...sources.map((s) => s.conversation.replies)) as FileConversation['replies'] : conversation?.replies
+
+  const newWhenDrawn = useNewWhenDrawn(stream, listedLoading ? undefined : allRoots, allReplies, viewerPubkey, streamOfRoot)
   // The kit's watch (ConversationLayout's and Thread's `seen`): its messages by the layout, its replies by the thread.
   const seenRoots = useSeenOnScreen(newWhenDrawn ? address : null)
   const seenReplies = useSeenOnScreen(newWhenDrawn ? (openThreadId ?? null) : null)
   const seenAt = conversation ? newestMessageAt(conversation.roots.filter((r) => seenRoots.ids.has(r.id))) : undefined
-  const openReplies = conversation && openThreadId ? conversation.replies[openThreadId] : undefined
+  const seenAtOf = sources.length ? new Map<string, number>() : undefined
+  for (const source of sources) {
+    const at = newestMessageAt(source.conversation.roots.filter((r) => seenRoots.ids.has(r.id)))
+    if (at !== undefined) seenAtOf?.set(source.address, at)
+  }
+  // A file's comment seen here reads that file, in its own stream, so Ship and its own page agree. The topic's own
+  // stream is the caller's to mark, by `seenAt`, as a DM's and a file's are.
+  useMarkFilesRead(seenAtOf)
+  const openConversation = openThreadId ? conversationOf(openThreadId) : null
+  const openReplies = openConversation && openThreadId ? openConversation.replies[openThreadId] : undefined
   useMarkThreadRead(openThreadId, openReplies ? newestMessageAt(openReplies.filter((r) => seenReplies.ids.has(r.id))) : undefined, 0)
   // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
-  const newReplies = useNewReplyThreads(stream, conversation?.replies, viewerPubkey)
-  const urgentReplies = useUrgentReplyThreads(stream, conversation?.replies, viewerPubkey)
-  const replyOnlyThread = useReplyOnlyThread(stream, conversation?.roots, conversation?.replies, viewerPubkey)
+  const newReplies = useNewReplyThreads(stream, allReplies, viewerPubkey, streamOfRoot)
+  const urgentReplies = useUrgentReplyThreads(stream, allReplies, viewerPubkey, streamOfRoot)
+  const replyOnlyThread = useReplyOnlyThread(stream, allRoots, allReplies, viewerPubkey, streamOfRoot)
   // What was new as it was drawn keeps the unread look until it is seen; urgent for you, in its urgent tone.
   const unseen = (id: string, seen: { ids: ReadonlySet<string> }) => !!newWhenDrawn?.has(id) && !seen.ids.has(id)
-  const urgentRoots = new Set(conversation?.roots.filter((r) => !isGone(r) && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
+  const urgentRoots = new Set(allRoots?.filter((r) => !isGone(r) && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
-  const view = conversation ? project(conversation, viewerPubkey, people) : null
+  const ownView = conversation ? project(conversation, viewerPubkey, people) : null
+  const view = ownView && sources.length ? merged(ownView, sources.map((s) => project(s.conversation, viewerPubkey, people))) : ownView
 
-  const liveRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
+  /** Nothing can be written on it: the topic is read-only, or the file it belongs to is archived or has no team. */
+  const readOnlyOf = (id: string) => {
+    const source = sourceOf.get(id)
+    return readOnly || (!!source && (source.archived || !source.container))
+  }
+  /** Where a change to it is said not to have been saved: the topic, or the file whose thread it is in. */
+  const noteNameOf = (id: string) => {
+    const source = sourceOf.get(id)
+    return source && listed ? listed.nameOf(source.address) : noteName
+  }
+  /** The file it was written on: an edit linking that file adds no card (§13.6.2). */
+  const writtenOnOf = (id: string) => sourceOf.get(id)?.address ?? (container?.kind === 'file' ? container.address : undefined)
+  /** Why nothing can be written on it: the topic's line, or its archived file's. */
+  const closedOf = (id: string) => {
+    const source = sourceOf.get(id)
+    return source && listed && !readOnly ? listed.closedOf(source.address) : readOnly ? closed : undefined
+  }
+  /** Where it was said, over a file's thread at All; nothing over the topic's own. */
+  const headingOf = (id: string) => {
+    const source = sourceOf.get(id)
+    return source && listed ? listed.headingOf(source.address) : undefined
+  }
+  /** Whose writes reach it: the topic's own, or its file's. */
+  const actionsOf = (id: string): FileConversationActions => {
+    const source = sourceOf.get(id)
+    return source ? (listed?.actionsFor(source.address) ?? READ_ONLY_ACTIONS) : actions
+  }
+
+  const liveRoot = openThreadId && openConversation ? openConversation.roots.find((r) => r.id === openThreadId) : undefined
   const liveView = openThreadId && view ? view.byId[openThreadId] : undefined
   /*
     The open thread as last read. A comment with no replies leaves the read the moment it is deleted; while its reply
@@ -274,7 +367,8 @@ export function useFileConversationView({
   */
   const toggleReaction = async (targetEventId: string, emoji: string): Promise<ReactionAnswer> => {
     const mine = view?.reactionsById[targetEventId]?.find((r) => r.emoji === emoji && r.by === viewerPubkey)
-    const result = await (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji))
+    const on = actionsOf(targetEventId)
+    const result = await (mine ? on.remove(mine.id) : on.react(targetEventId, emoji))
     return result.ok ? { accepted: true } : { accepted: false, reason: result.reason }
   }
 
@@ -285,12 +379,12 @@ export function useFileConversationView({
     change goes out, so the note names this conversation even when the person
     has moved on by the time the relay answers.
   */
-  const notSaved = (change: 'edit' | 'delete', result: WriteResult | { ok: false; reason: unknown }) => {
-    if (!result.ok) showToast({ label: notSavedNote(change, noteName, result.reason), type: 'error' })
+  const notSaved = (change: 'edit' | 'delete', target: string, result: WriteResult | { ok: false; reason: unknown }) => {
+    if (!result.ok) showToast({ label: notSavedNote(change, noteNameOf(target), result.reason), type: 'error' })
   }
 
   const setResolution = (targetEventId: string, resolved: boolean, message?: string, supportingEventId?: string) =>
-    void actions.resolve(targetEventId, resolved ? 'resolved' : 'reopened', message, supportingEventId).then(refuse)
+    void actionsOf(targetEventId).resolve(targetEventId, resolved ? 'resolved' : 'reopened', message, supportingEventId).then(refuse)
 
   /*
     One edit per save. A card's save reports the body and then, when they
@@ -310,9 +404,10 @@ export function useFileConversationView({
     queueMicrotask(() => {
       const edit = pending.get(targetEventId)
       pending.delete(targetEventId)
-      const body = edit?.body ?? (conversation ? currentBody(conversation, targetEventId) : undefined)
+      const owning = conversationOf(targetEventId)
+      const body = edit?.body ?? (owning ? currentBody(owning, targetEventId) : undefined)
       if (body === undefined) return
-      const current = conversation ? currentFiles(conversation, targetEventId) : undefined
+      const current = owning ? currentFiles(owning, targetEventId) : undefined
       let files: OutgoingAttachment[]
       if (edit?.files) {
         // A file the message already had goes back as its `imeta` was read, every field kept; a new one as uploaded.
@@ -326,17 +421,17 @@ export function useFileConversationView({
         if (!current) {
           // Peek's own cause, said in the shared words ("something went wrong, try again").
           const reason = { cause: 'unknown' }
-          if (!putBackEdit(targetEventId, { text: body, reason })) notSaved('edit', { ok: false, reason })
+          if (!putBackEdit(targetEventId, { text: body, reason })) notSaved('edit', targetEventId, { ok: false, reason })
           return
         }
         files = current
       }
       // The card set rides the same edit, so it cannot race the body either (OPT-17).
-      void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
+      void actionsOf(targetEventId).edit(targetEventId, body, files, edit?.embeds).then((result) => {
         if (result.ok) return
         // The old text is back on the message; what was saved goes back in its edit box with why under it (Miky, 9 Oct;
         // PEEKM-4). A note only when no card of it is on screen to reopen.
-        if (!putBackEdit(targetEventId, { text: body, reason: result.reason, files: edit?.files })) notSaved('edit', result)
+        if (!putBackEdit(targetEventId, { text: body, reason: result.reason, files: edit?.files })) notSaved('edit', targetEventId, result)
       })
     })
   }
@@ -345,7 +440,7 @@ export function useFileConversationView({
   const editEmbeds = (targetEventId: string, embeds: Embed[]) => queueEdit(targetEventId, { embeds })
 
   // Gone as it is confirmed, so nothing is said unless it comes back (Miky, 9 Oct).
-  const remove = (targetEventId: string) => void actions.remove(targetEventId).then((result) => notSaved('delete', result))
+  const remove = (targetEventId: string) => void actionsOf(targetEventId).remove(targetEventId).then((result) => notSaved('delete', targetEventId, result))
 
   /*
     The composer's files are the relay's copies (CON-12): `UploadedFile` carries
@@ -407,8 +502,9 @@ export function useFileConversationView({
     if (!openRoot) return { accepted: false, reason: { cause: 'unknown' } }
     const missing = notOnTheRelay(files)
     if (missing) return missing
-    const where = openView ? `your reply to ${openView.data.authorName}` : noteName
-    const result = await actions.reply(openRoot, text, outgoing(files), urgent, embeds)
+    const where = openView ? `your reply to ${openView.data.authorName}` : noteNameOf(openRoot.id)
+    // A reply in a file's thread is a comment on that file, in its own team, its anchor kept (TOPI-3).
+    const result = await actionsOf(openRoot.id).reply(openRoot, text, outgoing(files), urgent, embeds)
     if (!result.ok) return notSent(where, payload, result.reason, away)
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
@@ -442,9 +538,10 @@ export function useFileConversationView({
     since: when it was left is the layout's record, under the same name (`rememberAs`).
   */
   const leftAt = useLeftAt(address)
+  // At All, over the files' threads too, once they are in: the line is drawn once, where it belongs.
   const firstNew =
-    leftAt !== null && conversation
-      ? conversation.roots.find((r) => !isGone(r) && r.createdAt > Math.floor(leftAt / 1000) && r.author !== viewerPubkey)?.id
+    leftAt !== null && allRoots && !listedLoading
+      ? allRoots.find((r) => !isGone(r) && r.createdAt > Math.floor(leftAt / 1000) && r.author !== viewerPubkey)?.id
       : undefined
 
   /*
@@ -518,9 +615,9 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
-        writtenOn={container?.kind === 'file' ? container.address : undefined}
-        readOnly={readOnly}
-        readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
+        writtenOn={writtenOnOf(openRoot.id)}
+        readOnly={readOnlyOf(openRoot.id)}
+        readOnlyNotice={readOnlyOf(openRoot.id) && closedOf(openRoot.id) ? <ClosedBox reason={closedOf(openRoot.id)!} /> : undefined}
         // MetaText, as before the adoption (in Signal the mono micro-type); it is one line, and a sentence in a narrow panel has to wrap.
         // Its comment gone, the kit's one sentence for it, as Leaf and Ship say it (SPEC §6.5): the pinned card above says why.
         // A reply being written when its comment went keeps its box, and Send says why it is refused (ONE-10).
@@ -555,9 +652,10 @@ export function useFileConversationView({
           hasNewMessage={unseen(c.id, seenRoots)}
           hasNewReply={newReplies.has(c.id)}
           isUrgent={(unseen(c.id, seenRoots) && urgentRoots.has(c.id)) || (newReplies.has(c.id) && urgentReplies.has(c.id))}
-          readOnly={readOnly}
+          readOnly={readOnlyOf(c.id)}
           actions={rowActions}
-          writtenOn={container?.kind === 'file' ? container.address : undefined}
+          writtenOn={writtenOnOf(c.id)}
+          heading={headingOf(c.id)}
         />
       ),
       thread: () => threadPanel,
@@ -618,7 +716,36 @@ export function useFileConversationView({
     seen: seenRoots,
   }
 
-  return { conversationParts, threadDrawn: threadPanel !== undefined, seenAt, viewerPubkey, replyOnlyThread }
+  return { conversationParts, threadDrawn: threadPanel !== undefined, seenAt, seenAtOf, viewerPubkey, replyOnlyThread }
+}
+
+const NO_SOURCES: readonly ListedSource[] = []
+
+/** A file whose threads are read-only answers every write with a refusal; nothing on screen offers one. */
+const READ_ONLY_REFUSAL: WriteResult = { ok: false, reason: 'This file is read-only.' }
+const READ_ONLY_ACTIONS: FileConversationActions = {
+  comment: async () => READ_ONLY_REFUSAL,
+  reply: async () => READ_ONLY_REFUSAL,
+  edit: async () => READ_ONLY_REFUSAL,
+  remove: async () => READ_ONLY_REFUSAL,
+  react: async () => READ_ONLY_REFUSAL,
+  resolve: async () => READ_ONLY_REFUSAL,
+}
+
+/**
+ * A topic's own conversation and its listed files', as one list (TOPI-3): every root in time order, the open thread
+ * found by its root whichever conversation holds it. The reaction horizon is said for all of them together: what was
+ * not asked about in any, and whether any read came back cut.
+ */
+function merged(own: ProjectedConversation, files: readonly ProjectedConversation[]): ProjectedConversation {
+  const all = [own, ...files]
+  return {
+    roots: all.flatMap((one) => one.roots).sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0)),
+    byId: Object.assign({}, ...all.map((one) => one.byId)) as ProjectedConversation['byId'],
+    reactionsById: Object.assign({}, ...all.map((one) => one.reactionsById)) as ProjectedConversation['reactionsById'],
+    reactionTargetsOmitted: all.reduce((n, one) => n + one.reactionTargetsOmitted, 0),
+    reactionEventsCut: all.some((one) => one.reactionEventsCut),
+  }
 }
 
 // ── From the relay's events to what the cards take ──

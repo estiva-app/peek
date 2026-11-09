@@ -70,14 +70,16 @@ export function fileHasUnread(
 export function replyOnlyThread(
   roots: readonly ConversationMessage[],
   replies: Readonly<Record<string, readonly ConversationMessage[]>>,
-  frontier: Parameters<typeof fileHasUnread>[1],
+  /** One stream's markers, or each thread's own stream's: a topic at All holds its files' threads too (TOPI-3). */
+  frontier: Parameters<typeof fileHasUnread>[1] | ((root: string) => Parameters<typeof fileHasUnread>[1]),
 ): string | null {
-  if (fileHasUnread(roots, frontier)) return null
+  const judge = typeof frontier === 'function' ? frontier : () => frontier
+  if (roots.some((root) => fileHasUnread([root], judge(root.root)))) return null
   let newest: ConversationMessage | undefined
   for (const list of Object.values(replies)) {
     for (const reply of list) {
       if (newest && reply.at <= newest.at) continue
-      if (fileHasUnread([reply], frontier)) newest = reply
+      if (fileHasUnread([reply], judge(reply.root))) newest = reply
     }
   }
   return newest?.root ?? null
