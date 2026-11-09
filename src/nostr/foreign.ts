@@ -708,7 +708,10 @@ export async function resolveParentsAsViewer(
   token: StoredToken,
   lane: ReadLane = 'click',
 ): Promise<Record<string, string | null>> {
-  return resolveParents(references, viewerQuery(relayUrl, token, lane), manifests)
+  // Each file by the list read as soon as the relay offers it, switched or not: its current values, not every change
+  // (ALO-15). why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+  const listRead = await listReadOffered()
+  return resolveParents(references, viewerQuery(relayUrl, token, lane), manifests, listRead ? { listRead } : undefined)
 }
 
 /** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */
