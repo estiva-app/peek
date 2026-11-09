@@ -4,7 +4,7 @@ import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { ClosedBox, ConversationBox, type SendAnswer, type SendPayload } from '@/components/ui/ConversationBox'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
-import { draftKeys } from '@/lib/drafts'
+import { browserDrafts, draftKeys } from '@/lib/drafts'
 import type { Embed } from '@estiva-app/protocol'
 import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
@@ -119,6 +119,10 @@ interface ViewSlots {
   replyOnlyThread: string | null | undefined
 }
 
+/** The drafts every box keeps (CON-10), read to know whether a thread's reply box holds text. */
+const drafts = browserDrafts()
+const replyHoldsText = (threadId: string) => !!drafts.read(draftKeys.thread(threadId))?.trim()
+
 /**
  * A file's conversation drawn as Peek's own — FOL-31.
  *
@@ -229,7 +233,30 @@ export function useFileConversationView({
   const urgentRoots = new Set(conversation?.roots.filter((r) => !isGone(r) && isUrgentForViewer(r, viewerPubkey)).map((r) => r.id))
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
-  const groups = view ? groupByDay(view.roots) : []
+
+  const liveRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
+  const liveView = openThreadId && view ? view.byId[openThreadId] : undefined
+  /*
+    The open thread as last read. A comment with no replies leaves the read the moment it is deleted; while its reply
+    box holds text it stays where it was, as "This comment was deleted." with the box, so the text is not lost and Send
+    says why it is refused (ONE-10, Decided 9 November). Kept until the thread is closed: Peek's box empties its draft
+    the moment Send is pressed and draws the reply before the relay answers, so a check of the draft on that render
+    would close the thread, and the refusal with it.
+  */
+  const [lastOpen, setLastOpen] = useState<{ root: NonNullable<typeof liveRoot>; view: NonNullable<typeof liveView> }>()
+  if (liveRoot && liveView && lastOpen?.root !== liveRoot) setLastOpen({ root: liveRoot, view: liveView })
+  /** The open thread whose comment went while its reply box held text; its box stays until the thread is closed. */
+  const [boxKept, setBoxKept] = useState<string>()
+  const goneNow = !!openThreadId && (liveView ? liveView.data.isDeleted || liveView.data.isUnseen : !!view && lastOpen?.root.id === openThreadId)
+  if (boxKept !== undefined && boxKept !== openThreadId) setBoxKept(undefined)
+  else if (goneNow && boxKept !== openThreadId && replyHoldsText(openThreadId)) setBoxKept(openThreadId)
+  const keepsBox = !!openThreadId && boxKept === openThreadId
+  const held =
+    view && !liveRoot && openThreadId && lastOpen?.root.id === openThreadId && keepsBox
+      ? { root: lastOpen.root, view: { ...lastOpen.view, data: { ...lastOpen.view.data, isDeleted: true, isUnseen: false, replyCount: 0 }, replies: [] } }
+      : undefined
+  const roots = view ? (held ? [...view.roots, held.view.data].sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0)) : view.roots) : []
+  const groups = groupByDay(roots)
 
   /** Toasts a refusal; true when the relay took the write. */
   const refuse = (result: WriteResult): result is { ok: true; id: string } => {
@@ -372,8 +399,8 @@ export function useFileConversationView({
     return { accepted: true }
   }
 
-  const openRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
-  const openView = openThreadId && view ? view.byId[openThreadId] : undefined
+  const openRoot = liveRoot ?? held?.root
+  const openView = liveView ?? held?.view
 
   const handleSendReply = async (payload: SendPayload, away: () => boolean): Promise<SendAnswer> => {
     const { text, resolution, files, urgent, embeds } = payload
@@ -496,7 +523,8 @@ export function useFileConversationView({
         readOnlyNotice={readOnly && closed ? <ClosedBox reason={closed} /> : undefined}
         // MetaText, as before the adoption (in Signal the mono micro-type); it is one line, and a sentence in a narrow panel has to wrap.
         // Its comment gone, the kit's one sentence for it, as Leaf and Ship say it (SPEC §6.5): the pinned card above says why.
-        composerNotice={openView.data.isDeleted || openView.data.isUnseen ? (
+        // A reply being written when its comment went keeps its box, and Send says why it is refused (ONE-10).
+        composerNotice={(openView.data.isDeleted || openView.data.isUnseen) && !keepsBox ? (
           // @estiva-escape(no-restyled-part): a sentence, not a time: it wraps in the narrow thread column, as it did before the adoption (audit A17); the kit's MetaText has no way to wrap yet
           <MetaText className="whitespace-normal">{GONE_CLOSED}</MetaText>
         ) : undefined}

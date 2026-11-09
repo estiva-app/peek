@@ -330,6 +330,7 @@ export function ConversationBox({ kind = 'conversation', onSend, draftKey, draft
         upload={upload}
         send={send}
         showsAtOnce
+        reply={kind === 'reply'}
         under={under}
         closed={closed ? { reason: closed } : undefined}
         marked={hasHighlight}
