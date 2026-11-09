@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { byActivity, isArchived, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
+import { byActivity, isArchived, relayNamesTeams, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { getLiveClient } from '@/nostr/liveTopics'
+import { peekRelay } from '@/nostr/relayInfo'
 import { readTopicOrder, writeTopicOrder } from '@/lib/topicOrder'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
@@ -233,7 +234,10 @@ function startWatch() {
       put({ ...held, activity: { ...held.activity, at: new Map(activity.at) } })
       if (pubkey) writeTopicOrder(pubkey, activity.at)
     },
-    { since: current.since, onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason) },
+    // Asks by file alone on a relay that says it sends a kept-open request what asking again would return
+    // (ours), so a comment filed in a team the topic does not name still re-sorts it live.
+    // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-request-kept-open-hears-what-asking-again-would-return.md
+    { since: current.since, namesTeams: relayNamesTeams(peekRelay()), onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason) },
   )
 }
 

@@ -89,6 +89,10 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { forgetRelayInfo } from '@/nostr/relayInfo'
+
+/** The relay's NIP-11 document, as the tab reads it once per page. */
+let nip11: Record<string, unknown> = {}
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
 
@@ -203,6 +207,9 @@ const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
 
 beforeEach(() => {
   resetTopicsColumn()
+  forgetRelayInfo()
+  nip11 = { supported_extensions: ['nip-er'] }
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => nip11 })))
   relay.entries = []
   relay.topics = [WIDGETS, ALPHA, STRANGER, ARCHIVED].map((address) => ({ ...event(30840, [['d', d(address)], ['h', FOLDER]]), pubkey: address.split(':')[1]! }))
   relay.files = [event(30850, [['d', d(BUILD_1)], ['h', OTHER_FOLDER]]), event(30851, [['d', d(TESTING)], ['h', OTHER_FOLDER]])]
@@ -326,6 +333,29 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     await waitFor(() => expect(socket.subs).toHaveLength(1))
     unmount()
     expect(socket.subs[0]!.closed).toBe(true)
+  })
+
+  it('on a relay that says a kept-open request hears what asking again would return, the live watch names no team, so a comment in a team no topic names still moves its topic (TOPI-12)', async () => {
+    nip11 = { supported_extensions: ['nip-er', 'buzz-live-as-stored'] }
+    list(ALPHA, TESTING, true, 200)
+    relay.activity = [message(WIDGETS, 400)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
+    await waitFor(() => expect(socket.subs).toHaveLength(1))
+    const filters = socket.subs[0]!.filters
+    expect(filters.some((f) => (f['#A'] as string[] | undefined)?.includes(TESTING))).toBe(true)
+    for (const f of filters) expect(f['#h']).toBeUndefined()
+    const comment = { ...event(1111, [['A', TESTING], ['h', 'a-team-no-topic-names']], Math.floor(Date.now() / 1000)), id: 'comment-live' }
+    act(() => socket.subs[0]!.onEvent(comment))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] })
+  })
+
+  it('on a relay that does not say so, the live watch names the teams of the topics and their files (TOPI-12)', async () => {
+    list(ALPHA, TESTING, true, 200)
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    await waitFor(() => expect(socket.subs).toHaveLength(1))
+    for (const f of socket.subs[0]!.filters) expect(new Set(f['#h'] as string[])).toEqual(new Set([FOLDER, OTHER_FOLDER]))
   })
 
   it('back on Topics within a minute, a message heard there still moves its topic to the top (TOPI-10)', async () => {
