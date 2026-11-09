@@ -12,8 +12,12 @@ import { useToast } from '@/lib/toast'
 /** A team's chat: its own path beside the team's page (TEA-5). */
 export const teamChatPath = (team: string) => `/app/folders/${team}/chat`
 
-/** A team's chat row is called by the team, as the prototype draws it ("engineering" for Engineering). */
-export const chatLabel = (team: Team) => team.name.toLowerCase()
+/**
+ * A team's chat row is called by the team, as the prototype draws it ("engineering" for Engineering).
+ * The Company team's chat is the company's general conversation (SPEC §3.4), so it reads "general"
+ * whatever the team is named (TEA-1's story; TEA-7).
+ */
+export const chatLabel = (team: Team) => (team.company ? 'general' : team.name.toLowerCase())
 
 /**
  * Peek's Teams (TEA-5): the teams you are in, the ones you follow, and the
