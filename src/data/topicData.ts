@@ -158,6 +158,8 @@ export interface ConversationData {
    * latest edit's that carries any (SPEC §13.6.2). Absent: none.
    */
   embeds?: Embed[]
+  /** The values naming the file a comment is on, its `A` and `O`: a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: string[]
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string

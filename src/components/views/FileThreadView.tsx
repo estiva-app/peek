@@ -26,7 +26,10 @@ export function FileThreadView({
   root,
   state,
   people,
+  ownFile,
 }: {
+  /** The file the thread is on: a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: readonly string[]
   /** The comment the thread hangs from, from the conversation beside it — or its stand-in, when it was deleted. */
   root: DrawableComment
   state: FileThreadsState
@@ -38,7 +41,7 @@ export function FileThreadView({
 
   return (
     <div className="flex flex-col p-4" data-thread={root.id}>
-      <CommentRow comment={root} people={people} />
+      <CommentRow comment={root} people={people} ownFile={ownFile} />
       {/*
         A rule under the root, because the two halves are not the same thing:
         above is what is being answered, below are the answers. Without it a
@@ -67,7 +70,7 @@ export function FileThreadView({
         ) : (
           <div className="flex flex-col gap-3">
             {replies.map((reply) => (
-              <CommentReply key={reply.id} comment={reply} people={people} />
+              <CommentReply key={reply.id} comment={reply} people={people} ownFile={ownFile} />
             ))}
           </div>
         )}

@@ -72,6 +72,7 @@ import {
   byOrder,
   decorationsOf,
   foldEmbeds,
+  ownFileOf,
   foldThreads,
   groupThreads,
   isCommentOn,
@@ -142,6 +143,8 @@ export interface ConversationEvent extends FileComment {
   parts?: ConversationPart[]
   /** The cards its author asked for — its `embed` tags (SPEC §13.6.2). Absent: none. */
   embeds?: Embed[]
+  /** The values naming the file it is on, its `A` and `O`: a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: string[]
   /**
    * A root that was deleted while replies to it stay (PER-24, SPEC §6.5): its
    * author's `kind:5` came back. A stand-in with the deleted event's id, no
@@ -212,6 +215,7 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   urgent: event ? urgentOf(event) : [],
   parts: event ? partsAndAnchorOf(event) : [],
   embeds: event ? embedsOf(event) : [],
+  ownFile: event ? ownFileOf(event) : undefined,
 })
 
 /**

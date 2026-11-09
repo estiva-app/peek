@@ -228,7 +228,7 @@ export function useFileView({
         </IconButton>
       }
     >
-      <FileThreadView root={openThread} state={threads} people={people} />
+      <FileThreadView root={openThread} state={threads} people={people} ownFile={file?.address ? [file.address] : undefined} />
     </Panel>
   ) : (
     aside

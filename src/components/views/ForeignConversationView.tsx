@@ -137,6 +137,7 @@ export function ForeignConversationView({
           <CommentRow
             key={comment.id}
             comment={comment}
+            ownFile={object.address ? [object.address] : undefined}
             people={people}
             /*
               Its replies, spelled out under the body (FOL-25: an unlabelled count at the far right read as a timestamp,

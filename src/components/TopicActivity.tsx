@@ -153,6 +153,7 @@ export function TopicActivity({
             urgentMentions={conv.urgentMentions}
             parts={conv.parts}
             embeds={conv.embeds}
+            ownFile={conv.ownFile}
             here={here}
             isSelected={selectedId === conv.id}
             readOnly={mention}

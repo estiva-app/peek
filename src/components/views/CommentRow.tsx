@@ -42,8 +42,11 @@ export function CommentRow({
   isNew = false,
   selected,
   onOpen,
+  ownFile,
 }: {
   comment: DrawableComment
+  /** The file the comments are on: a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: readonly string[]
   /** Names and avatars for comment authors. Absent renders shortened keys. */
   people?: People
   /** How many replies, when they were asked for: never a nought, which would be an assertion nobody made. */
@@ -72,17 +75,17 @@ export function CommentRow({
         onClick={onOpen}
         selected={selected}
       >
-        <MessageBody body={comment.body} />
+        <MessageBody body={comment.body} ownFile={ownFile} />
       </ConversationCard>
     </article>
   )
 }
 
 /** A reply in another app's thread, in Peek: the kit's `ReplyCard`, with nothing to change it, as `CommentRow`. */
-export function CommentReply({ comment, people }: { comment: DrawableComment; people?: People }) {
+export function CommentReply({ comment, people, ownFile }: { comment: DrawableComment; people?: People; ownFile?: readonly string[] }) {
   return (
     <ReplyCard author={authorOf(comment, people)} time={whenLabel(msOf(comment))} at={msOf(comment)} readOnly>
-      <MessageBody body={comment.body} />
+      <MessageBody body={comment.body} ownFile={ownFile} />
     </ReplyCard>
   )
 }

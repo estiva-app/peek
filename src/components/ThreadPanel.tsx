@@ -358,6 +358,7 @@ function ThreadReplyCard({
       urgentMentions={reply.urgentMentions}
       parts={reply.parts}
       embeds={reply.embeds}
+      ownFile={reply.ownFile}
       nostrEventId={reply.nostrEventId}
       onResolutionChange={ownsResolution ? onResolutionChange : undefined}
       onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
