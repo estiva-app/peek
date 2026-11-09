@@ -144,7 +144,13 @@ export function useListedConversations(
     }
   }, [key, relayUrl, pubkey, viewer])
 
-  const current = read && read.key === key ? read : undefined
+  /*
+    A list changed in this tab (Add file, Remove) is read again; meanwhile the files still listed stay drawn, so the
+    column does not empty and fill again under the reader.
+  */
+  const stillListed = new Set(key ? key.split('\n') : [])
+  const current: Read | undefined =
+    read && read.key === key ? read : read && 'files' in read ? { key: read.key, files: read.files.filter((file) => stillListed.has(file.address)) } : undefined
   const heldFiles = current && 'files' in current ? current.files : NO_FILES
   const store = relayUrl && pubkey ? conversationsFor(relayUrl, pubkey) : null
   const storeKeys = heldFiles.flatMap((file) => (file.container ? [conversationKey(file.container)] : []))

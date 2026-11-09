@@ -133,8 +133,9 @@ export function useFileView({
   const listedView: ListedView | undefined =
     topic && atAll
       ? {
-          // The list itself is still being read: the files' conversations are as good as loading.
-          state: listedFiles ? listedConversations.state : 'loading',
+          // The list itself is still being read: the files' conversations are as good as loading. A list that could not
+          // be read draws the topic's own, as a failed read of the files does; the Overview says it could not load them.
+          state: listedFiles ? listedConversations.state : topicFiles.state === 'loading' ? 'loading' : { failed: 'unreachable' },
           actionsFor: listedConversations.actionsFor,
           headingOf: (address) => headings.get(address),
           nameOf: (address) => nameOf(listedFiles?.find((f) => f.address === address)),
