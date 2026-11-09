@@ -115,4 +115,25 @@ describe('a team chat’s dot', () => {
     expect(chatHasUnread(team(KATERINA, [MIKY, KATERINA]), [naming], {}, KATERINA)).toBe(true)
     expect(chatHasUnread(team(KATERINA, [MIKY]), [naming], {}, KATERINA)).toBe(false)
   })
+
+  /*
+    TEA-6: the chat is followed like a space. The teams read carries the
+    changes naming the viewer filed in the team, a level on its chat among them.
+  */
+  const CHAT = folder.channel!
+  const change = (by: string, at: number, place: string, field: string, value: string) =>
+    signed({ kind: 1851, created_at: at, tags: [['a', place], ['field', field], ['value', value], ['h', TEAM], ['ts', String(at * 1000)], ['p', KATERINA]] }, by)
+  const withChanges = (people: string[], ...changes: ReturnType<typeof signed>[]) => teamOf(folder, { ...read(people), changes: { [TEAM]: changes } }, KATERINA)
+
+  it('at All, a reply in a conversation they are not in lights, once sent after they chose All', () => {
+    const all = withChanges([MIKY, KATERINA], change(KATERINA, 1_700_000_900, CHAT, `follow:${KATERINA}`, 'all'))
+    expect(all.chat).toMatchObject({ in: true, level: 'all' })
+    expect(chatHasUnread(all, [root, reply], read_, KATERINA)).toBe(true)
+  })
+
+  it('a level on a topic the team leads is not a level on its chat', () => {
+    const elsewhere = withChanges([MIKY, KATERINA], change(KATERINA, 1_700_000_900, TOPIC, `follow:${KATERINA}`, 'all'))
+    expect(elsewhere.chat.level).toBe('important')
+    expect(chatHasUnread(elsewhere, [root, reply], read_, KATERINA)).toBe(false)
+  })
 })

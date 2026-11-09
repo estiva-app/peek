@@ -20,7 +20,7 @@ const listOf = (teams: Record<string, number>, at: number, by = ME) =>
   signed({ kind: 30078, created_at: at, tags: [['d', TEAMS_D_TAG]], content: serializeTeamsBlob({ teams, off: [] }, at) }, by)
 
 const read = (events: SignedEvent[]) =>
-  readTeams([A, B], ME, async () => events, async (ciphertext) => ciphertext)
+  readTeams([A, B], [`39000:${SOMEONE}:${A}`, `39000:${SOMEONE}:${B}`], ME, async () => events, async (ciphertext) => ciphertext)
 
 describe('the teams the viewer follows', () => {
   it('come from their newest list, whatever order the relay answers in', async () => {

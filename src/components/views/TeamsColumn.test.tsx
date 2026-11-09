@@ -33,6 +33,7 @@ const team = (id: string, name: string, over: Partial<Team> = {}): Team => ({
   isMember: false,
   isFollowing: false,
   listed: [],
+  chatAddress: `39000:${PK}:${id}`,
   chat: 'none' as unknown as Team['chat'],
   ...over,
 })

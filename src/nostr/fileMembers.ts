@@ -44,28 +44,14 @@ export async function fetchFileMembers(seam: RelaySeam, file: string): Promise<M
 }
 
 /**
- * The filters for one person in many files, over all history: of each file's
- * roster read, only the events that can name them — the changes tagging them,
- * and the comments they wrote or that mention them.
+ * The changes naming the viewer on these files, over all history, in one
+ * request; `undefined` when the relay did not answer. What the shared
+ * following fold reads (TEA-6): a level, an Add, a join or a leave. Writing
+ * in a file is not one, so no comment is asked for. For the Topics screen
+ * (7525c414): a topic followed before the membership read's horizon, with
+ * nothing since, is still yours.
  */
-export function personInFilesQueries(person: string, files: readonly string[]): Record<string, unknown>[] {
-  return [
-    { kinds: [KIND_CHANGE], '#a': files, '#p': [person] },
-    { kinds: [KIND_COMMENT], '#A': files, authors: [person] },
-    { kinds: [KIND_COMMENT], '#a': files, authors: [person] },
-    { kinds: [KIND_COMMENT], '#A': files, '#p': [person] },
-    { kinds: [KIND_COMMENT], '#a': files, '#p': [person] },
-  ]
-}
-
-/**
- * Which of these files the viewer is a member of, judged as each file's page
- * judges it (`fetchFileMembers`), in one request; `undefined` when the relay
- * did not answer. For the Topics screen (7525c414): a topic joined before the
- * membership read's horizon, with nothing since, is still yours.
- */
-export async function fetchMemberOf(seam: RelaySeam, files: readonly string[]): Promise<Set<string> | undefined> {
-  const { ok, events } = await queryRelay(seam.relayUrl, personInFilesQueries(seam.pubkey, files), seam.accessToken, seam.pubkey)
-  if (!ok) return undefined
-  return new Set(files.filter((file) => foldFileMembers(file, events).has(seam.pubkey)))
+export async function fetchChangesNaming(seam: RelaySeam, files: readonly string[]): Promise<SignedEvent[] | undefined> {
+  const { ok, events } = await queryRelay(seam.relayUrl, [{ kinds: [KIND_CHANGE], '#a': files, '#p': [seam.pubkey] }], seam.accessToken, seam.pubkey)
+  return ok ? events : undefined
 }

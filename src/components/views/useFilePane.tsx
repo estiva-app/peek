@@ -7,6 +7,7 @@ import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
+import { usePlaceFollowControls } from '@/components/PlaceFollow'
 import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, usePeekActions, useTeams, useWorkspaceDirectory } from '@/api'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
@@ -64,7 +65,7 @@ export function useFilePane(
     a link offers both; any other file reads none.
   */
   const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
-  const { teams } = useTeams({ read: isTopic })
+  const { teams, failed: teamsFailed } = useTeams({ read: isTopic })
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
@@ -176,7 +177,33 @@ export function useFilePane(
       />
     ) : undefined
   // Also when the roster could not be read: no pill then, and Join must not go with it.
-  const showToggle = toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
+  const showToggle = !isTopic && toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
+
+  /*
+    A topic or a space (TEA-6): one switch before its title — Not following,
+    Important or All — and Who follows in the members pill's place, with Add
+    there and in ⋮. They take the place of the Members pill and Join/Leave;
+    every other file keeps those. Its place is named by the team whose list
+    holds it, else its own Folder; read once the teams are, so it is read once.
+    An archived file keeps the switch read-only, as its archived team's does.
+  */
+  const followTarget =
+    isTopic && file?.address && file.folder && (teams || teamsFailed)
+      ? {
+          place: { address: file.address, team: listing?.team.id ?? file.folder },
+          folder: file.folder,
+          archived: !!(listing?.team.archived ?? teams?.find((team) => team.id === file.folder)?.archived),
+          fileArchived: readOnly,
+        }
+      : undefined
+  const follow = usePlaceFollowControls({
+    target: followTarget,
+    title,
+    teamName: listing?.team.name,
+    me,
+    directory: people,
+    people: file?.people,
+  })
 
   /*
     Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
@@ -243,6 +270,7 @@ export function useFilePane(
         */
         <PageHeader
           title={title}
+          leading={follow.switcher}
           after={
             /*
             Another app's file: one way into the app that owns it, "Open" —
@@ -274,7 +302,7 @@ export function useFilePane(
           }
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
-          members={file?.folder || view.sidePanel ? members : undefined}
+          members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
           actions={
             file?.folder || view.sidePanel ? (
               /* One strip: one Tab stop, arrows along it (UIG-14). */
@@ -298,7 +326,7 @@ export function useFilePane(
                   a Ship issue's header has nothing to put here, and a button
                   that opens nothing would say otherwise.
                 */}
-                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork || toggleSpace) && (
+                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork || toggleSpace || follow.openAdd) && (
                   <TopicMoreMenu
                     trigger={
                       <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -317,6 +345,7 @@ export function useFilePane(
                     spaceAction={toggleSpace && !readOnly ? (listing?.space ? 'unmark' : 'mark') : undefined}
                     onToggleSpace={toggleSpace ? () => void toggleSpace() : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                    onAddSomeone={follow.openAdd}
                   />
                 )}
               </Toolbar>
@@ -349,8 +378,13 @@ export function useFilePane(
 
   return {
     pane,
-    /** The controls' dialogs, rendered by the caller. */
-    dialogs: fileControls.dialogs,
+    /** The controls' dialogs, rendered by the caller; Who follows among them. */
+    dialogs: (
+      <>
+        {fileControls.dialogs}
+        {follow.dialog}
+      </>
+    ),
     /** Opens a control's dialog, for a row menu elsewhere on the page (PEE-2). */
     openControl: fileControls.open,
     /** Whether the person is a member of the open file; undefined until the relay has said. */

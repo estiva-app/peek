@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { isArchived, type ForeignObject } from '@estiva-app/interop'
+import type { SignedEvent } from '@estiva-app/protocol'
 import { resolveObjectAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
-import { fetchMemberOf } from '@/nostr/fileMembers'
+import { fetchChangesNaming } from '@/nostr/fileMembers'
 import { useRelayViewer, useResolvedReferences } from './foreign'
+import { topicFollowingOf } from './placeDots'
 import { hasRelay } from './relayUrl'
 
 /** One of your topics on the Topics screen, with the files its list holds. */
@@ -46,11 +48,11 @@ interface Held {
   /** Files read again after an Archive or Unarchive in this tab, drawn over the column's first answer. */
   rearchived: ReadonlyMap<string, ForeignObject | null>
   /**
-   * Topics the membership read has no word on, read over all history: whether
-   * you are a member. Nothing older than its horizon changes, so an answer is
-   * kept for the tab.
+   * Topics the membership read has no word on, read over all history: the
+   * changes naming you on each, for the shared following fold. Nothing older
+   * than its horizon changes, so an answer is kept for the tab.
    */
-  past: ReadonlyMap<string, boolean>
+  past: ReadonlyMap<string, readonly SignedEvent[]>
   /** Topics whose past read failed: drawn as the membership read has them, and asked again on the next mount. */
   pastFailed: ReadonlySet<string>
 }
@@ -143,11 +145,11 @@ async function readPast(viewer: Viewer, topics: readonly string[]) {
   if (!ask.length) return
   for (const topic of ask) pastReading.add(`${pubkey}:${topic}`)
   try {
-    const members = await fetchMemberOf({ relayUrl: viewer.relayUrl, accessToken: viewer.token.accessToken, pubkey }, ask)
-    if (!members) throw new Error('the relay did not answer')
+    const changes = await fetchChangesNaming({ relayUrl: viewer.relayUrl, accessToken: viewer.token.accessToken, pubkey }, ask)
+    if (!changes) throw new Error('the relay did not answer')
     if (held.pubkey !== pubkey) return
     const past = new Map(held.past)
-    for (const topic of ask) past.set(topic, members.has(topic))
+    for (const topic of ask) past.set(topic, changes.filter((change) => change.tags.some((t) => t[0] === 'a' && t[1] === topic)))
     put({ ...held, past })
   } catch (error) {
     failedRead(error, 'topic memberships')
@@ -236,13 +238,19 @@ export function useTopicsColumn(): {
 } {
   const { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived } = useReadableTopicsHeld()
   const membership = useMembership()
-  const { isMember, judges } = membership
+  const { me, changesOf, floor, termsOf } = membership
   const known = membership.state !== 'unknown'
   const { past, pastFailed } = mineHeld
+  /*
+    The membership read has a word on you in a topic when a change naming you
+    on it is inside its horizon, or you made it: the newest change decides, so
+    nothing older can change the answer.
+  */
+  const heard = useCallback((address: string) => address.split(':')[1] === me || changesOf(address).length > 0, [me, changesOf])
   // The topics the membership read has no word on: whether they are yours is read over all history.
   const unheardKey = useMemo(
-    () => (known ? live.filter((topic) => !judges(topic.address!) && !isMember(topic.address!)).map((topic) => topic.address!) : []).join(','),
-    [known, live, judges, isMember],
+    () => (known ? live.filter((topic) => !heard(topic.address!)).map((topic) => topic.address!) : []).join(','),
+    [known, live, heard],
   )
   useEffect(() => {
     const v = viewer()
@@ -251,11 +259,27 @@ export function useTopicsColumn(): {
     if (want.length) void readPast(v, want)
   }, [viewer, unheardKey, past, pastFailed])
   const pastUnread = !!unheardKey && unheardKey.split(',').every((topic) => !past.has(topic) && !pastFailed.has(topic))
+  /*
+    Yours is the shared rule Ship's Topics reads too (interop's `following.in`,
+    TEA-6): made, joined, added or a level chosen since your last leave;
+    writing in it is not following it, and a topic you muted is not yours, as
+    the switch shows a mute as Not following. A space's team default is not
+    read here, as Ship's is not. Decided by Miky, 6 Nov, so the two apps agree
+    from the day the switch ships.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/writing-in-a-place-never-follows-it.md
+  */
   const isYours = useCallback(
-    (address: string) => isMember(address) || (!judges(address) && past.get(address) === true),
-    [isMember, judges, past],
+    (topic: ForeignObject) => {
+      const address = topic.address!
+      if (!me || termsOf(address).muted) return false
+      const old = !heard(address)
+      const changes = old ? past.get(address) : changesOf(address)
+      if (!changes) return false
+      return topicFollowingOf({ address, folder: topic.folder ?? '', me, changes, floor: old ? 0 : floor }).in
+    },
+    [me, termsOf, heard, past, changesOf, floor],
   )
-  const mine = useMemo(() => live.filter((topic) => isYours(topic.address!)), [live, isYours])
+  const mine = useMemo(() => live.filter((topic) => isYours(topic)), [live, isYours])
   const mineKey = mine.map((topic) => topic.address).join(',')
 
   const { lists, stale } = mineHeld
@@ -288,7 +312,7 @@ export function useTopicsColumn(): {
         })
         return { topic, files: listedFiles.filter((file) => !isArchived(file)), archivedFiles: listedFiles.filter((file) => isArchived(file)) }
       }),
-      others: live.filter((topic) => !isYours(topic.address!)),
+      others: live.filter((topic) => !isYours(topic)),
       archived,
     }
   }, [mineHeld.failed, mineHeld.topics, known, topicsResolved, pastUnread, mine, lists, listed, fileObjects, objectOf, live, archived, isYours])

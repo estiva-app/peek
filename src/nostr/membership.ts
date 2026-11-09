@@ -22,13 +22,30 @@ import type { RelaySeam } from './stars'
 export interface MembershipRead extends SharedRead {
   /** Ids of the mentions urgent for the viewer (SPEC §13.1, CON-17). */
   urgent: ReadonlySet<string>
+  /**
+   * The `kind:1851` changes naming the viewer, by the place they name: a
+   * level, an Add, a join or a leave. What the shared `followingOf` folds for
+   * a topic's or a space's dot (TEA-6), with no read of its own.
+   */
+  changes: ReadonlyMap<string, readonly SignedEvent[]>
 }
+
+const KIND_CHANGE = 1851
 
 /** Fold what the three filters returned, with Peek's urgent set. Pure: the clock is `nowSeconds`. */
 export function foldMemberships(pubkey: string, events: readonly SignedEvent[], nowSeconds: number): MembershipRead {
   const urgent = new Set<string>()
-  for (const event of events) if (isTaggedUrgentFor(event, pubkey)) urgent.add(event.id)
-  return { ...foldShared(pubkey, events, nowSeconds), urgent }
+  const changes = new Map<string, SignedEvent[]>()
+  for (const event of events) {
+    if (isTaggedUrgentFor(event, pubkey)) urgent.add(event.id)
+    if (event.kind !== KIND_CHANGE) continue
+    const place = event.tags.find((t) => t[0] === 'a')?.[1]
+    if (!place) continue
+    const list = changes.get(place)
+    if (list) list.push(event)
+    else changes.set(place, [event])
+  }
+  return { ...foldShared(pubkey, events, nowSeconds), urgent, changes }
 }
 
 /** The membership read, or `undefined` when the relay did not answer — never an empty guess. */
