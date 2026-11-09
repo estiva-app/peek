@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import { channelContext, threadContext } from '@estiva-app/conversation'
+import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 
 const frontier = vi.hoisted(() => ({ merged: {} as Record<string, number>, ready: true }))
 vi.mock('@/nostr/useReadStateSync', () => ({
@@ -11,7 +11,7 @@ vi.mock('@/nostr/useReadStateSync', () => ({
   }),
 }))
 
-const { useNewReplyThreads } = await import('./useNewReplyThreads')
+const { useNewReplyThreads, useNewWhenDrawn, useReplyOnlyThread } = await import('./useNewReplyThreads')
 
 const ME = 'a'.repeat(64)
 const KAT = 'b'.repeat(64)
@@ -49,5 +49,39 @@ describe('useNewReplyThreads — the "new reply" on a thread (PEE-44)', () => {
 
   it('nothing is new before the first merge has landed', () => {
     expect(lit({}, { [ROOT]: [reply('1', KAT, T + 60)] }, false).size).toBe(0)
+  })
+})
+
+describe("a topic at All judges each file's threads by that file's own marker (TOPI-3)", () => {
+  const TOPIC = `30840:${KAT}:launch`
+  const ISSUE = `30851:${KAT}:issue-12`
+  const TOPIC_CONTEXT = fileContext(TOPIC) as string
+  const ISSUE_CONTEXT = fileContext(ISSUE) as string
+  // ROOT is the topic's own thread; OTHER is on the issue, drawn in the topic.
+  const streamOfRoot = (root: string) => (root === OTHER ? ({ kind: 'file', address: ISSUE } as const) : undefined)
+  const replies = { [ROOT]: [reply('1', KAT, T + 60)], [OTHER]: [reply('2', KAT, T + 60)] }
+  const judged = (merged: Record<string, number>) => {
+    frontier.merged = merged
+    frontier.ready = true
+    return renderHook(() => ({
+      replies: useNewReplyThreads({ kind: 'file', address: TOPIC }, replies, ME, streamOfRoot),
+      drawn: useNewWhenDrawn({ kind: 'file', address: TOPIC }, [{ id: OTHER, author: KAT, createdAt: T + 30 }], {}, ME, streamOfRoot),
+      only: useReplyOnlyThread({ kind: 'file', address: TOPIC }, [], replies, ME, streamOfRoot),
+    })).result.current
+  }
+
+  it("the issue read past its reply: the issue's thread is not new, though the topic's marker is older", () => {
+    const result = judged({ [TOPIC_CONTEXT]: T, [ISSUE_CONTEXT]: T + 120 })
+    expect([...result.replies]).toEqual([ROOT])
+    expect(result.drawn?.has(OTHER)).toBe(false)
+    expect(result.only).toBe(ROOT)
+  })
+
+  it("the topic read past it and the issue not: the issue's thread and comment are new", () => {
+    const result = judged({ [TOPIC_CONTEXT]: T + 120, [ISSUE_CONTEXT]: T })
+    expect([...result.replies]).toEqual([OTHER])
+    expect(result.drawn?.has(OTHER)).toBe(true)
+    // Only a reply is new, and it is the issue's: that is the thread a Desk click opens.
+    expect(result.only).toBe(OTHER)
   })
 })

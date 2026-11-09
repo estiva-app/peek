@@ -9,7 +9,7 @@ vi.mock('@/api', () => ({
   useReadActions: () => ({ markFileRead, markContainerRead, markThreadRead }),
 }))
 
-const { useMarkDmRead, useMarkFileRead, useMarkThreadRead } = await import('./useMarkRead')
+const { useMarkDmRead, useMarkFileRead, useMarkFilesRead, useMarkThreadRead } = await import('./useMarkRead')
 
 const FILE = `30851:${'e'.repeat(64)}:issue`
 const DM = 'b'.repeat(64)
@@ -133,5 +133,45 @@ describe('useMarkThreadRead (PEE-44)', () => {
     renderHook(() => useMarkThreadRead(null, 300))
     vi.advanceTimersByTime(5000)
     expect(markThreadRead).not.toHaveBeenCalled()
+  })
+})
+
+describe("useMarkFilesRead — a topic at All reads each listed file in its own stream (TOPI-3)", () => {
+  const ISSUE = `30851:${'e'.repeat(64)}:issue-12`
+  const NOTES = `30840:${'e'.repeat(64)}:notes`
+
+  it('marks each file up to its newest comment seen, with no dwell of its own', () => {
+    renderHook(() => useMarkFilesRead(new Map([[ISSUE, 100], [NOTES, 200]])))
+    vi.advanceTimersByTime(0)
+    expect(markFileRead).toHaveBeenCalledWith(ISSUE, 100)
+    expect(markFileRead).toHaveBeenCalledWith(NOTES, 200)
+  })
+
+  it('marks again only the file whose newest seen comment moved', () => {
+    const { rerender } = renderHook(({ seen }) => useMarkFilesRead(seen), { initialProps: { seen: new Map([[ISSUE, 100], [NOTES, 200]]) } })
+    vi.advanceTimersByTime(0)
+    markFileRead.mockClear()
+    rerender({ seen: new Map([[ISSUE, 150], [NOTES, 200]]) })
+    vi.advanceTimersByTime(0)
+    expect(markFileRead.mock.calls).toEqual([[ISSUE, 150]])
+  })
+
+  it('never marks past the clock: a comment ahead of it is read once the clock gets there', () => {
+    const now = Math.floor(Date.now() / 1000)
+    renderHook(() => useMarkFilesRead(new Map([[ISSUE, now + 10]])))
+    vi.advanceTimersByTime(0)
+    expect(markFileRead).toHaveBeenCalledWith(ISSUE, now)
+    vi.advanceTimersByTime(10_000)
+    expect(markFileRead).toHaveBeenLastCalledWith(ISSUE, now + 10)
+  })
+
+  it('marks nothing while the tab is hidden, and marks once it is shown', () => {
+    setHidden(true)
+    renderHook(() => useMarkFilesRead(new Map([[ISSUE, 100]])))
+    vi.advanceTimersByTime(5000)
+    expect(markFileRead).not.toHaveBeenCalled()
+    setHidden(false)
+    vi.advanceTimersByTime(0)
+    expect(markFileRead).toHaveBeenCalledWith(ISSUE, 100)
   })
 })

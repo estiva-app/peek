@@ -67,6 +67,7 @@ vi.mock('@/nostr/useReadStateSync', async () => ({
 
 import { useFileConversationView } from './useFileConversationView'
 import { ConversationLayout } from '@estiva-app/ui'
+import { useMarkFileRead } from '@/lib/useMarkRead'
 
 const CATH = 'b'.repeat(64)
 const people: People = { [CATH]: { displayName: 'Cath' } } as unknown as People
@@ -109,6 +110,7 @@ function View({ openThreadId }: { openThreadId: string | undefined }) {
 afterEach(() => {
   relay.read.mockReset()
   marks.thread.mockReset()
+  marks.file.mockReset()
 })
 
 describe('the conversation view reads top-level messages, and threads only when open (PEE-44)', () => {
@@ -132,6 +134,50 @@ describe('the conversation view reads top-level messages, and threads only when 
     relay.read.mockResolvedValue(conversation)
     render(<View openThreadId={root.id} />)
     await waitFor(() => expect(marks.thread).toHaveBeenCalledWith(root.id, T + 120))
+  })
+})
+
+describe("a topic at All reads each listed file's comments in that file's own stream (TOPI-3)", () => {
+  const TEAM = '2b0c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
+  const TOPIC = `30840:${CATH}:launch`
+  const ISSUE = `30851:${CATH}:issue-12`
+  const onIssue = { ...event('5', 'On the issue', T + 30), kind: 1111 }
+  const issue: FileConversation = {
+    roots: [onIssue],
+    replies: {},
+    decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+    threads: {},
+  }
+
+  /** The topic's view at All, marking the topic's own stream by `seenAt` as `useFileView` does. */
+  function TopicAtAll() {
+    const { conversationParts, seenAt } = useFileConversationView({
+      container: { kind: 'file', address: TOPIC, h: TEAM },
+      rootIds: [root.id],
+      openThreadId: undefined,
+      onOpenThread: () => {},
+      title: 'Launch',
+      listed: {
+        state: { files: [{ file: 'issue-12', address: ISSUE, folder: 'ship-team', container: { kind: 'file', address: ISSUE, h: 'ship-team' }, conversation: issue, archived: false }] },
+        actionsFor: () => undefined,
+        headingOf: () => null,
+        nameOf: () => 'Issue 12',
+        closedOf: () => undefined,
+      },
+    })
+    useMarkFileRead(TOPIC, seenAt, 0)
+    return <ConversationLayout threads="beside" {...conversationParts} />
+  }
+
+  it("a file's comment seen in the topic marks that file read up to it, and the topic only up to its own", async () => {
+    relay.read.mockResolvedValue({ ...conversation, replies: {} })
+    render(<TopicAtAll />)
+    await waitFor(() => expect(screen.getByText('Root')).toBeInTheDocument())
+    await waitFor(() => expect(marks.file).toHaveBeenCalledWith(ISSUE, T + 30))
+    // The topic is read up to its own newest comment, never up to the issue's, which is newer.
+    await waitFor(() => expect(marks.file).toHaveBeenCalledWith(TOPIC, T))
+    expect(marks.file).not.toHaveBeenCalledWith(TOPIC, T + 30)
+    expect(marks.file.mock.calls.filter(([address]) => address === ISSUE)).toHaveLength(1)
   })
 })
 
