@@ -6,7 +6,7 @@ import { REACTION_OPTIONS, reactorNameIn, toggledReaction, type ReactionAnswer }
 import { CURRENT_USER_NAME, type ReactionData, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
-import { withoutCard } from '@estiva-app/conversation'
+import { withoutCard, withoutOwnFileLines } from '@estiva-app/conversation'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
 import { postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
@@ -67,6 +67,8 @@ interface ReplyCardProps {
   parts?: { address: string; block: string; anchor?: true }[]
   /** The cards its author asked for (SPEC §13.6.2). */
   embeds?: readonly Embed[]
+  /** The file the comment is on (its `A` and `O`): a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: readonly string[]
   /** The published event's id. When present the time is the message's permalink (PEE-17). */
   nostrEventId?: string
   /** Show it with no way to change it: no hover menu, reactions not toggleable. An archived file's replies. */
@@ -108,6 +110,7 @@ export function ReplyCard({
   urgentMentions,
   parts,
   embeds,
+  ownFile,
   nostrEventId,
   readOnly = false,
   className,
@@ -208,7 +211,8 @@ export function ReplyCard({
             key={editing.key}
             kind="reply"
             message={{
-              body: bodyState,
+              // Without the line linking its own file, which Ship once appended and no reader draws (ONE-11).
+              body: ownFile ? withoutOwnFileLines(bodyState, ownFile) : bodyState,
               urgent: urgentMentions,
               highlightType: highlightState,
               resolution: ownsResolution ? { message: resolutionMsg ?? '' } : undefined,
@@ -234,6 +238,7 @@ export function ReplyCard({
         parts={parts}
         embeds={embeds}
         authorName={authorName}
+        ownFile={ownFile}
         // Words, not pickers, on a card where nothing can be changed: an archived file's conversation, a read-only copy.
         readOnly={readOnly}
         // The author's ✕, offered where Edit is: an edit with that card `none` and every other kept (§13.6.2).

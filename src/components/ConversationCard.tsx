@@ -4,7 +4,7 @@ import { AttachmentCard, ConversationCard as KitConversationCard } from '@estiva
 import { CURRENT_USER_NAME, type ReactionData, type HighlightType, type FileAttachment } from '@/api'
 import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
-import { withoutCard } from '@estiva-app/conversation'
+import { withoutCard, withoutOwnFileLines } from '@estiva-app/conversation'
 import { MessageBody } from './ui/MessageBody'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
 import { REACTION_OPTIONS, reactorNameIn, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
@@ -65,8 +65,8 @@ interface ConversationCardProps {
   embeds?: readonly Embed[]
   /** The address of the file it is shown on ("Mentioned in"): no card for that file under it, only its chip (WID-3). */
   here?: string
-  /** The file the comment is on (its `A`): a paragraph that is only a `nostr:` link to it draws nothing (ONE-11). */
-  ownFile?: string
+  /** The file the comment is on (its `A` and `O`): a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: readonly string[]
   /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
   writtenOn?: string
   /** An edit changed the highlight it carries (the edit box keeps one; nothing here sets one). */
@@ -314,7 +314,8 @@ export function ConversationCard({
           <EditBox
             key={editing.key}
             message={{
-              body: bodyState,
+              // Without the line linking its own file, which Ship once appended and no reader draws (ONE-11).
+              body: ownFile ? withoutOwnFileLines(bodyState, ownFile) : bodyState,
               urgent: urgentMentions,
               highlightType: highlightState,
               resolution: resolved ? { message: resolutionMsg } : undefined,

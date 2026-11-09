@@ -701,6 +701,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       urgentMentions: reply.urgent,
       parts: reply.parts,
       embeds: d.embeds,
+      ownFile: reply.ownFile,
       nostrEventId: reply.id,
       reactions: d.reactions,
     }
@@ -743,6 +744,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       urgentMentions: root.urgent,
       parts: root.parts,
       embeds: d.embeds,
+      ownFile: root.ownFile,
       nostrEventId: root.id,
     }
     byId[root.id] = {

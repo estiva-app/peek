@@ -34,6 +34,8 @@ export interface ReplyData {
   parts?: { address: string; block: string; anchor?: true }[]
   /** The cards its author asked for — see `ConversationData.embeds`. */
   embeds?: Embed[]
+  /** The file a comment is on — see `ConversationData.ownFile`. */
+  ownFile?: string[]
   /** The published event's id — what a message link names (PEE-17). Absent
    *  until the reply reaches the relay. */
   nostrEventId?: string

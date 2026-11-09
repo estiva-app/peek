@@ -64,6 +64,7 @@ export const ConversationRow = memo(
         resolutionMessage={c.resolutionMessage}
         urgentMentions={c.urgentMentions}
         parts={c.parts}
+        ownFile={c.ownFile}
         embeds={c.embeds}
         deleted={c.isDeleted}
         unseen={c.isUnseen}

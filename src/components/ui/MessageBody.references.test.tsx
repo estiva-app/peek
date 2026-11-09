@@ -86,3 +86,25 @@ describe('a topic or a message in a message body', () => {
     expect(c.textContent).not.toContain('[')
   })
 })
+
+// ONE-11 (Miky, 2026-11-09): Ship ended every issue comment with a line linking its own issue, which Peek drew as a row.
+describe('a comment’s line that only links the file it is on', () => {
+  const ISSUE = `30851:${RELAY}:5e783319-e6f4-4436-9f4c-5310ce37074d`
+  const ISSUE_NADDR = `nostr:${addrToNaddr(ISSUE, [])}`
+  const onIssue = (body: string, ownFile: string[] = [ISSUE]) => render(<MessageBody body={body} ownFile={ownFile} here={ISSUE} />).container
+
+  it('draws nothing, leaving the comment’s words', () => {
+    const c = onIssue(`Looks right.\n\n${ISSUE_NADDR}`)
+    expect(c.textContent).toBe('Looks right.')
+  })
+
+  it('still draws a link alone on its line to another file, as its row', () => {
+    const c = render(<MessageBody body={`Looks right.\n\n${ISSUE_NADDR}`} ownFile={[`30851:${RELAY}:another-issue`]} />).container
+    expect(c.querySelector('[data-link-row]')?.textContent).toBe("You can't open this issue")
+  })
+
+  it('draws the link when the comment has no other words', () => {
+    const c = onIssue(ISSUE_NADDR)
+    expect(c.textContent).toBe("You can't open this issue")
+  })
+})
