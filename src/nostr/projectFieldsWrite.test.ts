@@ -428,24 +428,34 @@ describe('A change from a tab that read the relay before it switched (ALO-8)', (
     expect(sent()).toHaveLength(1)
   })
 
-  it('a second switch refusal is said as any refusal, not tried a third time', async () => {
+  it('a second switch refusal asks for a reload in Peek’s words, not tried a third time', async () => {
     switchesAfterTheTabRead()
     publishSigned.mockImplementation(async () => ({ ok: false, reason: SWITCH_REFUSAL }))
     queryRelay.mockImplementation(relayOver(world()))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
 
-    expect(result.ok).toBe(false)
-    expect(result.reason).toContain(SWITCH_REFUSAL)
+    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
     expect(sent().map((e) => tag(e, 'prev'))).toEqual([undefined, nameChange.id])
   })
 
-  it('a relay whose NIP-11 still says nothing of the switch: the refusal is said and nothing is sent again', async () => {
+  it('a relay whose NIP-11 still says nothing of the switch: a reload is asked for and nothing is sent again', async () => {
     relayInfo(false)
     refusingChangesWithNoPrev()
     queryRelay.mockImplementation(relayOver(world()))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
 
-    expect(result).toEqual({ ok: false, reason: SWITCH_REFUSAL })
+    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('a text with no text it was edited from is not written again over words saved since', async () => {
+    switchesAfterTheTabRead()
+    refusingChangesWithNoPrev()
+    queryRelay.mockImplementation(relayOver([textManifest(), project, channel, state]))
+    const mine = serializeBlockDocument({ type: 'doc', content: [{ type: 'paragraph', id: 'b1', content: [{ type: 'text', text: 'Mine' }] }] } as never)
+    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'edit-description', value: mine, contentFormat: BLOCKS }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
     expect(sent()).toHaveLength(1)
   })
 })

@@ -130,6 +130,9 @@ import {
 } from './projectFields'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
 
+/** A project change the relay refused for naming no change it follows, said in Peek's words (ALO-8). */
+const NOT_SAVED_RELOAD = 'This was not saved. Reload and try again.'
+
 export interface ActResult {
   ok: boolean
   reason?: string
@@ -2048,7 +2051,8 @@ export async function applyActionAsViewer(
     if (written.ok) return { ok: true, id: written.id }
     // Said of the field changed: a crossed title or status is not "this text".
     const what = changedField === TEXT_FIELD ? 'this text' : 'this'
-    return fail('refused' in written ? written.refused : `Someone changed ${what} at the same time. Reload and try again.`)
+    if (!('refused' in written)) return fail(`Someone changed ${what} at the same time. Reload and try again.`)
+    return fail(isSwitchRefusal(written.refused) ? NOT_SAVED_RELOAD : written.refused)
   }
 
   const built = buildActionEvents({ ...common, value, contentFormat: args.contentFormat, createdAtMs: Date.now() })
@@ -2065,14 +2069,16 @@ export async function applyActionAsViewer(
     /*
       The relay switched since this tab read its NIP-11 and now keeps projects in order (ALO-8): read it again, and
       write the change again once through the switched path above, after each field's current change. The person
-      sees nothing; a second refusal, or a relay still not switched, is said as any refusal is.
+      sees nothing. A text is written again only with the text it was edited from (`base`), so words saved since are
+      merged, never written over. A second refusal, or a relay still not switched, asks for a reload in Peek's words.
       why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
     */
-    if (!afterSwitch && changedField && pointer.kind === PROJECT_KIND && isSwitchRefusal(result.reason)) {
+    const switching = !!changedField && pointer.kind === PROJECT_KIND && isSwitchRefusal(result.reason)
+    if (switching && !afterSwitch && (changedField !== TEXT_FIELD || args.base)) {
       forgetProjectFields()
       if (await projectFields()) return applyActionAsViewer(args, relayUrl, token, transform, true)
     }
-    return fail(result.reason ?? 'The relay rejected the change.')
+    return fail(switching ? NOT_SAVED_RELOAD : (result.reason ?? 'The relay rejected the change.'))
   }
 
   /*
