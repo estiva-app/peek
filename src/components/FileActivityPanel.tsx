@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { SectionHeader } from '@estiva-app/ui'
+import { KIND_COMMENT } from '@estiva-app/conversation'
 import { formatReplyTimestamp, useMentionConversation, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
@@ -119,6 +120,8 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     nostrReferences: m.references,
     urgentMentions: m.urgent,
     embeds: now?.embeds ?? m.embeds,
+    // A comment's own file (its `A`, the place it was said): a line that is only a link to it draws nothing, as in its own conversation (ONE-11).
+    ownFile: m.kind === KIND_COMMENT ? [m.saidIn] : undefined,
     nostrEventId: m.id,
     // Nothing here edits or deletes (SHI-29): say so, rather than let the card
     // guess ownership from a display name anybody can set to "You".
