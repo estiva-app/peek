@@ -65,6 +65,8 @@ interface ConversationCardProps {
   embeds?: readonly Embed[]
   /** The address of the file it is shown on ("Mentioned in"): no card for that file under it, only its chip (WID-3). */
   here?: string
+  /** The file the comment is on (its `A`): a paragraph that is only a `nostr:` link to it draws nothing (ONE-11). */
+  ownFile?: string
   /** The file whose conversation it is in: an edit linking that file adds no card (§13.6.2). */
   writtenOn?: string
   /** An edit changed the highlight it carries (the edit box keeps one; nothing here sets one). */
@@ -132,6 +134,7 @@ export function ConversationCard({
   parts,
   embeds,
   here,
+  ownFile,
   writtenOn,
   highlightType,
   onHighlightChange,
@@ -349,6 +352,7 @@ export function ConversationCard({
         embeds={embeds}
         authorName={authorName}
         here={here}
+        ownFile={ownFile}
         // Words, not pickers, on a card where nothing can be changed: an archived file's conversation, a read-only copy.
         readOnly={readOnly}
         // The author's ✕, offered where Edit is: an edit with that card `none` and every other kept (§13.6.2).
