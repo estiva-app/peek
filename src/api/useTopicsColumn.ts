@@ -3,6 +3,7 @@ import { byActivity, isArchived, watchTopicActivity, type ActivityFile, type Act
 import type { SignedEvent } from '@estiva-app/protocol'
 import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { getLiveClient } from '@/nostr/liveTopics'
+import { readTopicOrder, writeTopicOrder } from '@/lib/topicOrder'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
@@ -100,27 +101,6 @@ let activityReading: string | null = null
 let current: { key: string; activity: TopicActivity; since: number; relayUrl: string; watch: ActivityWatch | null } | null = null
 let watchUsers = 0
 
-/** Where this browser keeps the order it last drew, per person (TOPI-10): a topic → its time. */
-export const TOPIC_ORDER_KEY = 'peek.topics.activity'
-const storeKey = (pubkey: string) => `${TOPIC_ORDER_KEY}.${pubkey}`
-
-function readStored(pubkey: string): Map<string, number> {
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(storeKey(pubkey)) ?? '{}')
-    if (!parsed || typeof parsed !== 'object') return new Map()
-    return new Map(Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
-  } catch {
-    return new Map()
-  }
-}
-
-function writeStored(pubkey: string, at: ReadonlyMap<string, number>) {
-  try {
-    window.localStorage.setItem(storeKey(pubkey), JSON.stringify(Object.fromEntries(at)))
-  } catch {
-    // Storage refused (a private window, a full quota): the next first draw waits for the read.
-  }
-}
 
 function put(next: Held) {
   held = next
@@ -229,7 +209,7 @@ async function readActivity(viewer: Viewer, key: string, topics: readonly Foreig
     current = { key, activity, since, relayUrl: viewer.relayUrl, watch: null }
     startWatch()
     put({ ...held, activity: { key, at: new Map(activity.at), readAt: Date.now(), live: !!current.watch }, activityFailed: null })
-    writeStored(pubkey, activity.at)
+    writeTopicOrder(pubkey, activity.at)
   } catch (error) {
     failedRead(error, 'topic activity')
     if (held.pubkey === pubkey && activityReading === key) put({ ...held, activityFailed: key })
@@ -251,7 +231,7 @@ function startWatch() {
     () => {
       if (current?.key !== key || held.pubkey !== pubkey || held.activity?.key !== key) return
       put({ ...held, activity: { ...held.activity, at: new Map(activity.at) } })
-      if (pubkey) writeStored(pubkey, activity.at)
+      if (pubkey) writeTopicOrder(pubkey, activity.at)
     },
     { since: current.since, onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason) },
   )
@@ -276,8 +256,12 @@ function wantActivity(): () => void {
     if (watchUsers > 0) return
     stopWatch()
     current = null
-    // Not drawn differently, so no one is told: the next mount reads it again.
-    if (held.activity) held = { ...held, activity: { ...held.activity, live: false } }
+    /*
+      Not drawn differently, so no one is told. Old at once (`readAt: 0`):
+      nothing keeps it current now, so the next mount reads it again and opens
+      a new watch, however soon it comes — even back within a minute.
+    */
+    if (held.activity) held = { ...held, activity: { ...held.activity, live: false, readAt: 0 } }
   }
 }
 
@@ -531,7 +515,7 @@ function useReadableTopicsHeld() {
       stopWatch()
       current = null
       activityReading = null
-      put({ ...EMPTY, pubkey: v.token.pubkey, stored: readStored(v.token.pubkey) })
+      put({ ...EMPTY, pubkey: v.token.pubkey, stored: readTopicOrder(v.token.pubkey) })
     }
     if (held.pastFailed.size || held.activityFailed) put({ ...held, pastFailed: new Set(), activityFailed: null })
     if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)

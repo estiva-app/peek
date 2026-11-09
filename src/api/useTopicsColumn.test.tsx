@@ -88,7 +88,8 @@ vi.mock('@/api/internal/membership', () => ({
   }),
 }))
 
-import { fileArchiveChanged, resetTopicsColumn, TOPIC_ORDER_KEY, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
 
 const d = (address: string) => address.split(':')[2]!
@@ -325,6 +326,19 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     await waitFor(() => expect(socket.subs).toHaveLength(1))
     unmount()
     expect(socket.subs[0]!.closed).toBe(true)
+  })
+
+  it('back on Topics within a minute, a message heard there still moves its topic to the top (TOPI-10)', async () => {
+    relay.activity = [message(ALPHA, 400)]
+    const first = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(first.result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    first.unmount()
+    // Back at once: nothing kept the order current while away, so it is read again and heard again.
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(socket.subs.filter((sub) => !sub.closed)).toHaveLength(1))
+    const now = Math.floor(Date.now() / 1000)
+    act(() => socket.subs.find((sub) => !sub.closed)!.onEvent(message(WIDGETS, now)))
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
   })
 
   it('a topic archived with the project above it is under Archived, not among yours or the other topics (b1ace226)', async () => {
