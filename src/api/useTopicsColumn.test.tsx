@@ -89,7 +89,7 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
-import { forgetRelayInfo } from '@/nostr/relayInfo'
+import { forgetProjectFields } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
 
@@ -207,7 +207,7 @@ const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
 
 beforeEach(() => {
   resetTopicsColumn()
-  forgetRelayInfo()
+  forgetProjectFields()
   nip11 = { supported_extensions: ['nip-er'] }
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => nip11 })))
   relay.entries = []
