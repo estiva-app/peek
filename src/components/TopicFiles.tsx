@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
-import { IconPlus } from '@tabler/icons-react'
-import { CommandPalette, CommandPaletteSearch, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
+import { IconArchive, IconPlus } from '@tabler/icons-react'
+import { CollapsibleSection, CommandPalette, CommandPaletteSearch, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
 import { fileChoices, subscribeReferences, useTopicFiles } from '@/api'
 import { MessageCard } from '@/components/ui/MessageLinks'
 import { referenceOfValue } from '@/lib/embedValue'
@@ -22,6 +22,10 @@ import { useToast } from '@/lib/toast'
  * drawn on an archived topic, which is read-only in every app (why:
  * https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md).
  *
+ * Its archived files, on their own or with a file above them, wait at the end
+ * behind one closed "Archived · n" line (TOPI-10, the approved story): since
+ * the Topics column lists topics flat, this is where they are found.
+ *
  * Above Activity: Peek's Activity is every mention from elsewhere, as long as
  * it grows, and the topic's own files under it would scroll out of sight.
  */
@@ -39,6 +43,8 @@ export function TopicFiles({ topic, folder, title, readOnly }: {
   const { showToast } = useToast()
   const [picking, setPicking] = useState(false)
   const files = typeof state === 'object' && 'files' in state ? state.files : []
+  const live = files.filter((file) => !file.archived)
+  const archived = files.filter((file) => file.archived)
 
   const change = async (file: string, listed: boolean) => {
     const result = await setListed(file, listed)
@@ -50,7 +56,7 @@ export function TopicFiles({ topic, folder, title, readOnly }: {
       {/* The heading's 8px inset brought to the cards' 16px edge, as Activity's is: the room on the heading itself. */}
       <SectionHeader
         title="Files"
-        count={files.length > 0 ? files.length : undefined}
+        count={live.length > 0 ? live.length : undefined}
         actions={readOnly ? undefined : [{ icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add file', onClick: () => setPicking(true) }]}
         showActions="always"
         className="mx-2 mt-4"
@@ -61,15 +67,36 @@ export function TopicFiles({ topic, folder, title, readOnly }: {
         ) : files.length === 0 ? (
           <EmptyState scope="section" message="None yet. A topic can be only a conversation." />
         ) : (
-          files.map(({ file, address }) => {
-            const uri = referenceOfValue(address)
-            if (!uri) return null
-            return (
-              <div key={file} data-topic-file={address} className={busy.has(file) ? 'opacity-50' : undefined}>
-                <MessageCard uri={uri} readOnly={readOnly} onRemove={readOnly || busy.has(file) ? undefined : () => void change(file, false)} />
-              </div>
-            )
-          })
+          <>
+            {live.map(({ file, address }) => {
+              const uri = referenceOfValue(address)
+              if (!uri) return null
+              return (
+                <div key={file} data-topic-file={address} className={busy.has(file) ? 'opacity-50' : undefined}>
+                  <MessageCard uri={uri} readOnly={readOnly} onRemove={readOnly || busy.has(file) ? undefined : () => void change(file, false)} />
+                </div>
+              )
+            })}
+            {archived.length > 0 && (
+              // The kit's folding row, closed: out of the way, one press from here (Miky, 6 Nov). Read-only inside, as an archived file is everywhere.
+              <CollapsibleSection
+                look="row"
+                title={`Archived · ${archived.length}`}
+                icon={<IconArchive size={16} stroke={1.5} />}
+                defaultOpen={false}
+                contentClassName="flex flex-col gap-3 pt-2"
+              >
+                {archived.map(({ file, address }) => {
+                  const uri = referenceOfValue(address)
+                  return uri ? (
+                    <div key={file} data-topic-file={address}>
+                      <MessageCard uri={uri} readOnly />
+                    </div>
+                  ) : null
+                })}
+              </CollapsibleSection>
+            )}
+          </>
         )}
       </div>
       {picking && (

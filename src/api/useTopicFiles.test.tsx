@@ -27,6 +27,23 @@ vi.mock('@/auth/heldSession', async () => ({
   heldToken: () => ({ accessToken: 't', pubkey: VIEWER }),
 }))
 
+/*
+  A listed file's fields as the resolve answers them: archived on its own, or
+  only when read `archivedWith` (an issue of an archived project), as interop
+  marks it.
+*/
+const resolved = vi.hoisted(() => ({ own: new Set<string>(), withParent: new Set<string>() }))
+vi.mock('./foreign', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('./foreign')),
+  useResolvedReferences: (refs: readonly string[], options?: { archivedWith?: boolean }) =>
+    Object.fromEntries(
+      refs.map((ref) => [
+        ref,
+        { ref, address: ref, slots: {}, ...(resolved.own.has(ref) || (options?.archivedWith && resolved.withParent.has(ref)) ? { archived: { by: VIEWER, at: 1 } } : {}) },
+      ]),
+    ),
+}))
+
 import { useTopicFiles } from './useTopicFiles'
 
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -45,6 +62,8 @@ const roots = [
 const filesOf = (state: unknown) => (typeof state === 'object' && state && 'files' in state ? (state as { files: Array<{ file: string }> }).files.map((f) => f.file) : state)
 
 beforeEach(() => {
+  resolved.own = new Set()
+  resolved.withParent = new Set()
   relay.entries = []
   relay.refuse = false
   relay.signViaEstivaId.mockReset().mockImplementation(async (unsigned: unknown) => unsigned)
@@ -103,5 +122,21 @@ describe('useTopicFiles', () => {
     const { result } = renderHook(() => useTopicFiles(TOPIC, FOLDER))
 
     await waitFor(() => expect(result.current.state).toEqual({ failed: true }))
+  })
+
+  it('marks a listed file archived on its own, or with the project above it, for the Overview’s Archived line (TOPI-10)', async () => {
+    const PROJECT = `30850:${VIEWER}:${PROJECT_D}`
+    const ISSUE = `30851:${VIEWER}:${ISSUE_D}`
+    // The issue's own fields are not archived: only its project is, which archives it with it.
+    resolved.withParent.add(ISSUE)
+    const { result } = renderHook(() => useTopicFiles(TOPIC, FOLDER))
+    await waitFor(() => expect(filesOf(result.current.state)).toEqual([]))
+    await act(async () => void (await result.current.setListed(PROJECT_D, true)))
+    await act(async () => void (await result.current.setListed(ISSUE_D, true)))
+    const archived = (state: unknown) => (state as { files: Array<{ address: string; archived?: boolean }> }).files.map((f) => [f.address, f.archived])
+    expect(archived(result.current.state)).toEqual([
+      [PROJECT, false],
+      [ISSUE, true],
+    ])
   })
 })

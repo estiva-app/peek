@@ -78,6 +78,36 @@ describe('TopicFiles', () => {
     expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull()
   })
 
+  it('puts the archived files at the end behind one closed “Archived · n” line, read-only, and keeps them out of the count (TOPI-10)', () => {
+    const ISSUE = `30851:${AUTHOR}:issue`
+    const DOC = `30842:${AUTHOR}:doc`
+    hook.state = {
+      files: [
+        { file: 'issue', address: ISSUE, archived: true },
+        { file: 'proj', address: PROJECT, archived: false },
+        { file: 'doc', address: DOC, archived: true },
+      ],
+    }
+    render(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)
+
+    const line = screen.getByRole('button', { name: /Archived · 2/ })
+    expect(line.getAttribute('aria-expanded')).toBe('false')
+    // Only the live file is a card in the open list, with its Remove.
+    const seen = () => screen.queryAllByTestId('card').filter((card) => !card.closest('[hidden]'))
+    expect(seen()).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1)
+    fireEvent.click(line)
+    expect(line.getAttribute('aria-expanded')).toBe('true')
+    expect(seen()).toHaveLength(3)
+    // The archived ones take no Remove: an archived file is read-only.
+    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1)
+  })
+
+  it('draws no Archived line when nothing listed is archived', () => {
+    render(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)
+    expect(screen.queryByRole('button', { name: /Archived/ })).toBeNull()
+  })
+
   it('says so when the topic lists nothing, and when the read failed — never an empty list for a refused read', () => {
     hook.state = { files: [] }
     const { rerender } = render(<TopicFiles topic={TOPIC} folder="f" title="Widgets" readOnly={false} />)

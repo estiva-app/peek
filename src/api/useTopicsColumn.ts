@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import { isArchived, type ForeignObject } from '@estiva-app/interop'
+import { byActivity, isArchived, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { resolveObjectAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
+import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
+import { getLiveClient } from '@/nostr/liveTopics'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
@@ -10,21 +11,15 @@ import { useRelayViewer, useResolvedReferences } from './foreign'
 import { topicFollowingOf } from './placeDots'
 import { hasRelay } from './relayUrl'
 
-/** One of your topics on the Topics screen, with the files its list holds. */
-export interface TopicWithFiles {
-  topic: ForeignObject
-  /** In the order they were added, as the topic's right column draws them (TOP-3). Only what is not archived. */
-  files: ForeignObject[]
-  /** The files it lists that are archived, on their own or with a file above them, in the same order: behind its "Archived" line. */
-  archivedFiles: ForeignObject[]
-}
-
 export type TopicsColumnState =
   | 'loading'
   | { failed: true }
   | {
-      /** The topics you are a member of, A–Z, each with its files. */
-      mine: TopicWithFiles[]
+      /**
+       * The topics you are a member of, one flat list, newest activity first
+       * (TOPI-10): no files under them.
+       */
+      mine: ForeignObject[]
       /** Every other topic you can read, A–Z, title only: to open and join. */
       others: ForeignObject[]
       /** Every archived topic you can read, on its own or with a file above it, A–Z: the closed "Archived" section. */
@@ -40,9 +35,22 @@ export type TopicsColumnState =
 interface Held {
   pubkey: string | undefined
   topics: readonly string[] | null
+  /** Each topic's root time, Unix seconds: its time in the order while nothing has happened in it. */
+  createdAt: ReadonlyMap<string, number>
   topicsAt: number
   failed: boolean
-  lists: ReadonlyMap<string, readonly string[]>
+  /** Each of your topics' listed files, with each file's team: what the order judges a change on it by. */
+  lists: ReadonlyMap<string, readonly ActivityFile[]>
+  /**
+   * Each of your topics' newest activity, Unix seconds (TOPI-10): the read for
+   * `key` (the topics and their lists it was read over), raised since by the
+   * live watch while `live`. `null` before the first answer.
+   */
+  activity: { key: string; at: ReadonlyMap<string, number>; readAt: number; live: boolean } | null
+  /** The `key` whose activity read failed: drawn in the order this browser last saw, and asked again on the next mount. */
+  activityFailed: string | null
+  /** The times this browser last drew the topics in, for the first draw: no skeleton while the order is read again. */
+  stored: ReadonlyMap<string, number>
   /** Lists to read again: an Add file or Remove on the topic, or an old answer. */
   stale: ReadonlySet<string>
   /** Files read again after an Archive or Unarchive in this tab, drawn over the column's first answer. */
@@ -61,9 +69,13 @@ const FRESH_MS = 60_000
 const EMPTY: Held = {
   pubkey: undefined,
   topics: null,
+  createdAt: new Map(),
   topicsAt: 0,
   failed: false,
   lists: new Map(),
+  activity: null,
+  activityFailed: null,
+  stored: new Map(),
   stale: new Set(),
   rearchived: new Map(),
   past: new Map(),
@@ -78,6 +90,37 @@ const listeners = new Set<() => void>()
 let topicsReading = false
 const listsReading = new Set<string>()
 const pastReading = new Set<string>()
+/** The activity `key` being read now, if any. */
+let activityReading: string | null = null
+/**
+ * The last activity answer, kept current in place by its live watch: one
+ * watch per tab, open while any mount wants the order (`watchUsers`), so the
+ * column and the file page beside it share it.
+ */
+let current: { key: string; activity: TopicActivity; since: number; relayUrl: string; watch: ActivityWatch | null } | null = null
+let watchUsers = 0
+
+/** Where this browser keeps the order it last drew, per person (TOPI-10): a topic → its time. */
+export const TOPIC_ORDER_KEY = 'peek.topics.activity'
+const storeKey = (pubkey: string) => `${TOPIC_ORDER_KEY}.${pubkey}`
+
+function readStored(pubkey: string): Map<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(storeKey(pubkey)) ?? '{}')
+    if (!parsed || typeof parsed !== 'object') return new Map()
+    return new Map(Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
+  } catch {
+    return new Map()
+  }
+}
+
+function writeStored(pubkey: string, at: ReadonlyMap<string, number>) {
+  try {
+    window.localStorage.setItem(storeKey(pubkey), JSON.stringify(Object.fromEntries(at)))
+  } catch {
+    // Storage refused (a private window, a full quota): the next first draw waits for the read.
+  }
+}
 
 function put(next: Held) {
   held = next
@@ -102,9 +145,9 @@ async function readTopics(viewer: Viewer) {
   topicsReading = true
   const pubkey = viewer.token.pubkey
   try {
-    const topics = await topicAddressesAsViewer(viewer.relayUrl, viewer.token)
+    const createdAt = await topicAddressesAsViewer(viewer.relayUrl, viewer.token)
     // Every list held is from before this answer: each is read again, still drawn meanwhile.
-    if (held.pubkey === pubkey) put({ ...held, topics, topicsAt: Date.now(), failed: false, stale: new Set(held.lists.keys()) })
+    if (held.pubkey === pubkey) put({ ...held, topics: [...createdAt.keys()], createdAt, topicsAt: Date.now(), failed: false, stale: new Set(held.lists.keys()) })
   } catch (error) {
     failedRead(error, 'topics')
     // A failed read after a good one keeps the topics drawn; with none yet, it says so.
@@ -160,6 +203,85 @@ async function readPast(viewer: Viewer, topics: readonly string[]) {
 }
 
 /**
+ * Your topics' newest activity (TOPI-10): one read over every topic and the
+ * files it lists, then the live watch keeps it current while a mount wants it.
+ */
+async function readActivity(viewer: Viewer, key: string, topics: readonly ForeignObject[]) {
+  if (activityReading === key) return
+  activityReading = key
+  const pubkey = viewer.token.pubkey
+  // Heard from when the read was asked, so nothing written while it was out is missed.
+  const since = Math.floor(Date.now() / 1000)
+  try {
+    const activity = await topicActivityAsViewer(
+      topics.map((topic) => ({
+        address: topic.address!,
+        createdAt: held.createdAt.get(topic.address!),
+        // Its team from its root: a change to it counts only there, and the watch names it.
+        folder: topic.folder ?? null,
+        files: held.lists.get(topic.address!) ?? [],
+      })),
+      viewer.relayUrl,
+      viewer.token,
+    )
+    if (held.pubkey !== pubkey || activityReading !== key) return
+    stopWatch()
+    current = { key, activity, since, relayUrl: viewer.relayUrl, watch: null }
+    startWatch()
+    put({ ...held, activity: { key, at: new Map(activity.at), readAt: Date.now(), live: !!current.watch }, activityFailed: null })
+    writeStored(pubkey, activity.at)
+  } catch (error) {
+    failedRead(error, 'topic activity')
+    if (held.pubkey === pubkey && activityReading === key) put({ ...held, activityFailed: key })
+  } finally {
+    if (activityReading === key) activityReading = null
+  }
+}
+
+/** Open the live watch over the last answer, when a mount wants it and none is open. */
+function startWatch() {
+  if (!current || current.watch || watchUsers === 0) return
+  const client = getLiveClient(current.relayUrl)
+  if (!client) return
+  const { key, activity } = current
+  const pubkey = held.pubkey
+  current.watch = watchTopicActivity(
+    client.relay,
+    activity,
+    () => {
+      if (current?.key !== key || held.pubkey !== pubkey || held.activity?.key !== key) return
+      put({ ...held, activity: { ...held.activity, at: new Map(activity.at) } })
+      if (pubkey) writeStored(pubkey, activity.at)
+    },
+    { since: current.since, onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason) },
+  )
+}
+
+function stopWatch() {
+  current?.watch?.stop()
+  if (current) current.watch = null
+}
+
+/**
+ * A mount that draws the order: the watch stays open while there is one. With
+ * none left it closes, and the order held is no longer current: the next
+ * mount reads it again, drawing it meanwhile.
+ */
+function wantActivity(): () => void {
+  watchUsers++
+  startWatch()
+  if (current?.watch && held.activity?.key === current.key && !held.activity.live) put({ ...held, activity: { ...held.activity, live: true } })
+  return () => {
+    watchUsers--
+    if (watchUsers > 0) return
+    stopWatch()
+    current = null
+    // Not drawn differently, so no one is told: the next mount reads it again.
+    if (held.activity) held = { ...held, activity: { ...held.activity, live: false } }
+  }
+}
+
+/**
  * A topic's list changed in this tab — Add file or Remove on its page (TOP-4):
  * the Topics column reads that topic's list again, in the same tab. Another
  * tab, or somebody else's change, shows on the next read.
@@ -172,9 +294,9 @@ export function topicListChanged(topic: string): void {
 /**
  * A file was archived or unarchived in this tab — from a row's menu, its page
  * or a toast's Undo (b1ace226): the column reads it again, archived-with
- * included, so a topic moves to or from "Archived", and a listed file leaves or
- * rejoins its topic, without a reload. Archiving a topic's parent moves the
- * topic on the next read.
+ * included, so a topic moves to or from "Archived", and a listed file to or
+ * from its topic Overview's "Archived" line ({@link useRearchived}), without a
+ * reload. Archiving a topic's parent moves the topic on the next read.
  */
 export async function fileArchiveChanged(address: string): Promise<void> {
   const viewer = lastViewer
@@ -187,6 +309,18 @@ export async function fileArchiveChanged(address: string): Promise<void> {
   put({ ...held, rearchived: new Map(held.rearchived).set(address, object) })
 }
 
+/**
+ * The files read again after an Archive or Unarchive in this tab
+ * ({@link fileArchiveChanged}), to draw over an older held answer: a topic's
+ * Overview moves a listed file to or from its Archived line with them.
+ */
+export function useRearchived(): ReadonlyMap<string, ForeignObject | null> {
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const now = useSyncExternalStore(subscribe, snapshot, snapshot)
+  return now.pubkey === pubkey ? now.rearchived : EMPTY.rearchived
+}
+
 /** For tests: forget what this tab has read. */
 export function resetTopicsColumn(): void {
   topicsReading = false
@@ -194,6 +328,10 @@ export function resetTopicsColumn(): void {
   pastReading.clear()
   lastViewer = null
   rearchiveAsked.clear()
+  activityReading = null
+  stopWatch()
+  current = null
+  watchUsers = 0
   put(EMPTY)
 }
 
@@ -202,23 +340,34 @@ const ARCHIVED_WITH = { archivedWith: true }
 const byTitle = (a: ForeignObject, b: ForeignObject) =>
   (a.slots.title?.value ?? '').localeCompare(b.slots.title?.value ?? '', undefined, { sensitivity: 'base' })
 
+/** What the activity was read over: your topics and the files each lists. A topic joined or a file added reads it again. */
+const activityKeyOf = (topics: readonly ForeignObject[], lists: ReadonlyMap<string, readonly ActivityFile[]>) =>
+  topics
+    .map((topic) => `${topic.address}=${(lists.get(topic.address!) ?? []).map((file) => file.address).join(',')}`)
+    .sort()
+    .join(';')
+
 /**
- * **Peek's Topics screen** (TOP-4; why:
- * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-topic-keeps-its-own-list-of-files.md):
- * the topics you are a member of, each with the files its list holds, one
- * level deep and from any Folder; then every other topic you can read, to
- * open and join. Only what is active (Miky, 2 Nov, b1ace226): a topic or a
- * listed file archived on its own or with a file above it (why:
+ * **Peek's Topics screen** (TOP-4, TOPI-10): the topics you are a member of,
+ * one flat list, newest activity first, with no files under them (Miky, 3 and
+ * 6 Nov); then every other topic you can read, to open and join. Only what is
+ * active (Miky, 2 Nov, b1ace226): a topic archived on its own or with a file
+ * above it (why:
  * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md)
- * is left out of the list: the archived topics are the closed "Archived"
- * section at the end, and a topic's archived files are behind one "Archived"
- * line under it, which opens them in a dialog (Miky, 2 Nov: "it should not
- * distract you, you should have options to access it").
+ * is in the closed "Archived" section at the end; a topic's archived files are
+ * at the end of its Overview.
+ *
+ * The order is interop's shared rule (`readTopicActivity`; why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md):
+ * where anything last happened, deep — a message, a file added, a change or a
+ * comment on a listed file or a file under one — never a rename, a join or
+ * arranging. Kept current live (`watchTopicActivity`, one subscription per
+ * tab), and drawn at once in the order this browser last saw while it is read
+ * again.
  *
  * Reads: every topic you can read (one request), then all your topics' lists
- * at once (`topicLists`, three requests), then the titles of both in one
- * resolve each. A listed file that does not resolve — unreadable, deleted —
- * is not drawn, as the topic's right column does not draw it.
+ * at once (`topicLists`, three requests), the topics' titles in one resolve,
+ * then the order (about seven requests, whatever the number of topics).
  *
  * Which topics are yours is judged as the topic's page judges it, over all
  * history (Miky, 2 Nov, 7525c414): the membership read is bounded by the
@@ -236,7 +385,7 @@ export function useTopicsColumn(): {
   /** Nobody is signed in: nothing is read, and the column says so. */
   signedOut: boolean
 } {
-  const { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived } = useReadableTopicsHeld()
+  const { viewer, pubkey, mineHeld, topicsResolved, live, archived } = useReadableTopicsHeld()
   const membership = useMembership()
   const { me, changesOf, floor, termsOf } = membership
   const known = membership.state !== 'unknown'
@@ -290,38 +439,53 @@ export function useTopicsColumn(): {
     if (want.length) void readLists(v, want)
   }, [viewer, mineKey, lists, stale])
 
-  const listed = useMemo(() => [...new Set(mine.flatMap((topic) => lists.get(topic.address!) ?? []))], [mine, lists])
-  // An issue of an archived project is archived with it: left out under its topic, as an archived topic is.
-  const fileObjects = useResolvedReferences(listed, ARCHIVED_WITH)
+  /*
+    The order (TOPI-10): read once every topic of yours has its list, since a
+    change to a listed file counts; again when a topic is joined or a file
+    added, or on a mount after the watch closed. Kept current live meanwhile.
+  */
+  const { activity, activityFailed, stored, createdAt } = mineHeld
+  const activityKey = mine.length > 0 && mine.every((topic) => lists.has(topic.address!)) ? activityKeyOf(mine, lists) : ''
+  useEffect(() => wantActivity(), [])
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v || !activityKey || activityFailed === activityKey) return
+    const current = activity?.key === activityKey && (activity.live || Date.now() - activity.readAt < FRESH_MS)
+    // The same key is the same read: one already out, or answered and current, is not asked again.
+    if (!current) void readActivity(v, activityKey, mine)
+  }, [viewer, activityKey, activity, activityFailed, mine])
+
+  const ordered = useMemo(() => {
+    // The read's answer; before it, what this browser drew last; for a topic neither knows, its own time.
+    const at = new Map(mine.map((topic) => [topic.address!, activity?.at.get(topic.address!) ?? stored.get(topic.address!) ?? createdAt.get(topic.address!) ?? 0]))
+    const order = byActivity(at)
+    return [...mine].sort((a, b) => order(a.address!, b.address!))
+  }, [mine, activity, stored, createdAt])
+  // Nothing to draw the order by until the read answers: the first time on this browser, a skeleton rather than a jump.
+  const orderUnknown = mine.length > 0 && !activity && activityFailed !== activityKey && mine.every((topic) => !stored.has(topic.address!))
 
   const state = useMemo<TopicsColumnState>(() => {
     if (mineHeld.failed && mineHeld.topics === null) return { failed: true }
     if (mineHeld.topics === null || !known || !topicsResolved || pastUnread) return 'loading'
     /*
       Loading only until the first answer: after it, a topic just joined is
-      drawn at once and its files arrive under it, and a list read again keeps
-      its rows, rather than the whole column going back to a skeleton.
+      drawn at once, and a list read again keeps the rows, rather than the
+      whole column going back to a skeleton.
     */
     if (mine.length && mine.every((topic) => !lists.has(topic.address!))) return mineHeld.failed ? { failed: true } : 'loading'
-    if (listed.length && listed.every((address) => !(address in fileObjects))) return 'loading'
-    return {
-      mine: mine.map((topic) => {
-        const listedFiles = (lists.get(topic.address!) ?? []).flatMap((address) => {
-          const file = objectOf(address, fileObjects)
-          return file ? [file] : []
-        })
-        return { topic, files: listedFiles.filter((file) => !isArchived(file)), archivedFiles: listedFiles.filter((file) => isArchived(file)) }
-      }),
-      others: live.filter((topic) => !isYours(topic)),
-      archived,
-    }
-  }, [mineHeld.failed, mineHeld.topics, known, topicsResolved, pastUnread, mine, lists, listed, fileObjects, objectOf, live, archived, isYours])
+    if (orderUnknown) return 'loading'
+    return { mine: ordered, others: live.filter((topic) => !isYours(topic)), archived }
+  }, [mineHeld.failed, mineHeld.topics, known, topicsResolved, pastUnread, mine, lists, orderUnknown, ordered, live, archived, isYours])
 
   // Unknown while loading; a failed read cannot say, and Folders draws every file.
   const yours = useMemo(
     () =>
-      typeof state !== 'object' ? null : 'failed' in state ? new Set<string>() : new Set(state.mine.flatMap(({ topic, files, archivedFiles }) => [topic.address, ...[...files, ...archivedFiles].map((file) => file.address)])),
-    [state],
+      typeof state !== 'object'
+        ? null
+        : 'failed' in state
+          ? new Set<string>()
+          : new Set(state.mine.flatMap((topic) => [topic.address, ...(lists.get(topic.address!) ?? []).map((file) => file.address)])),
+    [state, lists],
   )
   const column = useCallback(
     (address: string): 'topics' | 'folders' | undefined => (yours === null ? undefined : yours.has(address) ? 'topics' : 'folders'),
@@ -362,8 +526,14 @@ function useReadableTopicsHeld() {
     const v = viewer()
     if (!hasRelay || !v) return
     lastViewer = v
-    if (held.pubkey !== v.token.pubkey) put({ ...EMPTY, pubkey: v.token.pubkey })
-    if (held.pastFailed.size) put({ ...held, pastFailed: new Set() })
+    if (held.pubkey !== v.token.pubkey) {
+      // Somebody else's order is not theirs to hear: the watch closes, and the next read is the new viewer's.
+      stopWatch()
+      current = null
+      activityReading = null
+      put({ ...EMPTY, pubkey: v.token.pubkey, stored: readStored(v.token.pubkey) })
+    }
+    if (held.pastFailed.size || held.activityFailed) put({ ...held, pastFailed: new Set(), activityFailed: null })
     if (Date.now() - held.topicsAt >= FRESH_MS) void readTopics(v)
   }, [viewer, pubkey])
 
