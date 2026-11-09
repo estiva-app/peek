@@ -71,6 +71,7 @@ function put(next: Held) {
 }
 
 let lastIds: readonly string[] = []
+let lastChats: readonly string[] = []
 /** Which read was started last: only it may put, so a slower, older read never lands over a newer one. */
 let started = 0
 
@@ -79,23 +80,25 @@ export function resetTeamsForTests(): void {
   held = { key: '', at: 0, failed: false }
   reading = null
   lastIds = []
+  lastChats = []
 }
 
 /** Read the teams again now: after a join, leave, add, follow or mark, so the change shows where it was made. */
 export function reloadTeamsOnScreen(): Promise<void> {
   if (!held.key) return Promise.resolve()
   held = { ...held, at: 0 }
-  return load(held.key, lastIds, true)
+  return load(held.key, lastIds, lastChats, true)
 }
 
-function load(key: string, ids: readonly string[], again = false): Promise<void> {
+function load(key: string, ids: readonly string[], chats: readonly string[], again = false): Promise<void> {
   const token = heldToken()
   if (!RELAY_URL || !token) return Promise.resolve()
   lastIds = ids
+  lastChats = chats
   const current = reading
   if (current && held.key === key && !again) return current
   const mine = ++started
-  const run = readTeamsAsViewer(ids, RELAY_URL, token)
+  const run = readTeamsAsViewer(ids, chats, RELAY_URL, token)
     .then((read) => {
       if (mine === started) put({ key, read, at: Date.now(), failed: false })
     })
@@ -116,6 +119,9 @@ export function teamFolders(folders: readonly FolderSummary[]): FolderSummary[] 
   return folders.filter((folder) => ids.has(folder.id))
 }
 
+/** A team's chat's address: its Folder's channel. */
+const chatAddressOf = (folder: FolderSummary) => folder.channel ?? `39000::${folder.id}`
+
 /** A team from its Folder and the facts read for it. Pure, so the rules are tested without a relay. */
 export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): Team {
   const roster = read.rosters[folder.id] ?? []
@@ -124,7 +130,7 @@ export function teamOf(folder: FolderSummary, read: TeamsRead, viewer: string): 
   const members = teamMembersOf(folder.id, roster)
   const isMember = members.some((member) => member.pubkey === viewer)
   const archived = !!folder.archived
-  const chatAddress = folder.channel ?? `39000::${folder.id}`
+  const chatAddress = chatAddressOf(folder)
   const chat = followingOf(
     { address: chatAddress, team: folder.id },
     viewer,
@@ -160,19 +166,20 @@ export function useTeams({ read = true }: {
   const viewer = heldToken()?.pubkey
   const folderList = useMemo(() => (folders ? teamFolders(folders) : null), [folders])
   const ids = useMemo(() => (folderList ?? []).map((folder) => folder.id).sort(), [folderList])
+  const chats = useMemo(() => (folderList ?? []).map(chatAddressOf).sort(), [folderList])
   const key = viewer && folderList ? `${viewer}|${ids.join(',')}` : ''
   const state = useSyncExternalStore(subscribe, snapshot, snapshot)
 
   useEffect(() => {
     if (!key || !read) return
-    if (held.key !== key || Date.now() - held.at > FRESH_MS) void load(key, ids)
-  }, [key, ids, read])
+    if (held.key !== key || Date.now() - held.at > FRESH_MS) void load(key, ids, chats)
+  }, [key, ids, chats, read])
 
   const reload = useCallback(async () => {
     if (!key) return
     held = { ...held, at: 0 }
-    await load(key, ids, true)
-  }, [key, ids])
+    await load(key, ids, chats, true)
+  }, [key, ids, chats])
 
   const teams = useMemo(() => {
     if (!folderList || !viewer || state.key !== key || !state.read) return null

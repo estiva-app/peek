@@ -131,6 +131,25 @@ describe('the switch on a space reached by its team’s default, at the wire', (
     expect(await pick(topic, 'not-following')).toEqual({ ok: false, reason: 'Your followed teams could not be read, so nothing was changed. Try again.' })
     expect(relay.sentOf(30078, 1851)).toHaveLength(0)
   })
+
+  // A list from a newer version decrypts but does not parse: writing a v1 list over it would drop every team it follows.
+  it('a teams list that decrypts but is not one this version reads is never written over, and nothing is sent', async () => {
+    const future = `fake-nip44:${Buffer.from(JSON.stringify({ v: 2, teams: { [TEAM]: 1 } })).toString('base64')}`
+    relay.seed(signed({ kind: 30078, created_at: T0, tags: [['d', TEAMS_D_TAG]], content: future }))
+    expect(await pick(topic, 'not-following')).toEqual({ ok: false, reason: 'Your followed teams could not be read, so nothing was changed. Try again.' })
+    expect(relay.sentOf(30078, 1851)).toHaveLength(0)
+  })
+
+  it('a teams list that turns unreadable between the read and the write is not written over: it says it was only partly changed', async () => {
+    relay.seed(teamsList([]))
+    const read = await readPlaceAsViewer(topic, RELAY, held)
+    // Another device saved a list this tab cannot read, after the switch was drawn.
+    relay.seed(signed({ kind: 30078, created_at: T0 + 10, tags: [['d', TEAMS_D_TAG]], content: 'not-a-fake-ciphertext' }))
+    relay.sent.length = 0
+    const result = await actions().choosePlaceLevel({ place: topic, folder: TEAM, choice: 'not-following', read, archived: false, muted: false })
+    expect(result).toEqual({ ok: false, reason: 'Your followed teams could not be read, so it was only partly changed. Try again.' })
+    expect(relay.sentOf(30078)).toHaveLength(0)
+  })
 })
 
 describe('the switch on a team’s chat, at the wire', () => {

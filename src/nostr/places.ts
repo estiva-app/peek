@@ -77,8 +77,11 @@ async function readTeamsListFrom(events: readonly SignedEvent[], decrypt: (ciphe
   const plaintext = await decrypt(newest.content)
   if (plaintext === undefined) return { state: 'unreachable' }
   const list = parseTeamsBlob(plaintext)
-  return list ? { state: 'present', list } : { state: 'absent' }
+  return list ? { state: 'present', list } : { state: 'absent', unparsed: true }
 }
+
+/** A teams list the switch must not write over: there and unreadable, or read but not one this version reads. */
+const unwritable = (read: TeamsListRead) => read.state === 'unreachable' || (read.state === 'absent' && read.unparsed === true)
 
 /** {@link readPlace} as the viewer. */
 export function readPlaceAsViewer(place: Place, relayUrl: string, token: StoredToken): Promise<PlaceRead> {
@@ -108,7 +111,7 @@ export async function choosePlaceLevelAsViewer(
   const teams = read.teamsList.state === 'present' ? read.teamsList.list : undefined
   const following = followingOf(place, token.pubkey, { ...read.facts, archived: args.archived })
   const writes = switchWrites(token.pubkey, Date.now(), { place, folder, choice, following, ...(teams ? { teams } : {}) })
-  if (writes.off && read.teamsList.state === 'unreachable') {
+  if (writes.off && unwritable(read.teamsList)) {
     return { ok: false, reason: 'Your followed teams could not be read, so nothing was changed. Try again.' }
   }
   for (const change of writes.changes) {
@@ -116,7 +119,7 @@ export async function choosePlaceLevelAsViewer(
   }
   if (writes.off) {
     const fresh = await readTeamsListAsViewer(relayUrl, token)
-    if (fresh.state === 'unreachable') return { ok: false, reason: 'Your followed teams could not be read, so it was only partly changed. Try again.' }
+    if (unwritable(fresh)) return { ok: false, reason: 'Your followed teams could not be read, so it was only partly changed. Try again.' }
     const now = Date.now()
     const next = withPlaceOff(fresh.state === 'present' ? fresh.list : undefined, writes.off)
     const ciphertext = await encryptBlob(serializeTeamsBlob(next, now), token.accessToken)

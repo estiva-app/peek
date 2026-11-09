@@ -39,10 +39,10 @@ const directory = {
 }
 
 /** The header's switch, pill and dialog, and a stand-in for the ⋮ menu's "Add someone…", shown only when it is offered. */
-function Harness({ archived = false, fileArchived = false }: { archived?: boolean; fileArchived?: boolean }) {
+function Harness({ archived = false, fileArchived = false, place }: { archived?: boolean; fileArchived?: boolean; place?: string }) {
   const team = '33333333-3333-4333-8333-333333333333'
   const controls = usePlaceFollowControls({
-    target: { place: { address: `30840:${MIKY}:brief`, team }, folder: team, archived, fileArchived },
+    target: { place: { address: place ?? `30840:${MIKY}:brief`, team }, folder: team, archived, fileArchived },
     title: 'Brief',
     me: ME,
     directory,
@@ -84,6 +84,22 @@ describe('Who follows', () => {
     const offered = screen.getAllByRole('option').map((option) => option.textContent ?? '')
     expect(offered.some((text) => text.endsWith('QA Two'))).toBe(true)
     expect(offered.some((text) => text.endsWith('QA One'))).toBe(false)
+  })
+
+  // Miky, 6 Nov: you come into a team's chat by joining the team.
+  it('on a team’s chat it lists the people and offers no Add, in the dialog or the menu', async () => {
+    render(<Harness place={`39000:${MIKY}:33333333-3333-4333-8333-333333333333`} />)
+    expect(screen.queryByRole('button', { name: 'Add someone…' })).toBeNull()
+    await act(async () => screen.getByRole('button', { name: /2/ }).click())
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Miky')).toBeTruthy()
+    expect(within(dialog).queryByText(/Add someone/)).toBeNull()
+  })
+
+  it('on a topic the dialog offers Add someone', async () => {
+    render(<Harness />)
+    await act(async () => screen.getByRole('button', { name: /2/ }).click())
+    expect(within(await screen.findByRole('dialog')).getByText(/Add someone/)).toBeTruthy()
   })
 })
 

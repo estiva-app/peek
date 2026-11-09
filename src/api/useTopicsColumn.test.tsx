@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { planListInTopic, planRemoveFromTopic } from '@estiva-app/interop'
-import { buildMembershipChange } from '@estiva-app/conversation'
+import { buildLevelChange, buildMembershipChange } from '@estiva-app/conversation'
 
 const VIEWER = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -36,9 +36,10 @@ const seen = vi.hoisted(() => ({
   objects: {} as Record<string, unknown>,
   /** Archived with a file above it: marked only when read `archivedWith`, as interop marks it. */
   withParent: {} as Record<string, unknown>,
-  members: new Set<string>(),
-  /** Files the membership read has a word on without counting you: a leave within its horizon. */
-  heard: new Set<string>(),
+  /** The changes naming the viewer inside the membership read's 90-day horizon. */
+  horizon: [] as Event[],
+  /** Files the viewer muted (`estiva:muted:v1`). */
+  muted: new Set<string>(),
 }))
 const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
   const object = seen.objects[ref] as Record<string, unknown> | undefined
@@ -54,11 +55,14 @@ vi.mock('@/nostr/foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
   resolveObjectAsViewer: async (ref: string, _relay: string, _token: unknown, options?: { archivedWith?: boolean }) => resolveSeen(ref, options?.archivedWith),
 }))
+// The membership read as the shared fold takes it: who you are, its horizon, the changes naming you inside it, your mutes.
 vi.mock('@/api/internal/membership', () => ({
   useMembership: () => ({
     state: 'known',
-    isMember: (key: string) => seen.members.has(key),
-    judges: (key: string) => seen.members.has(key) || seen.heard.has(key),
+    me: VIEWER,
+    floor: Math.floor(Date.now() / 1000) - 90 * 24 * 60 * 60,
+    changesOf: (key: string) => seen.horizon.filter((e) => e.tags.some((t) => t[0] === 'a' && t[1] === key)),
+    termsOf: (key: string) => ({ member: false, muted: seen.muted.has(key) }),
   }),
 }))
 
@@ -88,11 +92,31 @@ function addOldTopic() {
   seen.objects[OLD] = object(OLD, 'Pitch')
 }
 
+const signedAs = (signer: string, id: string, at: number, unsigned: unknown): Event => ({
+  id,
+  pubkey: signer,
+  content: '',
+  sig: '',
+  ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>),
+  created_at: at,
+})
+
 /** The viewer's Join of `OLD` 100 days ago, before the membership read's 90-day horizon — or an Add of them by `signer`. */
 function oldJoin(signer = VIEWER): Event {
   const at = Math.floor(Date.now() / 1000) - 100 * DAY
-  const unsigned = buildMembershipChange(signer, at * 1000, { file: OLD, folder: FOLDER, person: VIEWER, member: true })
-  return { id: 'join-old', pubkey: signer, content: '', sig: '', ...(unsigned as Omit<Event, 'id' | 'pubkey' | 'content' | 'sig'>), created_at: at }
+  return signedAs(signer, 'join-old', at, buildMembershipChange(signer, at * 1000, { file: OLD, folder: FOLDER, person: VIEWER, member: true }))
+}
+
+/** A join (or leave) of the viewer's on `topic` a day ago, inside the horizon. */
+function recentMembership(topic: string, member: boolean, daysAgo = 1): Event {
+  const at = Math.floor(Date.now() / 1000) - daysAgo * DAY
+  return signedAs(VIEWER, `${member ? 'join' : 'leave'}-${topic}-${at}`, at, buildMembershipChange(VIEWER, at * 1000, { file: topic, folder: FOLDER, person: VIEWER, member }))
+}
+
+/** A level the viewer chose on `topic` with the switch, `daysAgo` days ago. */
+function level(topic: string, value: 'all' | 'important', daysAgo = 1): Event {
+  const at = Math.floor(Date.now() / 1000) - daysAgo * DAY
+  return signedAs(VIEWER, `level-${topic}-${at}`, at, buildLevelChange(VIEWER, at * 1000, { place: topic, folder: FOLDER, level: value }))
 }
 
 const object = (address: string, title: string, extra: Record<string, unknown> = {}) => ({
@@ -146,8 +170,9 @@ beforeEach(() => {
     [TESTING]: object(TESTING, 'Testing Widgets'),
   }
   seen.withParent = {}
-  seen.members = new Set([WIDGETS, ALPHA, ARCHIVED])
-  seen.heard = new Set()
+  // WIDGETS, ALPHA and ARCHIVED are the viewer's own: theirs from creation.
+  seen.horizon = []
+  seen.muted = new Set()
   relay.changes = []
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
     const tagged = (e: Event, name: string, values: unknown) => !values || e.tags.some((t) => t[0] === name && (values as string[]).includes(t[1]!))
@@ -287,7 +312,7 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     list(STRANGER, TESTING)
     const { result, rerender } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ others: ['Somebody else’s'] }))
-    seen.members = new Set([...seen.members, STRANGER])
+    seen.horizon = [recentMembership(STRANGER, true)]
     rerender()
     await waitFor(() =>
       expect(titlesOf(result.current.state)).toEqual({
@@ -324,7 +349,7 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     const { result, rerender } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Pitch', []], ['Widgets', []]] }))
     // The Leave reaches the membership read: it now has a word on the topic, and it is not yours.
-    seen.heard = new Set([OLD])
+    seen.horizon = [recentMembership(OLD, false)]
     rerender()
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ others: ['Pitch', 'Somebody else’s'] }))
   })
@@ -344,10 +369,54 @@ describe('the Topics screen’s topics (TOP-4)', () => {
   it('a topic the membership read has a word on — you left it — stays under Other topics, whatever an older join says (7525c414)', async () => {
     addOldTopic()
     relay.changes = [oldJoin()]
-    seen.heard = new Set([OLD])
+    seen.horizon = [recentMembership(OLD, false)]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
     expect(titlesOf(result.current.state)).toMatchObject({ others: ['Pitch', 'Somebody else’s'] })
+  })
+
+  /*
+    TEA-6, decided by Miky 6 Nov: Your topics follows the shared rule Ship's
+    Topics reads — any level or Add puts a topic there, Not following takes it
+    out, writing in it does not, and a muted topic is not yours.
+  */
+  it('a topic you only chose a level on with the switch is among yours', async () => {
+    seen.horizon = [level(STRANGER, 'all')]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Somebody else’s', []], ['Widgets', []]], others: [] })
+  })
+
+  it('a topic you chose a level on, then set to Not following, is under Other topics', async () => {
+    seen.horizon = [level(STRANGER, 'important', 2), recentMembership(STRANGER, false, 1)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], others: ['Somebody else’s'] })
+  })
+
+  it('a topic you chose a level on 100 days ago, with nothing naming you since, is among yours', async () => {
+    relay.changes = [{ ...level(STRANGER, 'important', 100), id: 'level-old' }]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Somebody else’s', []], ['Widgets', []]] })
+  })
+
+  it('a topic you only wrote in is not yours, and its past read asks for no comment', async () => {
+    const at = Math.floor(Date.now() / 1000) - 100 * DAY
+    relay.changes = [{ ...event(1111, [['A', STRANGER], ['a', STRANGER], ['h', FOLDER]], at), id: 'wrote' }]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ others: ['Somebody else’s'] })
+    const pastReads = relay.queryRelay.mock.calls.flatMap(([, filters]) => (filters as Array<Record<string, unknown>>).filter(namesAPerson))
+    expect(pastReads.flatMap((f) => f.kinds as number[])).not.toContain(1111)
+  })
+
+  it('a topic you joined and then muted is under Other topics', async () => {
+    seen.horizon = [recentMembership(STRANGER, true)]
+    seen.muted = new Set([STRANGER])
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ others: ['Somebody else’s'] })
   })
 
   it('a file opened by link belongs under Topics when a topic of yours is it or lists it, else under Folders', async () => {

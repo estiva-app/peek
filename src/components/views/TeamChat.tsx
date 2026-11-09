@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import { IconDotsVertical, IconUsers } from '@tabler/icons-react'
-import { ConversationLayout, EmptyState, PageHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconUsers } from '@tabler/icons-react'
+import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
 import { useMembership, useWorkspaceDirectory, type Team } from '@/api'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { chatLabel } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { draftKeys } from '@/lib/drafts'
@@ -33,7 +32,9 @@ export function TeamChat({ team }: { team: Team }) {
   useMarkChannelRead(team.id, chat.seenAt, 0)
   /*
     The chat is followed like a space (TEA-6): its switch before the title, in
-    people icons since the place is the team's own, and Who follows with Add.
+    people icons since the place is the team's own, and Who follows listing
+    people only: you come into a team's chat by joining the team, so there is
+    no Add and no ⋮ in its header (Miky, 6 Nov).
   */
   const people = useWorkspaceDirectory()
   const { me } = useMembership()
@@ -53,20 +54,6 @@ export function TeamChat({ team }: { team: Team }) {
             title={name}
             leading={follow.switcher ?? <IconUsers size={16} stroke={1.5} aria-hidden />}
             members={follow.pill}
-            actions={
-              follow.openAdd ? (
-                <Toolbar aria-label="Chat actions" surface={false}>
-                  <TopicMoreMenu
-                    trigger={
-                      <ToolbarButton tooltip="More actions" aria-label="More actions">
-                        <IconDotsVertical size={16} stroke={1.5} />
-                      </ToolbarButton>
-                    }
-                    onAddSomeone={follow.openAdd}
-                  />
-                </Toolbar>
-              ) : undefined
-            }
           />
         }
       />

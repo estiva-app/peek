@@ -136,10 +136,4 @@ describe('a team chat’s dot', () => {
     expect(elsewhere.chat.level).toBe('important')
     expect(chatHasUnread(elsewhere, [root, reply], read_, KATERINA)).toBe(false)
   })
-
-  it('someone added to the chat who is not in the team is in it, and a new conversation lights', () => {
-    const added = withChanges([MIKY], change(MIKY, 1_700_000_900, CHAT, `member:${KATERINA}`, 'true'))
-    expect(added.chat.in).toBe(true)
-    expect(chatHasUnread(added, [root], {}, KATERINA)).toBe(true)
-  })
 })

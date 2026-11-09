@@ -14,7 +14,7 @@ export interface PlaceFollowControls {
   pill: ReactNode
   /** The Who follows dialog, while open. */
   dialog: ReactNode
-  /** Opens Who follows on its add layer: the menu's "Add someone…". Absent where nobody can be added (an archived team). */
+  /** Opens Who follows on its add layer: the menu's "Add someone…". Absent where nobody can be added: an archived team or topic, and a team's chat, which you come into by joining the team (Miky, 6 Nov). */
   openAdd?: () => void
 }
 
@@ -23,8 +23,10 @@ export interface PlaceFollowControls {
  * team's chat (TEA-6, from the approved prototype's FollowSwitch and
  * WhoFollowsDialog). Peek's part is which people, their names and faces, and
  * the writes. Add opens the standard add layer with its Invite button (Miky, 6
- * November); whoever is added joins at Important and can leave. In an archived
- * team the switch cannot change and nobody is added; the list still opens.
+ * November); whoever is added joins at Important and can leave. A team's chat
+ * has no Add: you come into it by joining the team, and its Who follows only
+ * lists people (Miky, 6 November). In an archived team the switch cannot
+ * change and nobody is added; the list still opens.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-place-lists-who-chose-a-level-and-its-teams-members.md
  */
@@ -107,11 +109,11 @@ export function usePlaceFollowControls({
       all={listed.filter((l) => l.level === 'all').map((l) => row(l.pubkey))}
       important={listed.filter((l) => l.level === 'important').map((l) => row(l.pubkey))}
       candidates={candidates}
-      onAdd={frozen ? undefined : add}
+      onAdd={frozen || chat ? undefined : add}
       initialView={open}
       onClose={() => setOpen(null)}
     />
   ) : undefined
 
-  return { switcher, pill, dialog, openAdd: target && follow.listed && !frozen ? () => setOpen('add') : undefined }
+  return { switcher, pill, dialog, openAdd: target && follow.listed && !frozen && !chat ? () => setOpen('add') : undefined }
 }

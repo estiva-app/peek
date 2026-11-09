@@ -35,21 +35,29 @@ const COMMANDS_LIMIT = 1_000
 
 /**
  * One read for every team listed: rosters, the commands behind them, each
- * team's list, the viewer's teams list, and the changes naming the viewer
- * filed in those teams — their level on each team's chat among them (TEA-6).
+ * team's list, the viewer's teams list, and the changes naming the viewer on
+ * each team's chat — their level on it (TEA-6). The changes are asked for by
+ * the chats' addresses, not by the teams: every level and Add naming the
+ * viewer on a team's topics is filed in the team too, and those, sharing one
+ * limit, could crowd a chat's own out.
  */
-export function teamsFilters(teams: readonly string[], viewer: string): Record<string, unknown>[] {
+export function teamsFilters(teams: readonly string[], chats: readonly string[], viewer: string): Record<string, unknown>[] {
   return [
     { kinds: [KIND_ROSTER], '#d': [...teams] },
     { kinds: ROSTER_COMMANDS, '#h': [...teams], limit: COMMANDS_LIMIT },
     { kinds: [KIND_FOLDER_STATE], '#d': [...teams] },
     teamsFilter(viewer),
-    { kinds: [KIND_CHANGE], '#h': [...teams], '#p': [viewer], limit: COMMANDS_LIMIT },
+    ...(chats.length ? [{ kinds: [KIND_CHANGE], '#a': [...chats], '#p': [viewer], limit: COMMANDS_LIMIT }] : []),
   ]
 }
 
-/** The viewer's teams list: kept, none kept yet, or there and unreadable (never overwritten from a guess). */
-export type TeamsListRead = { state: 'present'; list: TeamsList } | { state: 'absent' } | { state: 'unreachable' }
+/**
+ * The viewer's teams list: kept, none kept yet, or there and unreadable (never
+ * overwritten from a guess). `unparsed`: a list is there and decrypts, but is
+ * not one this version reads — drawn as following nothing, and never written
+ * over by a place's switch, which would replace every team it follows.
+ */
+export type TeamsListRead = { state: 'present'; list: TeamsList } | { state: 'absent'; unparsed?: true } | { state: 'unreachable' }
 
 export interface TeamsRead {
   /** Per team: its `39002` and the stored commands naming it — `teamMembersOf`'s and `followingOf`'s roster. */
@@ -66,6 +74,8 @@ const tagOf = (event: SignedEvent, name: string) => event.tags.find((t) => t[0] 
 /** The events by team, and the viewer's list decrypted. Throws when the read fails, so a failure never draws as "in no team". */
 export async function readTeams(
   teams: readonly string[],
+  /** The teams' chats' addresses (`39000:…:<team>`), whose changes naming the viewer are read. */
+  chats: readonly string[],
   viewer: string,
   query: QueryFn,
   decrypt: (ciphertext: string) => Promise<string | undefined>,
@@ -79,7 +89,7 @@ export async function readTeams(
     changes[team] = []
   }
   if (teams.length === 0) return { rosters, listings, changes, teamsList: await readTeamsList(viewer, query, decrypt) }
-  const events = await query(teamsFilters(teams, viewer))
+  const events = await query(teamsFilters(teams, chats, viewer))
   let own: SignedEvent | undefined
   for (const event of events) {
     if (event.kind === KIND.APP_DATA) {
@@ -107,7 +117,7 @@ async function listOf(event: SignedEvent | undefined, decrypt: (ciphertext: stri
   if (plaintext === undefined) return { state: 'unreachable' }
   const list = parseTeamsBlob(plaintext)
   // A list this version cannot read is no list: drawn as following nothing, and replaced only by the person's own Follow.
-  return list ? { state: 'present', list } : { state: 'absent' }
+  return list ? { state: 'present', list } : { state: 'absent', unparsed: true }
 }
 
 /** One entry of a team's list: a file named by its address (`a`), or by its id alone (`o`, as the relay also takes), and whether it is one of the team's spaces. */
@@ -208,6 +218,6 @@ export function readTeamsListAsViewer(relayUrl: string, token: StoredToken): Pro
 }
 
 /** {@link readTeams} as the viewer. */
-export function readTeamsAsViewer(teams: readonly string[], relayUrl: string, token: StoredToken): Promise<TeamsRead> {
-  return readTeams(teams, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
+export function readTeamsAsViewer(teams: readonly string[], chats: readonly string[], relayUrl: string, token: StoredToken): Promise<TeamsRead> {
+  return readTeams(teams, chats, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
 }
