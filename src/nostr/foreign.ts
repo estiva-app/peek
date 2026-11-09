@@ -115,9 +115,19 @@ import {
   openFile,
   prevOf,
   writeChange,
+  isSwitchRefusal,
+  type WriteChangeArgs,
   TEXT_FIELD,
 } from '@estiva-app/interop'
-import { inOrderTypes, listReadOffered, listReadOption, projectFields, PROJECT_KIND, withOpenRead } from './projectFields'
+import {
+  forgetProjectFields,
+  inOrderTypes,
+  listReadOffered,
+  listReadOption,
+  projectFields,
+  PROJECT_KIND,
+  withOpenRead,
+} from './projectFields'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
 
 export interface ActResult {
@@ -1814,6 +1824,11 @@ export async function applyActionAsViewer(
      * is one; with the switch off it is never sent.
      */
     prev?: string
+    /**
+     * For a project's text: the text the caller loaded and edited from. Used only when the change is written again
+     * after the relay switched (ALO-8), so words saved since are merged onto, never written over.
+     */
+    base?: WriteChangeArgs['base']
   },
   relayUrl: string,
   token: StoredToken,
@@ -1830,6 +1845,8 @@ export async function applyActionAsViewer(
    * A reply's parent is not this seam's: that is `replyTo`.
    */
   transform?: (event: UnsignedActionEvent) => UnsignedActionEvent,
+  /** Set on the one write again after the relay's switch refusal (ALO-8), so it is never tried a third time. */
+  afterSwitch = false,
 ): Promise<
   ActResult & {
     created?: string
@@ -2016,6 +2033,7 @@ export async function applyActionAsViewer(
       value,
       ...(args.contentFormat ? { format: args.contentFormat } : {}),
       prev,
+      ...(afterSwitch && args.base ? { base: args.base } : {}),
       // The manifest decides the change's shape: `buildActionEvents` bound to this action, the same tags each try.
       build: (input) => {
         const one = buildActionEvents({ ...common, value: input.value, contentFormat: input.format ?? args.contentFormat, prev: input.prev, createdAtMs: input.createdAtMs })
@@ -2043,7 +2061,19 @@ export async function applyActionAsViewer(
     token.pubkey,
   )
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  if (!result.ok) return fail(result.reason ?? 'The relay rejected the change.')
+  if (!result.ok) {
+    /*
+      The relay switched since this tab read its NIP-11 and now keeps projects in order (ALO-8): read it again, and
+      write the change again once through the switched path above, after each field's current change. The person
+      sees nothing; a second refusal, or a relay still not switched, is said as any refusal is.
+      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
+    */
+    if (!afterSwitch && changedField && pointer.kind === PROJECT_KIND && isSwitchRefusal(result.reason)) {
+      forgetProjectFields()
+      if (await projectFields()) return applyActionAsViewer(args, relayUrl, token, transform, true)
+    }
+    return fail(result.reason ?? 'The relay rejected the change.')
+  }
 
   /*
     The Folder commands, in order, stopping at the first refusal (SPEC §7.3).

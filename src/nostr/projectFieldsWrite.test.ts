@@ -20,6 +20,7 @@ vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: tr
 
 import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, moveFileAsViewer, restoreFileAsViewer } from './foreign'
 import { forgetProjectFields } from './projectFields'
+import { parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const RELAY = 'cd'.repeat(32)
@@ -333,5 +334,118 @@ describe('A change to a project, with the switch on', () => {
     expect(tag(comment, 'A')).toBe(ADDRESS)
     expect(tag(comment, 'O')).toBe(ID)
     expect(tag(comment, 'prev')).toBeUndefined()
+  })
+})
+
+describe('A change from a tab that read the relay before it switched (ALO-8)', () => {
+  const SWITCH_REFUSAL = 'invalid: a project change names the change it follows in prev'
+  const BLOCKS = 'estiva-blocks-1'
+  const ON = { files: { requires_prev: ['osnova.project'] }, file_list: { newest: true, text: true } }
+  /** The relay's NIP-11 said nothing of the switch when the tab read it, and says it is on from then on. */
+  function switchesAfterTheTabRead() {
+    let reads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => (reads++ === 0 ? { supported_nips: [1, 11] } : ON) })),
+    )
+  }
+  /** A switched relay: a project change with no `prev` is refused with its words, as the relay says them. */
+  function refusingChangesWithNoPrev() {
+    publishSigned.mockImplementation(async (...args: unknown[]) => {
+      const e = args[1] as { kind: number; tags: string[][] }
+      return e.kind === 1851 && !tag(e, 'prev') ? { ok: false, reason: SWITCH_REFUSAL } : { ok: true }
+    })
+  }
+  /** Ship's manifest with a change of the project's text, as the launcher would offer it. */
+  const textManifest = () => {
+    const manifest = shipManifest('deleted field')
+    const content = JSON.parse(manifest.content)
+    content.actions.push({
+      id: 'edit-description',
+      label: 'Edit description',
+      appliesTo: String(PROJECT),
+      emits: { kind: 1851, field: 'description' },
+      input: { type: 'string', format: BLOCKS },
+    })
+    return { ...manifest, content: JSON.stringify(content) }
+  }
+  const world = () => [shipManifest('deleted field'), project, channel, state, nameChange]
+
+  it('a rename refused for naming no prev is read again and sent after the name’s current change, with no message', async () => {
+    switchesAfterTheTabRead()
+    refusingChangesWithNoPrev()
+    queryRelay.mockImplementation(relayOver(world()))
+    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
+
+    // Nothing for the person to read: an ok with no reason.
+    expect(result.ok).toBe(true)
+    expect(result.reason).toBeUndefined()
+    expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([
+      [1851, 'name', 'Launch 3', undefined],
+      [1851, 'name', 'Launch 3', nameChange.id],
+    ])
+  })
+
+  it('the text written again keeps the words someone saved after the tab loaded it', async () => {
+    switchesAfterTheTabRead()
+    refusingChangesWithNoPrev()
+    const p = (id: string, text: string) => ({ type: 'paragraph' as const, id, content: [{ type: 'text' as const, text }] })
+    const text = (...blocks: ReturnType<typeof p>[]) => serializeBlockDocument({ type: 'doc', content: blocks } as never)
+    const textChange = (value: string) =>
+      event({ kind: 1851, tags: [['a', ADDRESS], ['O', ID], ['field', 'description'], ['value', value], ['content-format', BLOCKS], ['h', FOLDER]] })
+    const loadedText = text(p('b1', 'Intro'), p('b2', 'Goals'))
+    const loaded = textChange(loadedText)
+    // Someone added a paragraph after this tab loaded the text, before the switch.
+    const savedSince = textChange(text(p('b1', 'Intro'), p('b2', 'Goals'), p('b3', 'Risks')))
+    queryRelay.mockImplementation(relayOver([textManifest(), project, channel, state, loaded, savedSince]))
+    const result = await applyActionAsViewer(
+      {
+        naddr: ADDRESS,
+        actionId: 'edit-description',
+        value: text(p('b1', 'Intro, shorter'), p('b2', 'Goals')),
+        contentFormat: BLOCKS,
+        base: { value: loadedText, format: BLOCKS },
+      },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(true)
+    const [first, again] = sent()
+    expect(tag(first, 'prev')).toBeUndefined()
+    expect(tag(again, 'prev')).toBe(savedSince.id)
+    const words = (parseBlockDocument(tag(again, 'value')!).content as ReturnType<typeof p>[]).map((b) => b.content[0]!.text)
+    expect(words).toEqual(['Intro, shorter', 'Goals', 'Risks'])
+  })
+
+  it('a different refusal is said as before and nothing is sent again', async () => {
+    switchesAfterTheTabRead()
+    publishSigned.mockImplementation(async () => ({ ok: false, reason: 'restricted: not a member of this team' }))
+    queryRelay.mockImplementation(relayOver(world()))
+    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: false, reason: 'restricted: not a member of this team' })
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('a second switch refusal is said as any refusal, not tried a third time', async () => {
+    switchesAfterTheTabRead()
+    publishSigned.mockImplementation(async () => ({ ok: false, reason: SWITCH_REFUSAL }))
+    queryRelay.mockImplementation(relayOver(world()))
+    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain(SWITCH_REFUSAL)
+    expect(sent().map((e) => tag(e, 'prev'))).toEqual([undefined, nameChange.id])
+  })
+
+  it('a relay whose NIP-11 still says nothing of the switch: the refusal is said and nothing is sent again', async () => {
+    relayInfo(false)
+    refusingChangesWithNoPrev()
+    queryRelay.mockImplementation(relayOver(world()))
+    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: false, reason: SWITCH_REFUSAL })
+    expect(sent()).toHaveLength(1)
   })
 })
