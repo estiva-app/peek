@@ -90,15 +90,17 @@ function View({ rootIds }: { rootIds: string[] }) {
 }
 
 /** Cath's comment is open with its reply box; then it is deleted, and the next read no longer has it. */
-async function deletedWhileOpen() {
+async function deletedWhileOpenAt() {
   let onRelay = conversationOf(rootA, rootB)
   relay.read.mockImplementation(async () => onRelay)
-  const { rerender } = render(<View rootIds={[rootA.id, rootB.id]} />)
+  const rendered = render(<View rootIds={[rootA.id, rootB.id]} />)
   await screen.findByRole('textbox', { name: 'Reply box' })
   onRelay = conversationOf(rootB)
-  await act(async () => rerender(<View rootIds={[rootB.id]} />))
+  await act(async () => rendered.rerender(<View rootIds={[rootB.id]} />))
   await screen.findAllByText('Another comment')
+  return rendered
 }
+const deletedWhileOpen = async () => void (await deletedWhileOpenAt())
 
 const drafts = browserDrafts()
 afterEach(() => {
@@ -114,6 +116,17 @@ describe('a comment deleted while you reply to it (ONE-10)', () => {
     expect(screen.getByRole('textbox', { name: 'Reply box' })).toBeTruthy()
     expect(screen.queryByText(/takes no new replies/)).toBeNull()
     expect(screen.queryByText('Can you check the numbers?')).toBeNull()
+  })
+
+  it('stays while Send waits for the relay, though the box has emptied its draft and the reply is drawn', async () => {
+    drafts.write(draftKeys.thread(rootA.id), 'Yes, the totals are off')
+    const { rerender } = await deletedWhileOpenAt()
+    // Send: Peek's box empties its draft at once and draws the reply, which reads the conversation again.
+    drafts.clear(draftKeys.thread(rootA.id))
+    await act(async () => rerender(<View rootIds={[rootB.id]} />))
+    expect(screen.getByText('This comment was deleted.')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Reply box' })).toBeTruthy()
+    expect(screen.queryByText(/takes no new replies/)).toBeNull()
   })
 
   it('negative control: with nothing in the box the thread goes with its comment', async () => {
