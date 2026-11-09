@@ -51,7 +51,7 @@ export { fileChoices, referenceSections, subscribeReferences, useReferenceFolder
 export { useTopicFiles, type TopicFile, type TopicFilesState } from './useTopicFiles'
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'
-export { useTopicsColumn, topicListChanged, fileArchiveChanged,type TopicWithFiles, type TopicsColumnState } from './useTopicsColumn'
+export { useTopicsColumn, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
 export { useFileMembers } from '@/api/internal/fileMembers'
 export type { StreamTerms } from '@estiva-app/conversation'
 export { PeekDataProvider } from './store'

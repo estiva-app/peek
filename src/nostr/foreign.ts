@@ -98,6 +98,10 @@ import {
   topicList,
   topicLists,
   type ListedFile,
+  type ActivityFile,
+  type ActivityTopic,
+  type TopicActivity,
+  readTopicActivity,
   archiveImpact,
   createLoadQuery,
   type ArchiveImpact,
@@ -892,30 +896,47 @@ export async function topicFilesAsViewer(
 /**
  * Every topic the viewer can read, by address (TOP-4): the Topics screen's
  * rows, before membership and archive sort them. A topic is a bare file
- * (`kind:30840`); the relay answers only what this viewer may read.
+ * (`kind:30840`); the relay answers only what this viewer may read. Each with
+ * its root's time, Unix seconds: its time in the order of topics while
+ * nothing has happened in it (interop's `ActivityTopic.createdAt`, TOPI-10).
  *
  * **Throws {@link RelayReadError} when the read failed.**
  */
-export async function topicAddressesAsViewer(relayUrl: string, token: StoredToken): Promise<string[]> {
+export async function topicAddressesAsViewer(relayUrl: string, token: StoredToken): Promise<Map<string, number>> {
   const events = await viewerQuery(relayUrl, token)([{ kinds: [KIND_BARE_FILE], limit: 500 }])
-  return [...new Set(events.flatMap((event) => {
+  const topics = new Map<string, number>()
+  for (const event of events) {
     const d = event.tags.find((tag) => tag[0] === 'd')?.[1]
-    return d ? [`${event.kind}:${event.pubkey}:${d}`] : []
-  }))]
+    if (!d) continue
+    const address = `${event.kind}:${event.pubkey}:${d}`
+    topics.set(address, Math.min(topics.get(address) ?? event.created_at, event.created_at))
+  }
+  return topics
 }
 
 /**
  * Many topics' lists at once (TOP-4) — interop's `topicLists`, the rules of
  * {@link topicFilesAsViewer} for each, in three requests whatever the number
  * of topics: one per topic trips the relay's rate limit at a few dozen. Each
- * topic asked for maps to the addresses it lists that resolved, in the order
- * they were added.
+ * topic asked for maps to the files it lists that resolved, each with its
+ * team from its root (what the order of topics needs to judge a change on it,
+ * TOPI-10), in the order they were added.
  *
  * **Throws {@link RelayReadError} when the read failed.**
  */
-export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, string[]>> {
+export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, ActivityFile[]>> {
   const lists = await topicLists(viewerQuery(relayUrl, token), topics)
-  return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [entry.address] : []))]))
+  return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [{ address: entry.address, folder: entry.folder }] : []))]))
+}
+
+/**
+ * Each topic's newest activity (TOPI-10): interop's `readTopicActivity`, the
+ * one rule Peek, Ship and Leaf order topics by, read as the viewer.
+ *
+ * **Throws {@link RelayReadError} when the read failed.**
+ */
+export function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
+  return readTopicActivity(viewerQuery(relayUrl, token), topics)
 }
 
 /**

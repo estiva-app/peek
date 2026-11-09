@@ -94,7 +94,7 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
   it("beside an open topic, chooses that topic's Folder first", async () => {
     const user = userEvent.setup()
     const open = { ref: `30840:${PK}:open`, address: `30840:${PK}:open`, kind: 30840, folder: TESTING, slots: { title: { value: 'Widgets' } } }
-    column.state = { mine: [{ topic: open, files: [], archivedFiles: [] }], others: [], archived: [] }
+    column.state = { mine: [open], others: [], archived: [] }
     render(
       <MemoryRouter>
         <PeekSetup>

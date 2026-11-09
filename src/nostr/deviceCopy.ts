@@ -36,6 +36,7 @@ import { clearPagePictures } from '@/lib/pagePicture'
 import { cardShapes } from '@/lib/cardShapes'
 import { clearUnavailableCards } from '@/lib/unavailableCards'
 import { clearRecents } from '@/lib/recents'
+import { clearTopicOrder } from '@/lib/topicOrder'
 
 /**
  * Bump when what Peek folds from the copy changes meaning: a copy written
@@ -105,6 +106,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
     clearUnavailableCards()
     cardShapes.clear()
     clearRecents()
+    clearTopicOrder()
   }
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
@@ -202,6 +204,8 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   cardShapes.clear()
   // The launcher's Recent holds titles, summaries and projects of files opened (SUM-7).
   clearRecents()
+  // The Topics column's last order says which topics you are in and when each was last active (TOPI-10).
+  clearTopicOrder({ signOut: true })
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(

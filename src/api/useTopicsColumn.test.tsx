@@ -24,9 +24,27 @@ const relay = vi.hoisted(() => ({
   files: [] as Event[],
   /** Membership changes and comments, answered to the filters that name a person. */
   changes: [] as Event[],
+  /** Messages, changes and comments on topics and their files: what the order of topics is read from (TOPI-10). */
+  activity: [] as Event[],
   queryRelay: vi.fn(),
 }))
 vi.mock('@/nostr/bridge', () => ({ publishSigned: vi.fn(), signViaEstivaId: vi.fn(), queryRelay: relay.queryRelay }))
+/** The tab's socket: each live subscription the hook opens, to deliver an event to as the relay would. */
+const socket = vi.hoisted(() => ({
+  subs: [] as Array<{ filters: Record<string, unknown>[]; onEvent: (event: unknown) => void; closed: boolean }>,
+}))
+vi.mock('@/nostr/liveTopics', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/liveTopics')),
+  getLiveClient: () => ({
+    relay: {
+      subscribe: (filters: Record<string, unknown>[], onEvent: (event: unknown) => void) => {
+        const sub = { filters, onEvent, closed: false }
+        socket.subs.push(sub)
+        return { close: () => (sub.closed = true) }
+      },
+    },
+  }),
+}))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/heldSession', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/auth/heldSession')),
@@ -40,6 +58,8 @@ const seen = vi.hoisted(() => ({
   horizon: [] as Event[],
   /** Files the viewer muted (`estiva:muted:v1`). */
   muted: new Set<string>(),
+  /** Every reference a hook asked to resolve. */
+  resolved: [] as string[],
 }))
 const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
   const object = seen.objects[ref] as Record<string, unknown> | undefined
@@ -48,8 +68,10 @@ const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
 })
 vi.mock('./foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('./foreign')),
-  useResolvedReferences: (refs: readonly string[], options?: { archivedWith?: boolean }) =>
-    Object.fromEntries(refs.map((ref) => [ref, resolveSeen(ref, options?.archivedWith)])),
+  useResolvedReferences: (refs: readonly string[], options?: { archivedWith?: boolean }) => {
+    seen.resolved.push(...refs)
+    return Object.fromEntries(refs.map((ref) => [ref, resolveSeen(ref, options?.archivedWith)]))
+  },
 }))
 vi.mock('@/nostr/foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
@@ -67,6 +89,7 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
 
 const d = (address: string) => address.split(':')[2]!
@@ -81,7 +104,6 @@ const STRANGER = `30840:${SOMEBODY}:1e2f3a4b-0000-4000-8000-000000000002`
 const ARCHIVED = topicAt('1e2f3a4b-0000-4000-8000-000000000003')
 const BUILD_1 = `30850:${VIEWER}:0ebd5fdd-c58a-416e-b8a7-cbdcec77b77f`
 const TESTING = `30851:${VIEWER}:c579e675-6365-4b62-9cc1-d14495c22ca2`
-const GONE = `30851:${VIEWER}:dddddddd-0000-4000-8000-00000000dead`
 
 /** A topic somebody else started, as the topics re-published on 15 Sep are. */
 const OLD = `30840:${SOMEBODY}:1e2f3a4b-0000-4000-8000-000000000004`
@@ -139,17 +161,40 @@ function list(topic: string, file: string, listed = true, at = 200) {
 const namesAPerson = (f: Record<string, unknown>) =>
   !f['#O'] && (f.kinds as number[]).some((kind) => kind === 1851 || kind === 1111) && !!(f['#p'] || f.authors)
 
-/** Every `#O` request the hook sent: each is the topics whose lists it read. */
+/** A list read: list entries (`kind:1851`) by the topics' `O`. */
+const isListRead = (f: Record<string, unknown>) => !!f['#O'] && (f.kinds as number[]).includes(1851)
+/** Every list request the hook sent: each is the topics whose lists it read. */
 const listReads = () =>
   relay.queryRelay.mock.calls
     .map(([, filters]) => filters as Array<Record<string, unknown>>)
-    .filter((filters) => filters.some((f) => f['#O']))
-    .map((filters) => filters.flatMap((f) => f['#O'] as string[]))
+    .filter((filters) => filters.some(isListRead))
+    .map((filters) => filters.filter(isListRead).flatMap((f) => f['#O'] as string[]))
+/** Every request of the order's read: a topic's conversation by its `A` is its first filter. */
+const activityReads = () =>
+  relay.queryRelay.mock.calls
+    .map(([, filters]) => filters as Array<Record<string, unknown>>)
+    .filter((filters) => filters.some((f) => (f.kinds as number[]).includes(9)))
+
+/** As the relay answers one filter: by kind, author, every `#x` tag, `until`, newest first, cut at `limit`. */
+function answer(f: Record<string, unknown>, pool: readonly Event[]): Event[] {
+  const found = pool.filter(
+    (e) =>
+      (f.kinds as number[]).includes(e.kind) &&
+      (!f.authors || (f.authors as string[]).includes(e.pubkey)) &&
+      (f.until === undefined || e.created_at <= (f.until as number)) &&
+      Object.entries(f).every(([key, values]) => !key.startsWith('#') || e.tags.some((t) => t[0] === key.slice(1) && (values as string[]).includes(t[1]!))),
+  )
+  found.sort((a, b) => b.created_at - a.created_at)
+  return typeof f.limit === 'number' ? found.slice(0, f.limit) : found
+}
+
+/** A message in `topic` by somebody, `at` Unix seconds. */
+const message = (topic: string, at: number, id = `m-${topic}-${at}`): Event => ({ ...event(9, [['A', topic], ['h', FOLDER]], at), id, pubkey: SOMEBODY })
 
 const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
   if (typeof state !== 'object' || 'failed' in state) return state
   return {
-    mine: state.mine.map(({ topic, files }) => [topic.slots.title?.value, files.map((file) => file.slots.title?.value)]),
+    mine: state.mine.map((topic) => topic.slots.title?.value),
     others: state.others.map((topic) => topic.slots.title?.value),
     // `?? []`: on code from before Archived, the archived-with tests fail on what is listed, not on a missing field.
     archived: (state.archived ?? []).map((topic) => topic.slots.title?.value),
@@ -173,43 +218,127 @@ beforeEach(() => {
   // WIDGETS, ALPHA and ARCHIVED are the viewer's own: theirs from creation.
   seen.horizon = []
   seen.muted = new Set()
+  seen.resolved = []
   relay.changes = []
+  relay.activity = []
+  socket.subs = []
+  window.localStorage.clear()
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
-    const tagged = (e: Event, name: string, values: unknown) => !values || e.tags.some((t) => t[0] === name && (values as string[]).includes(t[1]!))
-    const events = filters.flatMap((f) => {
-      if (namesAPerson(f))
-        return relay.changes.filter(
-          (e) =>
-            (f.kinds as number[]).includes(e.kind) &&
-            tagged(e, 'a', f['#a']) &&
-            tagged(e, 'A', f['#A']) &&
-            tagged(e, 'p', f['#p']) &&
-            (!f.authors || (f.authors as string[]).includes(e.pubkey)),
-        )
-      if (f['#O']) return relay.entries.filter((e) => e.tags.some((t) => t[0] === 'O' && (f['#O'] as string[]).includes(t[1]!)))
-      const kinds = f.kinds as number[]
-      const pool = [...relay.topics, ...relay.files].filter((e) => kinds.includes(e.kind))
-      const ds = f['#d'] as string[] | undefined
-      return ds ? pool.filter((e) => ds.includes(e.tags.find((t) => t[0] === 'd')![1]!)) : pool
-    })
+    const events = filters.flatMap((f) =>
+      // The membership read's changes naming a person; every other filter over all the relay holds.
+      namesAPerson(f) ? answer(f, relay.changes) : answer(f, [...relay.topics, ...relay.files, ...relay.entries, ...relay.activity]),
+    )
     return { ok: true, events }
   })
 })
 
-describe('the Topics screen’s topics (TOP-4)', () => {
-  it('lists your topics A–Z, each with its files from any Folder; other topics apart; an archived topic only under Archived', async () => {
-    list(WIDGETS, BUILD_1, true, 200)
-    list(WIDGETS, TESTING, true, 201)
+describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
+  it('lists your topics flat, the one where something last happened first, not A–Z; other topics apart; an archived topic only under Archived', async () => {
+    relay.activity = [message(ALPHA, 400), message(WIDGETS, 500)]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toEqual({
-      mine: [
-        ['alpha', []],
-        ['Widgets', ['Widgets 2: build 1', 'Testing Widgets']],
-      ],
-      others: ['Somebody else’s'],
-      archived: ['Old'],
-    })
+    expect(titlesOf(result.current.state)).toEqual({ mine: ['Widgets', 'alpha'], others: ['Somebody else’s'], archived: ['Old'] })
+  })
+
+  it('a change to a file a topic lists, in that file’s own team, moves the topic up (TOPI-10)', async () => {
+    list(ALPHA, TESTING, true, 200)
+    relay.activity = [message(WIDGETS, 400), { ...event(1851, [['a', TESTING], ['h', OTHER_FOLDER], ['field', 'status'], ['value', 'done']], 500), id: 'status' }]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+  })
+
+  it('a rename of a topic does not move it up (TOPI-10, Miky 9 Nov)', async () => {
+    relay.activity = [message(ALPHA, 400), { ...event(1851, [['a', WIDGETS], ['h', FOLDER], ['field', 'title'], ['value', 'Widgets!']], 900), id: 'rename' }]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] })
+  })
+
+  it('reads the order of all your topics together, every topic’s conversation in one request', async () => {
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(activityReads()).toHaveLength(1)
+    const conversations = activityReads()[0]!.filter((f) => (f.kinds as number[]).includes(9)).flatMap((f) => f['#A'] as string[])
+    expect(conversations.sort()).toEqual([ALPHA, WIDGETS].sort())
+  })
+
+  it('a message heard live moves its topic to the top without a reload, and the order is kept for the next visit (TOPI-10)', async () => {
+    relay.activity = [message(ALPHA, 400)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    const now = Math.floor(Date.now() / 1000)
+    const live = socket.subs.filter((sub) => !sub.closed)
+    expect(live).toHaveLength(1)
+    act(() => live[0]!.onEvent(message(WIDGETS, now)))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] })
+    expect(JSON.parse(window.localStorage.getItem(`${TOPIC_ORDER_KEY}.${VIEWER}`)!)).toMatchObject({ [WIDGETS]: now, [ALPHA]: 400 })
+  })
+
+  it('a rename heard live does not move its topic (TOPI-10)', async () => {
+    relay.activity = [message(ALPHA, 400)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    const rename = { ...event(1851, [['a', WIDGETS], ['h', FOLDER], ['field', 'title'], ['value', 'Widgets!']], Math.floor(Date.now() / 1000)), id: 'rename-live' }
+    act(() => socket.subs[0]!.onEvent(rename))
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] })
+  })
+
+  it('draws the order this browser last saw at once, while the order is read again (TOPI-10)', async () => {
+    window.localStorage.setItem(`${TOPIC_ORDER_KEY}.${VIEWER}`, JSON.stringify({ [WIDGETS]: 900, [ALPHA]: 300 }))
+    const answered = relay.queryRelay.getMockImplementation()!
+    // The order's read never answers.
+    relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
+      filters.some((f) => (f.kinds as number[]).includes(9)) ? new Promise(() => {}) : answered(url, filters),
+    )
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
+  })
+
+  it('the first time on this browser, a skeleton until the order is read, never a list that then jumps (TOPI-10)', async () => {
+    let answerOrder: () => void = () => {}
+    const answered = relay.queryRelay.getMockImplementation()!
+    relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
+      filters.some((f) => (f.kinds as number[]).includes(9))
+        ? new Promise((done) => (answerOrder = () => done(answered(url, filters))))
+        : answered(url, filters),
+    )
+    relay.activity = [message(WIDGETS, 500)]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(activityReads()).toHaveLength(1))
+    expect(result.current.state).toBe('loading')
+    await act(async () => answerOrder())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
+  })
+
+  it('a failed order read still draws your topics, by what this browser last saw (TOPI-10)', async () => {
+    window.localStorage.setItem(`${TOPIC_ORDER_KEY}.${VIEWER}`, JSON.stringify({ [WIDGETS]: 900 }))
+    const answered = relay.queryRelay.getMockImplementation()!
+    relay.queryRelay.mockImplementation(async (url: string, filters: Array<Record<string, unknown>>) =>
+      filters.some((f) => (f.kinds as number[]).includes(9)) ? { ok: false, reason: 'rate-limited' } : answered(url, filters),
+    )
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
+  })
+
+  it('closes its live watch when nothing draws the order any more (TOPI-10)', async () => {
+    const { result, unmount } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    await waitFor(() => expect(socket.subs).toHaveLength(1))
+    unmount()
+    expect(socket.subs[0]!.closed).toBe(true)
+  })
+
+  it('back on Topics within a minute, a message heard there still moves its topic to the top (TOPI-10)', async () => {
+    relay.activity = [message(ALPHA, 400)]
+    const first = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(first.result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    first.unmount()
+    // Back at once: nothing kept the order current while away, so it is read again and heard again.
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(socket.subs.filter((sub) => !sub.closed)).toHaveLength(1))
+    const now = Math.floor(Date.now() / 1000)
+    act(() => socket.subs.find((sub) => !sub.closed)!.onEvent(message(WIDGETS, now)))
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
   })
 
   it('a topic archived with the project above it is under Archived, not among yours or the other topics (b1ace226)', async () => {
@@ -218,21 +347,7 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     seen.withParent[STRANGER] = { by: VIEWER, at: 1, with: PROJECT }
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toEqual({ mine: [['Widgets', []]], others: [], archived: ['alpha', 'Old', 'Somebody else’s'] })
-  })
-
-  it('a listed file archived on its own or with its project is not among its topic’s files, but behind its Archived line (b1ace226)', async () => {
-    list(WIDGETS, BUILD_1, true, 200)
-    list(WIDGETS, TESTING, true, 201)
-    seen.objects[BUILD_1] = object(BUILD_1, 'Widgets 2: build 1', { archived: { by: VIEWER, at: 1 } })
-    seen.withParent[TESTING] = { by: VIEWER, at: 1, with: `30850:${VIEWER}:archived-project` }
-    const { result } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]] })
-    const state = result.current.state as Extract<typeof result.current.state, { mine: unknown }>
-    expect(state.mine[1]!.archivedFiles?.map((file) => file.slots.title?.value)).toEqual(['Widgets 2: build 1', 'Testing Widgets'])
-    // Opened by link, an archived file a topic of yours lists still belongs under Topics.
-    expect(result.current.column(TESTING)).toBe('topics')
+    expect(titlesOf(result.current.state)).toEqual({ mine: ['Widgets'], others: [], archived: ['alpha', 'Old', 'Somebody else’s'] })
   })
 
   it('a topic archived in this tab moves to Archived without a reload, and unarchived moves back (b1ace226)', async () => {
@@ -240,10 +355,10 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
     seen.objects[WIDGETS] = object(WIDGETS, 'Widgets', { archived: { by: VIEWER, at: 2 } })
     await act(() => fileArchiveChanged(WIDGETS))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []]], archived: ['Old', 'Widgets'] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha'], archived: ['Old', 'Widgets'] })
     seen.objects[WIDGETS] = object(WIDGETS, 'Widgets')
     await act(() => fileArchiveChanged(WIDGETS))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], archived: ['Old'] })
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'], archived: ['Old'] }))
   })
 
   it('Archive then Undo at once: the later re-read is drawn even when the earlier one answers last (b1ace226)', async () => {
@@ -260,24 +375,18 @@ describe('the Topics screen’s topics (TOP-4)', () => {
       answerArchive(object(WIDGETS, 'Widgets', { archived: { by: VIEWER, at: 2 } }))
       await archiving
     })
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], archived: ['Old'] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'], archived: ['Old'] })
     resolve.mockRestore()
   })
 
-  it('a file two of your topics list is under both', async () => {
+  it('reads none of the listed files’ fields: the column draws no file under a topic (TOPI-10)', async () => {
     list(WIDGETS, TESTING)
-    list(ALPHA, TESTING)
+    list(WIDGETS, BUILD_1)
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', ['Testing Widgets']], ['Widgets', ['Testing Widgets']]] })
-  })
-
-  it('a listed file that resolves to nothing — unreadable or deleted — is not drawn', async () => {
-    list(WIDGETS, TESTING)
-    list(WIDGETS, GONE)
-    const { result } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', ['Testing Widgets']]] })
+    expect(seen.resolved).toContain(WIDGETS)
+    expect(seen.resolved).not.toContain(TESTING)
+    expect(seen.resolved).not.toContain(BUILD_1)
   })
 
   it('reads every one of your topics’ lists in one request, not one per topic', async () => {
@@ -287,40 +396,25 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     expect(listReads()[0]!.sort()).toEqual([d(ALPHA), d(WIDGETS)].sort())
   })
 
-  it('a file added on a topic’s page shows under that topic in the same tab, reading only that topic again', async () => {
-    list(WIDGETS, BUILD_1, true, 200)
+  it('a file added on a topic’s page reads only that topic’s list again, and the order with it, so the file’s activity counts (TOPI-10)', async () => {
+    relay.activity = [message(ALPHA, 400), { ...event(1851, [['a', TESTING], ['h', OTHER_FOLDER], ['field', 'status'], ['value', 'done']], 300), id: 'status' }]
     const { result } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', ['Widgets 2: build 1']]] }))
-    list(WIDGETS, TESTING, true, 300)
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    // Added at 600: its entry is news on the topic, and the file's own change is now read for it.
+    list(WIDGETS, TESTING, true, 600)
     act(() => topicListChanged(WIDGETS))
-    await waitFor(() =>
-      expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', ['Widgets 2: build 1', 'Testing Widgets']]] }),
-    )
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
     expect(listReads().at(-1)).toEqual([d(WIDGETS)])
+    expect(activityReads()).toHaveLength(2)
   })
 
-  it('a file removed on a topic’s page leaves that topic’s rows in the same tab', async () => {
-    list(WIDGETS, BUILD_1, true, 200)
-    const { result } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', ['Widgets 2: build 1']]] }))
-    list(WIDGETS, BUILD_1, false, 300)
-    act(() => topicListChanged(WIDGETS))
-    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]] }))
-  })
-
-  it('a topic joined from Other topics moves up among yours, with its files', async () => {
-    list(STRANGER, TESTING)
+  it('a topic joined from Other topics moves up among yours, in its place by activity', async () => {
+    relay.activity = [message(ALPHA, 400), message(STRANGER, 500)]
     const { result, rerender } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ others: ['Somebody else’s'] }))
     seen.horizon = [recentMembership(STRANGER, true)]
     rerender()
-    await waitFor(() =>
-      expect(titlesOf(result.current.state)).toEqual({
-        mine: [['alpha', []], ['Somebody else’s', ['Testing Widgets']], ['Widgets', []]],
-        others: [],
-        archived: ['Old'],
-      }),
-    )
+    await waitFor(() => expect(titlesOf(result.current.state)).toEqual({ mine: ['Somebody else’s', 'alpha', 'Widgets'], others: [], archived: ['Old'] }))
   })
 
   it('a topic joined 100 days ago, with nothing naming you since, is among yours, as its page counts you (7525c414)', async () => {
@@ -329,7 +423,7 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
     expect(titlesOf(result.current.state)).toEqual({
-      mine: [['alpha', []], ['Pitch', []], ['Widgets', []]],
+      mine: ['alpha', 'Widgets', 'Pitch'],
       others: ['Somebody else’s'],
       archived: ['Old'],
     })
@@ -340,14 +434,14 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     relay.changes = [oldJoin(SOMEBODY)]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Pitch', []], ['Widgets', []]] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets', 'Pitch'] })
   })
 
   it('a topic yours by an old join moves to Other topics when you leave it in this tab (7525c414)', async () => {
     addOldTopic()
     relay.changes = [oldJoin()]
     const { result, rerender } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Pitch', []], ['Widgets', []]] }))
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets', 'Pitch'] }))
     // The Leave reaches the membership read: it now has a word on the topic, and it is not yours.
     seen.horizon = [recentMembership(OLD, false)]
     rerender()
@@ -384,21 +478,21 @@ describe('the Topics screen’s topics (TOP-4)', () => {
     seen.horizon = [level(STRANGER, 'all')]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Somebody else’s', []], ['Widgets', []]], others: [] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets', 'Somebody else’s'], others: [] })
   })
 
   it('a topic you chose a level on, then set to Not following, is under Other topics', async () => {
     seen.horizon = [level(STRANGER, 'important', 2), recentMembership(STRANGER, false, 1)]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Widgets', []]], others: ['Somebody else’s'] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'], others: ['Somebody else’s'] })
   })
 
   it('a topic you chose a level on 100 days ago, with nothing naming you since, is among yours', async () => {
     relay.changes = [{ ...level(STRANGER, 'important', 100), id: 'level-old' }]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(titlesOf(result.current.state)).toMatchObject({ mine: [['alpha', []], ['Somebody else’s', []], ['Widgets', []]] })
+    expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets', 'Somebody else’s'] })
   })
 
   it('a topic you only wrote in is not yours, and its past read asks for no comment', async () => {

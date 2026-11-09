@@ -15,6 +15,7 @@ import {
   resetDeviceCopyForTest,
 } from './deviceCopy'
 import { rememberRecent, resetRecentsForTests } from '@/lib/recents'
+import { readTopicOrder, resetTopicOrderForTest, writeTopicOrder } from '@/lib/topicOrder'
 
 const RELAY = 'https://relay.test'
 const ME = 'a'.repeat(64)
@@ -40,6 +41,10 @@ const pageStorage = {
   getItem: (key: string) => kept.get(key) ?? null,
   setItem: (key: string, value: string) => void kept.set(key, value),
   removeItem: (key: string) => void kept.delete(key),
+  get length() {
+    return kept.size
+  },
+  key: (i: number) => [...kept.keys()][i] ?? null,
 }
 vi.stubGlobal('localStorage', pageStorage)
 
@@ -140,6 +145,42 @@ describe('the launcher’s Recent on the device (SUM-7)', () => {
     resetDeviceCopyForTest(storage) // a new page, signed in as somebody else
     await readFromCopy(RELAY, [filter], SOMEONE)
     expect(recentOnDevice()).toEqual([])
+  })
+})
+
+describe('the Topics column’s last order on the device (TOPI-10)', () => {
+  // It says which topics you are in and when each was last active: it goes with the copy.
+  const PRIVATE_TOPIC = `30840:${ME}:board-only`
+  beforeEach(() => {
+    ;(globalThis as { window?: unknown }).window = { localStorage: pageStorage }
+    resetTopicOrderForTest()
+  })
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window
+  })
+
+  it('signing out removes it, and a watch still open in this tab cannot write it back', async () => {
+    resetDeviceCopyForTest(memorySnapshotStorage())
+    writeTopicOrder(ME, new Map([[PRIVATE_TOPIC, 1_800_000_000]]))
+    expect(readTopicOrder(ME).size).toBe(1)
+    await clearDeviceCopy()
+    expect(readTopicOrder(ME).size).toBe(0)
+    writeTopicOrder(ME, new Map([[PRIVATE_TOPIC, 1_800_000_100]]))
+    expect(readTopicOrder(ME).size).toBe(0)
+  })
+
+  it('somebody else signing in does not find the previous person’s topics', async () => {
+    const storage = memorySnapshotStorage()
+    resetDeviceCopyForTest(storage)
+    expect(await readFromCopy(RELAY, [filter], ME)).toBeNull()
+    writeTopicOrder(ME, new Map([[PRIVATE_TOPIC, 1_800_000_000]]))
+
+    resetDeviceCopyForTest(storage) // a new page, signed in as somebody else
+    await readFromCopy(RELAY, [filter], SOMEONE)
+    expect(readTopicOrder(ME).size).toBe(0)
+    // Theirs is kept from their own next read.
+    writeTopicOrder(SOMEONE, new Map([[PRIVATE_TOPIC, 1_800_000_000]]))
+    expect(readTopicOrder(SOMEONE).size).toBe(1)
   })
 })
 
