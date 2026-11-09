@@ -88,7 +88,7 @@ vi.mock('@/api/internal/membership', () => ({
   }),
 }))
 
-import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useTopicsColumn } from './useTopicsColumn'
+import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
 import { forgetProjectFields } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
@@ -407,6 +407,32 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     })
     expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'], archived: ['Old'] })
     resolve.mockRestore()
+  })
+
+  it("a listed file's newest comment, from the order's read, and one heard live are what its topic's dot judges, with no request added (TOPI-3)", async () => {
+    list(ALPHA, TESTING, true, 200)
+    const onTesting = (id: string, at: number): Event => ({ ...event(1111, [['A', TESTING], ['K', '30851'], ['a', TESTING], ['k', '30851'], ['h', OTHER_FOLDER]], at), id, pubkey: SOMEBODY })
+    relay.activity = [message(WIDGETS, 400), onTesting('said-before', 500)]
+
+    // The column alone, for how many requests its read takes.
+    const alone = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(titlesOf(alone.result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
+    alone.unmount()
+    const requests = relay.queryRelay.mock.calls.length
+    resetTopicsColumn()
+    relay.queryRelay.mockClear()
+    socket.subs = []
+
+    const { result } = renderHook(() => ({ column: useTopicsColumn(), news: useListedNews() }))
+    await waitFor(() => expect(result.current.news.get(ALPHA)?.map((one) => one.file)).toEqual([TESTING]))
+    expect(result.current.news.get(ALPHA)![0]!.events.map((e) => e.id)).toEqual(['said-before'])
+    expect(relay.queryRelay.mock.calls.length).toBe(requests)
+
+    // Heard live, older than the topic's time or not: it reaches the topic's news with no read.
+    await waitFor(() => expect(socket.subs.filter((sub) => !sub.closed)).toHaveLength(1))
+    act(() => socket.subs.find((sub) => !sub.closed)!.onEvent(onTesting('said-live', Math.floor(Date.now() / 1000))))
+    expect(result.current.news.get(ALPHA)![0]!.events.map((e) => e.id)).toEqual(['said-before', 'said-live'])
+    expect(relay.queryRelay.mock.calls.length).toBe(requests)
   })
 
   it('reads none of the listed files’ fields: the column draws no file under a topic (TOPI-10)', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useState } from 'react'
 import { IconArchive, IconPlus } from '@tabler/icons-react'
 import { CollapsibleSection, CommandPalette, CommandPaletteSearch, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
-import { fileChoices, subscribeReferences, useTopicFiles } from '@/api'
+import { fileChoices, subscribeReferences, type useTopicFiles } from '@/api'
 import { MessageCard } from '@/components/ui/MessageLinks'
 import { referenceOfValue } from '@/lib/embedValue'
 import { useToast } from '@/lib/toast'
@@ -29,17 +29,20 @@ import { useToast } from '@/lib/toast'
  * Above Activity: Peek's Activity is every mention from elsewhere, as long as
  * it grows, and the topic's own files under it would scroll out of sight.
  */
-export function TopicFiles({ topic, folder, title, readOnly }: {
+export function TopicFiles({ topic, files: read, title, readOnly }: {
   /** The topic's address. */
   topic: string
-  /** Its Folder, from its root: where an entry is filed. */
-  folder: string
+  /**
+   * Its list and the writes on it (`useTopicFiles`), read by the topic's view: at All its middle column draws the
+   * same files' conversations, so the list is read once for both (TOPI-3).
+   */
+  files: ReturnType<typeof useTopicFiles>
   /** Its title, for the picker. */
   title: string
   /** Archived: the files show, with no Add file and no Remove. */
   readOnly: boolean
 }) {
-  const { state, busy, setListed } = useTopicFiles(topic, folder)
+  const { state, busy, setListed } = read
   const { showToast } = useToast()
   const [picking, setPicking] = useState(false)
   const files = typeof state === 'object' && 'files' in state ? state.files : []

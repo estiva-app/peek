@@ -300,6 +300,38 @@ export async function applyLiveEvents(
 }
 
 /**
+ * Events a watch already filed under this conversation, applied with no read: a topic at All hears its files'
+ * conversations by file (`watchListedConversations`, TOPI-3), which decides what each event is about by the A/O
+ * rules, so nothing here asks for the Folder's `h` — a comment filed in another team, and a reaction, which carries
+ * none, are this file's too. Only the held kinds are kept; a deletion by somebody other than the author is checked
+ * with the relay, as {@link applyLiveEvents} does. True when the conversation was folded again.
+ */
+export async function applyHeardEvents(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  events: readonly SignedEvent[],
+  query: QueryFn,
+): Promise<boolean> {
+  if (store.since(key) === undefined || events.length === 0) return false
+  const merged = store.merge(
+    key,
+    events.filter((event) => HELD_KINDS.has(event.kind)),
+  )
+  if (merged.added.length === 0) return false
+  if (merged.disputed.length) {
+    const remaining = new Set((await query([{ ids: merged.disputed, limit: merged.disputed.length }])).map((event) => event.id))
+    store.forget(
+      key,
+      merged.disputed.filter((id) => !remaining.has(id)),
+    )
+  }
+  await settleFolded(store, key, null, container, rootIds, query)
+  return true
+}
+
+/**
  * Your own events, drawn before the relay has answered for them (OPT-6), by
  * id. Held like any other event, so the fold draws them exactly as sent ones;
  * a catch-up only never takes one's absence on the relay as lost access.

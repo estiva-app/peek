@@ -65,7 +65,6 @@ const ON_FILE: ConversationData = {
 }
 
 const row = (conv: ConversationData, about: string): TopicActivityItem => ({
-  relation: 'mention',
   about,
   href: `/message/${conv.id}`,
   conv,

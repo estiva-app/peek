@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { IconUsers } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
-import { useMembership, useWorkspaceDirectory, type Team } from '@/api'
+import { useMembership, usePlaceFollow, useWorkspaceDirectory, type Team } from '@/api'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
 import { chatLabel } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
@@ -42,7 +42,7 @@ export function TeamChat({ team }: { team: Team }) {
     () => ({ place: { address: team.chatAddress, team: team.id }, folder: team.id, archived: team.archived }),
     [team.chatAddress, team.id, team.archived],
   )
-  const follow = usePlaceFollowControls({ target, title: name, teamName: team.name, me, directory: people })
+  const follow = usePlaceFollowControls({ follow: usePlaceFollow(target), target, title: name, teamName: team.name, me, directory: people })
   return (
     <>
       <ConversationLayout

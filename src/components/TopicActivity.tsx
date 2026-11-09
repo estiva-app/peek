@@ -4,76 +4,25 @@ import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData } from '@/api'
 
 /**
- * **Activity: the conversations of files related to this topic** — CON-9.
+ * **Activity: where this file is mentioned elsewhere** — CON-11, in a file's Overview (`FileActivityPanel`).
  *
- * The model agreed 2026-09-05 replaces a growing list of modes with two lists,
- * and one rule decides which a thread lands in: *identity merges; relation
- * aggregates.* A topic and the project in its Folder are the same file, so the
- * project's own comments stay in the stream. A comment on one of its tickets is
- * a **different file's** conversation and aggregates here.
+ * A message in any other conversation that names this file carries its address as an `a` tag, and the file's
+ * mentions are read off the relay by it. Each row is that message as it is now, under the kit's
+ * `ConversationPlace` saying *Mentioned in* and where — SPEC §6.4's own phrase, kept verbatim as Ship keeps it.
  *
- * ## Why the stream got quieter, and why that is the point
+ * A mention has no thread here: it was said in another conversation, which this page does not hold. So the row
+ * opens that conversation (`href`), where the message can be read in place and replied to, and nothing on it is
+ * offered here — no menu, no reply, no reaction to toggle, no resolve (PEE-48, Katerina, 8 October).
  *
- * Ship publishes a comment into the project's Folder, which *is* this topic's
- * channel — that is "one container, many projections" working, and it is how
- * every issue comment ever written has arrived in Peek. It arrived as an
- * ordinary message, indistinguishable from somebody talking in the topic.
- *
- * Measured against production on 2026-09-06: **422 of 453 threads, 93%**, across
- * every paired topic. The container was right and the projection was not — a
- * reader had no way to tell "Ravi said this here" from "Ravi commented on a
- * ticket". Those threads are not lost; they are one tab across, under the
- * ticket they were always about.
- *
- * ## Same list, not same weight
- *
- * The second relation is a **mention** — CON-11. A topic is
- * `39000:<relay>:<uuid>` (RFC 0.4 §5.2), and a message in any other channel
- * that names it carries the address as an `a` tag; `useTopicMentions` reads
- * those off the relay. It is drawn lighter, as Ship draws one, because a
- * mention is anyone typing your address — retroactive and permanently
- * unwithdrawable (§5.2) — while a sub-file's thread is your own subtree. Same
- * list, one order, and the chip says which.
- *
- * ## Replies go to the file the thread belongs to
- *
- * Opening a thread here opens the same thread panel the stream opens, which
- * replies into that thread — so a reply lands on the ticket's conversation and
- * never on the topic's. That falls out of the data rather than being enforced
- * here, but the row names the ticket, because a composer whose destination is a
- * different object than the page around it is otherwise a trap.
- *
- * A mention has no thread here at all: it was said in another topic, whose
- * conversation this page does not hold. So its row opens that topic (`href`),
- * where the message can be read in place and replied to — the same rule, with
- * the destination one page away instead of one column.
+ * A topic's own files' conversations are no longer rolled up here (CON-9's "On a file"): followed at All, a topic
+ * draws them in its own list, each under its file's heading (TOPI-3).
  */
-/**
- * How a row relates to the file it is shown on — the related file's own
- * conversation (a sub-file) or a mention of it somewhere else (SPEC §6.4).
- */
-export type ActivityRelation = 'sub-file' | 'mention'
-
 export interface TopicActivityItem {
   conv: ConversationData
-  /** Which related file this conversation belongs to — a sub-file's address,
-   *  or the address of the topic a mention was said in. Undefined when it
-   *  resolved to nothing. */
+  /** The address of the conversation it was said in. Undefined when it resolved to nothing. */
   about?: string
-  /** How it is related. Absent means a sub-file, which is what every row was before CON-11. */
-  relation?: ActivityRelation
-  /** Where the row opens instead of a thread: the topic a mention was said in. */
-  href?: string
-}
-
-/**
- * The words, in one place. *"Mentioned in"* is SPEC §6.4's own phrase, kept
- * verbatim as Ship keeps it, so the two apps and the specification cannot drift
- * into three names for one thing.
- */
-const RELATION: Record<ActivityRelation, { label: string; muted: boolean }> = {
-  'sub-file': { label: 'On a file', muted: false },
-  mention: { label: 'Mentioned in', muted: true },
+  /** Where the row opens: the message, where it was said. */
+  href: string
 }
 
 /** The box the rows live in, written once: the list and its empty line both sit in it. */
@@ -83,8 +32,6 @@ const LIST = 'flex flex-col px-4 pt-1 pb-4 gap-3'
 export function TopicActivity({
   items,
   labelFor,
-  selectedId,
-  onOpenThread,
   here,
 }: {
   items: TopicActivityItem[]
@@ -92,8 +39,6 @@ export function TopicActivity({
   here?: string
   /** Address → the name the owning app gives it. Missing while the Folder resolves. */
   labelFor: Map<string, string>
-  selectedId?: string | null
-  onOpenThread: (id: string) => void
 }) {
   const navigate = useNavigate()
   if (items.length === 0) {
@@ -110,28 +55,17 @@ export function TopicActivity({
   return (
     // The rows only: the Panel they sit in scrolls them (estiva-ui 0.37.0), so there is one scroll, not two.
     <div className={LIST}>
-      {items.map(({ conv, about, relation = 'sub-file', href }) => {
-        const words = RELATION[relation]
-        const open = href ? () => navigate(href) : () => onOpenThread(conv.id)
+      {items.map(({ conv, about, href }) => (
         /*
-          A mention is a message said somewhere else (PEE-48, Katerina, 8
-          October): shown as it is now, nothing on it to act on — no menu, no
-          reply, no reaction to toggle, no resolve — and a click opens it where
-          it was said.
-        */
-        const mention = relation === 'mention'
-        return (
-        /*
-          The kit's ConversationPlace (B14): the chip saying how it is related, and the ticket's own title, from its
-          own app's manifest — absent while the Folder is still resolving, and drawn as nothing rather than as a
+          The kit's ConversationPlace (B14): the chip saying how it is related, and where it was said, from its own
+          app's manifest — absent while the Folder is still resolving, and drawn as nothing rather than as a
           placeholder.
         */
-        <ConversationPlace key={conv.id} relation={words.label} place={about ? labelFor.get(about) : undefined} data-relation={relation}>
+        <ConversationPlace key={conv.id} relation="Mentioned in" place={about ? labelFor.get(about) : undefined} data-relation="mention">
           {/*
             The same card the stream draws. A conversation should look like a
             conversation wherever it is read, and the card already renders the
-            ticket's own widget beneath the message — so the row's chip says how
-            it is related and the widget says what it is about.
+            file's own widget beneath the message.
           */}
           <ConversationCard
             authorName={conv.authorName}
@@ -155,14 +89,11 @@ export function TopicActivity({
             embeds={conv.embeds}
             ownFile={conv.ownFile}
             here={here}
-            isSelected={selectedId === conv.id}
-            readOnly={mention}
-            onClick={open}
-            onReply={mention ? undefined : open}
+            readOnly
+            onClick={() => navigate(href)}
           />
         </ConversationPlace>
-        )
-      })}
+      ))}
     </div>
   )
 }

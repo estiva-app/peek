@@ -6,6 +6,8 @@ import type { TeamWrite } from '@/nostr/teams'
 import { usePeekActions } from './actions'
 import { useMembership } from './internal/membership'
 import { RELAY_URL } from './relayUrl'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { listingOf, type Team } from './useTeams'
 
 /** The place a header follows: a topic or space by its address and team, or a team's chat. */
 export interface FollowTarget {
@@ -16,6 +18,29 @@ export interface FollowTarget {
   archived: boolean
   /** The place itself is archived in a live team: the switch shows the level and cannot be changed, and nobody is added. */
   fileArchived?: boolean
+}
+
+/**
+ * A topic's place, as its header's switch follows it (TEA-6): named by the team whose list holds it, else its own
+ * Folder; read once the teams are, so it is read once. An archived file keeps the switch read-only, as its archived
+ * team's does. Undefined for anything else, and until the teams are read or failed.
+ *
+ * The view reads the level from it too (TOPI-3: at All a topic draws its files' conversations), so the header and
+ * the middle column follow the one read.
+ */
+export function topicFollowTarget(
+  file: { address?: string | null; folder?: string | null; archived?: unknown } | null | undefined,
+  teams: readonly Team[] | null,
+  teamsFailed: boolean,
+): FollowTarget | undefined {
+  if (!file?.address || !file.folder || Number(file.address.split(':')[0]) !== KIND_BARE_FILE || !(teams || teamsFailed)) return undefined
+  const listing = listingOf(teams, file.address)
+  return {
+    place: { address: file.address, team: listing?.team.id ?? file.folder },
+    folder: file.folder,
+    archived: !!(listing?.team.archived ?? teams?.find((team) => team.id === file.folder)?.archived),
+    fileArchived: !!file.archived,
+  }
 }
 
 export interface PlaceFollow {

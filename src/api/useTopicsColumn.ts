@@ -10,7 +10,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
 import { fetchChangesNaming } from '@/nostr/fileMembers'
 import { useRelayViewer, useResolvedReferences } from './foreign'
-import { topicFollowingOf } from './placeDots'
+import { topicFollowingOf, type ListedNews } from './placeDots'
 import { hasRelay } from './relayUrl'
 
 export type TopicsColumnState =
@@ -48,7 +48,18 @@ interface Held {
    * `key` (the topics and their lists it was read over), raised since by the
    * live watch while `live`. `null` before the first answer.
    */
-  activity: { key: string; at: ReadonlyMap<string, number>; readAt: number; live: boolean } | null
+  activity: {
+    key: string
+    at: ReadonlyMap<string, number>
+    /**
+     * Each file a topic lists directly, by address: the comments about it the read already fetched to time its
+     * topics (its newest one or few), and every new one the watch hears (TOPI-3). What a topic's dot judges at All,
+     * with no read of its own (`useListedNews`).
+     */
+    comments: ReadonlyMap<string, readonly SignedEvent[]>
+    readAt: number
+    live: boolean
+  } | null
   /** The `key` whose activity read failed: drawn in the order this browser last saw, and asked again on the next mount. */
   activityFailed: string | null
   /** The times this browser last drew the topics in, for the first draw: no skeleton while the order is read again. */
@@ -209,7 +220,7 @@ async function readActivity(viewer: Viewer, key: string, topics: readonly Foreig
     stopWatch()
     current = { key, activity, since, relayUrl: viewer.relayUrl, watch: null }
     startWatch()
-    put({ ...held, activity: { key, at: new Map(activity.at), readAt: Date.now(), live: !!current.watch }, activityFailed: null })
+    put({ ...held, activity: { key, at: new Map(activity.at), comments: commentsOf(activity), readAt: Date.now(), live: !!current.watch }, activityFailed: null })
     writeTopicOrder(pubkey, activity.at)
   } catch (error) {
     failedRead(error, 'topic activity')
@@ -237,9 +248,22 @@ function startWatch() {
     // Asks by file alone on a relay that says it sends a kept-open request what asking again would return
     // (ours), so a comment filed in a team the topic does not name still re-sorts it live.
     // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-request-kept-open-hears-what-asking-again-would-return.md
-    { since: current.since, namesTeams: relayNamesTeams(peekRelay()), onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason) },
+    {
+      since: current.since,
+      namesTeams: relayNamesTeams(peekRelay()),
+      onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason),
+      // A new comment on a listed file, whether or not it moved its topic: the topic's dot at All judges it (TOPI-3).
+      onComment: () => {
+        if (current?.key !== key || held.pubkey !== pubkey || held.activity?.key !== key) return
+        put({ ...held, activity: { ...held.activity, comments: commentsOf(activity) } })
+      },
+    },
   )
 }
+
+/** The watch appends to `activity.comments` in place: a copy, so what is held changes when it does. */
+const commentsOf = (activity: TopicActivity): ReadonlyMap<string, readonly SignedEvent[]> =>
+  new Map([...(activity.comments ?? new Map<string, SignedEvent[]>())].map(([file, events]) => [file, [...events]]))
 
 function stopWatch() {
   current?.watch?.stop()
@@ -307,6 +331,26 @@ export function useRearchived(): ReadonlyMap<string, ForeignObject | null> {
   const pubkey = viewer()?.token.pubkey
   const now = useSyncExternalStore(subscribe, snapshot, snapshot)
   return now.pubkey === pubkey ? now.rearchived : EMPTY.rearchived
+}
+
+/**
+ * What each of your topics' listed files has said lately, by topic address (TOPI-3): every file its list holds
+ * directly, with the comments the Topics column's read and its live watch hold for it. What a topic's dot judges at
+ * All (`listedHaveUnread`). No read of its own: it is what `useTopicsColumn` already holds, empty until it has read.
+ */
+export function useListedNews(): ReadonlyMap<string, ListedNews> {
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const now = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const mine = now.pubkey === pubkey
+  const lists = now.lists
+  const comments = now.activity?.comments
+  return useMemo(() => {
+    const news = new Map<string, ListedNews>()
+    if (!mine || !comments) return news
+    for (const [topic, files] of lists) news.set(topic, files.map((file) => ({ file: file.address, events: comments.get(file.address) ?? [] })))
+    return news
+  }, [mine, lists, comments])
 }
 
 /** For tests: forget what this tab has read. */

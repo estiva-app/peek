@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { READ_DWELL_MS, useReadActions } from '@/api'
 
 /**
@@ -93,6 +93,61 @@ export function useMarkChannelRead(channelUuid: string | null, newestAt: number 
 export function useMarkFileRead(address: string | null | undefined, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markFileRead } = useReadActions()
   useDwell(address, newestAt, markFileRead, dwellMs)
+}
+
+/**
+ * Mark each file read up to its newest top-level comment seen on screen, when one view draws several files'
+ * conversations: a topic at All draws every listed file's threads beside its own, and reading one there reads it in
+ * that file's own stream, so Ship and the file's own page agree (TOPI-3). The topic's own stream is
+ * {@link useMarkFileRead}'s, as before.
+ *
+ * As the view's own mark: no dwell of its own (being seen already took one), never past the clock (a comment ahead
+ * of it is read once the clock gets there, while the view is open), nothing while the tab is hidden, and one
+ * `markFileRead` per file whose newest seen comment moved.
+ */
+export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefined) {
+  const { markFileRead } = useReadActions()
+  const marked = useRef(new Map<string, number>())
+  // By value: the view builds the map on every render.
+  const seen = seenAtOf ? [...seenAtOf].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : []
+  // A newline: no address holds one, where a `d` may hold a comma.
+  const signature = seen.map(([address, at]) => `${address}@${at}`).join('\n')
+  useEffect(() => {
+    if (!signature) return
+    const wanted = signature.split('\n').map((one) => {
+      const at = one.lastIndexOf('@')
+      return [one.slice(0, at), Number(one.slice(at + 1))] as const
+    })
+    let t: ReturnType<typeof setTimeout> | undefined
+    const fire = () => {
+      // Hidden since it was armed (the clock catching up on a comment ahead of it): marked once shown again.
+      if (document.hidden) return
+      const now = Math.floor(Date.now() / 1000)
+      let ahead: number | undefined
+      for (const [address, newestAt] of wanted) {
+        const upTo = Math.min(newestAt, now)
+        if ((marked.current.get(address) ?? -1) < upTo) {
+          marked.current.set(address, upTo)
+          markFileRead(address, upTo)
+        }
+        if (newestAt > now) ahead = Math.min(ahead ?? newestAt, newestAt)
+      }
+      // Ahead of the clock: read it once the clock gets there, if still open.
+      if (ahead !== undefined) t = setTimeout(fire, (ahead - now) * 1000)
+    }
+    const arm = () => {
+      clearTimeout(t)
+      if (!document.hidden) t = setTimeout(fire, 0)
+    }
+    arm()
+    document.addEventListener('visibilitychange', arm)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('visibilitychange', arm)
+    }
+    // `markFileRead` is recreated each render; the marks depend only on what was seen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature])
 }
 
 /**

@@ -17,7 +17,6 @@ const hook = vi.hoisted(() => ({
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
-  useTopicFiles: () => ({ state: hook.state, busy: new Set<string>(), setListed: hook.setListed }),
   fileChoices: () => hook.choices,
 }))
 vi.mock('@/components/ui/MessageLinks', () => ({
@@ -35,9 +34,10 @@ vi.mock('@/components/ui/MessageLinks', () => ({
 import { ToastProvider } from '@/lib/toast'
 import { TopicFiles as Section } from './TopicFiles'
 
-const TopicFiles = (props: Parameters<typeof Section>[0]) => (
+/** The section as the topic's view draws it, handed the list's read (`useTopicFiles`, stubbed above). */
+const TopicFiles = ({ topic, title, readOnly }: Omit<Parameters<typeof Section>[0], 'files'> & { folder: string }) => (
   <ToastProvider>
-    <Section {...props} />
+    <Section topic={topic} title={title} readOnly={readOnly} files={{ state: hook.state as never, busy: new Set<string>(), setListed: hook.setListed }} />
   </ToastProvider>
 )
 
