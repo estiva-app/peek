@@ -8,10 +8,11 @@
  * nothing lights; a mention always does.
  */
 import { describe, expect, it } from 'vitest'
-import { buildLevelChange, buildMembershipChange, type TeamsList } from '@estiva-app/conversation'
+import { buildLevelChange, buildMembershipChange, fileContext, threadContext, type TeamsList } from '@estiva-app/conversation'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { signed } from '@/test/wireRelay'
+import * as dots from './placeDots'
 import { placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
 
 const ME = 'c'.repeat(64)
@@ -151,5 +152,49 @@ describe('a space, by its team’s default', () => {
 
   it('holds nobody in an archived team', () => {
     expect(lights([said('new', T0 + 50)], [], { readTo: T0 + 30, team: { ...space(), archived: true } })).toBe(false)
+  })
+})
+
+describe('a file the topic lists (TOPI-3)', () => {
+  const ISSUE = `30851:${MIKY}:issue-12`
+  const SHIP_TEAM = '3c1d2e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
+  const comment = (id: string, at: number, by = MIKY) =>
+    signed({ kind: 1111, created_at: at, content: id, tags: [['A', ISSUE], ['K', '30851'], ['a', ISSUE], ['k', '30851'], ['h', SHIP_TEAM]] }, by)
+  const reply = (to: SignedEvent, at: number, by = MIKY) =>
+    signed({ kind: 1111, created_at: at, content: 'reply', tags: [['A', ISSUE], ['K', '30851'], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ['h', SHIP_TEAM]] }, by)
+  /** Whether the topic lights for news on the issue it lists, with ME's markers `merged`. */
+  const listedLights = (events: SignedEvent[], changes: SignedEvent[], merged: Record<string, number> = {}) =>
+    // Read off the module, so on code without it this file still loads and the test fails on its assertion.
+    ((dots as { listedHaveUnread?: (news: unknown, judge: unknown) => boolean }).listedHaveUnread?.([{ file: ISSUE, events }], {
+      me: ME,
+      following: following(changes),
+      muted: false,
+      merged,
+      floor: FLOOR,
+    }) ?? false)
+  const atAll = [added(T0 + 10), level(T0 + 15, 'all')]
+  const ISSUE_CONTEXT = fileContext(ISSUE) as string
+
+  it('lights at All for a comment said after All was chosen, and not for one said before', () => {
+    expect(listedLights([comment('after', T0 + 50)], atAll)).toBe(true)
+    expect(listedLights([comment('before', T0 + 12)], atAll)).toBe(false)
+  })
+
+  it('stays dark at Important for the same comment', () => {
+    expect(listedLights([comment('after', T0 + 50)], atAll)).toBe(true)
+    expect(listedLights([comment('after', T0 + 50)], [added(T0 + 10)])).toBe(false)
+  })
+
+  it("stays dark once the file's own marker passes it: read in Ship, on its page or in the topic", () => {
+    expect(listedLights([comment('after', T0 + 50)], atAll, { [TOPIC]: T0 + 100 })).toBe(true)
+    expect(listedLights([comment('after', T0 + 50)], atAll, { [ISSUE_CONTEXT]: T0 + 60 })).toBe(false)
+  })
+
+  it("a reply is judged by its thread's marker, not by the file's", () => {
+    const root = comment('root', T0 + 20)
+    const answer = reply(root, T0 + 50)
+    // The file read past it: a reply is read only in its thread (PEE-44), so it still lights.
+    expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 60 })).toBe(true)
+    expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 30, [threadContext(root.id) as string]: T0 + 60 })).toBe(false)
   })
 })

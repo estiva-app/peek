@@ -10,7 +10,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-has-members-and-followers-and-a-place-is-followed-at-a-level.md
  */
-import { followingOf, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
+import { fileContext, followingOf, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
 
@@ -67,4 +67,39 @@ export function placeHasUnread(
     tags: m.root !== m.id ? [['e', m.root, '', 'root']] : [],
   }))
   return unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor }).length > 0
+}
+
+/** What a topic's list holds that its dot judges at All (TOPI-3): each file it lists directly, with its comments held. */
+export type ListedNews = readonly { file: string; events: readonly SignedEvent[] }[]
+
+/**
+ * Whether a file the topic lists has something new for `me` — what lights the topic's dot at **All** beside its own
+ * stream (TOPI-3): the topic's middle column draws those files' threads there, so the dot says when one has news.
+ * Nothing at Important, Not following or when not in: the column draws the topic's own alone then.
+ *
+ * Each file is judged in its own stream, by the shared rule at the topic's level (`unreadOnPlace` with the file's
+ * context, as the rule's own words say a listed file is judged), so a file read in Ship, on its own page or in the
+ * topic (its own marker moved) stays dark; a reply by its thread's marker. Only what was said after the viewer chose
+ * All counts: choosing it never brings back older talk (Miky, 2026-11-03).
+ *
+ * Known limit: the Topics column's read holds only each file's newest comment or two (the ones it already fetched
+ * to time its topics; interop's `TopicActivity.comments`), and the live watch adds each new one. An older unread
+ * comment from someone else, under your own newer one, is not held, so it does not light the dot until the next
+ * comment on that file.
+ */
+export function listedHaveUnread(
+  news: ListedNews,
+  judge: { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number },
+): boolean {
+  if (!judge.following.in || judge.following.level !== 'all') return false
+  const from = judge.following.allSince
+  return news.some(({ file, events }) => {
+    const stream = fileContext(file)
+    if (!stream) return false
+    const after = from === undefined ? events : events.filter((event) => event.created_at >= from)
+    return (
+      after.length > 0 &&
+      unreadOnPlace(after, judge.merged, { stream, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor }).length > 0
+    )
+  })
 }

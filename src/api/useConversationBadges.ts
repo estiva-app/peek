@@ -7,7 +7,7 @@ import { fileContext, isCommentOn, isReply, streamHasUnread, THREAD_RULE_FROM } 
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
-import { placeHasUnread, topicFollowingOf } from './placeDots'
+import { listedHaveUnread, placeHasUnread, topicFollowingOf, type ListedNews } from './placeDots'
 import { listingOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
 
@@ -140,7 +140,14 @@ export function foldHeldEvents(
  */
 export function useConversationBadges(
   files: ForeignObject[] | undefined,
-  { hold = false }: { hold?: boolean } = {},
+  {
+    hold = false,
+    listed,
+  }: {
+    hold?: boolean
+    /** Your topics' listed files' news, by topic (`useListedNews`): a topic followed at All lights for it too (TOPI-3). */
+    listed?: ReadonlyMap<string, ListedNews>
+  } = {},
 ): {
   counts: Record<string, number>
   unread: Record<string, boolean>
@@ -266,6 +273,19 @@ export function useConversationBadges(
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
     const me = heldToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
+    const floor = nowSeconds - PEEK_HORIZON_DAYS * 24 * 60 * 60
+    // How `me` follows a topic: its team's default for a space, held by the teams read.
+    const followingOfTopic = (address: string, folder: string, me: string) => {
+      const team = listingOf(teams, address)?.team
+      return topicFollowingOf({
+        address,
+        folder,
+        me,
+        changes: membership.changesOf(address),
+        floor: membership.floor,
+        ...(team?.facts ? { team: { team: team.id, roster: team.facts.roster, listing: team.facts.listing, archived: team.archived, ...(team.facts.teams ? { teams: team.facts.teams } : {}) } } : {}),
+      })
+    }
     for (const [ref, messages] of Object.entries(current)) {
       // Comments, not their replies, which are here for the dot (CON-34): the count `conversationCountsOf` gives.
       counts[ref] = messages.filter((m) => m.root === m.id).length
@@ -287,16 +307,7 @@ export function useConversationBadges(
       */
       if (me && file?.address && file.folder && Number(file.address.split(':')[0]) === KIND_BARE_FILE) {
         if (!teamsKnown) continue
-        const listed = listingOf(teams, file.address)
-        const team = listed?.team
-        const following = topicFollowingOf({
-          address: file.address,
-          folder: file.folder,
-          me,
-          changes: membership.changesOf(file.address),
-          floor: membership.floor,
-          ...(team?.facts ? { team: { team: team.id, roster: team.facts.roster, listing: team.facts.listing, archived: team.archived, ...(team.facts.teams ? { teams: team.facts.teams } : {}) } } : {}),
-        })
+        const following = followingOfTopic(file.address, file.folder, me)
         unread[ref] = placeHasUnread(
           messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
           {
@@ -305,7 +316,7 @@ export function useConversationBadges(
             following,
             muted: membership.termsOf(file.address).muted,
             merged: frontier.merged,
-            floor: nowSeconds - PEEK_HORIZON_DAYS * 24 * 60 * 60,
+            floor,
             isMentioned: membership.isMentioned,
           },
         )
@@ -321,10 +332,25 @@ export function useConversationBadges(
         membership.isMentioned,
       )
     }
+    /*
+      A topic followed at All also lights for news on a file it lists (TOPI-3): its middle column draws those files'
+      threads there. Judged from what the Topics column already holds (`useListedNews`), with no read of its own; each
+      file in its own stream, so one read in Ship or in the topic stays dark.
+    */
+    if (listed && me && teamsKnown && frontier.ready && membership.state !== 'unknown') {
+      for (const file of files ?? []) {
+        const news = file.address ? listed.get(file.address) : undefined
+        if (!news?.length || !file.folder || unread[file.ref]) continue
+        const address = file.address!
+        if (listedHaveUnread(news, { me, following: followingOfTopic(address, file.folder, me), muted: membership.termsOf(address).muted, merged: frontier.merged, floor })) {
+          unread[file.ref] = true
+        }
+      }
+    }
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key])
+  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key, listed])
 }
 
 /**

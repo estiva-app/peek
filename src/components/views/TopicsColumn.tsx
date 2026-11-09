@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EmptyState, ListColumn, NavTree, NavTreeSection, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { useConversationBadges, useFolders, useTopicsColumn, type TopicsColumnState } from '@/api'
+import { useConversationBadges, useFolders, useListedNews, useTopicsColumn, type TopicsColumnState } from '@/api'
 import { TreeRow } from '@/components/views/FileTreeView'
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { TreeColumn } from '@/lib/openedFrom'
@@ -37,7 +37,9 @@ export function TopicsColumn({ selectedRef, onControl }: {
   const { state, signedOut } = useTopicsColumn()
   const railClosed = useRailClosed()
   // Your topics carry the dot, as the Folder tree's rows do; the others are not yours to hear about.
-  const { unread } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined)
+  // At All a topic also lights for news on a file it lists, from what the column already holds (TOPI-3).
+  const listed = useListedNews()
+  const { unread } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
   const [starting, setStarting] = useState(false)
   // The Folder list New topic chooses from, read with the column (one shared read per tab), so its dialog opens on the press.
   useFolders()
