@@ -432,18 +432,19 @@ export function useFileControls({
       new one — named as still listing it, never as refusing, since those after
       the refused move were never asked — and why, in Peek's words.
     */
-    const partly = (stillIn: readonly string[], why: string | undefined) => {
+    const partly = (stillIn: readonly string[], why: string | undefined, retry?: false) => {
       const names = [...new Set(stillIn)].map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another team')
-      return `Moved to ${to.name ?? 'the team'}, but ${names.join(' and ')} still list${names.length > 1 ? '' : 's'} it too${why ? `: ${why}` : '. Try moving it again.'}`
+      // A reason code Peek has no words for (TEA-9): say what did move, never to try again.
+      return `Moved to ${to.name ?? 'the team'}, but ${names.join(' and ')} still list${names.length > 1 ? '' : 's'} it too${why ? `: ${why}` : retry === false ? '.' : '. Try moving it again.'}`
     }
-    type Step = () => Promise<{ ok: true } | { ok: false; reason?: string; why?: string; stillIn?: string[] }>
+    type Step = () => Promise<{ ok: true } | { ok: false; reason?: string; why?: string; stillIn?: string[]; retry?: false }>
     const relist: Step | undefined = changesFolder
       ? async () => {
           // "Keep it a space in <team>" — answered only when the dialog asked it (TEA-5).
           const result = await moveFile(file, state.sources, target, choice.checked === true)
           if (result.ok || !('landed' in result)) return result
           // It did arrive, so the move goes on.
-          refuse(partly(result.stillIn, result.why))
+          refuse(partly(result.stillIn, result.why, result.retry))
           return { ok: true as const }
         }
       : undefined
@@ -469,7 +470,7 @@ export function useFileControls({
           return false
         }
         // The issue took its new project, and what is listed under it was not moved with it.
-        if (result.stillIn?.length) refuse(partly(result.stillIn, result.why))
+        if (result.stillIn?.length) refuse(partly(result.stillIn, result.why, result.retry))
         else refuse(`Moved to ${to.name ?? 'the team'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`)
         break
       }

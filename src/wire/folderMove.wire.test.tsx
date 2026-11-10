@@ -142,6 +142,26 @@ describe('moving a file at the wire', () => {
     expect(await said()).toBe('Moved to Steer, but Ops still lists it too: one of the teams is archived.')
   })
 
+  // TEA-9. A reason code Peek has no words for: the move would be refused the same way again, so it never says to try again.
+  it('a move refused with a reason code Peek does not know says only that nothing was moved', async () => {
+    relay.refuse({ when: (event) => event.kind === 1852, message: 'invalid: frozen: the team is archived' })
+    const onMoved = await moveTo('Steer')
+
+    await waitFor(() => expect(commands()).toEqual(['move HQ→Steer']))
+    expect(await said()).toBe('Nothing was moved.')
+    expect(onMoved).not.toHaveBeenCalled()
+  })
+
+  it('a refused second move with a reason code Peek does not know says which Folder still lists it, and never to try again', async () => {
+    relay.seed(...folder(OPS, 'Ops', [ADDRESS]))
+    relay.refuse({ when: (event) => event.kind === 1852 && tagOf(event, 'from') === OPS, message: 'invalid: frozen: the team is archived' })
+    const onMoved = await moveTo('Steer')
+
+    await waitFor(() => expect(onMoved).toHaveBeenCalled())
+    expect(commands()).toEqual(['move HQ→Steer', 'move Ops→Steer'])
+    expect(await said()).toBe('Moved to Steer, but Ops still lists it too.')
+  })
+
   it('after "the Folders changed", Move pressed again moves it from where it is now', async () => {
     const onMoved = await pick('Steer')
     // Meanwhile somebody moved it from HQ to Ops, so the read the dialog opened on is out of date.

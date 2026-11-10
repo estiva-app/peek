@@ -1140,7 +1140,7 @@ export async function moveFileAsViewer(
           : plan.reason === 'target-is-private'
             ? 'Can’t move this into a private team: it would stay readable by everyone who can read it now.'
             : plan.reason === 'target-is-not-home'
-              ? 'This topic is in no team yet, so it can go only to the one it was started in or to the Company team.'
+              ? `This topic is ${NOT_HOME}`
               : 'That team has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
@@ -1160,16 +1160,17 @@ export async function moveFileAsViewer(
             : refusal.why === 'changed-meanwhile'
               ? 'the teams changed since you opened this. Try again.'
               : refusal.why === 'not-home'
-                ? 'it is in no team yet, so it can go only to the team it was started in, or to the Company team.'
+                ? `it is ${NOT_HOME}`
                 : undefined
+  // A code Peek does not know (and `leaves-by-moving`: Peek never removes a live topic) says only that nothing moved, never "Try again".
+  const unexplained = why === undefined && refusal.why !== 'refused'
   if (refusal.nothingMoved) {
     const stillIn = plan.events.flatMap((event) => event.tags.filter((tag) => tag[0] === 'from').map((tag) => tag[1]!))
-    // A code Peek does not know (and `leaves-by-moving`: Peek never removes a live topic) says only that nothing moved, never "Try again".
-    const reason = why ? `Nothing was moved: ${why}` : refusal.why === 'refused' ? 'Nothing was moved. Try again.' : 'Nothing was moved.'
+    const reason = why ? `Nothing was moved: ${why}` : unexplained ? 'Nothing was moved.' : 'Nothing was moved. Try again.'
     return { ok: false, reason, why, stillIn }
   }
   // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with why.
-  return { ok: false, landed: true, why, stillIn: refusal.notMovedFrom }
+  return { ok: false, landed: true, why, stillIn: refusal.notMovedFrom, ...(unexplained ? { retry: false as const } : {}) }
 }
 
 /**
@@ -1177,12 +1178,16 @@ export async function moveFileAsViewer(
  * alone, the whole sentence. Sent and refused, or failed on the way: `why` in
  * Peek's words (none when there is none to give) and `stillIn`, the Folders
  * that still list the file besides the target — with `reason` when nothing
- * moved, and `landed` when an earlier move did arrive.
+ * moved, and `landed` when an earlier move did arrive (`retry: false` when the
+ * relay's reason code is one Peek has no words for, so it never says try again).
  */
 export type MoveOutcome =
   | { ok: true }
   | { ok: false; reason: string; why?: string; stillIn?: string[] }
-  | { ok: false; landed: true; reason?: undefined; why?: string; stillIn: string[] }
+  | { ok: false; landed: true; reason?: undefined; why?: string; stillIn: string[]; retry?: false }
+
+/** Where a topic no team lists may go (TEA-9's decided words), said the same whether Peek or the relay stops the move. */
+const NOT_HOME = 'in no team yet, so it can go only to the team it was started in, or to the Company team.'
 
 /** Peek's own failure on the way to the relay, in a person's words: the sign-in, Estiva ID, or the network. */
 function ownFailureWords(error: unknown): string {
