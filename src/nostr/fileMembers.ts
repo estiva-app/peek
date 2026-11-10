@@ -15,10 +15,19 @@ import type { RelaySeam } from './stars'
 
 const KIND_COMMENT = 1111
 
-/** The filters one file's roster needs, in one request. */
-export function fileMembersQueries(file: string): Record<string, unknown>[] {
+/**
+ * The filters one file's roster needs, in one request. Of its changes, only
+ * the ones naming `people` (everyone with a profile): the fold takes a change
+ * for its `p` tags or a `member:<P>` field, and a membership change MUST carry
+ * its person's `p` (§11.8), so this is the fold's whole input for them and none of
+ * the text saves (ALO-19; on production 22 of 1,993 project changes name
+ * anyone). With no `people`, every change, as before.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-membership-change-names-the-person-it-is-about.md
+ */
+export function fileMembersQueries(file: string, people?: readonly string[]): Record<string, unknown>[] {
   return [
-    { kinds: [KIND_CHANGE], '#a': [file] },
+    people?.length ? { kinds: [KIND_CHANGE], '#a': [file], '#p': [...new Set(people)].sort() } : { kinds: [KIND_CHANGE], '#a': [file] },
     { kinds: [KIND_COMMENT], '#A': [file] },
     { kinds: [KIND_COMMENT], '#a': [file] },
   ]
@@ -37,9 +46,10 @@ export function foldFileMembers(file: string, events: readonly SignedEvent[]): M
   return membersOf(file, [root, ...unique])
 }
 
-/** The file's members, or `undefined` when the relay did not answer — never an empty guess. */
-export async function fetchFileMembers(seam: RelaySeam, file: string): Promise<Map<string, Membership> | undefined> {
-  const { ok, events } = await queryRelay(seam.relayUrl, fileMembersQueries(file), seam.accessToken, seam.pubkey)
+/** The file's members, or `undefined` when the relay did not answer — never an empty guess. `people`: as {@link fileMembersQueries}. */
+export async function fetchFileMembers(seam: RelaySeam, file: string, people?: readonly string[]): Promise<Map<string, Membership> | undefined> {
+  // An empty directory is no answer either: `#p` with the viewer alone would miss everyone else.
+  const { ok, events } = await queryRelay(seam.relayUrl, fileMembersQueries(file, people?.length ? [seam.pubkey, ...people] : undefined), seam.accessToken, seam.pubkey)
   return ok ? foldFileMembers(file, events) : undefined
 }
 
