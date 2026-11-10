@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { THREAD_RULE_FROM, channelContext, threadContext } from '@estiva-app/conversation'
+import { encodeNpub } from '@estiva-app/protocol'
 import { topicChannelFlags } from './topicUnread'
 
 const CHANNEL = '0d1c9f5a-6f7e-4a2b-9c3d-8e5f4a1b2c3d'
@@ -31,7 +32,7 @@ const replied = (id: string, at: number, inThread: string, urgent = false, by = 
   body: '',
 })
 
-const judge = (
+const flags = (
   messages: StreamMessage[],
   markers: Record<string, number> = {},
 ) =>
@@ -41,6 +42,39 @@ const judge = (
     nowSeconds: NOW,
     horizonSeconds: HORIZON,
   })
+/** The two signals alone: the dot and the urgent mark. */
+const judge = (messages: StreamMessage[], markers: Record<string, number> = {}) => {
+  const { unread, urgent } = flags(messages, markers)
+  return { unread, urgent }
+}
+
+describe('a DM’s card (ACT-3)', () => {
+  it('lists every new message, urgent or not, newest first, with its words; never your own or one already read', () => {
+    const old = said('old', NOW - 7200)
+    const mine = { ...said('mine', NOW - 3000), by: ME }
+    const plain = { ...said("plain", NOW - 3600), body: "Are we still on for Thursday?" }
+    const urgent = { ...said("urgent", NOW - 1800, true), body: "Can you look now?" }
+    const news = flags([old, mine, plain, urgent], { [channelContext(CHANNEL) as string]: NOW - 5000 }).news
+    expect(news.map((line) => [line.id, line.words])).toEqual([
+      ['urgent', urgent.body],
+      ['plain', plain.body],
+    ])
+  })
+
+  it('a DM’s line is a message, never a new conversation, and a mention of you says so (§11.8)', () => {
+    const plain = said('plain', NOW - 3600)
+    const naming = { ...said('naming', NOW - 1800), body: `nostr:${encodeNpub(ME)} look` }
+    const news = flags([plain, naming], {}).news
+    expect(news.map((line) => [line.id, line.reason])).toEqual([
+      ['naming', 'mention'],
+      ['plain', 'message'],
+    ])
+  })
+
+  it('a channel with nothing new has no card', () => {
+    expect(flags([said('m', NOW - 3600)], { [channelContext(CHANNEL) as string]: NOW }).news).toEqual([])
+  })
+})
 
 const CONTAINER = channelContext(CHANNEL) as string
 

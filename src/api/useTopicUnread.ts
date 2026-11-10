@@ -4,6 +4,7 @@ import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { topicChannelFlags } from './topicUnread'
 import { useChannelStreams } from './useChannelStreams'
+import type { RowNewsItem } from './rowNews'
 
 /** What the fold needs of a topic: the sidebar's key, and the channel to read. */
 export interface TopicChannel {
@@ -55,6 +56,8 @@ export function useTopicUnread(
 ): {
   unread: Record<string, boolean>
   urgent: Record<string, boolean>
+  /** A lit channel's card lines, newest first (ACT-3): what lit its dot or its urgent mark. */
+  news: Record<string, RowNewsItem[]>
 } {
   const frontier = useReadFrontier()
 
@@ -87,9 +90,10 @@ export function useTopicUnread(
   return useMemo(() => {
     const unread: Record<string, boolean> = {}
     const urgent: Record<string, boolean> = {}
+    const news: Record<string, RowNewsItem[]> = {}
     // Not judged until the first merge has landed: before that every marker is
     // absent, and "absent" would light the whole sidebar.
-    if (!frontier.ready) return { unread, urgent }
+    if (!frontier.ready) return { unread, urgent, news }
     const me = heldToken()?.pubkey
     for (const [id, folder] of pairs) {
       const messages = held.streams[folder]
@@ -103,7 +107,8 @@ export function useTopicUnread(
       })
       unread[id] = flags.unread
       urgent[id] = flags.urgent
+      if (flags.news.length > 0) news[id] = flags.news
     }
-    return { unread, urgent }
+    return { unread, urgent, news }
   }, [held, frontier, pairs])
 }

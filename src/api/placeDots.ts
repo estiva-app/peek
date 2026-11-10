@@ -13,6 +13,7 @@
 import { fileContext, followingOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
+import { explainUnread, type RowNewsItem } from './rowNews'
 
 /** What a space's team gives the fold: its roster and list, the viewer's teams list, and whether it is archived. */
 export interface TeamFacts {
@@ -51,11 +52,18 @@ export function topicFollowingOf(args: { address: string; folder: string; me: st
   })
 }
 
+type PlaceJudgeArgs = { context: string; me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number; isMentioned: (id: string) => boolean }
+
 /** Whether the place's stream has something new for `me` at the level they follow it at. */
-export function placeHasUnread(
-  messages: readonly StreamMessage[],
-  judge: { context: string; me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number; isMentioned: (id: string) => boolean },
-): boolean {
+export function placeHasUnread(messages: readonly StreamMessage[], judge: PlaceJudgeArgs): boolean {
+  return placeNews(messages, judge).length > 0
+}
+
+/**
+ * What is new for `me` on the place's own stream, a line each with its reason (ACT-3): the same messages
+ * `placeHasUnread` lights for. The stream holds no words, so the lines carry none; the card asks for them.
+ */
+export function placeNews(messages: readonly StreamMessage[], judge: PlaceJudgeArgs): RowNewsItem[] {
   // The messages carry no body: one that names the viewer is handed to the rule as the body it would have had.
   const named = `nostr:${encodeNpub(judge.me)}`
   const asPlace = messages.map((m) => ({
@@ -66,7 +74,9 @@ export function placeHasUnread(
     content: judge.isMentioned(m.id) ? named : '',
     tags: m.root !== m.id ? [['e', m.root, '', 'root']] : [],
   }))
-  return unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor }).length > 0
+  const unread = unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor })
+  const rootOf = new Map(messages.map((m) => [m.id, m.root]))
+  return explainUnread(asPlace, unread, judge.me, (m) => ({ root: rootOf.get(m.id) ?? m.id }))
 }
 
 /**
@@ -96,15 +106,31 @@ export type ListedNews = readonly { file: string; events: readonly SignedEvent[]
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/at-important-what-names-you-on-a-listed-file-lights-the-topic.md
  */
-export function listedHaveUnread(
-  news: ListedNews,
-  judge: { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number },
-): boolean {
+export function listedHaveUnread(news: ListedNews, judge: ListedJudgeArgs): boolean {
   if (!judge.following.in) return false
-  return news.some(({ file, events, under }) => {
-    const stream = fileContext(file)
-    if (!stream || events.length === 0) return false
-    const place = { stream, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor, ...(under ? { under } : {}) }
-    return unreadOnListedFile(events, judge.merged, place).length > 0
-  })
+  return news.some(({ file, events, under }) => unreadOnListed(file, events, under, judge).length > 0)
 }
+
+type ListedJudgeArgs = { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number }
+
+function unreadOnListed(file: string, events: readonly SignedEvent[], under: boolean | undefined, judge: ListedJudgeArgs): SignedEvent[] {
+  const stream = fileContext(file)
+  if (!stream || events.length === 0) return []
+  const place = { stream, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor, ...(under ? { under } : {}) }
+  return unreadOnListedFile(events, judge.merged, place)
+}
+
+/**
+ * What is new for `me` on the files a topic lists, a line each with its reason and the file it is on (ACT-3): the
+ * same messages `listedHaveUnread` lights the topic for. Each comment is held whole, so its words come with it.
+ */
+export function listedNews(news: ListedNews, judge: ListedJudgeArgs): RowNewsItem[] {
+  if (!judge.following.in) return []
+  return news.flatMap(({ file, events, under }) =>
+    explainUnread(events, unreadOnListed(file, events, under, judge), judge.me, (event) => ({ root: commentRootOf(event), words: event.content, file })),
+  )
+}
+
+/** A comment's conversation root: its `E`, else its `e`, the comment it answers (§6.4), else itself — as the badges read it. */
+const commentRootOf = (event: SignedEvent) =>
+  event.tags.find((t) => t[0] === 'E' && t[1])?.[1] ?? event.tags.find((t) => t[0] === 'e' && t[1])?.[1] ?? event.id

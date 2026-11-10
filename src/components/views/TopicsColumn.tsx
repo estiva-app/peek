@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type TopicsColumnState } from '@/api'
+import { listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type RowNewsItem, type TopicsColumnState } from '@/api'
 import { useToast } from '@/lib/toast'
 import { TreeRow } from '@/components/views/FileTreeView'
 
@@ -41,7 +41,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   // Your topics carry the dot, as the Folder tree's rows do; the others are not yours to hear about.
   // A topic also lights for news on a file it lists, and for what names you one level under one, from what the column already holds (TOPI-3, ACT-2).
   const listed = useListedNews()
-  const { unread } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
+  const { unread, news } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
   const [starting, setStarting] = useState(false)
   /*
     A topic's row offers Make it a space to a member of its team, as the Teams column does (TEA-5, TOPI-7). The teams
@@ -78,6 +78,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
         signedOut={signedOut}
         railClosed={railClosed}
         unread={unread}
+        news={news}
         selectedRef={selectedRef}
         exploring={exploring}
         onControl={onControl}
@@ -96,6 +97,7 @@ export function TopicsColumnView({
   signedOut = false,
   railClosed = false,
   unread = {},
+  news,
   selectedRef,
   exploring = false,
   onControl,
@@ -107,6 +109,8 @@ export function TopicsColumnView({
   signedOut?: boolean
   railClosed?: boolean
   unread?: Record<string, boolean>
+  /** What lit each lit row (ACT-3), for its card. */
+  news?: Record<string, readonly RowNewsItem[]>
   selectedRef?: string
   exploring?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
@@ -132,7 +136,7 @@ export function TopicsColumnView({
     >
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
-        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} spaceOf={spaceOf} leavesOf={leavesOf} />
+        <TopicsBody state={state} signedOut={signedOut} unread={unread} news={news} selectedRef={selectedRef} exploring={exploring} onControl={onControl} spaceOf={spaceOf} leavesOf={leavesOf} />
       </TreeColumn.Provider>
     </ListColumn>
   )
@@ -142,6 +146,7 @@ function TopicsBody({
   state,
   signedOut,
   unread,
+  news,
   selectedRef,
   exploring,
   onControl,
@@ -151,6 +156,7 @@ function TopicsBody({
   state: TopicsColumnState
   signedOut: boolean
   unread: Record<string, boolean>
+  news?: Record<string, readonly RowNewsItem[]>
   selectedRef?: string
   exploring: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
@@ -166,7 +172,7 @@ function TopicsBody({
       {/* The approved story's empty line (Miky, 6 Nov), above Explore topics, where every other topic is. */}
       {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
       {state.mine.map((topic) => (
-        <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves={leavesOf?.(topic) ?? true} nested />
+        <TreeRow key={topic.ref} file={topic} unread={unread} news={news} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves={leavesOf?.(topic) ?? true} nested />
       ))}
       {/* Where every other topic is, archived ones too, in place of the Other topics and Archived sections; no icon: a way in, not another kind of topic (Miky, 6 Nov). */}
       <ExploreRow exploring={exploring} />

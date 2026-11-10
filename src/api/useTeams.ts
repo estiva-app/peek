@@ -10,6 +10,7 @@ import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
 import { useFolderContents, useFolders } from './useFolderContents'
 import { useReadableTopics } from './useTopicsColumn'
+import { explainUnread, newestFirst, type RowNewsItem } from './rowNews'
 
 export { entryNames, type ListedEntry }
 
@@ -305,9 +306,17 @@ export const chatMessagesOf = (messages: readonly StreamMessage[]) => messages.f
 
 /** Whether a team's chat has something new for `viewer` in its channel's stream (§11.8): only for someone in it. */
 export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merged: Readonly<Record<string, number>>, viewer: string): boolean {
-  if (!team.chat.in) return false
-  const messages = chatMessagesOf(stream).map(asPlaceMessage)
-  return unreadOnPlace(messages, merged, { stream: team.id, me: viewer, following: team.chat }).length > 0
+  return chatNews(team, stream, merged, viewer).length > 0
+}
+
+/** What is new for `viewer` in a team's chat, a line each with its reason and words (ACT-3), newest first: the messages its dot lights for. */
+export function chatNews(team: Team, stream: readonly StreamMessage[], merged: Readonly<Record<string, number>>, viewer: string): RowNewsItem[] {
+  if (!team.chat.in) return []
+  const chat = chatMessagesOf(stream)
+  const messages = chat.map(asPlaceMessage)
+  const unread = unreadOnPlace(messages, merged, { stream: team.id, me: viewer, following: team.chat })
+  const byId = new Map(chat.map((m) => [m.id, m]))
+  return newestFirst(explainUnread(messages, unread, viewer, (m) => ({ root: byId.get(m.id)?.root ?? m.id, words: m.content })))
 }
 
 /**
@@ -320,17 +329,26 @@ export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merg
  * absent.
  */
 export function useTeamChatUnread(teams: readonly Team[] | null): Record<string, boolean> {
+  return useTeamChatNews(teams).unread
+}
+
+/** {@link useTeamChatUnread}, with each lit chat's card lines (ACT-3): the same messages, read once. */
+export function useTeamChatNews(teams: readonly Team[] | null): { unread: Record<string, boolean>; news: Record<string, RowNewsItem[]> } {
   const viewer = heldToken()?.pubkey
   const ids = useMemo(() => (teams ?? []).filter((team) => team.chat.in).map((team) => team.id), [teams])
   const { streams } = useChannelStreams(ids)
   const { merged, ready } = useReadFrontier()
   return useMemo(() => {
-    const out: Record<string, boolean> = {}
-    if (!viewer || !ready) return out
+    const unread: Record<string, boolean> = {}
+    const news: Record<string, RowNewsItem[]> = {}
+    if (!viewer || !ready) return { unread, news }
     for (const team of teams ?? []) {
       const stream = team.chat.in ? streams[team.id] : []
-      if (stream) out[team.id] = chatHasUnread(team, stream, merged, viewer)
+      if (!stream) continue
+      const lines = chatNews(team, stream, merged, viewer)
+      unread[team.id] = lines.length > 0
+      if (lines.length > 0) news[team.id] = lines
     }
-    return out
+    return { unread, news }
   }, [teams, streams, merged, ready, viewer])
 }

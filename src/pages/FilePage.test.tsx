@@ -262,7 +262,7 @@ vi.mock('@/api', async () => ({
   // The Teams column and Move read the teams this tab holds (TEA-5): one, the Folder's, unless a test says otherwise.
   // Subscribed, as the real read is: a test that sets them after mounting (`arrive`) redraws the page.
   useTeams: () => ({ teams: useSyncExternalStore(teamsHeld.subscribe, () => teamsHeld.teams), failed: false, reload: async () => {} }),
-  useTeamChatUnread: () => ({}),
+  useTeamChatNews: () => ({ unread: {}, news: {} }),
   // useMayMove's own rule over the teams above (its hook reads useTeams inside its module, past this mock).
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.

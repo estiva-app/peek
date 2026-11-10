@@ -16,6 +16,7 @@ import { mockConvIdFor } from './directory'
 import { hasRelay } from './relayUrl'
 import { useTopicUnread } from './useTopicUnread'
 import { useDmChannels } from './internal/dms'
+import type { RowNewsItem } from './rowNews'
 import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
 
 /**
@@ -36,6 +37,7 @@ import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/u
 export function useUnread(): {
   dmHasUnread: (dmId: string) => boolean
   dmIsUrgent: (dmId: string) => boolean
+  dmNews: (dmId: string) => readonly RowNewsItem[]
 } {
   const { partners, channelOf } = useDmChannels()
   const dmChannels = useMemo(
@@ -57,8 +59,13 @@ export function useUnread(): {
 
   const dmIsUrgent = useCallback((dmId: string) => (hasRelay ? (dmFold.urgent[dmId] ?? false) : false), [dmFold])
 
-  return { dmHasUnread, dmIsUrgent }
+  // What lit a DM, for its row's card (ACT-3): the channel's own unread messages, words and all.
+  const dmNews = useCallback((dmId: string): readonly RowNewsItem[] => (hasRelay ? (dmFold.news[dmId] ?? NO_NEWS) : NO_NEWS), [dmFold])
+
+  return { dmHasUnread, dmIsUrgent, dmNews }
 }
+
+const NO_NEWS: readonly RowNewsItem[] = []
 
 /** How long a conversation/thread must stay open before it counts as read. */
 export const READ_DWELL_MS = 1500

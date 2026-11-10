@@ -1,6 +1,7 @@
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { REPLY_FLOOR_CONTEXT, channelContext, threadContext } from '@estiva-app/conversation'
-import { fileHasUnread } from './fileUnread'
+import { fileHasUnread, fileUnreadMessages } from './fileUnread'
+import { explainUnread, newestFirst, type RowNewsItem } from './rowNews'
 
 /**
  * A topic's two sidebar signals, folded from its channel — SHR-5, §4.3.
@@ -50,20 +51,35 @@ export function topicChannelFlags(
     nowSeconds: number
     horizonSeconds: number
   },
-): { unread: boolean; urgent: boolean } {
+): { unread: boolean; urgent: boolean; news: RowNewsItem[] } {
   const container = frontier.marker(channelContext(channelUuid))
-  const judge = (subset: readonly StreamMessage[]) =>
-    subset.length > 0 &&
-    fileHasUnread(subset, {
-      file: container,
-      thread: (root) => frontier.marker(threadContext(root)),
-      floor: frontier.marker(REPLY_FLOOR_CONTEXT),
-      me: frontier.me,
-      nowSeconds: frontier.nowSeconds,
-      horizonSeconds: frontier.horizonSeconds,
-    })
+  const judged = {
+    file: container,
+    thread: (root: string) => frontier.marker(threadContext(root)),
+    floor: frontier.marker(REPLY_FLOOR_CONTEXT),
+    me: frontier.me,
+    nowSeconds: frontier.nowSeconds,
+    horizonSeconds: frontier.horizonSeconds,
+  }
+  const judge = (subset: readonly StreamMessage[]) => subset.length > 0 && fileHasUnread(subset, judged)
   return {
     unread: judge(messages.filter((m) => !m.urgent)),
     urgent: judge(messages.filter((m) => m.urgent)),
+    news: channelNews(messages, fileUnreadMessages(messages, judged), frontier.me),
   }
+}
+
+/**
+ * A DM's unread messages as card lines (ACT-3), newest first, urgent or not: the words are the channel's own. A DM is
+ * one conversation, so each line is a mention or a message (§11.8).
+ */
+function channelNews(all: readonly StreamMessage[], unread: readonly StreamMessage[], me: string | undefined): RowNewsItem[] {
+  if (!me || unread.length === 0) return []
+  const asRule = (m: StreamMessage) => ({ id: m.id, pubkey: m.by, kind: 9, created_at: m.at, content: m.body, tags: m.root !== m.id ? [['e', m.root, '', 'root']] : [] })
+  const ids = new Set(unread.map((m) => m.id))
+  const rules = all.map(asRule)
+  const byId = new Map(all.map((m) => [m.id, m]))
+  return newestFirst(
+    explainUnread(rules, rules.filter((m) => ids.has(m.id)), me, (m) => ({ root: byId.get(m.id)!.root, words: byId.get(m.id)!.body }), { dm: true }),
+  )
 }
