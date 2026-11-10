@@ -60,6 +60,14 @@ describe('who People lists', () => {
     ])
   })
 
+  it('leaves out a key the roster marks a service, even with a profile (TEA-7)', () => {
+    const operator = 'fd2256a800000000000000000000000000000000000000000000000000000000'
+    const list = { ...roster([MIKY, KATERINA]), tags: [['-'], ['member', MIKY, 'admin'], ['member', KATERINA, 'member'], ['member', operator, 'admin', 'service']] }
+    const events = [list, ...people, profile(operator, { display_name: 'Relay Operator' })]
+    expect(workspacePeopleOf(events, ME).map((p) => p.name)).toEqual(['Katerina Kelepouri', 'Miky'])
+    expect(mentionablePeopleOf(events, ME).map((p) => p.pubkey)).not.toContain(operator)
+  })
+
   it('leaves out a profile marked bot (NIP-24) even on the roster', () => {
     const out = workspacePeopleOf([roster([MIKY, AGENT]), ...people], ME)
     expect(out.map((p) => p.pubkey)).toEqual([MIKY])

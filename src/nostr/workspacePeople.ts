@@ -88,5 +88,20 @@ export function mentionablePeopleOf(events: readonly SignedEvent[], me: string |
 
 function membersOf(events: readonly SignedEvent[], me: string | undefined, include: Iterable<string>): WorkspaceProfile[] {
   const roster = rosterOf(events)
-  return mentionablePeople(profilesOf(events).values(), roster ? new Set([...roster, ...include]) : null, me)
+  const services = servicesOf(events)
+  const people = roster ? [...roster].filter((pubkey) => !services.has(pubkey)) : null
+  return mentionablePeople(profilesOf(events).values(), people ? new Set([...people, ...include]) : null, me)
+}
+
+/**
+ * Keys the roster marks as services, `["member", <pubkey>, <role>, "service"]`
+ * (SPEC §3.4): an app's or the server's own key, let in to write and one of
+ * nobody's people, so never offered to DM, mention or add (TEA-7).
+ */
+// why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-service-key-is-let-in-but-is-not-in-the-company.md
+function servicesOf(events: readonly SignedEvent[]): Set<string> {
+  const list = events
+    .filter((e) => e.kind === KIND_MEMBERSHIP_LIST)
+    .reduce<SignedEvent | undefined>((newest, e) => (!newest || e.created_at > newest.created_at ? e : newest), undefined)
+  return new Set((list?.tags ?? []).filter((t) => t[0] === 'member' && t[3] === 'service').map((t) => t[1]))
 }
