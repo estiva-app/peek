@@ -8,7 +8,7 @@ import type { FolderSummary } from '@estiva-app/interop'
 import { serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
 import { encodeNpub } from '@estiva-app/protocol'
 import { signed } from '@/test/wireRelay'
-import { chatHasUnread, mayMove, teamOf } from './useTeams'
+import { chatHasUnread, mayChangeTopicIn, mayMove, teamOf } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
 
 const RELAY = 'b'.repeat(64)
@@ -78,6 +78,23 @@ describe('mayMove (SPEC §3.3)', () => {
   it('a topic the team only leads moves by anyone, and so does anything while no teams are held', () => {
     expect(mayMove([teamOf(folder, read([MIKY]), KATERINA)], TOPIC)).toBe(true)
     expect(mayMove(null, SPACE)).toBe(true)
+  })
+})
+
+describe('mayChangeTopicIn (TOPI-5)', () => {
+  it('offers adding and arranging a topic’s files to a member of its team, private or not', () => {
+    expect(mayChangeTopicIn([teamOf(folder, read([MIKY]), MIKY)], TEAM)).toBe(true)
+    expect(mayChangeTopicIn([teamOf({ ...folder, private: true }, read([MIKY]), MIKY)], TEAM)).toBe(true)
+  })
+
+  it('offers it to anyone in an open team, and to nobody outside a private one, as the relay takes their changes', () => {
+    expect(mayChangeTopicIn([teamOf(folder, read([MIKY]), KATERINA)], TEAM)).toBe(true)
+    expect(mayChangeTopicIn([teamOf({ ...folder, private: true }, read([MIKY]), KATERINA)], TEAM)).toBe(false)
+  })
+
+  it('offers it while the team is not held: a refusal then says why', () => {
+    expect(mayChangeTopicIn(null, TEAM)).toBe(true)
+    expect(mayChangeTopicIn([], TEAM)).toBe(true)
   })
 })
 
