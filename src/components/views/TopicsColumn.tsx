@@ -36,7 +36,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   const { state, signedOut } = useTopicsColumn()
   const railClosed = useRailClosed()
   // Your topics carry the dot, as the Folder tree's rows do; the others are not yours to hear about.
-  // At All a topic also lights for news on a file it lists, from what the column already holds (TOPI-3).
+  // A topic also lights for news on a file it lists, and for what names you one level under one, from what the column already holds (TOPI-3, ACT-2).
   const listed = useListedNews()
   const { unread } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
   const [starting, setStarting] = useState(false)

@@ -98,6 +98,6 @@ describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
     const mine = comment(THEIRS, ME, { created_at: NOW - 300 })
     const someoneElses = comment(THEIRS, THEM, { created_at: NOW - 100, tags: [['A', THEIRS], ['p', THEM]] })
     const level = change(THEIRS, `follow:${ME}`, 'all', ME, ME)
-    expect(foldMemberships(ME, [tagsMe, someoneElses, level, mine], NOW).named.map((e) => e.id)).toEqual([mine.id, tagsMe.id])
+    expect(foldMemberships(ME, [tagsMe, someoneElses, level, mine], NOW).named?.map((e) => e.id)).toEqual([mine.id, tagsMe.id])
   })
 })

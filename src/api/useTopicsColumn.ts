@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { byActivity, isArchived, relayNamesTeams, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
 import { fileIdOf, type SignedEvent } from '@estiva-app/protocol'
+import { anchorIdsOf, anchorsOf } from '@estiva-app/conversation'
 import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { getLiveClient } from '@/nostr/liveTopics'
 import { peekRelay } from '@/nostr/relayInfo'
@@ -374,7 +375,11 @@ export function useListedNews(): ReadonlyMap<string, ListedNews> {
     const eventsOn = (file: string) => merged(comments.get(file) ?? [], [...(named.get(file) ?? []), ...(named.get(fileIdOf(file) ?? '') ?? [])])
     // Each file found under a listed one, by the file it sits directly under.
     const children = new Map<string, string[]>()
-    for (const [file, parent] of parents ?? []) children.set(parent, [...(children.get(parent) ?? []), file])
+    for (const [file, parent] of parents ?? []) {
+      const list = children.get(parent)
+      if (list) list.push(file)
+      else children.set(parent, [file])
+    }
     for (const [topic, files] of lists) {
       const listed = new Set(files.map((file) => file.address))
       const under = [...listed].flatMap((parent) => (children.get(parent) ?? []).filter((file) => !listed.has(file)))
@@ -387,12 +392,15 @@ export function useListedNews(): ReadonlyMap<string, ListedNews> {
   }, [mine, lists, comments, parents, namedComments])
 }
 
-/** The comments naming the viewer, by what they are on: the file's address (`A`) and its id (`O`), as interop reads a comment's file. */
+/** The comments naming the viewer, by what they are on: the file's address and its id, as the shared rule reads a comment's file (§6.4). */
 function namedByFile(named: readonly SignedEvent[]): ReadonlyMap<string, readonly SignedEvent[]> {
   const byFile = new Map<string, SignedEvent[]>()
   for (const event of named) {
-    const on = new Set(event.tags.filter((t) => (t[0] === 'A' || t[0] === 'O') && t[1]).map((t) => t[1]!))
-    for (const key of on) byFile.set(key, [...(byFile.get(key) ?? []), event])
+    for (const key of new Set([...anchorsOf(event), ...anchorIdsOf(event)])) {
+      const list = byFile.get(key)
+      if (list) list.push(event)
+      else byFile.set(key, [event])
+    }
   }
   return byFile
 }
