@@ -16,6 +16,7 @@ import {
   useStarred,
   useUnread,
   useWorkspacePeople,
+  type RowNewsItem,
 } from '@/api'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -27,7 +28,7 @@ import { useTabTitle } from '@/lib/useTabTitle'
  * and the direct message with the chosen person beside them.
  */
 export function PeoplePage() {
-  const { dmHasUnread, dmIsUrgent } = useUnread()
+  const { dmHasUnread, dmIsUrgent, dmNews } = useUnread()
   const navigate = useNavigate()
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
   const { id: routeId } = useParams<{ id: string }>()
@@ -64,6 +65,7 @@ export function PeoplePage() {
         avatarSrc: e.avatarSrc,
         isUnread: (showUnreads && dmHasUnread(e.dmId)) || urgent,
         isUrgent: urgent,
+        news: showUnreads ? dmNews(e.dmId) : undefined,
       }
     })
     .sort((a, b) => Number(b.isUnread) - Number(a.isUnread))
@@ -137,6 +139,7 @@ export function PeoplePage() {
           avatarSrc: dm.avatarSrc,
           isUnread: (showUnreads && dmHasUnread(dm.id)) || urgent,
           isUrgent: urgent,
+          news: showUnreads ? dmNews(dm.id) : undefined,
           canHide: canHideDm(dm.id),
         }
       })}
@@ -164,6 +167,7 @@ export interface PeopleListItem {
   avatarSrc?: string
   isUnread: boolean
   isUrgent: boolean
+  news?: readonly RowNewsItem[]
   /** Hiding is offered only where it can succeed (DMS-6). */
   canHide: boolean
 }
@@ -228,6 +232,7 @@ export function PeoplePageView({
                   avatarSrc={dm.avatarSrc}
                   unread={dm.isUnread}
                   urgent={dm.isUrgent}
+                  news={dm.news}
                   active={selectedId === dm.id}
                   onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
                   openWorkAction={openWorkActionFor?.(dm.id)}

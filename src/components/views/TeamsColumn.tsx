@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
 import { EmptyState, NavItem, NavTree, SectionHeader, SkeletonList } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useConversationBadges, usePeekActions, useTeamChatUnread, useTeams, useTeamTopics, type Team } from '@/api'
+import { teamPlaces, useConversationBadges, usePeekActions, useTeamChatNews, useTeams, useTeamTopics, type RowNewsItem, type Team } from '@/api'
+import { RowNewsCard } from '@/components/RowNewsCard'
 import { TreeRow } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import type { TreeShow } from '@/components/views/treeFilter'
@@ -49,13 +50,13 @@ export function TeamsColumn({
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { teams, failed } = useTeams()
-  const chatUnread = useTeamChatUnread(teams)
+  const { unread: chatUnread, news: chatNews } = useTeamChatNews(teams)
   const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
 
   const drawn = useMemo(() => (teams ? [...topics.values()] : undefined), [teams, topics])
-  const { unread } = useConversationBadges(drawn)
+  const { unread, news } = useConversationBadges(drawn)
 
   if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
   if (failed) return <EmptyState scope="section" message="Couldn’t load your teams. Reload to try again." />
@@ -72,7 +73,9 @@ export function TeamsColumn({
       teams={teams.filter((team) => !team.archived)}
       topics={topics}
       chatUnread={chatUnread}
+      chatNews={chatNews}
       unread={unread}
+      news={news}
       show={show}
       selectedRef={selectedRef}
       openTeam={openTeam}
@@ -88,7 +91,9 @@ export function TeamsColumnView({
   teams,
   topics,
   chatUnread,
+  chatNews,
   unread,
+  news,
   show = 'all',
   selectedRef,
   openTeam,
@@ -100,8 +105,11 @@ export function TeamsColumnView({
   /** The topics this viewer can read, by address. */
   topics: ReadonlyMap<string, ForeignObject>
   chatUnread: Record<string, boolean>
+  /** What lit each lit chat and row (ACT-3), for their cards. */
+  chatNews?: Record<string, readonly RowNewsItem[]>
   /** Today's dot on a topic's row, by `ref`. */
   unread: Record<string, boolean>
+  news?: Record<string, readonly RowNewsItem[]>
   show?: TreeShow
   selectedRef?: string
   openTeam?: string | null
@@ -128,6 +136,7 @@ export function TeamsColumnView({
         key={topic.ref}
         file={topic}
         unread={unread}
+        news={news}
         selectedRef={selectedRef}
         onControl={onControl}
         nested
@@ -148,6 +157,7 @@ export function TeamsColumnView({
             label={chatLabel(team)}
             icon={<IconUsers size={16} stroke={1.5} aria-hidden />}
             unread={chatUnread[team.id] === true}
+            preview={chatUnread[team.id] === true && chatNews?.[team.id]?.length ? <RowNewsCard items={chatNews[team.id]} placeHref={teamChatPath(team.id)} place="chat" /> : undefined}
             active={chatOpenHere}
           />
         )}

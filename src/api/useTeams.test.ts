@@ -8,7 +8,7 @@ import type { FolderSummary } from '@estiva-app/interop'
 import { serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
 import { encodeNpub } from '@estiva-app/protocol'
 import { signed } from '@/test/wireRelay'
-import { chatHasUnread, mayChangeTopicIn, mayMove, teamOf } from './useTeams'
+import { chatHasUnread, chatNews, mayChangeTopicIn, mayMove, teamOf } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
 
 const RELAY = 'b'.repeat(64)
@@ -116,6 +116,16 @@ describe('a team chat’s dot', () => {
   it('a reply in a conversation they wrote in lights', () => {
     const theirs = message('e'.repeat(64), KATERINA, 1_700_001_020, root.id)
     expect(chatHasUnread(team(KATERINA), [root, theirs, reply], read_, KATERINA)).toBe(true)
+  })
+
+  it('a lit chat’s card names who started a conversation and who replied in yours, newest first, with their words (ACT-3)', () => {
+    const theirs = message('e'.repeat(64), KATERINA, 1_700_001_020, root.id)
+    const lines = chatNews(team(KATERINA), [{ ...root, body: 'Shall we ship Friday?' }, theirs, { ...reply, body: 'Yes, Friday' }], {}, KATERINA)
+    expect(lines.map((line) => [line.by, line.reason, line.words])).toEqual([
+      [MIKY, 'reply-in-yours', 'Yes, Friday'],
+      [MIKY, 'new-conversation', 'Shall we ship Friday?'],
+    ])
+    expect(chatNews(team(KATERINA), [root, reply], read_, KATERINA)).toEqual([])
   })
 
   it('a message about a file is that file’s, never the chat’s', () => {

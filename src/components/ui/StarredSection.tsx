@@ -1,5 +1,6 @@
 import { CollapsibleSection, EmptyState } from '@estiva-app/ui'
 import { PersonItem } from './PersonItem'
+import type { RowNewsItem } from '@/api'
 
 /** A starred person. Starred holds people only since the Convex topics went (FOL-23). */
 export interface StarredItem {
@@ -7,6 +8,8 @@ export interface StarredItem {
   name: string
   isUnread?: boolean
   isUrgent?: boolean
+  /** What lit the DM (ACT-3), for its card. */
+  news?: readonly RowNewsItem[]
   avatarSrc?: string
 }
 
@@ -55,6 +58,7 @@ export function StarredSection({
             avatarSrc={item.avatarSrc}
             unread={item.isUnread}
             urgent={item.isUrgent}
+            news={item.news}
             active={selectedId === item.id}
             openWorkAction={openWorkActionFor?.(item.id)}
             onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(item.id) : undefined}

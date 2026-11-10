@@ -1,5 +1,6 @@
 import { NavItem } from '@estiva-app/ui'
-import { useAvatarSrc } from '@/api'
+import { useAvatarSrc, type RowNewsItem } from '@/api'
+import { RowNewsCard } from '@/components/RowNewsCard'
 import { TopicState } from './TopicState'
 import { TopicMenuItems } from './TopicMoreMenu'
 
@@ -19,6 +20,7 @@ export function PersonItem({
   onHide,
   openWorkAction,
   onToggleOpenWork,
+  news,
 }: {
   id: string
   name: string
@@ -30,11 +32,15 @@ export function PersonItem({
   /** Whether the ⋮ adds this DM to Open work or takes it off; absent where adding cannot succeed. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
+  /** What lit the DM (ACT-3): a lit row opens their card while it is pointed at. */
+  news?: readonly RowNewsItem[]
 }) {
   const avatarSrcFor = useAvatarSrc()
+  const href = `/app/people/${id}`
   return (
     <NavItem
-      href={`/app/people/${id}`}
+      href={href}
+      preview={(unread || urgent) && news?.length ? <RowNewsCard items={news} placeHref={href} place="dm" /> : undefined}
       label={name}
       icon={<TopicState type="DM" avatarSrc={avatarSrc ?? avatarSrcFor(name)} />}
       active={active}

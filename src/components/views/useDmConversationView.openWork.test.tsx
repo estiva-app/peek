@@ -13,6 +13,7 @@ import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { useDmConversationView } from './useDmConversationView'
 
+const asked = vi.hoisted(() => ({ thread: undefined as string | undefined }))
 const list = vi.hoisted(() => ({
   ids: new Set<string>(),
   add: vi.fn(),
@@ -29,7 +30,11 @@ vi.mock('@/api', async () => ({
 }))
 vi.mock('@/lib/useMarkRead', () => ({ useMarkDmRead: () => {} }))
 vi.mock('./useFileConversationView', () => ({
-  useFileConversationView: () => ({ conversationParts: { children: <div /> }, threadPanel: undefined, replyOnlyThread: undefined }),
+  // The conversation itself is the view's own (and tested there); here it records only which thread it was asked to open.
+  useFileConversationView: ({ openThreadId }: { openThreadId?: string }) => {
+    asked.thread = openThreadId
+    return { conversationParts: { children: <div /> }, threadPanel: undefined, replyOnlyThread: undefined }
+  },
 }))
 
 afterEach(() => {
@@ -44,11 +49,11 @@ function Dm() {
   return <>{useDmConversationView({ dmId: 'dm-1', dmName: 'Cleo' }).rightPanel}</>
 }
 
-function mount() {
+function mount(url = '/app/people/dm-1') {
   render(
     <DebugProvider>
       <LastSelectionProvider>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[url]}>
           <Dm />
         </MemoryRouter>
       </LastSelectionProvider>
@@ -57,6 +62,16 @@ function mount() {
 }
 
 const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+
+describe('a link to a DM reply opens its thread (ACT-3: a row card’s line)', () => {
+  it('?thread=<root> opens that thread; the DM alone opens none', () => {
+    mount('/app/people/dm-1?thread=r1')
+    expect(asked.thread).toBe('r1')
+    cleanup()
+    mount()
+    expect(asked.thread).toBeUndefined()
+  })
+})
 
 describe('Open work on a DM’s header (Katerina, 30 October)', () => {
   it('a DM not in Open work is added from the header’s ⋮', () => {

@@ -2,10 +2,11 @@ import { useContext, useState, type ReactNode } from 'react'
 import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
-import type { FolderContentsState } from '@/api'
+import type { FolderContentsState, RowNewsItem } from '@/api'
 import { rememberFileAddress, useConversationBadges, useForeignChildren, useMayMove, useMembership, useOpenWorkFiles } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
+import { RowNewsCard } from '@/components/RowNewsCard'
 import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
 import { canMove, fileControlsOf } from '@/lib/fileControls'
@@ -113,6 +114,7 @@ export function TreeRow({
   under,
   space,
   leaves = false,
+  news,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -138,6 +140,8 @@ export function TreeRow({
   space?: { action: 'mark' | 'unmark'; onToggle: () => void }
   /** The topic is yours, so its row offers Leave (TOPI-7): the Topics column, which lists only yours. */
   leaves?: boolean
+  /** What lit each row, by ref (ACT-3): a lit row with lines opens their card while it is pointed at. */
+  news?: Record<string, readonly RowNewsItem[]>
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -218,11 +222,31 @@ export function TreeRow({
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
   const hasMenu = offers || renames || copies || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
+  const href = file.address ? filePath(file.address, file.slots.title?.value) : '#'
+  // A lit row says why (ACT-3): its card lists what lit the dot. Nothing new, no dot and no card.
+  const lines = isUnread ? news?.[file.ref] : undefined
+
   return (
     <NavItem
       data-file={file.ref}
       // The address the row's click opens, as the page writes it (FOL-37): Cmd-click opens the same in a new tab.
-      href={file.address ? filePath(file.address, file.slots.title?.value) : '#'}
+      href={href}
+      preview={
+        lines?.length ? (
+          <RowNewsCard
+            items={lines}
+            placeHref={href}
+            place="topic"
+            // As the row's own click: the page needs no `#d` read, and it shows the column this row is in.
+            onOpen={(listed) => {
+              const address = listed ?? file.address
+              if (!address) return
+              rememberFileAddress(address)
+              rememberOpenedFrom(address, column)
+            }}
+          />
+        ) : undefined
+      }
       label={title}
       icon={
         <TopicState

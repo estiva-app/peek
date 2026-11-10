@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
 import { useMembership, usePlaceFollow, useWorkspaceDirectory, type Team } from '@/api'
@@ -16,7 +17,14 @@ import { useMarkChannelRead } from '@/lib/useMarkRead'
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-teams-chat-is-followed-like-a-space.md
  */
 export function TeamChat({ team }: { team: Team }) {
-  const [thread, setThread] = useState<string | null>(null)
+  // A link may name a thread (`?thread=<root>`, a row card's reply line, ACT-3): it opens, and each new one opens again.
+  const linked = useSearchParams()[0].get('thread')
+  const [thread, setThread] = useState<string | null>(linked)
+  const [seenLink, setSeenLink] = useState(linked)
+  if (linked !== seenLink) {
+    setSeenLink(linked)
+    if (linked) setThread(linked)
+  }
   const name = chatLabel(team)
   const chat = useFileConversationView({
     container: { kind: 'channel', h: team.id, general: true },

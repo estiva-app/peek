@@ -44,21 +44,27 @@ export function fileHasUnread(
     horizonSeconds: number
   },
 ): boolean {
-  const oldest = frontier.nowSeconds - frontier.horizonSeconds
-  for (const message of messages) {
-    if (frontier.me && message.by === frontier.me) continue
-    const isRoot = message.root === message.id
-    const marker = isRoot
-      ? frontier.file
-      : threadReadAt({ thread: frontier.thread(message.root), stream: frontier.file, floor: frontier.floor })
-    if (marker === undefined) {
-      if (!isRoot && belowReplyFloor(message.at, frontier.floor)) continue
-      if (message.at > oldest) return true
-      continue
-    }
-    if (message.at > marker) return true
+  return messages.some((message) => isNewInFile(message, frontier))
+}
+
+/** {@link fileHasUnread}'s messages: each one it lights for, in the order given (ACT-3, a DM's card). */
+export function fileUnreadMessages<M extends ConversationMessage>(messages: readonly M[], frontier: FileFrontier): M[] {
+  return messages.filter((message) => isNewInFile(message, frontier))
+}
+
+type FileFrontier = Parameters<typeof fileHasUnread>[1]
+
+function isNewInFile(message: ConversationMessage, frontier: FileFrontier): boolean {
+  if (frontier.me && message.by === frontier.me) return false
+  const isRoot = message.root === message.id
+  const marker = isRoot
+    ? frontier.file
+    : threadReadAt({ thread: frontier.thread(message.root), stream: frontier.file, floor: frontier.floor })
+  if (marker === undefined) {
+    if (!isRoot && belowReplyFloor(message.at, frontier.floor)) return false
+    return message.at > frontier.nowSeconds - frontier.horizonSeconds
   }
-  return false
+  return message.at > marker
 }
 
 /**
