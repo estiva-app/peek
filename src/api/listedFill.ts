@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { anchorIdsOf, anchorsOf } from '@estiva-app/conversation'
+import { isAbout } from '@estiva-app/conversation'
 import { fileIdOf, KIND, type SignedEvent } from '@estiva-app/protocol'
 import { viewerQuery } from '@/nostr/foreign'
 import { hasRelay } from './relayUrl'
@@ -78,8 +78,8 @@ export function useListedFill(fill: ListedFill | undefined): RowNewsItem[] | und
   return useMemo(() => {
     if (!fill || !read) return undefined
     const held = fill.held.map((entry) => {
-      const id = fileIdOf(entry.file)
-      const more = read.events.filter((event) => anchorsOf(event).includes(entry.file) || (!!id && anchorIdsOf(event).includes(id)))
+      // The column's own rule for what a comment is on (§6.4): a crossed root with a borrowed id is on nothing.
+      const more = read.events.filter((event) => isAbout(event, entry.file))
       return more.length ? { ...entry, events: merged(entry.events, more) } : entry
     })
     return listedNews(held, fill.judge)
