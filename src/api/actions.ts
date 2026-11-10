@@ -19,7 +19,7 @@ import {
   markSpaceAsViewer,
   type TeamWrite,
 } from '@/nostr/teams'
-import { addToPlaceAsViewer, choosePlaceLevelAsViewer, type PlaceRead } from '@/nostr/places'
+import { addToPlaceAsViewer, choosePlaceLevelAsViewer, readPlaceAsViewer, type PlaceRead } from '@/nostr/places'
 import type { Place, SwitchChoice } from '@estiva-app/conversation'
 import { RELAY_URL } from './relayUrl'
 import { reloadTeamsOnScreen } from './useTeams'
@@ -58,6 +58,16 @@ export function usePeekActions() {
     /** One pick on the place's switch: Not following, Important, All, or back to the team's default (§11.8). */
     choosePlaceLevel: (args: { place: Place; folder: string; choice: SwitchChoice; read: PlaceRead; archived: boolean; muted: boolean }) =>
       asViewer((relayUrl, token) => choosePlaceLevelAsViewer(args, relayUrl, token)),
+    /**
+     * Leave a place from a list (TOPI-7): the switch's Not following, from a row that has not read the place, so it is
+     * read first — one `POST /query`, on the click.
+     */
+    leavePlace: (args: { place: Place; folder: string; archived: boolean; muted: boolean }) =>
+      asViewer(async (relayUrl, token) => {
+        const read = await readPlaceAsViewer(args.place, relayUrl, token).catch(() => undefined)
+        if (!read) return { ok: false, reason: 'Peek could not read this topic, so nothing changed. Try again.' }
+        return choosePlaceLevelAsViewer({ ...args, choice: 'not-following', read }, relayUrl, token)
+      }),
     /** Add someone to the place: they join it at Important, and can leave. */
     addToPlace: (args: { place: Place; folder: string; person: string; read: PlaceRead }) =>
       asViewer((relayUrl, token) => addToPlaceAsViewer(args, relayUrl, token)),

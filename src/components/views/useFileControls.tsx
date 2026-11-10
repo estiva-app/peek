@@ -3,7 +3,7 @@ import { KIND_BARE_FILE, SUMMARY_FIELD, isArchived, topLevelFolders } from '@est
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject, useTeams, entryNames } from '@/api'
+import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, topicFollowTarget, useForeignObjects, useMembership, usePeekActions, useReloadHeldObject, useTeams, entryNames } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
@@ -195,6 +195,12 @@ export function useFileControls({
   const [teamsWanted, setTeamsWanted] = useState(false)
   const { teams, failed: teamsFailed } = useTeams({ read: teamsWanted })
   const teamsPending = (file: ForeignObject) => !teams && !teamsFailed && isTopic(file)
+  // Read through a ref, as membership is: `open` stays the one stable function every row holds.
+  const teamsNow = useRef({ teams, teamsFailed })
+  useEffect(() => {
+    teamsNow.current = { teams, teamsFailed }
+  })
+  const { leavePlace } = usePeekActions()
 
   const refuse = useCallback(
     (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
@@ -322,6 +328,28 @@ export function useFileControls({
         them. Said only once the relay holds it — a refused change undoes
         itself, and the toast says so instead.
       */
+      /*
+        Leave on a topic's row (TOPI-7): the topic page's switch at Not following, so the column, the switch and Ship
+        agree on what is yours. Said once the relay holds it, and the column re-reads, so the row goes.
+        why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-persons-level-on-a-place-is-theirs-alone.md
+      */
+      if (control === 'leave' && isTopic(file)) {
+        const title = file.slots.title?.value ?? 'this topic'
+        const target = topicFollowTarget(file, teamsNow.current.teams, teamsNow.current.teamsFailed)
+        if (!target) return refuse(`Peek has not read your teams yet, so “${title}” cannot be left from here. Try again.`)
+        void leavePlace({
+          place: target.place,
+          folder: target.folder,
+          archived: target.archived,
+          muted: membershipNow.current.termsOf(target.place.address).muted,
+        }).then(async (result) => {
+          if (!result.ok) return showToast({ label: `Nothing changed: “${title}” could not be left. ${result.reason}`, type: 'error' })
+          await membershipNow.current.refresh()
+          membershipCallback.current?.(file)
+          showToast({ label: `Left “${title}”`, type: 'success' })
+        })
+        return
+      }
       if (control === 'join' || control === 'leave') {
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
@@ -392,7 +420,7 @@ export function useFileControls({
         replaceReading(moveStateOf(file, place))
       })()
     },
-    [refuse, readPlace, archiveImpact, setArchived, showToast],
+    [refuse, readPlace, archiveImpact, setArchived, showToast, leavePlace],
   )
 
   /*

@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { useConversationBadges, useFolders, useListedNews, useTopicsColumn, type TopicsColumnState } from '@/api'
+import { listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type TopicsColumnState } from '@/api'
+import { useToast } from '@/lib/toast'
 import { TreeRow } from '@/components/views/FileTreeView'
+
+type SpaceToggle = { action: 'mark' | 'unmark'; onToggle: () => void }
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
 import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
@@ -40,6 +43,24 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   const listed = useListedNews()
   const { unread } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
   const [starting, setStarting] = useState(false)
+  /*
+    A topic's row offers Make it a space to a member of its team, as the Teams column does (TEA-5, TOPI-7). The teams
+    read is the one a topic's page and the Teams column share, kept for the tab; Leave names the topic's team from it too.
+  */
+  const { teams } = useTeams()
+  const { markSpace } = usePeekActions()
+  const { showToast } = useToast()
+  const spaceOf = (topic: ForeignObject): SpaceToggle | undefined => {
+    const listing = listingOf(teams, topic.address ?? undefined)
+    if (!listing || !listing.team.isMember || listing.team.archived || !topic.address) return undefined
+    return {
+      action: listing.space ? 'unmark' : 'mark',
+      onToggle: () =>
+        void markSpace(listing.team.id, topic.address!, !listing.space).then((result) => {
+          if (!result.ok) showToast({ label: result.reason, type: 'error' })
+        }),
+    }
+  }
   // The Folder list New topic chooses from, read with the column (one shared read per tab), so its dialog opens on the press.
   useFolders()
   // The open file's Folder is chosen first, as the open Folder is in Folders.
@@ -56,6 +77,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
         exploring={exploring}
         onControl={onControl}
         onNewTopic={() => setStarting(true)}
+        spaceOf={spaceOf}
       />
       {starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
     </>
@@ -72,6 +94,7 @@ export function TopicsColumnView({
   exploring = false,
   onControl,
   onNewTopic,
+  spaceOf,
 }: {
   state: TopicsColumnState
   signedOut?: boolean
@@ -80,6 +103,8 @@ export function TopicsColumnView({
   selectedRef?: string
   exploring?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** A topic's Make it a space, for a member of its team (TEA-5, TOPI-7). */
+  spaceOf?: (topic: ForeignObject) => SpaceToggle | undefined
   /** The header's New topic (TOP-9), as Folders' header has; none signed out, since starting one acts as somebody. */
   onNewTopic?: () => void
 }) {
@@ -98,7 +123,7 @@ export function TopicsColumnView({
     >
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
-        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} />
+        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} spaceOf={spaceOf} />
       </TreeColumn.Provider>
     </ListColumn>
   )
@@ -111,6 +136,7 @@ function TopicsBody({
   selectedRef,
   exploring,
   onControl,
+  spaceOf,
 }: {
   state: TopicsColumnState
   signedOut: boolean
@@ -118,6 +144,7 @@ function TopicsBody({
   selectedRef?: string
   exploring: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
+  spaceOf?: (topic: ForeignObject) => SpaceToggle | undefined
 }) {
   if (signedOut) return <EmptyState scope="section" message="Sign in to see topics." />
   if (state === 'loading') return <SkeletonList />
@@ -127,7 +154,7 @@ function TopicsBody({
       {/* The approved story's empty line (Miky, 6 Nov), above Explore topics, where every other topic is. */}
       {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
       {state.mine.map((topic) => (
-        <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} nested />
+        <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves nested />
       ))}
       {/* Where every other topic is, archived ones too, in place of the Other topics and Archived sections; no icon: a way in, not another kind of topic (Miky, 6 Nov). */}
       <ExploreRow exploring={exploring} />

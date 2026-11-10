@@ -336,6 +336,15 @@ export function shareableFileUrl(address: string, title: string | undefined, ori
 }
 
 /**
+ * Copy link (FOL-37), from a file's page or its row (TOPI-7): {@link shareableFileUrl} on the clipboard, and the link
+ * in a prompt for a browser that refuses the clipboard off a menu.
+ */
+export function copyFileLink(address: string, title: string | undefined): void {
+  const link = shareableFileUrl(address, title, window.location.origin)
+  void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this link:', link))
+}
+
+/**
  * Whether a `/<word>/<ref>` names this file, in either grammar — the launcher's
  * "the page you are on is not somewhere to go" (FOL-37).
  *

@@ -38,6 +38,9 @@ vi.mock('@/api', () => ({
   useForeignObjects: () => foreign,
   // No team is held: Move asks nothing about spaces (TEA-5; FilePage.test.tsx covers when it does).
   useTeams: () => ({ teams: null, failed: false, reload: async () => {} }),
+  // Leave on a topic's row (TOPI-7) is tested in useFileControls.leave.test.tsx.
+  usePeekActions: () => ({ leavePlace: async () => ({ ok: true }) }),
+  topicFollowTarget: () => undefined,
 }))
 const toast = vi.hoisted(() => ({ showToast: (shown: { label: string }) => void toasts.shown.push(shown) }))
 vi.mock('@/lib/toast', () => ({ useToast: () => toast }))

@@ -234,8 +234,9 @@ export const MentionUrgent: Story = { render: () => <Mentions people={PEOPLE.sli
 export const MentionSingleMatch: Story = { render: () => <Mentions people={PEOPLE.slice(0, 1)} /> }
 
 /**
- * The same items on a tree row of the Folders column: the package's `NavItem`
- * draws its own ⋮, so it takes the items alone. Point at the row and press ⋮.
+ * The items on a topic's row in the Topics column: what you do from a list
+ * (TOPI-7). The package's `NavItem` draws its own "…", so it takes the items
+ * alone. Point at the row and press "…".
  */
 export const TopicMenuOnATreeRow: Story = {
   render: () => (
@@ -246,20 +247,14 @@ export const TopicMenuOnATreeRow: Story = {
         menuLabel="More options"
         menu={
           <TopicMenuItems
-            onOpenDetails={noop}
-            onRename={noop}
-            onNewSubTopic={noop}
-            onMove={noop}
-            onCopyLink={noop}
             openWorkAction="add"
             onToggleOpenWork={noop}
-            memberAction="join"
+            openWorkShortcut="Ctrl+O"
+            onCopyLink={noop}
+            spaceAction="mark"
+            onToggleSpace={noop}
+            memberAction="leave"
             onToggleMember={noop}
-            onHideDm={noop}
-            archiveAction="archive"
-            onToggleArchive={noop}
-            onDeleteTopic={noop}
-            onAddSomeone={noop}
           />
         }
       />

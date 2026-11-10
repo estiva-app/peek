@@ -1,5 +1,5 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { EmptyState, NavItem, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
+import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -8,9 +8,10 @@ import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
-import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { canMove, fileControlsOf } from '@/lib/fileControls'
 import { fileGlyph } from '@/lib/fileGlyph'
-import { filePath } from '@/lib/objectUrl'
+import { copyFileLink, filePath } from '@/lib/objectUrl'
+import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { rememberOpenedFrom, TreeColumn } from '@/lib/openedFrom'
 
 /**
@@ -111,6 +112,7 @@ export function TreeRow({
   remember = false,
   under,
   space,
+  leaves = false,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -134,6 +136,8 @@ export function TreeRow({
   under?: ReactNode
   /** Make it one of its team's spaces, or not (TEA-5): the Teams column passes it to a member of the topic's team. */
   space?: { action: 'mark' | 'unmark'; onToggle: () => void }
+  /** The topic is yours, so its row offers Leave (TOPI-7): the Topics column, which lists only yours. */
+  leaves?: boolean
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -170,13 +174,19 @@ export function TreeRow({
   // An archived row (the Archive view) keeps what the file's own page keeps — Details, Copy link, Unarchive, Delete —
   // and nothing that changes it or adds under it (SPEC §6.5, PEEKM-2).
   const readOnly = !!file.archived
-  const controls = onControl ? fileControlsOf(file) : {}
+  /*
+    A topic's row keeps what you do from a list — Open work, Copy link, Make it a space, Leave — and what you do to the
+    topic itself (Details, Rename, Move, Archive, Delete) is on its page's ⋮ (Miky, 3 Nov; the approved stories, TOPI-7).
+  */
+  // An archived topic's row (the Archive view) keeps Details, Unarchive and Delete, as its page's ⋮ does.
+  const isPlace = Number(file.address?.split(':')[0]) === KIND_BARE_FILE
+  const listRow = isPlace && !readOnly
+  const controls = onControl && !listRow ? fileControlsOf(file) : {}
   const renames = !readOnly && !!controls.rename
-  const inside = !!onControl && !readOnly && canStartInside(file)
   // A space moves only by a member of its team (TEA-5, SPEC §3.3).
   const mayMove = useMayMove(file.address)
-  const moves = !!onControl && !readOnly && canMove(file) && mayMove
-  // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
+  const moves = !!onControl && !listRow && !readOnly && canMove(file) && mayMove
+  // Details is the manifest's (FOL-33).
   const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
     Join / leave and mute on the row (SPEC §11.8): the same seam the dot is
@@ -187,9 +197,10 @@ export function TreeRow({
   const membership = useMembership()
   const followKey = file.address
   const isMember = followKey ? membership.isMember(followKey) : false
-  // A topic or a space is followed with the switch on its header (TEA-6): its row offers no Join or Leave.
-  const isPlace = Number(followKey?.split(':')[0]) === KIND_BARE_FILE
-  const memberAction = followKey && file.folder && !readOnly && !isPlace ? (isMember ? 'leave' : 'join') : undefined
+  // A topic or a space is followed with the switch on its header (TEA-6); its row offers only Leave, and only in the
+  // Topics column, where every topic is yours (TOPI-7). Join is on Explore topics.
+  const memberAction = followKey && file.folder && !readOnly ? (isPlace ? (leaves && onControl ? 'leave' : undefined) : isMember ? 'leave' : 'join') : undefined
+  const copies = listRow && !!followKey
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
@@ -205,7 +216,7 @@ export function TreeRow({
   */
   const archivedNow = file.archived
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
-  const hasMenu = offers || renames || inside || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
+  const hasMenu = offers || renames || copies || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -228,9 +239,10 @@ export function TreeRow({
           <TopicMenuItems
             onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
             onRename={renames ? () => onControl?.('rename', file) : undefined}
-            onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
             onMove={moves ? () => onControl?.('move', file) : undefined}
+            onCopyLink={copies ? () => copyFileLink(followKey!, file.slots.title?.value) : undefined}
             openWorkAction={openWorkAction}
+            openWorkShortcut={listRow ? shortcutLabel(OPEN_WORK_KEY) : undefined}
             onToggleOpenWork={
               followKey && openWorkAction
                 ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
