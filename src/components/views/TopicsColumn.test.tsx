@@ -13,7 +13,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import type { TopicsColumnState } from '@/api'
 import { filePath } from '@/lib/objectUrl'
 import { openedFrom } from '@/lib/openedFrom'
-import { EXPLORE_TOPICS_PATH, TopicsColumnView } from './TopicsColumn'
+import { TopicsColumnView } from './TopicsColumn'
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const file = (kind: number, d: string, title: string) =>
@@ -63,7 +63,7 @@ describe('the Topics column (TOP-4, TOPI-10)', () => {
     mount({ mine: [WIDGETS, DESIGN], others: [STRANGER], archived: [OLD] })
     const links = [...document.querySelectorAll('a')]
     expect(links.map((link) => link.textContent)).toEqual(['Widgets', 'Design', 'Explore topics'])
-    expect(links.at(-1)!.getAttribute('href')).toBe(EXPLORE_TOPICS_PATH)
+    expect(links.at(-1)!.getAttribute('href')).toBe('/app/topics/explore')
     expect(screen.queryByText('Other topics')).toBeNull()
     expect(screen.queryByText('Archived')).toBeNull()
     expect(screen.queryByText('Somebody else’s')).toBeNull()

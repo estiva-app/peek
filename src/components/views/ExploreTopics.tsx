@@ -61,6 +61,8 @@ export function ExploreTopicsView({
     <Panel title="Explore topics" bodyClassName="flex flex-col gap-4 px-6 py-5">
       {state === 'loading' ? (
         <SkeletonList rows={8} />
+      ) : state === 'signedOut' ? (
+        <EmptyState scope="page" message="Sign in to see topics." />
       ) : 'failed' in state ? (
         <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message="Topics didn’t load." action={{ label: 'Try again', onClick: onRetry }} />
       ) : (

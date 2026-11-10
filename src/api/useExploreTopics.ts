@@ -3,6 +3,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { topicActivityAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { topicMemberCountsAsViewer } from '@/nostr/topicMembers'
 import { filePath } from '@/lib/objectUrl'
+import { launcherMatch } from '@/lib/launcherSearch'
 import { useRelayViewer } from './foreign'
 import { useFolders } from './useFolderContents'
 import { readTopicsAgain, useTopicsColumn, useTopicTimes } from './useTopicsColumn'
@@ -31,7 +32,7 @@ export interface ExploreRow {
   yours: boolean
 }
 
-export type ExploreState = 'loading' | { failed: true } | Record<ExploreTab, ExploreRow[]>
+export type ExploreState = 'loading' | 'signedOut' | { failed: true } | Record<ExploreTab, ExploreRow[]>
 
 /*
   What Explore has read beside the column, for this tab: each topic's Members
@@ -103,10 +104,8 @@ async function readActive(viewer: Viewer, topics: readonly ForeignObject[], crea
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-matches-every-word-as-a-word-start.md
  */
 export function findsTopic(title: string, query: string): boolean {
-  // Split as the title is, so "q4-pl" finds "Q4-plan".
-  const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  const titleWords = title.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-  return words.every((word) => titleWords.some((titleWord) => titleWord.startsWith(word)))
+  // The launcher's one rule, so a quoted phrase or a minus word means the same here.
+  return launcherMatch(title, query)
 }
 
 const titleOf = (topic: ForeignObject) => topic.slots.title?.value ?? 'Untitled'
@@ -123,7 +122,7 @@ const titleOf = (topic: ForeignObject) => topic.slots.title?.value ?? 'Untitled'
  * requests, then their activity); your topics' Active is the column's.
  */
 export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry: () => void } {
-  const { state: column } = useTopicsColumn()
+  const { state: column, signedOut } = useTopicsColumn()
   const times = useTopicTimes()
   const { folders } = useFolders()
   const viewer = useRelayViewer()
@@ -144,7 +143,7 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
 
   const ready = typeof column === 'object' && 'mine' in column ? column : undefined
 
-  // A topic that turns yours while the page is open (a Join here or anywhere) has its people read again.
+  // A topic that turns yours or stops being yours while the page is open (a Join or Leave here or anywhere) has its people read again.
   const mineBefore = useRef<ReadonlySet<string> | null>(null)
   useEffect(() => {
     if (!ready) return
@@ -152,12 +151,12 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
     const before = mineBefore.current
     mineBefore.current = now
     if (!before) return
-    const joined = ready.mine.filter((topic) => !before.has(topic.address!))
+    const changed = [...ready.mine, ...ready.others].filter((topic) => now.has(topic.address!) !== before.has(topic.address!))
     const v = viewer()
-    if (!joined.length || !hasRelay || !v) return
-    // Read at once, whichever tab is shown: the row is drawn on Your topics and All from now on.
-    for (const topic of joined) asked.add(`m:${topic.address}`)
-    void readMembers(v, joined)
+    if (!changed.length || !hasRelay || !v) return
+    // Read at once, whichever tab is shown: the row moves between tabs with it.
+    for (const topic of changed) asked.add(`m:${topic.address}`)
+    void readMembers(v, changed)
   }, [ready, viewer])
 
   const lists = useMemo((): Record<ExploreTab, ExploreRow[]> | undefined => {
@@ -208,7 +207,7 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
     if (needActive.length) void readActive(v, needActive, createdAt)
   }, [viewer, shown, createdAt, held.pubkey])
 
-  const state: ExploreState = column === 'loading' ? 'loading' : 'failed' in column ? { failed: true } : lists ?? 'loading'
+  const state: ExploreState = signedOut ? 'signedOut' : column === 'loading' ? 'loading' : 'failed' in column ? { failed: true } : lists ?? 'loading'
   return { state, retry: readTopicsAgain }
 }
 

@@ -23,11 +23,12 @@ const OLD = topic('old', 'Level 2')
 
 const column = vi.hoisted(() => ({
   state: 'loading' as unknown,
+  signedOut: false,
   yours: undefined as ReadonlyMap<string, number> | undefined,
   readAgain: vi.fn(),
 }))
 vi.mock('./useTopicsColumn', () => ({
-  useTopicsColumn: () => ({ state: column.state }),
+  useTopicsColumn: () => ({ state: column.state, signedOut: column.signedOut }),
   useTopicTimes: () => ({ yours: column.yours, createdAt: new Map() }),
   readTopicsAgain: column.readAgain,
 }))
@@ -47,6 +48,7 @@ const asked = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls.flatMap(([topics])
 beforeEach(() => {
   resetExploreTopics()
   column.state = { mine: [WIDGETS, ALPHA], others: [PRICING, BETA], archived: [OLD] }
+  column.signedOut = false
   column.yours = new Map([[WIDGETS.address!, 300], [ALPHA.address!, 200]])
   column.readAgain.mockReset()
   reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 4])))
@@ -82,7 +84,19 @@ describe('useExploreTopics', () => {
     await waitFor(() => expect((result.current.state as Record<string, { active?: number }[]>).others![0]!.active).toBe(100))
   })
 
-  it('a topic joined moves to Your topics at once and has its Members read again', async () => {
+  it('a topic left moves to Other topics as soon as the column hears it, and has its Members read again', async () => {
+    const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'yours' as const } })
+    await waitFor(() => expect(asked(reads.members)).toContain(ALPHA.address))
+    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 3])))
+    // The column hears the leave: alpha is no longer yours.
+    column.state = { mine: [WIDGETS], others: [ALPHA, PRICING, BETA], archived: [OLD] }
+    rerender({ tab: 'yours' })
+    const lists = () => result.current.state as Record<string, { title: string; members?: number; yours: boolean }[]>
+    expect(titles(lists().others!)).toContain('alpha')
+    await waitFor(() => expect(lists().all!.find((row) => row.title === 'alpha')!.members).toBe(3))
+  })
+
+  it('a topic joined moves to Your topics as soon as the column hears it, and has its Members read again', async () => {
     const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'others' as const } })
     await waitFor(() => expect(asked(reads.members)).toContain(PRICING.address))
     reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 5])))
@@ -93,6 +107,13 @@ describe('useExploreTopics', () => {
     expect(titles(lists().yours!)).toContain('Pricing')
     expect(titles(lists().others!)).toEqual(['Beta plan'])
     await waitFor(() => expect(lists().all!.find((row) => row.title === 'Pricing')!.members).toBe(5))
+  })
+
+  it('says signed out, not loading, when nobody is signed in: the column never reads then', () => {
+    column.state = 'loading'
+    column.signedOut = true
+    const { result } = renderHook(() => useExploreTopics('all'))
+    expect(result.current.state).toBe('signedOut')
   })
 
   it('says the read failed when the column’s did, and Try again reads the topics again', () => {

@@ -44,6 +44,33 @@ function answersFilter(event: SignedEvent, filter: Filter): boolean {
   })
 }
 
+/** The most the relay answers one filter with no `limit`, newest first. */
+export const RELAY_FILTER_CAP = 2000
+
+/**
+ * Every event the filters match, not only the newest the relay answers each
+ * with: one request for all, then, for a filter that came back full, older
+ * pages of it alone until one comes back short. The oldest changes are the
+ * joins and level choices a count needs most.
+ */
+async function readWhole(query: (filters: Filter[]) => Promise<SignedEvent[]>, filters: Filter[]): Promise<SignedEvent[]> {
+  const byId = new Map<string, SignedEvent>()
+  for (const event of await query(filters)) byId.set(event.id, event)
+  for (const filter of filters) {
+    if (filter.limit !== undefined) continue
+    let page = [...byId.values()].filter((event) => answersFilter(event, filter))
+    while (page.length >= RELAY_FILTER_CAP) {
+      const until = Math.min(...page.map((event) => event.created_at))
+      page = await query([{ ...filter, until }])
+      const size = byId.size
+      for (const event of page) byId.set(event.id, event)
+      // `until` takes in its own second again: a page with nothing new is the end.
+      if (byId.size === size) break
+    }
+  }
+  return [...byId.values()]
+}
+
 /**
  * How many people each topic lists, for Explore topics' Members (TOPI-6, as
  * Ship's and Leaf's `readTopicMembers`): conversation's `placeListing`, the
@@ -52,7 +79,8 @@ function answersFilter(event: SignedEvent, filter: Filter): boolean {
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-place-lists-who-chose-a-level-and-its-teams-members.md
  *
  * One read for every topic asked, each topic's `placeFilters` merged by
- * shape. A topic whose team is no team id maps to `undefined`.
+ * shape, paged past the relay's cap where it is reached. A topic whose team
+ * is no team id maps to `undefined`.
  *
  * **Throws when the read failed**: a failed read is not "nobody".
  */
@@ -71,7 +99,7 @@ export async function topicMemberCountsAsViewer(
       return { topic, place, filters: undefined }
     }
   })
-  const events = await viewerQuery(relayUrl, token)(mergedFilters(asked.flatMap(({ filters }) => filters ?? [])))
+  const events = await readWhole(viewerQuery(relayUrl, token), mergedFilters(asked.flatMap(({ filters }) => filters ?? [])))
   return new Map(
     asked.map(({ topic, place, filters }): [string, number | undefined] => {
       if (!filters) return [topic.address, undefined]

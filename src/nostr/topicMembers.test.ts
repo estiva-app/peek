@@ -24,14 +24,22 @@ function answers(event: Event, filter: Record<string, unknown>): boolean {
     if (key === 'kinds') return wanted.includes(event.kind)
     if (key === 'authors') return wanted.includes(event.pubkey)
     if (key.startsWith('#')) return event.tags.some((tag) => tag[0] === key.slice(1) && wanted.includes(tag[1]))
+    if (key === 'until') return event.created_at <= (value as number)
     return true
   })
 }
+/** As Buzz answers: each filter its newest 2000 at most, newest first. */
+const CAP = 2000
 vi.mock('./bridge', () => ({
   queryRelay: async (_url: string, filters: Record<string, unknown>[]) => {
     relay.asked.push(filters)
     if (!relay.ok) return { ok: false, events: [], reason: 'busy' }
-    return { ok: true, events: relay.events.filter((event) => filters.some((filter) => answers(event, filter))) }
+    const answered = new Map<string, Event>()
+    for (const filter of filters) {
+      const matched = relay.events.filter((event) => answers(event, filter)).sort((a, b) => b.created_at - a.created_at)
+      for (const event of matched.slice(0, CAP)) answered.set(event.id, event)
+    }
+    return { ok: true, events: [...answered.values()] }
   },
 }))
 
@@ -67,6 +75,13 @@ describe('topicMemberCountsAsViewer (Explore topics’ Members)', () => {
     await topicMemberCountsAsViewer([topic(TOPIC_A), topic(TOPIC_B)], 'https://relay.test', token)
     const one = placeFilters({ address: TOPIC_A, team: TEAM }, VIEWER).filter((filter) => !(filter.kinds as number[]).includes(30078))
     expect(relay.asked[0]!.length).toBe(one.length)
+  })
+
+  it('counts everyone past the relay’s 2000-event answer, the oldest joins included', async () => {
+    const people = Array.from({ length: CAP + 1 }, (_, n) => (n + 1).toString(16).padStart(64, '0'))
+    relay.events = people.map((person) => levelOn(person, TOPIC_A))
+    const counts = await topicMemberCountsAsViewer([topic(TOPIC_A)], 'https://relay.test', token)
+    expect(counts.get(TOPIC_A)).toBe(CAP + 1)
   })
 
   it('throws when the relay refuses, so a failed read is never drawn as nobody', async () => {

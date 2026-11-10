@@ -111,6 +111,18 @@ describe('Explore topics (TOPI-6)', () => {
     expect(screen.getByText('You’re in no topics yet.')).toBeInTheDocument()
   })
 
+  it('asks a signed-out person to sign in, rather than loading for ever', () => {
+    mount('signedOut')
+    expect(screen.getByText('Sign in to see topics.')).toBeInTheDocument()
+    expect(shownTitles()).toEqual([])
+  })
+
+  it('finds by the launcher’s rules: a minus word leaves out the topics that have it', async () => {
+    mount(LISTS, 'all')
+    await userEvent.type(screen.getByLabelText('Find a topic'), 'p -review')
+    expect(shownTitles()).toEqual(['Pricing'])
+  })
+
   it('says the topics did not load, and Try again asks again', async () => {
     const onRetry = vi.fn()
     mount({ failed: true }, 'yours', { onRetry })

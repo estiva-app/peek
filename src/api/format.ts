@@ -100,7 +100,8 @@ export function formatActive(at: number, now: number = Date.now()): string {
   let amount = (at - now) / 60_000
   if (amount > -1) return 'Just now'
   for (const [unit, next] of RELATIVE_STEPS) {
-    if (Math.abs(amount) < next) {
+    // Rounded before the unit is chosen: 59.6 minutes is "1 hour ago", not "60 minutes ago".
+    if (Math.abs(Math.round(amount)) < next) {
       const said = RELATIVE.format(Math.round(amount), unit)
       return said.charAt(0).toUpperCase() + said.slice(1)
     }
