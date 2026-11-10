@@ -33,6 +33,8 @@ export interface ActivityItem {
   emoji?: string
   /** A listed file it happened on; absent when it was in the place itself. */
   file?: string
+  /** On a team's page: the chat, space or topic under the team it happened in. */
+  in?: string
   /** The words, cut to a line. */
   text: string
   /** How long ago, as the card says it. */
@@ -55,7 +57,7 @@ const item = (who: string, what: ActivityItem['what'], text: string, ago: string
 export interface Place {
   id: string
   name: string
-  kind: 'topic' | 'space' | 'chat' | 'dm'
+  kind: 'topic' | 'space' | 'chat' | 'dm' | 'team'
   /** The team it sits under, in Teams. */
   team?: string
   /** What lit it, newest first. Empty: no dot. */
@@ -191,4 +193,20 @@ export const petrDm: Place = { id: 'petr', name: 'Petr', kind: 'dm', items: [] }
 
 export const peopleColumn = [katerinaDm, danielDm, anaDm, petrDm]
 
-export const allPlaces: Place[] = [...topicsColumn, ...teamsColumn.flatMap((t) => t.places), ...peopleColumn]
+/**
+ * A team's own page: everything under it in one list, each line saying where. The name in the column still has no
+ * dot; the list is on the page.
+ */
+const minutesAgo = (ago: string) => (ago === 'just now' ? 0 : ago === 'yesterday' ? 1440 : parseInt(ago, 10) * (ago.endsWith('h') ? 60 : 1))
+
+export const teamPages: Place[] = teamsColumn.map(({ team, places }) => ({
+  id: `team:${team}`,
+  name: team,
+  kind: 'team',
+  items: places
+    .flatMap((p) => p.items.map((i) => ({ ...i, in: p.kind === 'chat' ? `# ${p.name}` : p.name })))
+    .sort((a, b) => minutesAgo(a.ago) - minutesAgo(b.ago)),
+  seen: places.flatMap((p) => (p.seen ?? []).map((i) => ({ ...i, in: p.name }))),
+}))
+
+export const allPlaces: Place[] = [...topicsColumn, ...teamsColumn.flatMap((t) => t.places), ...peopleColumn, ...teamPages]

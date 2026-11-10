@@ -35,9 +35,9 @@ export function ActivityLine({ item, onOpen, quiet = false }: { item: ActivityIt
             {item.ago}
           </MetaText>
         </div>
-        {/* Where, when it was on a listed file, then the words. */}
+        {/* Where: the space or chat on a team's page, the listed file, then the words. */}
         <div className="truncate text-caption text-text-muted">
-          {item.file && <span className="text-text-secondary">{item.file} · </span>}
+          {(item.in || item.file) && <span className="text-text-secondary">{[item.in, item.file].filter(Boolean).join(' › ')} · </span>}
           {item.text}
         </div>
       </div>
@@ -57,9 +57,10 @@ export function ActivityCardContent({ items, onOpen, onForYou }: { items: Activi
       {shown.map((i) => (
         <ActivityLine key={i.id} item={i} onOpen={onOpen} />
       ))}
-      {onForYou && (
+      {/* Only what is new (Miky, 10 Nov): a last line only when more is new than the card holds. */}
+      {onForYou && more > 0 && (
         <Button variant="muted" size="small" onClick={onForYou} className="self-start">
-          {more > 0 ? `${more} more in For you` : 'For you'}
+          {`${more} more`}
         </Button>
       )}
     </div>

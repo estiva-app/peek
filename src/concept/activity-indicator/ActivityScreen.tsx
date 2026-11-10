@@ -1,6 +1,7 @@
 import { useState, type MouseEvent, type ReactNode } from 'react'
-import { IconBell, IconUsers, IconX } from '@tabler/icons-react'
-import { EmptyState, IconButton, ListColumn, NavItem, NavTree, PageHeader, Panel, SectionHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { IconUsers } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
+import { EmptyState, IconButton, ListColumn, NavItem, NavTree, PageHeader, PreviewCard, SectionHeader } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { TreeRow } from '@/components/views/FileTreeView'
 import { PersonItem } from '@/components/ui/PersonItem'
@@ -19,23 +20,20 @@ export interface ActivityScreenProps {
   touch?: boolean
   /** The place open on the right, by id. */
   open?: string
-  /** Its For you list open beside it. */
-  forYou?: boolean
   /** Items already seen (orange the hover cleared, blue that was opened), by id. */
   cleared?: string[]
 }
 
 /**
  * Peek's frame with one column, every row carrying the dot that explains
- * itself. Hover a lit row for its card; leave it and its orange is seen. Open a
- * row and the right shows the place with a For you button; the card's last line
- * opens For you too.
+ * itself. Hover a lit row for its card of what is new; leave it and its orange
+ * is seen. Open a row, or a team's name, and its page has a dot beside the
+ * title: hover it for the place's whole list, new and earlier.
  */
-export function ActivityScreen({ column, look = 'blue-wins', touch = false, open: openAt, forYou: forYouAt = false, cleared: clearedAt = [] }: ActivityScreenProps) {
+export function ActivityScreen({ column, look = 'blue-wins', touch = false, open: openAt, cleared: clearedAt = [] }: ActivityScreenProps) {
   const { showToast } = useToast()
   const [cleared, setCleared] = useState<ReadonlySet<string>>(() => new Set(clearedAt))
   const [openId, setOpenId] = useState<string | undefined>(openAt)
-  const [forYou, setForYou] = useState(forYouAt)
   const place = allPlaces.find((p) => p.id === openId)
 
   const clear = (ids: string[]) => setCleared((now) => new Set([...now, ...ids]))
@@ -45,16 +43,12 @@ export function ActivityScreen({ column, look = 'blue-wins', touch = false, open
   // file stays until that file's conversation is opened.
   const openPlace = (p: Place) => {
     setOpenId(p.id)
-    clear(p.items.filter((i) => i.colour === 'orange' || !i.file).map((i) => i.id))
+    if (p.kind !== 'team') clear(p.items.filter((i) => i.colour === 'orange' || !i.file).map((i) => i.id))
   }
   const openItem = (p: Place, i: ActivityItem) => {
-    openPlace(p)
+    if (p.kind !== 'team') openPlace(p)
     clear([i.id])
-    showToast({ label: `Opens ${i.file ? `“${i.file}”` : p.name} at ${i.who}’s message`, type: 'neutral' })
-  }
-  const showForYou = (p: Place) => {
-    openPlace(p)
-    setForYou(true)
+    showToast({ label: `Opens ${i.file ? `“${i.file}”` : (i.in ?? p.name)} at ${i.who}’s message`, type: 'neutral' })
   }
 
   const row = (p: Place, drawn: ReactNode) => (
@@ -66,7 +60,7 @@ export function ActivityScreen({ column, look = 'blue-wins', touch = false, open
         openPlace(p)
       }}
     >
-      <ActivityRow place={p} cleared={cleared} look={look} touch={touch} onHovered={hovered} onOpenItem={openItem} onForYou={showForYou}>
+      <ActivityRow place={p} cleared={cleared} look={look} touch={touch} onHovered={hovered} onOpenItem={openItem} onForYou={openPlace}>
         {drawn}
       </ActivityRow>
     </div>
@@ -92,7 +86,15 @@ export function ActivityScreen({ column, look = 'blue-wins', touch = false, open
             <SectionHeader title="My teams" />
             {teamsColumn.map(({ team, places }) => (
               <div key={team} className="flex flex-col gap-0.5 pb-2">
-                <SectionHeader title={team} look="quiet" />
+                {/* The team's name opens its page, as on main; its page has the dot beside its title. */}
+                <div
+                  onClickCapture={(event: MouseEvent) => {
+                    event.preventDefault()
+                    setOpenId(`team:${team}`)
+                  }}
+                >
+                  <SectionHeader title={team} look="quiet" render={<Link to="#" aria-label={`Open ${team}`} />} />
+                </div>
                 {places.map((p) =>
                   p.kind === 'chat'
                     ? row(p, <NavItem href="#" label={p.name} icon={<IconUsers size={16} stroke={1.5} aria-hidden />} unread={isLit(p)} active={openId === p.id} />)
@@ -117,16 +119,10 @@ export function ActivityScreen({ column, look = 'blue-wins', touch = false, open
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
         title={place.kind === 'chat' ? `# ${place.name}` : place.name}
-        actions={
-          <Toolbar aria-label="Place actions" surface={false}>
-            <ToolbarButton aria-label="For you" tooltip="For you" pressed={forYou} onClick={() => setForYou(!forYou)}>
-              <IconBell size={16} stroke={1.5} aria-hidden />
-            </ToolbarButton>
-          </Toolbar>
-        }
+        after={<TitleDot place={place} cleared={cleared} touch={touch} onHovered={hovered} onOpen={(i) => openItem(place, i)} />}
       />
       <div className="flex flex-1 items-center justify-center p-4">
-        <span className="text-caption text-text-muted">{place.name}’s conversation, as today</span>
+        <span className="text-caption text-text-muted">{place.kind === 'team' ? `${place.name}’s page, as today` : `${place.name}’s conversation, as today`}</span>
       </div>
     </div>
   ) : (
@@ -135,27 +131,35 @@ export function ActivityScreen({ column, look = 'blue-wins', touch = false, open
     </div>
   )
 
-  return <PeekFrame leftPanel={left} rightPanel={right} threadPanel={place && forYou ? <ForYouPanel place={place} cleared={cleared} onClose={() => setForYou(false)} onOpen={(i) => openItem(place, i)} /> : undefined} />
+  return <PeekFrame leftPanel={left} rightPanel={right} />
 }
 
 /**
- * A place's For you: everything its dot's card listed, kept after the hover
- * cleared it. New on top, then Earlier.
+ * The dot beside a page's title, as the navigation prototype drew it (estiva-ui `concept/cross-app-navigation`,
+ * `ActivityDot`; Miky, 10 Nov): blue with something new to read, orange with only a reaction to you, a quiet ring with
+ * nothing new. Hovering it shows the place's whole list, new and earlier. On a touch screen a tap opens it.
  */
-export function ForYouPanel({ place, cleared, onClose, onOpen }: { place: Place; cleared: ReadonlySet<string>; onClose: () => void; onOpen: (item: ActivityItem) => void }) {
+export function TitleDot({ place, cleared, touch, onHovered, onOpen }: { place: Place; cleared: ReadonlySet<string>; touch: boolean; onHovered: (p: Place) => void; onOpen: (item: ActivityItem) => void }) {
+  const { blue, orange } = lit(place, cleared)
+  const dot = blue ? 'bg-accent-primary' : orange ? 'bg-warning-default' : 'border border-border-strong'
+  return (
+    <span onPointerLeave={() => onHovered(place)}>
+      <PreviewCard side="bottom" delay={touch ? 0 : undefined} contentClassName="p-1" content={<PlaceList place={place} cleared={cleared} onOpen={onOpen} />}>
+        <IconButton aria-label={blue || orange ? 'Something new here; show what' : 'Show what happened here'} tooltip="">
+          <span aria-hidden className={`size-1.5 rounded-full ${dot}`} />
+        </IconButton>
+      </PreviewCard>
+    </span>
+  )
+}
+
+/** A place's whole list: New on top, then Earlier, which keeps what a hover cleared. */
+export function PlaceList({ place, cleared, onOpen }: { place: Place; cleared: ReadonlySet<string>; onOpen?: (item: ActivityItem) => void }) {
   const fresh = place.items.filter((i) => !cleared.has(i.id))
   const earlier = [...place.items.filter((i) => cleared.has(i.id)), ...(place.seen ?? [])]
   return (
-    <Panel
-      title="For you"
-      actions={
-        <IconButton aria-label="Close For you" tooltip="Close" onClick={onClose}>
-          <IconX size={16} stroke={1.5} aria-hidden />
-        </IconButton>
-      }
-      bodyClassName="flex flex-col gap-3 px-2 pt-2 pb-4"
-    >
-      {fresh.length + earlier.length === 0 && <EmptyState scope="section" message="Nothing for you here yet." />}
+    <div className="flex flex-col gap-2">
+      {fresh.length + earlier.length === 0 && <EmptyState scope="section" message="Nothing here yet." />}
       {fresh.length > 0 && (
         <div className="flex flex-col gap-0.5">
           <SectionHeader title="New" />
@@ -172,6 +176,6 @@ export function ForYouPanel({ place, cleared, onClose, onOpen }: { place: Place;
           ))}
         </div>
       )}
-    </Panel>
+    </div>
   )
 }
