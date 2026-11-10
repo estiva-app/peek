@@ -42,7 +42,7 @@ const LISTS: ExploreState = {
   archived: [domain, level2],
 }
 
-function Explore({ state, start = 'yours' }: { state: ExploreState; start?: ExploreTab }) {
+function Explore({ state, start = 'all' }: { state: ExploreState; start?: ExploreTab }) {
   const [tab, setTab] = useState<ExploreTab>(start)
   return <ExploreTopicsView state={state} tab={tab} onTab={setTab} onRetry={() => {}} onJoin={() => {}} now={NOW} />
 }
@@ -63,8 +63,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Opens on Your topics, in the column's order; Pricing's Members and Active are still being read. */
-export const YourTopics: Story = { args: { state: LISTS } }
+/** Opens on All, A to Z, yours and others; Pricing's Members and Active are still being read. */
+export const All: Story = { args: { state: LISTS } }
+
+/** Your topics, in the column's order. */
+export const YourTopics: Story = { args: { state: LISTS, start: 'yours' } }
 
 /** Other topics, A to Z, each with Join. */
 export const OtherTopics: Story = { args: { state: LISTS, start: 'others' } }

@@ -26,10 +26,11 @@ const EMPTY: Record<ExploreTab, string> = {
  * `ExplorePage.tsx`), in the shape of Ship's Topics page and Leaf's Explore
  * topics: tabs All, Your topics, Other topics and Archived with their counts,
  * a search, and one row per topic with its team, members and last active, and
- * Join on a topic you are not in. It opens on Your topics, as Ship and Leaf do.
+ * Join on a topic you are not in. It opens on All (Miky, 10 Nov).
  */
 export function ExploreTopics({ onControl }: { onControl: (control: FileControl, file: ForeignObject) => void }) {
-  const [tab, setTab] = useState<ExploreTab>('yours')
+  // Opens on All, as the approved story and Slack's browse channels do (Miky, 10 Nov, at /land): the column beside it already lists yours.
+  const [tab, setTab] = useState<ExploreTab>('all')
   const { state, retry } = useExploreTopics(tab)
   // Active counts back from when the page opened, as Ship's and Leaf's do.
   const [now] = useState(() => Date.now())

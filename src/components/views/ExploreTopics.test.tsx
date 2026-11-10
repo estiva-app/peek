@@ -10,7 +10,16 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { ExploreRow, ExploreState, ExploreTab } from '@/api'
 import { openedFrom } from '@/lib/openedFrom'
-import { ExploreTopicsView } from './ExploreTopics'
+import { ExploreTopics, ExploreTopicsView } from './ExploreTopics'
+
+const hook = vi.hoisted(() => ({ tabs: [] as string[], state: 'loading' as unknown }))
+vi.mock('@/api', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  useExploreTopics: (tab: string) => {
+    hook.tabs.push(tab)
+    return { state: hook.state, retry: () => {} }
+  },
+}))
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const NOW = Date.UTC(2026, 10, 10, 12)
@@ -40,6 +49,17 @@ const shownTitles = () => [...document.querySelectorAll('[data-topic] a')].map((
 const rowOf = (title: string) => screen.getByText(title).closest('[data-topic]') as HTMLElement
 
 describe('Explore topics (TOPI-6)', () => {
+  it('opens on All, every live topic, not the Your topics the column already lists (Miky, 10 Nov)', () => {
+    hook.state = LISTS
+    render(
+      <MemoryRouter>
+        <ExploreTopics onControl={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(hook.tabs[0]).toBe('all')
+    expect(shownTitles()).toEqual(['Pricing', 'Q4-plan review', 'Widgets'])
+  })
+
   it('counts each tab', () => {
     mount(LISTS)
     for (const [label, count] of [['All', 3], ['Your topics', 1], ['Other topics', 2], ['Archived', 1]] as const) {
