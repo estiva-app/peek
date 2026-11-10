@@ -1,0 +1,98 @@
+import { memo, type ReactNode } from 'react'
+import { ConversationCard } from '@/components/ConversationCard'
+import type { ConversationData, FileAttachment } from '@/api'
+import type { Embed } from '@estiva-app/protocol'
+import type { ReactionAnswer } from '@/lib/reactions'
+
+/** What a card in the list does, by the id of the message it draws. */
+export interface RowHandlers {
+  setResolution: (id: string, resolved: boolean, message?: string) => void
+  /** Answers with what the relay said, which the card says under the message when it refused. */
+  toggleReaction: (id: string, emoji: string) => Promise<ReactionAnswer | void>
+  editBody: (id: string, body: string) => void
+  editFiles: (id: string, files: FileAttachment[]) => void
+  /** The card set after an edit, when it changed (OPT-17). */
+  editEmbeds: (id: string, embeds: Embed[]) => void
+  remove: (id: string) => void
+}
+
+interface ConversationRowProps {
+  c: ConversationData
+  /** New to you as it was drawn, and not seen yet (Katerina, 30 October). */
+  hasNewMessage: boolean
+  hasNewReply: boolean
+  /** What is new in it is urgent for you: the unread look in its urgent tone. */
+  isUrgent: boolean
+  readOnly: boolean
+  /** The same object on every render — the view's — so it never re-draws a row by itself. */
+  actions: RowHandlers
+  /** The file whose conversation this is: an edit linking it adds no card (§13.6.2). */
+  writtenOn?: string
+  /**
+   * Where it was said, when the list mixes places: a topic at All draws each of its files' threads under the file's
+   * `ConversationHeading` (TOPI-3). Built once per file by the view, so it is the same node across renders.
+   */
+  heading?: ReactNode
+}
+
+/**
+ * One message in a conversation's list (OPT-6). Drawn again only when what it
+ * shows changed: the view rebuilds every message's data from the held
+ * conversation on each change, so the data is compared by value, not by
+ * identity. Without this, one new message re-drew every card of a long topic.
+ *
+ * Opening its thread is the kit's ConversationLayout's: a press on the card,
+ * its replies row or Reply asks the layout, which marks the open one (B1).
+ */
+export const ConversationRow = memo(
+  function ConversationRow({ c, hasNewMessage, hasNewReply, isUrgent, readOnly, actions, writtenOn, heading }: ConversationRowProps) {
+    return (
+      <ConversationCard
+        heading={heading}
+        authorName={c.authorName}
+        authorAvatarSrc={c.authorAvatarSrc}
+        authorBot={c.authorBot}
+        timestamp={c.timestamp}
+        createdAtMs={c.createdAtMs}
+        body={c.body}
+        editedAt={c.editedAt}
+        canEditAndDelete={c.canEditAndDelete}
+        files={c.files}
+        reactions={c.reactions}
+        replyCount={c.replyCount}
+        replyAuthors={c.replyAuthors}
+        lastReplyTime={c.lastReplyTime}
+        hasNewMessage={hasNewMessage}
+        hasNewReply={hasNewReply}
+        isUrgent={isUrgent}
+        isResolved={c.isResolved}
+        resolvedBy={c.resolvedBy}
+        resolutionMessage={c.resolutionMessage}
+        urgentMentions={c.urgentMentions}
+        parts={c.parts}
+        ownFile={c.ownFile}
+        embeds={c.embeds}
+        deleted={c.isDeleted}
+        unseen={c.isUnseen}
+        onResolvedChange={(resolved, _by, message) => actions.setResolution(c.id, resolved, message)}
+        onReactionsChange={(_next, emoji) => actions.toggleReaction(c.id, emoji)}
+        onBodyChange={(b) => actions.editBody(c.id, b)}
+        onFilesChange={(f) => actions.editFiles(c.id, f)}
+        onEmbedsChange={(e) => actions.editEmbeds(c.id, e)}
+        writtenOn={writtenOn}
+        readOnly={readOnly}
+        onDelete={() => actions.remove(c.id)}
+        messageId={c.id}
+      />
+    )
+  },
+  (before, after) =>
+    before.hasNewMessage === after.hasNewMessage &&
+    before.hasNewReply === after.hasNewReply &&
+    before.isUrgent === after.isUrgent &&
+    before.readOnly === after.readOnly &&
+    before.actions === after.actions &&
+    before.writtenOn === after.writtenOn &&
+    before.heading === after.heading &&
+    (before.c === after.c || JSON.stringify(before.c) === JSON.stringify(after.c)),
+)

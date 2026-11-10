@@ -1,0 +1,112 @@
+/**
+ * Peek data-access seam (the rule: `.claude/rules/data-seam.md`).
+ *
+ * The ONLY module tree components and pages may read app data through.
+ * Convex queries/mutations serve every entity when a deployment is
+ * configured (override providers cover the optimistic window); without one
+ * the static mocks in src/data merged with the override providers serve
+ * everything (tests, Storybook, demo instance).
+ */
+export * from './types'
+export * from './reference'
+export * from './directory'
+export * from './unread'
+export * from './desk'
+export * from './currentUser'
+export * from './people'
+export { useDmChannels, useDmVisibility } from '@/api/internal/dms'
+/* `window.__readState()` — see src/nostr/useReadStateSync.ts (CRO-14). At module
+   scope so it exists before anything asks, including on a cold URL load. */
+import { installReadStateDiagnostic } from '@/nostr/useReadStateSync'
+installReadStateDiagnostic()
+
+/* `window.__promptContext()` — see src/nostr/promptContextDiagnostic.ts (INT-1).
+   Same reason and the same module-load registration. */
+import { installPromptContextDiagnostic } from '@/nostr/promptContextDiagnostic'
+installPromptContextDiagnostic()
+
+/* `window.__membership()` — see src/nostr/useMembershipSync.ts (CON-19). Same again. */
+import { installMembershipDiagnostic } from '@/nostr/useMembershipSync'
+installMembershipDiagnostic()
+
+/* `window.__wideFilters()` — see src/nostr/liveTopics.ts (FOL-40). Same again. */
+import { installWideFilterDiagnostic } from '@/nostr/liveTopics'
+installWideFilterDiagnostic()
+
+/* `window.__relayReads()` — see src/nostr/relayMeter.ts (PER-8): how many
+   requests this tab spent against the relay's per-minute meter, by shape. */
+import { installRelayReadsDiagnostic } from '@/nostr/relayMeter'
+installRelayReadsDiagnostic()
+export * from './messages'
+export * from './actions'
+export * from './profile'
+export * from './uploads'
+export * from './screener'
+export { knownCardValue, askLinks, knownBlockOfUrl, knownLinkTarget, onLinksChanged, linksVersion, isFromCopy, folderLoad, useLinkResolver, useLinksIn, useDeleted, useForeignObjects, useHeldObject, useReloadHeldObject, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, useFileSearch, type MessageHit } from './foreign'
+export { usePart, type PartView } from './part'
+export { formatActive, formatDateLabel, formatReplyTimestamp, formatShortDate, formatTimestamp } from './format'
+export { useAvatarSrc } from './avatars'
+export { mentionPeople, mentionsVersion, personByPubkey, subscribeMentions } from './mentions'
+export { fileChoices, referenceSections, subscribeReferences, useReferenceFolder, useRememberFile } from './references'
+export { useTopicFiles, type TopicFile, type TopicFilesState } from './useTopicFiles'
+export { useStarred } from '@/api/internal/starred'
+export { useMembership, type MembershipSeam } from '@/api/internal/membership'
+export { useTopicsColumn, useListedNews, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
+export { useExploreTopics, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
+export { useFileMembers } from '@/api/internal/fileMembers'
+export type { StreamTerms } from '@estiva-app/conversation'
+export { PeekDataProvider } from './store'
+export { useLoadAhead } from './loadAhead'
+export { RELAY_URL, hasRelay } from './relayUrl'
+export {
+  listedFile,
+  prefetchFolderContents,
+  reloadFoldersOnScreen,
+  topLevelFolders,
+  useFolderContents,
+  useFolders,
+  type FolderContentsState,
+} from './useFolderContents'
+export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
+export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
+export type { StartTopicArgs } from './startTopic'
+export {
+  useForeignConversation,
+  useFileAddress,
+  rememberFileAddress,
+  forgetFileAddresses,
+  useForeignChildren,
+  useFileThreads,
+  type FileAddressState,
+  type ForeignConversationState,
+  type ForeignChildrenState,
+  type FileThreadsState,
+} from './useForeignConversation'
+export {
+  useFileConversation,
+  conversationKeyOf,
+  isGone,
+  relayAttachmentOf,
+  type FileConversationState,
+  type FileConversationActions,
+  type ConversationContainer,
+  type ConversationEvent,
+  type FileConversation,
+  type OutgoingAttachment,
+  type WriteResult,
+} from './useFileConversation'
+export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
+export { CARD_LINES, type RowNewsItem } from './rowNews'
+export { useRowNewsDetails } from './rowNewsDetails'
+export {
+  isUrgentForViewer,
+  useNewReplyThreads,
+  useNewWhenDrawn,
+  useReplyOnlyThread,
+  useUrgentReplyThreads,
+  type ReplyStream,
+} from './useNewReplyThreads'
+export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFolders, teamOf, teamPlaces, useMayMove, useTeamChatNews, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
+export { useMentionConversation, type MentionConversation } from './useMentionConversation'
+export { placeLevelChanged, topicFollowTarget, usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'
+export { useListedConversations, type ListedSource, type ListedState } from './useListedConversations'

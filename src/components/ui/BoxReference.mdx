@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Primitives/BoxReference" />
+
+# BoxReference
+
+How a link or a person is drawn inside the box while it is written.
+
+**Seen in** — No story: it only draws inside the message box, whose stories are in the estiva-ui Storybook (Writing / CommentBox).
+
+## When
+
+- As the `referenceView` of the box, in `ConversationBox` and `EditBox`. The editor hands it each reference it holds.
+
+## When not
+
+- For a link in a sent message. That is **LinkChip**, drawn by `MessageChip`.
+- For a person in a sent message. That is `Reference`.
+
+## How
+
+```tsx
+import { BoxReference } from '@/components/ui/BoxReference'
+
+<CommentBox referenceView={BoxReference} /* ...rest of the box */ />
+```
+
+- Props are the kit's `ReferenceViewProps`: `uri`, `href`, `editing`.
+
+## What it owns
+
+- **Peek's half:** where the object comes from. It reads the box's supplied objects first, then asks Peek's relay, and knows deleted files.
+- **The look and the behaviour are the kit's LinkChip.** While it is written the chip shows no card and a click does not leave the draft. See LinkChip in the estiva-ui Storybook (Links / LinkChip).

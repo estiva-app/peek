@@ -1,0 +1,263 @@
+/**
+ * A message's links drawn by the kit (Widgets 2, "Peek's messages and
+ * 'Mentioned in' draw links from the kit"): where a link sits decides how it
+ * draws (SPEC §13.2; record a-link-on-words-counts-toward-the-card).
+ * A link in a sentence is a chip, a line that is only a link to a file is that
+ * file's row, a person or a Folder alone stays a chip, and the file its author
+ * chose gets the card under the message — which any reader may change from
+ * (Decided 16 Oct), with an unread dot only for a member. A preview draws
+ * chips only, and "Mentioned in" draws no card for the file it is on.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { addrToNaddr, encodeNpub, type Embed } from '@estiva-app/protocol'
+
+const SHIP = 'cb77583ed45cac74ce4e46c626c1edada0204a6fc4c91f9c7be230b5af36156c'
+const ADA = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const BRUNO = 'f3a38fa6c6a1e5d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920'
+const SENTENCE_ISSUE = `30851:${SHIP}:a0b27d90-d5b9-40e7-8078-865ab36a421c`
+const CARD_ISSUE = `30851:${SHIP}:c0b27d90-d5b9-40e7-8078-865ab36a421c`
+const PROJECT = `30850:${SHIP}:b0b27d90-d5b9-40e7-8078-865ab36a421c`
+const FOLDER = `39000:${BRUNO}:d0b27d90-d5b9-40e7-8078-865ab36a421c`
+const ref = (address: string) => `nostr:${addrToNaddr(address, [])}`
+const PERSON = `nostr:${encodeNpub(ADA)}`
+
+const base = (address: string, kind: number, title: string) => ({
+  ref: address,
+  address,
+  eventId: 'e'.repeat(64),
+  kind,
+  widget: 'row',
+  appName: 'Ship',
+  openUrl: `https://ship.estiva.app/o/${address}`,
+  slots: { title: { value: title } },
+  meta: [],
+  comments: [],
+  actions: [],
+})
+const cardIssue = () => ({
+  ...base(CARD_ISSUE, 30851, 'Cards draw from the kit'),
+  slots: { title: { value: 'Cards draw from the kit' }, status: { value: 'Todo', colour: 'neutral', field: 'status' } },
+  meta: [{ label: 'Assignee', value: ADA, isPubkey: true, field: 'assignee' }],
+  people: { [ADA]: { displayName: 'Ada Lovelace' } },
+  actions: [
+    { id: 'change-status', label: 'Change status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo', colour: 'neutral' }, { value: 'done', label: 'Done', colour: 'green' }] },
+    { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee', current: ADA },
+  ],
+})
+let objects: Record<string, unknown> = {}
+const byReference = (reference: string) => objects[reference.replace(/^nostr:/, '')]
+let unread: boolean | undefined = false
+const applyCardAction = vi.fn<(change: { naddr: string; actionId: string; value: string }) => Promise<{ ok: boolean }>>(async () => ({ ok: true }))
+
+vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
+  TOPICS: [],
+  APP_FILES: [],
+  DOCUMENT_FILES: [],
+  hasRelay: true,
+  isFromCopy: () => false,
+  useLinkResolver: () => () => undefined,
+  useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((r) => [r, byReference(r) ?? null])),
+  // Never answered: the card waits, as on a slow relay.
+  useHeldObject: (naddr: string) => ({ object: objects[naddr] ?? 'loading', reload: async () => {}, gone: false }),
+  useForeignObjects: () => ({ applyCardAction, parentArchiveOf: async () => undefined }),
+  useWorkspaceDirectory: () => ({ [ADA]: { displayName: 'Ada Lovelace' }, [BRUNO]: { displayName: 'Bruno Ferreira' } }),
+  // `useConversationBadges` gates unread on membership itself; this is its answer.
+  useConversationBadges: (files?: { ref: string }[]) => ({
+    counts: Object.fromEntries((files ?? []).map((f) => [f.ref, 3])),
+    // `undefined`: the file is not judged — the reader is no member of it — so it has no key at all.
+    unread: Object.fromEntries((files ?? []).flatMap((f) => (unread === undefined ? [] : [[f.ref, unread]]))),
+  }),
+}))
+vi.mock('@/api/mentions', () => ({
+  personByPubkey: (pubkey: string) => (pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : undefined),
+  subscribeMentions: () => () => {},
+  mentionsVersion: () => 0,
+}))
+
+import { MessageBody } from './MessageBody'
+import { AppProvider } from '@estiva-app/ui'
+
+const naddr = (address: string) => ref(address).replace(/^nostr:/, '')
+const show = (body: string, props: { embeds?: Embed[]; here?: string; preview?: boolean; readOnly?: boolean } = {}) => render(<MessageBody body={body} {...props} />).container
+// A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
+const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
+
+beforeEach(() => {
+  applyCardAction.mockClear()
+  unread = false
+  objects = {
+    [naddr(SENTENCE_ISSUE)]: base(SENTENCE_ISSUE, 30851, 'Fix the sign-in'),
+    [naddr(PROJECT)]: base(PROJECT, 30850, 'Widgets 2'),
+    [naddr(CARD_ISSUE)]: cardIssue(),
+    [naddr(FOLDER)]: base(FOLDER, 39000, 'Design'),
+  }
+})
+
+const THE_MESSAGE = `Look at ${ref(SENTENCE_ISSUE)} today.\n\n${ref(PROJECT)}\n\n${ref(CARD_ISSUE)}`
+const ITS_CARD: Embed[] = [{ value: CARD_ISSUE, layout: 'detailed' }]
+
+describe('where a link sits decides how it draws', () => {
+  it('draws a link in a sentence as its chip, a link alone as its row, and the carded file only as its card', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(c.querySelector('p')?.textContent).toBe('Look at Fix the sign-in today.')
+    expect(rows(c)).toEqual(['Widgets 2'])
+    const card = c.querySelector('[data-card="detailed"]')
+    expect(card?.textContent).toContain('Cards draw from the kit')
+    // The carded issue's own line draws nothing: no row, no chip.
+    expect(c.textContent?.match(/Cards draw from the kit/g)).toHaveLength(1)
+  })
+
+  it('draws a bullet or numbered line that is only a link as a row, keeping its bullet', () => {
+    const c = show(`- ${ref(PROJECT)}\n- and ${ref(SENTENCE_ISSUE)} too\n\n1. ${ref(SENTENCE_ISSUE)}`)
+    expect(rows(c)).toEqual(['Widgets 2', 'Fix the sign-in'])
+    expect(c.querySelector('ul li [data-link-row]')).not.toBeNull()
+    expect(c.querySelector('ol li [data-link-row]')).not.toBeNull()
+    // A bullet with words around its link is a sentence.
+    expect(c.querySelectorAll('ul li')[1].textContent).toBe('and Fix the sign-in too')
+  })
+
+  it('gives a row its file’s comment count, opening the file’s conversation, as a card has it', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    const row = c.querySelector('[data-link-row]') as HTMLElement
+    expect(within(row).getByRole('link', { name: /comments — open the conversation/ })).toHaveTextContent('3')
+  })
+
+  it('keeps a person or a Folder alone on its line a chip', () => {
+    const c = show(`${PERSON}\n\n${ref(FOLDER)}`)
+    expect(rows(c)).toEqual([])
+    expect(c.textContent).toContain('@Ada Lovelace')
+    expect(c.textContent).toContain('Design')
+  })
+})
+
+describe('the card under the message', () => {
+  it('changes the issue from its status and assignee, for any reader', async () => {
+    show(THE_MESSAGE, { embeds: ITS_CARD })
+    await userEvent.click(screen.getByRole('combobox', { name: 'Status' }))
+    await userEvent.click(await screen.findByRole('option', { name: /Done/ }))
+    await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'change-status', value: 'done' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Assignee' }))
+    await userEvent.click(await screen.findByRole('option', { name: /Bruno Ferreira/ }))
+    await waitFor(() => expect(applyCardAction).toHaveBeenCalledWith({ naddr: naddr(CARD_ISSUE), actionId: 'assign-issue', value: BRUNO }))
+  })
+
+  it('reads its status and assignee as words where the reader cannot act: an archived or read-only conversation', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD, readOnly: true })
+    expect(screen.queryByRole('combobox')).toBeNull()
+    const card = c.querySelector('[data-card="detailed"]') as HTMLElement
+    expect(card.textContent).toContain('Todo')
+    expect(card.textContent).toContain('Ada Lovelace')
+  })
+
+  it('opens the issue’s conversation from its comment count, with a dot only when the reader has something unread there', () => {
+    const quiet = show(THE_MESSAGE, { embeds: ITS_CARD })
+    // The number, and its name for a screen reader, which carries the number too (ui 0.92).
+    expect(quiet.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
+    quiet.remove()
+    // QA-2, a reader who is no member: the badges leave the file out, and the count shows with no dot.
+    unread = undefined
+    const stranger = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(stranger.querySelector('[data-card] a[href^="/"]')?.textContent).toBe('33 comments — open the conversation')
+    stranger.remove()
+    unread = true
+    const member = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(member.querySelector('[data-card]')?.textContent).toContain('comments, unread')
+  })
+
+  it('shows no card on hover over a chip whose card is already under the message', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const c = show(`Look at ${ref(CARD_ISSUE)} and ${ref(SENTENCE_ISSUE)} today.`, { embeds: ITS_CARD })
+      const sentence = within(c.querySelector('p') as HTMLElement)
+      await user.hover(sentence.getByRole('link', { name: /Cards draw from the kit/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      // The chip and the card under the message; no third in a preview over the card.
+      expect(screen.getAllByText('Cards draw from the kit')).toHaveLength(2)
+      // A chip with no card under the message still shows its card on hover.
+      await user.hover(sentence.getByRole('link', { name: /Fix the sign-in/ }))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(screen.getAllByText('Fix the sign-in')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a card’s place while it loads, and says "You can\'t open this issue" for a file the reader cannot read', () => {
+    delete objects[naddr(CARD_ISSUE)]
+    const loading = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(loading.querySelector('[data-card="detailed"] [aria-busy="true"]')).not.toBeNull()
+    loading.remove()
+    objects[naddr(CARD_ISSUE)] = { ...cardIssue(), unreachable: true, noun: 'Issue' }
+    const unreadable = show(THE_MESSAGE, { embeds: ITS_CARD })
+    // Changed on purpose: kit 0.102.0 (ALO-4) says "You can't open this issue", not "Issue not available", and
+    // draws no Open button, since there is nothing for the reader to open.
+    expect(unreadable.querySelector('[data-card="detailed"]')?.textContent).toBe("You can't open this issue")
+    expect(unreadable.querySelector('[data-card="detailed"] a')).toBeNull()
+  })
+})
+
+describe('where the message is shown', () => {
+  it('draws no card in "Mentioned in" for the file it is on, and its link stays a chip', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD, here: CARD_ISSUE })
+    expect(c.querySelector('[data-card]')).toBeNull()
+    expect(rows(c)).toEqual(['Widgets 2'])
+    expect(c.textContent).toContain('Cards draw from the kit')
+  })
+
+  it('draws a preview’s links as chips only: no row, no card', () => {
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD, preview: true })
+    expect(c.querySelector('[data-card]')).toBeNull()
+    expect(rows(c)).toEqual([])
+    expect(c.textContent).toContain('Widgets 2')
+    expect(c.textContent).toContain('Cards draw from the kit')
+    expect(screen.queryByRole('combobox')).toBeNull()
+  })
+})
+
+describe('another app’s address, from a manifest anyone may publish', () => {
+  it('never becomes a link that is not http(s): a script URL draws no href on the chip, the row or the card', () => {
+    const script = 'javascript:alert(1)//'
+    for (const address of [SENTENCE_ISSUE, PROJECT, CARD_ISSUE]) objects[naddr(address)] = { ...(objects[naddr(address)] as object), openUrl: script }
+    const c = show(THE_MESSAGE, { embeds: ITS_CARD })
+    expect(c.textContent).toContain('Widgets 2')
+    expect([...c.querySelectorAll('a')].map((a) => a.getAttribute('href')).filter((href) => /^\s*javascript:/i.test(href ?? ''))).toEqual([])
+  })
+})
+
+describe('a click on a link', () => {
+  // Inside the kit's `AppProvider`, as `PeekSetup` gives it in the app: a kit link to another site opens a new tab.
+  const inApp = (children: React.ReactNode) => <AppProvider navigate={() => {}}>{children}</AppProvider>
+
+  it('is the link’s, not the message’s, and another app’s link opens in a new tab', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const onCard = vi.fn()
+    const { container } = render(
+      inApp(
+        <div onClick={onCard}>
+          <MessageBody body={`Look at ${ref(SENTENCE_ISSUE)} today.`} />
+        </div>,
+      ),
+    )
+    fireEvent.click(container.querySelector('a') as HTMLAnchorElement)
+    expect(onCard).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith(`https://ship.estiva.app/o/${SENTENCE_ISSUE}`, '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledTimes(1)
+    open.mockRestore()
+  })
+
+  it('with Cmd or Ctrl is the browser’s: no tab opened by the page, and nothing stops the click', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const { container } = render(inApp(<MessageBody body={`Look at ${ref(SENTENCE_ISSUE)} today.`} />))
+    const link = container.querySelector('a') as HTMLAnchorElement
+    expect(fireEvent.click(link, { metaKey: true })).toBe(true)
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
+})

@@ -1,0 +1,177 @@
+/**
+ * A link to one block of a file reads as that file (WBM-11; Miky, 19 Oct: "yes,
+ * that's the whole point"): in a sentence it is the file's chip where the URL
+ * was, and the chip opens the block; alone on its line it draws nothing while
+ * its `part` shows the block under the message (C26); with no part for it (an
+ * older message, another app's) it is the file's row. A link nothing answered
+ * stays the URL as written.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { render } from '@testing-library/react'
+import { addrToNaddr, markerTextToBlockDocument } from '@estiva-app/protocol'
+import type { PartView } from '@/api'
+import { urlPatternsOf } from '@estiva-app/interop'
+import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
+
+const SHIP = 'cb77583ed45cac74ce4e46c626c1edada0204a6fc4c91f9c7be230b5af36156c'
+const UUID = 'a0b27d90-d5b9-40e7-8078-865ab36a421c'
+const PAGE = `30851:${SHIP}:${UUID}`
+const BLOCK_LINK = `https://ship.estiva.app/issue/plan-${UUID}#block-p1`
+const UNREAD_LINK = `https://ship.estiva.app/issue/secret-${'b'.repeat(8)}-0000-4000-8000-000000000000#block-p2`
+const naddr = addrToNaddr(PAGE, [])
+
+const object = {
+  ref: PAGE,
+  address: PAGE,
+  eventId: 'e'.repeat(64),
+  kind: 30851,
+  widget: 'row',
+  appName: 'Ship',
+  noun: 'issue',
+  openUrl: `https://ship.estiva.app/o/${PAGE}`,
+  slots: { title: { value: 'Plan the launch' } },
+  meta: [],
+  comments: [],
+  actions: [],
+}
+let answers: Record<string, string> = {}
+
+vi.mock('@/api', () => ({
+  // Whether a file that came back as nothing was deleted, and the links in a message's words: neither asked here.
+  useDeleted: () => false,
+  useLinksIn: () => {},
+  TOPICS: [],
+  APP_FILES: [],
+  DOCUMENT_FILES: [],
+  hasRelay: true,
+  isFromCopy: () => false,
+  // What the app's one resolver answers for each link (§7.7): a block link, its file.
+  useLinkResolver: () => (url: string) => answers[url],
+  useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((r) => [r, r.replace(/^nostr:/, '') === naddr ? object : null])),
+  useHeldObject: () => ({ object: 'loading', reload: async () => {}, gone: false }),
+  useForeignObjects: () => ({ applyAction: async () => ({ ok: true }) }),
+  useWorkspaceDirectory: () => ({}),
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
+  usePart: (): PartView => ({ state: 'resolved', block: markerTextToBlockDocument('Ship it on Friday').content[0], object: object as never, link: BLOCK_LINK }),
+}))
+vi.mock('@/api/mentions', () => ({ personByPubkey: () => undefined, subscribeMentions: () => () => {}, mentionsVersion: () => 0 }))
+
+import { MessageBody } from './MessageBody'
+
+const PART = [{ address: PAGE, block: 'p1' }]
+const show = (body: string, parts?: { address: string; block: string }[]) => render(<MessageBody body={body} parts={parts} />).container
+const part = (c: HTMLElement) => c.querySelector('[data-part]')
+// A row's title, its link: since ui 0.91.0 a row has a second line under it (its key and what it is).
+const rows = (c: HTMLElement) => [...c.querySelectorAll('[data-link-row]')].map((row) => row.querySelector('a')?.textContent)
+
+beforeEach(() => {
+  answers = { [BLOCK_LINK]: PAGE }
+})
+
+describe('a link to one block reads as its file', () => {
+  it('in a sentence is the file’s chip where the URL was, the block live under the message', () => {
+    const c = show(`see ${BLOCK_LINK} here`, PART)
+    expect(c.querySelector('p')?.textContent).toBe('see Plan the launch here')
+    expect(c.textContent).not.toContain(BLOCK_LINK)
+    expect(part(c)?.textContent).toContain('Ship it on Friday')
+  })
+
+  it('opens the block, not the top of its file, from its chip', () => {
+    const c = show(`see ${BLOCK_LINK} here`, PART)
+    const chip = [...c.querySelectorAll('p a')].find((a) => a.textContent?.includes('Plan the launch'))
+    expect(chip?.getAttribute('href')).toBe(BLOCK_LINK)
+  })
+
+  it('alone on its line draws nothing in its place: the block under the message stands for it', () => {
+    const c = show(BLOCK_LINK, PART)
+    expect(rows(c)).toEqual([])
+    expect(c.textContent).not.toContain(BLOCK_LINK)
+    expect(part(c)?.textContent).toContain('Ship it on Friday')
+    // No chip either: everything the message draws is the part.
+    expect(c.textContent).toBe(part(c)?.textContent)
+  })
+
+  it('alone on its line with no part for it (an older message) is the file’s row, opening the block', () => {
+    const c = show(BLOCK_LINK)
+    expect(rows(c)).toEqual(['Plan the launch'])
+    expect(c.querySelector('[data-link-row] a')?.getAttribute('href')).toBe(BLOCK_LINK)
+  })
+
+  it('opens where its file opens, never the written URL, when that URL is on another site than the file (security review)', () => {
+    const rogue = `https://evil.example/issue/plan-${UUID}#block-p1`
+    answers[rogue] = PAGE
+    const c = show(`see ${rogue} here`)
+    const chip = [...c.querySelectorAll('p a')].find((a) => a.textContent?.includes('Plan the launch'))
+    expect(chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
+  it('stays the URL as written when nothing answered for it (a file the reader cannot read, or gone)', () => {
+    const c = show(`see ${UNREAD_LINK} here`)
+    expect(c.textContent).toContain(UNREAD_LINK)
+    expect(c.textContent).not.toContain('Plan the launch')
+  })
+})
+
+/*
+  LTX-6: a file's path is the same on every app's host, and a click opens the
+  address as written, in the app it names — Leaf's address for a Ship issue
+  opens Leaf, not Ship (why:
+  https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md).
+*/
+describe('an address on another Estiva app’s host opens as written', () => {
+  const LEAF_LINK = `https://leaf.estiva.app/issue/plan-${UUID}`
+  // The hosts come from the manifests, as `foreign.ts` reads them: Ship's and Leaf's, each declaring the path on its own.
+  const manifest = (app: string, host: string) => ({
+    tags: [['d', `estiva-${app}`], ['web', `https://${host}/o/<bech32>`, 'naddr'], ['urls', `https://${host}/issue/<slug>-<d>`, '30851']],
+  })
+  beforeEach(() => {
+    rememberRouteWords(routeWordsOf([manifest('ship', 'ship.estiva.app'), manifest('leaf', 'leaf.estiva.app')].flatMap(urlPatternsOf)))
+    answers[LEAF_LINK] = PAGE
+  })
+  afterEach(() => forgetRouteWords())
+
+  it('in a sentence, its chip opens Leaf at the address, not the issue in Ship', () => {
+    const c = show(`see ${LEAF_LINK} here`)
+    const chip = [...c.querySelectorAll('p a')].find((a) => a.textContent?.includes('Plan the launch'))
+    expect(chip?.getAttribute('href')).toBe(LEAF_LINK)
+  })
+
+  it('alone on its line, its row opens Leaf at the address', () => {
+    const c = show(LEAF_LINK)
+    expect(rows(c)).toEqual(['Plan the launch'])
+    expect(c.querySelector('[data-link-row] a')?.getAttribute('href')).toBe(LEAF_LINK)
+  })
+
+  it('on a host no app declares, opens where the file opens, never that site (security review)', () => {
+    const rogue = `https://evil.example/issue/plan-${UUID}`
+    answers[rogue] = PAGE
+    const c = show(`see ${rogue} here`)
+    const chip = [...c.querySelectorAll('p a')].find((a) => a.textContent?.includes('Plan the launch'))
+    expect(chip?.getAttribute('href')).toBe(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
+  // The card its author asked for opens where the chip would: the address as written.
+  const card = (body: string, layout: 'detailed' | 'compact') => {
+    const c = render(
+      <MessageBody body={body} embeds={[{ value: PAGE, layout }]} resolvedObjects={{ [`nostr:${naddr}`]: object as never, [naddr]: object as never }} />,
+    ).container
+    return [...c.querySelectorAll(`[data-card="${layout}"] a`)].map((a) => a.getAttribute('href'))
+  }
+
+  it('alone on its line with its card, the card opens Leaf at the address, not the issue in Ship', () => {
+    expect(card(LEAF_LINK, 'detailed')).toContain(LEAF_LINK)
+    expect(card(LEAF_LINK, 'detailed')).not.toContain(`https://ship.estiva.app/o/${PAGE}`)
+  })
+
+  it('an old message’s compact card opens Leaf at the address too', () => {
+    expect(card(LEAF_LINK, 'compact')).toEqual([LEAF_LINK])
+  })
+
+  it('a card for an address on a host no app declares opens where the file opens, never that site (security review)', () => {
+    const rogue = `https://evil.example/issue/plan-${UUID}`
+    answers[rogue] = PAGE
+    const hrefs = card(rogue, 'detailed')
+    expect(hrefs).toContain(`https://ship.estiva.app/o/${PAGE}`)
+    expect(hrefs.some((href) => href?.startsWith('https://evil.example'))).toBe(false)
+  })
+})

@@ -1,0 +1,91 @@
+import type { People } from '@estiva-app/interop'
+import { ConversationCard, ReplyCard } from '@estiva-app/ui'
+import { MessageBody } from '@/components/ui/MessageBody'
+import { whenLabel } from '@/lib/whenLabel'
+
+/** The part of a comment this row draws. Both panes' shapes satisfy it. */
+export interface DrawableComment {
+  id: string
+  author: string
+  body: string
+  /** Nostr seconds. */
+  createdAt: number
+  /** A comment deleted under its replies (PER-24): drawn as a line saying so, no author and no body. */
+  deleted?: boolean
+  /** A comment not read, with nothing saying it was deleted (SPEC §6.5, ONE-9): "can't be shown", its replies stay. */
+  unseen?: boolean
+}
+
+/**
+ * Who wrote it: a shortened key, not "Unknown", when they published no name. Whoever wrote it has an identity even
+ * then, and the key is how the person reading can tell two unnamed authors apart — which "Unknown" twice cannot.
+ */
+function authorOf(comment: DrawableComment, people?: People) {
+  const profile = people?.[comment.author]
+  return { name: profile?.displayName ?? `${comment.author.slice(0, 8)}…`, picture: profile?.picture, bot: profile?.bot === true }
+}
+
+/** Its moment, ms: nostr seconds, and `whenLabel` and the card both want milliseconds. */
+const msOf = (comment: DrawableComment) => comment.createdAt * 1000
+
+/**
+ * One comment owned by another app, in Peek: the kit's `ConversationCard`, the one conversation of every app (Katerina,
+ * 1 November). Nothing on it changes it — this viewer cannot edit, resolve or react to another app's comment here, and
+ * should not be offered controls for it ("only offer actions that can succeed"). What it offers is its thread: the
+ * replies row, which says the word "replies" next to the body it belongs to (FOL-25: a bare count read as a timestamp,
+ * and readers took the page for flat), a press anywhere on it, and Reply on hover, the true offer when it has none.
+ */
+export function CommentRow({
+  comment,
+  people,
+  replies,
+  isNew = false,
+  selected,
+  onOpen,
+  ownFile,
+}: {
+  comment: DrawableComment
+  /** The file the comments are on: a line that is only a link to it draws nothing (ONE-11). */
+  ownFile?: readonly string[]
+  /** Names and avatars for comment authors. Absent renders shortened keys. */
+  people?: People
+  /** How many replies, when they were asked for: never a nought, which would be an assertion nobody made. */
+  replies?: number
+  /** A reply not read yet: the replies row's "1 new". */
+  isNew?: boolean
+  /** Its thread is the one open beside it: the card is marked, so the pane on the right has a visible origin. */
+  selected?: boolean
+  /** Opens its thread. Absent (the comment a thread answers), it opens nothing and offers nothing. */
+  onOpen?: () => void
+}) {
+  return (
+    // One article per comment, its id on it, and the one whose thread is open marked current, as the row always was.
+    <article data-comment={comment.id} data-deleted={comment.deleted || comment.unseen ? '' : undefined} aria-current={selected || undefined}>
+      <ConversationCard
+        author={authorOf(comment, people)}
+        // Its time, short; with its moment the kit's card says the whole date and time in its tooltip (§4.9, B10), as the row always said it.
+        time={whenLabel(msOf(comment))}
+        at={msOf(comment)}
+        deleted={comment.deleted}
+        unseen={comment.unseen}
+        readOnly={!onOpen}
+        // The replies row is a button of its own, as the count was: reached by the keyboard, it opens the thread.
+        replies={replies ? { count: replies, isNew, onOpen } : undefined}
+        onReply={onOpen}
+        onClick={onOpen}
+        selected={selected}
+      >
+        <MessageBody body={comment.body} ownFile={ownFile} />
+      </ConversationCard>
+    </article>
+  )
+}
+
+/** A reply in another app's thread, in Peek: the kit's `ReplyCard`, with nothing to change it, as `CommentRow`. */
+export function CommentReply({ comment, people, ownFile }: { comment: DrawableComment; people?: People; ownFile?: readonly string[] }) {
+  return (
+    <ReplyCard author={authorOf(comment, people)} time={whenLabel(msOf(comment))} at={msOf(comment)} readOnly>
+      <MessageBody body={comment.body} ownFile={ownFile} />
+    </ReplyCard>
+  )
+}

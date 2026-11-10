@@ -1,0 +1,31 @@
+/*
+ * Storybook-only additions for the "Signal" theme.
+ *
+ * The theme itself (the `.signal` token block, kbd chips, skeleton shimmer,
+ * app dot grid) now lives in src/index.css and ships with the app. This file
+ * keeps only what belongs to the Storybook chrome: the dot-grid canvas behind
+ * stories (the app draws its grid on AppShell's .signal-canvas instead) and
+ * the Docs-page example blocks.
+ */
+
+/* control-room dot grid on the preview canvas, fading under content */
+.signal body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(1100px 700px at 50% 45%, transparent 25%, #000 100%);
+  -webkit-mask-image: radial-gradient(1100px 700px at 50% 45%, transparent 25%, #000 100%);
+}
+
+/* docs example blocks follow the signal canvas, same as .dark does */
+.signal .docs-story {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+.signal .docs-story > div {
+  background-color: transparent;
+}

@@ -1,0 +1,69 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="To be removed/Why these are here" />
+
+# To be removed
+
+Stories that are on their way out wait here until they are deleted, instead of
+disappearing inside somebody else's pull request. Katerina's idea, 22 September
+2026: a thing waiting to go should be visible, not quietly rotting where it is.
+
+**What waits here are components that stay** — the app still draws them, and
+only the *story* is parked, because Katerina wanted to look at the picture
+again before deciding. The dead code that waited here went on 1 November (see
+*Deleted outright* below).
+
+The distinction matters when you clear this heading. Parking a story changes
+nothing a person can see; deleting the component changes the app. Read the
+**Why** column before you act on a row.
+
+## The rule
+
+Nothing goes under this heading without **a ticket number and the date it went
+in**, both written in the row below. A heading with no rule becomes a junk
+drawer, and a junk drawer is somewhere to lose things rather than somewhere to
+find them.
+
+It sorts last, under everything of Peek's own.
+
+## What is parked, and why
+
+| Story | Ticket | Parked | Why |
+| --- | --- | --- | --- |
+| `ReadStatePanel` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
+| `MembersDialog` | UIG-26 (R20) | 2026-09-26 | **Nothing in the app draws it**: `gates:status` lists it unused. Katerina, 25 September: park the unused parts here, then decide each from its picture. |
+
+`ActivityTimeline` was unused too, with neither a story nor a page of its own;
+it went on 2 November (audit D9), its time words kept as `lib/whenLabel`.
+
+## Deleted outright, not parked
+
+On **1 November** (Katerina: Peek's Storybook keeps only what is Peek's own and
+still drawn), what nothing in the app reached went, the component with its
+story: `JoinTopicBanner`, `RouterLink`, `HighlightButton`, and `AttachmentChips`
+with the attach code nothing called (`AttachFiles`, `useEditAttachments`,
+`usePendingAttachments`), and Peek's unused copies of `Checkbox`,
+`EditableText`, `Property` and `UnreadDot`. `ThreadPanelLoading`'s page went
+with `ThreadPanel`'s stories. A file uploading and a file that failed are drawn
+in the package's own Storybook, *Writing/CommentBox*.
+
+`Layouts/App` and its `PeekApp` harness went on 22 September rather than waiting
+here, because Katerina asked for them to go now. They were the whole running app
+on three routes — Desk, Topics and People — fed by the invented data, which is
+the thing being got rid of; and being live, each could only ever show the one
+state the seed data put it in.
+
+Peek therefore has **no page-level stories at all** until Ship's shape replaces
+them: a presentational View fed a fixture, dropped into the shell, with a
+loading state beside it. That work is in this same pull request.
+
+`EditedMarker`'s story went on 23 September, and the component did not. Katerina
+ruled that a standalone primitive showing three words beside a time says nothing
+on an empty canvas: the marker is drawn where it means something, in
+*Messages/ConversationCard* → **Edited** and *Messages/ReplyCard* → **Edited**,
+and its rule page points at both. The same ruling ended its candidacy for the
+package.
+
+`ProjectTickets` went on 28 September, with its page: unused since FOL-23, and
+the only row in Peek that stretched a link over itself by hand. Katerina chose
+deleting it over moving it onto the package's `Link` `cover` (UIG-33).

@@ -1,0 +1,329 @@
+import { describe, it, expect, vi } from 'vitest'
+import { createReadStateQueue } from './readStateQueue'
+import { type ReadStateBlob } from '@estiva-app/conversation'
+
+const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
+const OTHER_UUID = 'c8d2f1b5-3a4e-4b97-8d26-9e1f7a3b5c02'
+const EVENT = 'a'.repeat(64)
+
+/** A controllable clock, so nothing here waits on a real timer. */
+function fakeTimers() {
+  let next = 1
+  const pending = new Map<number, () => void>()
+  return {
+    setTimer: (fn: () => void) => {
+      const handle = next++
+      pending.set(handle, fn)
+      return handle as unknown as ReturnType<typeof setTimeout>
+    },
+    clearTimer: (handle: ReturnType<typeof setTimeout>) => void pending.delete(handle as unknown as number),
+    /** Fire every scheduled callback. */
+    run: () => {
+      const fns = [...pending.values()]
+      pending.clear()
+      fns.forEach((fn) => fn())
+    },
+    count: () => pending.size,
+  }
+}
+
+/** The queue's publish callback, typed so `mock.calls[n][0]` is the blob. */
+type Publish = (contexts: Record<string, number>) => Promise<boolean>
+
+/** A reachable slot holding these contexts. */
+function blob(contexts: Record<string, number>): { reachable: true; blob: ReadStateBlob } {
+  return { reachable: true, blob: { v: 1, client_id: 'peek-test', contexts } }
+}
+
+/** A reachable slot with nothing in it — every installation's first run. */
+const emptySlot = { reachable: true as const }
+/** The relay could not be asked. */
+const unreachable = { reachable: false as const }
+
+describe('createReadStateQueue', () => {
+  it('batches a burst of markers into one publish', async () => {
+    const timers = fakeTimers()
+    const publish = vi.fn<Publish>(async () => true)
+    const queue = createReadStateQueue({
+      hydrate: async () => blob({}),
+      publish,
+      ...timers,
+    })
+
+    // Opening five topics must not publish five events.
+    queue.record(UUID, 1000)
+    queue.record(OTHER_UUID, 1001)
+    queue.record(`thread:${EVENT}`, 1002)
+    expect(publish).not.toHaveBeenCalled()
+
+    timers.run()
+    await queue.flush()
+
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(publish.mock.calls[0][0]).toEqual({
+      [UUID]: 1000,
+      [OTHER_UUID]: 1001,
+      [`thread:${EVENT}`]: 1002,
+    })
+  })
+
+  /**
+   * The trap the ticket names: the blob is a replaceable snapshot, not a delta.
+   * Publishing without hydrating replaces the coordinate with only what this
+   * session saw, and the loss is invisible until this is the only slot left.
+   */
+  it('publishes the whole blob, including contexts it never recorded', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const timers = fakeTimers()
+    const queue = createReadStateQueue({
+      hydrate: async () => blob({ [OTHER_UUID]: 500 }),
+      publish,
+      ...timers,
+    })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(publish.mock.calls[0][0]).toEqual({ [OTHER_UUID]: 500, [UUID]: 1000 })
+  })
+
+  it('does not lower a hydrated marker with an older one', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const queue = createReadStateQueue({
+      hydrate: async () => blob({ [UUID]: 9000 }),
+      publish,
+      ...fakeTimers(),
+    })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    // Nothing to send: the recorded marker is older than what is already there.
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('ignores a marker it would not publish, and schedules nothing for it', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const timers = fakeTimers()
+    const queue = createReadStateQueue({ hydrate: async () => blob({}), publish, ...timers })
+
+    queue.record('3', 1000) // a Peek topic id
+    queue.record(`h:${UUID}`, 1000) // the prefixed spelling
+    expect(timers.count()).toBe(0)
+
+    await queue.flush()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when there is nothing pending', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const queue = createReadStateQueue({ hydrate: async () => blob({}), publish, ...fakeTimers() })
+    await queue.flush()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  /**
+   * "Could not find out" is not "empty", and the difference is destructive.
+   * Publishing with an unknown relay state replaces the coordinate with only
+   * what this session recorded, dropping every context written before it — and
+   * because the cross-slot merge is grow-only, that loss stays invisible until
+   * this is the last slot standing.
+   */
+  it('refuses to publish while hydration has not succeeded, and retries', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const hydrate = vi.fn<() => Promise<{ reachable: boolean; blob?: ReadStateBlob }>>()
+    hydrate.mockResolvedValueOnce(unreachable).mockResolvedValueOnce(blob({ [OTHER_UUID]: 500 }))
+    const queue = createReadStateQueue({ hydrate, publish, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(hydrate).toHaveBeenCalledTimes(1)
+    expect(publish).not.toHaveBeenCalled()
+
+    // The marker was kept, so the next flush tries again — and this time it can
+    // send the whole blob, the relay's contexts included.
+    await queue.flush()
+    expect(hydrate).toHaveBeenCalledTimes(2)
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(publish.mock.calls[0][0]).toEqual({ [OTHER_UUID]: 500, [UUID]: 1000 })
+  })
+
+  it('keeps markers that arrive while a publish is in flight', async () => {
+    const publish = vi.fn<Publish>(async () => {
+      // Recorded from inside the publish, which is the only way to land strictly
+      // between "this blob was snapshotted" and "the publish resolved".
+      if (publish.mock.calls.length === 1) queue.record(OTHER_UUID, 2000)
+      return true
+    })
+    const queue = createReadStateQueue({ hydrate: async () => blob({}), publish, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+    await queue.flush()
+
+    expect(publish).toHaveBeenCalledTimes(2)
+    // The first blob did not carry it; the second does, along with everything else.
+    expect(publish.mock.calls[0][0]).toEqual({ [UUID]: 1000 })
+    expect(publish.mock.calls[1][0]).toEqual({ [UUID]: 1000, [OTHER_UUID]: 2000 })
+  })
+
+  it('retries the markers a failed publish was carrying', async () => {
+    const publish = vi.fn<Publish>()
+    publish.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const queue = createReadStateQueue({ hydrate: async () => blob({}), publish, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(1)
+
+    // Nothing new recorded — the retry is driven by the markers put back.
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(2)
+    expect(publish.mock.calls[1][0]).toEqual({ [UUID]: 1000 })
+  })
+
+  /**
+   * The bug the browser run surfaced: an empty coordinate read as "could not
+   * find out", so a brand-new installation refused to publish — forever, and
+   * silently. Every first run hits this.
+   */
+  it('publishes on a first run, when the coordinate is legitimately empty', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const queue = createReadStateQueue({ hydrate: async () => emptySlot, publish, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(publish.mock.calls[0][0]).toEqual({ [UUID]: 1000 })
+  })
+
+  it('hydrates once, not on every flush', async () => {
+    const hydrate = vi.fn(async () => blob({}))
+    const queue = createReadStateQueue({ hydrate, publish: async () => true, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+    queue.record(OTHER_UUID, 2000)
+    await queue.flush()
+
+    expect(hydrate).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancel drops the pending timer without publishing', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const timers = fakeTimers()
+    const queue = createReadStateQueue({ hydrate: async () => blob({}), publish, ...timers })
+
+    queue.record(UUID, 1000)
+    queue.cancel()
+    timers.run()
+
+    expect(publish).not.toHaveBeenCalled()
+    // The marker is still known — cancel drops the timer, not the state.
+    expect(queue.snapshot()).toEqual({ [UUID]: 1000 })
+  })
+})
+
+/**
+ * The byte cap, at the one place it has to hold: what actually gets published
+ * (SHR-4).
+ *
+ * The blob is replaced whole or not at all, so a map one context past the
+ * 65,535-byte plaintext limit does not lose that context — it stops every later
+ * marker from advancing, for as long as the map stays over. These tests are on
+ * the queue rather than on `capContextsToBytes` because the guarantee the ticket
+ * asks for is about the blob that leaves, and the queue is what assembles it.
+ */
+describe('the blob cannot exceed the ceiling', () => {
+  const thread = (n: number) => `thread:${n.toString(16).padStart(64, '0')}`
+
+  /** More contexts than fit, oldest first. */
+  function overfull(count: number): Record<string, number> {
+    const contexts: Record<string, number> = {}
+    for (let i = 0; i < count; i++) contexts[thread(i)] = 1_700_000_000 + i
+    return contexts
+  }
+
+  it('publishes a map inside the budget even when hydration brings back too much', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const evictions: string[][] = []
+    const timers = fakeTimers()
+    // A slot written before the cap existed: 1,500 thread keys, well over.
+    const queue = createReadStateQueue({
+      hydrate: async () => blob(overfull(1_500)),
+      publish,
+      onEvict: (evicted) => evictions.push([...evicted]),
+      ...timers,
+    })
+
+    queue.record(UUID, 1_800_000_000)
+    await queue.flush()
+
+    const sent = publish.mock.calls[0][0]
+    expect(new TextEncoder().encode(JSON.stringify(sent)).length).toBeLessThanOrEqual(
+      queue.diagnostic().budgetBytes,
+    )
+    // The marker just recorded is the newest, so it is in; the oldest are not.
+    expect(sent[UUID]).toBe(1_800_000_000)
+    expect(sent[thread(0)]).toBeUndefined()
+    // And the loss was reported rather than logged.
+    expect(evictions).toHaveLength(1)
+    expect(queue.diagnostic().evicted.total).toBeGreaterThan(600)
+    expect(queue.diagnostic().bytes).toBe(
+      new TextEncoder().encode(JSON.stringify(sent)).length,
+    )
+  })
+
+  it('reports nothing when nothing was dropped', async () => {
+    const onEvict = vi.fn()
+    const queue = createReadStateQueue({
+      hydrate: async () => blob({ [OTHER_UUID]: 900 }),
+      publish: async () => true,
+      onEvict,
+      ...fakeTimers(),
+    })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(onEvict).not.toHaveBeenCalled()
+    expect(queue.diagnostic().evicted).toEqual({ total: 0, lastAt: undefined, lastKeys: [] })
+  })
+
+  /**
+   * The thrash SHR-4 warns about, at the shape it would actually take in Peek:
+   * the horizon cache re-offers a marker the cap dropped (`useCacheReanchor`
+   * runs on every focus and visibility change), and it must not look like a
+   * change each time — one timer and one `unchanged` publish per focus, for
+   * ever, on a map that cannot hold it.
+   */
+  it('a re-offered eviction schedules nothing and reports no second loss', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const onEvict = vi.fn()
+    const timers = fakeTimers()
+    const queue = createReadStateQueue({
+      hydrate: async () => blob(overfull(1_500)),
+      publish,
+      onEvict,
+      ...timers,
+    })
+
+    queue.record(UUID, 1_800_000_000)
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(onEvict).toHaveBeenCalledTimes(1)
+
+    // What the re-anchor does: hand back the oldest markers, which the relay no
+    // longer holds because this slot just dropped them.
+    queue.record(thread(0), 1_700_000_000)
+    queue.record(thread(1), 1_700_000_001)
+    expect(timers.count()).toBe(0)
+    expect(onEvict).toHaveBeenCalledTimes(1)
+
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(queue.diagnostic().lastAttempt?.outcome).toBe('nothing-pending')
+  })
+})

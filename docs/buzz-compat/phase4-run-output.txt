@@ -1,0 +1,33 @@
+
+=== channel_event ===
+  [PASS] parses as a nostr Event
+  [PASS] buzz_core::verify_event (NIP-01 id hash + BIP-340 sig)
+         id=e6fb22b28309ae82d34f5f28c38a572bf84dab47fb6bad8f4fe001e9638e87b8
+  [PASS] kind is registered in buzz_core::kind::ALL_KINDS
+         kind=9007
+  [PASS] buzz_sdk::builders::extract_channel_id finds a valid channel UUID
+         channel_id=7b32200c-e4c0-4216-b79a-8490fc05e0bd
+  [PASS] buzz_core::filter::filters_match against {kinds,#h} REQ
+         REQ {"kinds":[9007],"#h":["7b32200c-e4c0-4216-b79a-8490fc05e0bd"]}
+  [PASS] tags match buzz_sdk::builders::build_create_channel output
+         want=[["h", "7b32200c-e4c0-4216-b79a-8490fc05e0bd"], ["name", "Onboarding redesign"], ["visibility", "open"], ["channel_type", "stream"]]
+         got =[["h", "7b32200c-e4c0-4216-b79a-8490fc05e0bd"], ["name", "Onboarding redesign"], ["visibility", "open"], ["channel_type", "stream"]]
+
+=== message_event ===
+  [PASS] parses as a nostr Event
+  [PASS] buzz_core::verify_event (NIP-01 id hash + BIP-340 sig)
+         id=4f0edeb3b732fa1c44c4dbd26563b4acad022ffeb469ccfdb2aeb02088a92546
+  [PASS] kind is registered in buzz_core::kind::ALL_KINDS
+         kind=9
+  [PASS] buzz_sdk::builders::extract_channel_id finds a valid channel UUID
+         channel_id=7b32200c-e4c0-4216-b79a-8490fc05e0bd
+  [PASS] buzz_core::filter::filters_match against {kinds,#h} REQ
+         REQ {"kinds":[9],"#h":["7b32200c-e4c0-4216-b79a-8490fc05e0bd"]}
+  [PASS] tags match buzz_sdk::builders::build_message output
+         want=[["h", "7b32200c-e4c0-4216-b79a-8490fc05e0bd"]]
+         got =[["h", "7b32200c-e4c0-4216-b79a-8490fc05e0bd"]]
+         canonical id for same fields: 4f0edeb3b732fa1c44c4dbd26563b4acad022ffeb469ccfdb2aeb02088a92546
+         peek-emitted id             : 4f0edeb3b732fa1c44c4dbd26563b4acad022ffeb469ccfdb2aeb02088a92546
+         ids identical: true
+
+=== RESULT: PASS ===

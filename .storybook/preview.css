@@ -1,0 +1,14 @@
+/*
+ * Docs-page example blocks follow the app theme: in dark mode they sit on
+ * the app's dark canvas (--bg-base, same as the running app) instead of
+ * the docs theme's default block background.
+ */
+.dark .docs-story {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* The inline story wrapper inside docs inherits the same canvas. */
+.dark .docs-story > div {
+  background-color: transparent;
+}

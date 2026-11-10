@@ -1,0 +1,103 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Docs/Introduction" />
+
+# Peek
+
+The Storybook for **Peek** — the app's own screens, and the parts they are built
+from.
+
+**The shared parts are not here.** `Button`, `Avatar`, `Chip`, `Tooltip`,
+`Dialog` and the rest belong to `@estiva-app/ui`, and their stories live in that
+package's Storybook — `npm run storybook` in `estiva-ui`,
+[http://localhost:6008](http://localhost:6008). Peek forwards twenty of them
+under its own names, and a forward gets no story here: a second story of the
+same part is a second thing to keep true.
+
+What *is* here is Peek's own — the conversation surface, topics, folders, the
+screener and the desk, the frame, and the parts built for them.
+
+Of everything Peek owns, **34 parts worth reusing** carry a written rule beside
+them: what it is, when to use it, when not to, how, and what it owns. The rest
+are one-offs, and a one-off keeps a purpose line and nothing more. That number
+is checked against the catalogue — if it is wrong here, CI's `gate` fails.
+
+## One theme
+
+Peek ships one theme, **Signal**, and cannot switch it at runtime. So there is
+no theme picker. A component seen in any other theme would be a component in a
+state nobody can reach.
+
+Checking a *shared* part across themes is the package's Storybook's job, and it
+has the picker. (Katerina, 11 September 2026 — D58.)
+
+## The six rules
+
+These are the whole of how this sidebar is arranged. Katerina ruled them on 23
+September, after a review that found three different ideas of what a heading
+meant, all running at once.
+
+1. **One principle, stated here.** In an app, a heading is **a place in the
+   product**. In `@estiva-app/ui` a heading is a *kind of part*, because that is
+   a library. Never the two in one sidebar.
+2. **Three levels, never four** — Group / Component / Story. One source file
+   that exports several parts is still one entry.
+3. **An entry is its component's name**, in PascalCase. Plain English only for
+   a page that is not a component — this one, *In the shell*, *Why these are
+   here*.
+4. **Headings in a written order, everything inside them alphabetical.** The
+   order is a decision and lives in `.storybook/preview.tsx`. What sits inside
+   a heading is not a decision, so it sorts itself.
+5. **Docs first, then whole screens, then the parts.** Someone new reads
+   downwards: what this is, what it builds, what it is built from.
+6. **A status group is allowed, and carries a ticket and a date.** That is
+   *To be removed*, and nothing enters it without both.
+
+## Where things live
+
+| Section | What lives here |
+|---|---|
+| **Docs** | This page. |
+| **Pages** | Peek's six screens, each a presentational view fed a fixture and dropped into the shell. |
+| **Frame** | Everything that wraps a screen — PeekFrame, AuthShell, Header, NavRail, PersonItem, StarredSection, ThreadPanel — and the two providers that sit above them all, which draw nothing and say so. |
+| **Primitives** | Peek's own atoms, and the package parts it uses often enough to have a rule of its own about — DateDivider, EditedMarker, UnreadDot, the two logos, Avatar, Person, EmptyState. |
+| **Topics** | The topic domain — state, highlights, banners, reactions, the files panel, and every dialog a topic opens. |
+| **Folders** | The file and folder screens, the panels beside them, and the dialogs that make, move and describe a file. |
+| **Screener & Desk** | The triage surfaces, and the picker that adds to Open work. |
+| **Overlays** | What is *not* about one place: the command launcher, the delete question, and every menu on one sheet. |
+| **To be removed** | A story on its way out, with the ticket and the date it was parked. Read that page before adding to it. |
+
+## How a story is written here
+
+- **Beside its component**, as `X.stories.tsx`. CSF3.
+- **The first story is the picture.** The ordinary state, never a spinner —
+  everything that links to a component links to its first story.
+- **One story per state**, not per prop. A person reads states; the props table
+  already lists props.
+- **No real data.** Everything a story shows is invented for it.
+- **Peek's use, not the package's.** A part that wraps something from
+  `@estiva-app/ui` is shown in its place — inside the row, the card or the panel
+  it belongs to — rather than documented a second time.
+- **The story is args, not markup.** A story names its `component` and hands it
+  `args`; a wrapper every story needs is a decorator on the meta. Composition
+  written into a `render` is markup living in a story file, which is the thing
+  these pages exist to stop.
+- **A part that means nothing alone is drawn where it means something.**
+  `EditedMarker` is three words beside a time: its page draws the message that
+  carries them rather than an empty canvas.
+
+## What every story is already inside
+
+The preview mounts what the app mounts, so a component deep in a tree finds what
+it reaches for:
+
+```
+DebugProvider → PeekDataProvider
+```
+
+Without them, 67 of 316 stories were silent error pages — measured, not
+guessed, on 1 September 2026. They are coming back out one story at a time, as
+each story learns to take props instead.
+
+`VITE_RELAY_URL` is pinned to empty, so the data seam takes its static path
+rather than reads that never resolve without a signed-in session.

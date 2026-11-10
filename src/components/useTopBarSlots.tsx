@@ -1,0 +1,102 @@
+import { useState, type ReactNode } from 'react'
+import { IdentityMenu, MenuItem } from '@estiva-app/ui'
+import { useSignOut } from '@/auth/useSignOut'
+import { ReadStatePanel } from './ReadStatePanel'
+import { hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
+
+/** What rides in the top bar's slots, and the Read state panel that hangs off it. */
+export interface TopBarSlots {
+  identity: ReactNode
+  /** Rendered beside the frame, not in it: a Popover that portals itself. */
+  panel: ReactNode
+}
+
+/**
+ * What rides in Peek's top bar — the identity — as a slot, so the package's
+ * floating `AppShell` can draw the bar (UIG-14, 9.3). The search field is the
+ * bar's own since 0.60.0: `PeekFrame` hands it the launcher (Katerina, 8
+ * October); so is the fold button since 0.95.0, the same in every app
+ * (Katerina, 31 October).
+ */
+export function useTopBarSlots(): TopBarSlots {
+  const signOut = useSignOut()
+  const [cluster, setCluster] = useState<HTMLDivElement | null>(null)
+  const [readStateOpen, setReadStateOpen] = useState(false)
+  const me = useCurrentUser()
+  const avatarSrcFor = useAvatarSrc()
+  const relayUrl = useRelayUrl()
+  /* The element the debug menu hangs off, captured when it is opened rather
+     than read from a ref during render — the menu row that opens it unmounts
+     as the account menu closes, so its own ref would be null by the time it
+     is needed. The anchor is the top bar's right cluster, which persists. */
+
+  const displayName = me?.name || CURRENT_USER_NAME
+  const live = hasRelay
+
+  return {
+    identity: (
+      /*
+        The cluster's element is the panel's anchor, captured by a callback
+        ref into state rather than read during render: the row that opens
+        the panel unmounts as the account menu closes, so its own ref would
+        be null by the time it is wanted, and a ref read during render is
+        what the hooks lint forbids by name.
+      */
+      <div ref={setCluster} className="flex items-center">
+        {/* The shared IdentityMenu (2026-09-01), Ship's anatomy, her ruling:
+            identity section, workspace line naming the relay, and the actions
+            — Edit your profile in Estiva ID (the ProfileDialog this used to
+            open is gone; Estiva ID is the one place a profile changes),
+            Sign out. Peek's shape survives as the compact face trigger; no
+            Copy public key, because Peek has no viewer key to offer. */}
+        <IdentityMenu
+          compact
+          // flex, so the wrapper hugs the face exactly: as a block it grows a
+          // line-box under the inline button and the face slips a pixel or
+          // two down the bar (the shot diff caught it, 7 stories × 1271px).
+          className="flex"
+          // The picture is looked up by CURRENT_USER_NAME, never the
+          // display name: the registry's viewer branch — the only place
+          // the uploaded avatar lives — is keyed by the literal "You"
+          // (src/api/avatars.tsx). Looking up by me.name silently
+          // degrades a signed-in face to initials (shipped 2026-09-02;
+          // pinned by TopBar.avatar.test.tsx).
+          // No email line: the relay holds none, and Convex's copy is gone (REM-6).
+          me={{ name: displayName, picture: avatarSrcFor(CURRENT_USER_NAME) ?? undefined }}
+          // Signed in is Estiva ID's to say, and `AuthGate` renders none of
+          // this without a session (REM-2); `me` is the relay's profile and may
+          // still be loading. Mock mode has neither backend.
+          signedIn={live}
+          relayUrl={relayUrl}
+          idBase={live ? PROFILE_EDIT_URL : undefined}
+          onSignOut={live ? () => void signOut() : undefined}
+        >
+          {/*
+            Read state, on the real app only — there is nothing to compare
+            against without a backend. This row is the only way in: the
+            debug button it used to share a panel with is gone (D48), and
+            was hidden on the real app anyway.
+
+            A click rather than a press, so no pointerdown is still in
+            flight when the panel arms its own outside-dismiss.
+          */}
+          {hasRelay
+            ? (close: () => void) => (
+                <MenuItem
+                  label="Read state"
+                  onClick={() => {
+                    close()
+                    setReadStateOpen(true)
+                  }}
+                />
+              )
+            : undefined}
+        </IdentityMenu>
+      </div>
+    ),
+    /* Always there on the real app, opened by `open` — not mounted only while
+       open (the package's Popover page; UIG-14). Only the real app has the
+       row that opens it. */
+    panel: hasRelay && <ReadStatePanel anchor={cluster} open={readStateOpen} onClose={() => setReadStateOpen(false)} />,
+  }
+}

@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
+
+@import '@estiva-app/ui/tokens.css';
+/* The scrollbar every Estiva app shares (Katerina, 2026-09-01): Peek kept a copy of it here, character for character. */
+@import '@estiva-app/ui/base.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ─── Light theme ───
+ *
+ * The shared tokens — every colour, the type ramp, radii, shadows — come from
+ * @estiva-app/ui (`tokens.css`, imported above; SHA-5, 2026-08-28), value for
+ * value what used to be here. Peek itself only ever renders Signal — the
+ * `dark signal` classes sit on `<html>` in `index.html`, applied before the
+ * first paint rather than by a provider (UIG-17, 2026-09-22). `light` is the
+ * base every other theme overrides and
+ * the palette the Estiva ID theme uses in Storybook. What remains in this
+ * block is Peek's alone: the summary highlight and the wordmark.
+ */
+:root {
+  /* Summary-highlight swatch. Follows the accent in the violet themes; signal
+     overrides it (its accent is cyan, which would collide with Question). */
+  --highlight-summary: var(--accent-primary);
+
+  /* brand mark/wordmark (indigo on light, white on dark) */
+  --logo: #140855;
+}
+
+/*
+ * ─── Dark theme ───
+ *
+ * Signal layers on top of this rather than replacing it, so `.dark` is applied
+ * for both and the dark values are live in the app wherever Signal does not
+ * override them. The shared ones come from @estiva-app/ui (`.dark` there, value
+ * for value); this block keeps Peek's own. Also reachable on its own from
+ * Storybook's theme toolbar.
+ */
+.dark {
+  /* brand mark/wordmark (purple on light, white on dark) */
+  --logo: #FFFFFF;
+}
+
+/* ─── Signal theme ───
+   Dark-based mission-control theme (design-lab v3). Applied as `.signal`
+   ALONGSIDE `.dark` on <html> so every dark: variant stays active; these
+   vars then win because the block comes after .dark. Components carry their
+   signal-specific styling behind the `signal:` Tailwind variant. */
+.signal {
+  /* The shared tokens for Signal come from @estiva-app/ui (tokens.css `.signal`,
+     value for value, 2026-08-28). What follows is Peek's alone. */
+  /* Summary highlight stays violet here — the accent is cyan, which would be
+     indistinguishable from Question's info-blue. Violet is the one hue the
+     signal palette doesn't already assign a meaning. */
+  --highlight-summary: #a78bfa;
+
+  --logo: #ffffff;
+
+  /* The washes, the glows and --text-interactive used to be redefined here.
+     They belong to @estiva-app/ui now — D17 for the glows, her wash ruling of
+     2026-09-07 for the rest. A token an app also spells is a token that can
+     drift, and these had: Peek's stronger glows were quietly overriding the
+     package's in every shared component that reads them.
+
+     Two do not come back as themselves. --accent-wash-2 becomes the package's
+     accent-outline, a border at 30% where Peek drew 22% (her ruling); and
+     --warning-wash is deleted, read by nothing but a swatch in Peek's own
+     SignalTheme story. --text-interactive was Peek's copy of the package's
+     value, character for character.
+
+     What the package has no name for stays: the summary highlight above and
+     the wordmark. The mono face is the package's (its Tailwind preset's
+     `font-mono`); the private register went with the huddles. */
+}
+
+/* The keyboard chip lives in @estiva-app/ui as `Kbd` (2026-09-05). The rule
+   that used to sit here styled every <kbd> app-wide, and it outlived its
+   job: as an element+class selector it beat the shared component's own
+   utilities and quietly repainted its border --border-default, so the chip
+   Storybook showed (--border-strong) was not the chip Peek drew. Deleted.
+   Never restore it — style the component, not the tag. */
+
+/* skeletons: shimmer sweep instead of the opacity pulse */
+.signal .animate-pulse {
+  animation: none;
+  position: relative;
+  overflow: hidden;
+}
+.signal .animate-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  translate: -100% 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: signal-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes signal-shimmer {
+  to { translate: 100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signal .animate-pulse::after { animation: none; }
+}
+
+/* ─── Base styles ─── */
+body {
+  margin: 0;
+  font-family: 'Geist', system-ui, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  /* Base UI's one layout requirement (ADOPTION B2): its popups measure and
+     position against the nearest stacking context, so the app's root has to be
+     one. Safe here, and checked rather than asserted: all six of Peek's own
+     createPortal calls target document.body, so everything that must float
+     above the app already lives outside #root. */
+  isolation: isolate;
+}

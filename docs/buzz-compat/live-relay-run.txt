@@ -1,0 +1,21 @@
+relay   : http://localhost:3000
+pubkey  : 163440f4dcf271a30ff83e9652adce713ad94abd76840265d5ed51f36fe47101
+channel : caf92945-3c2e-4f6d-9486-b029b0d5575a
+
+[PASS] kind:0 profile  (HTTP 200)
+       {"accepted":true,"event_id":"2043bda7b2b2fab22d12a52091822cfbe1d133540a40b18b6ce42e15d4c5bf62","message":""}
+
+[PASS] kind:9007 create channel  (HTTP 200)
+       {"accepted":true,"event_id":"daa28f2f9ed2e1d29e367566e84e6ee7f9c5d296e503ec1503b1a70f2450641c","message":""}
+
+message event id: 25db4f5324fe9a7bf90db4f99d57322668f51aba1eeb02d8ca3b70915168cb54
+
+[PASS] kind:9 message  (HTTP 200)
+       {"accepted":true,"event_id":"25db4f5324fe9a7bf90db4f99d57322668f51aba1eeb02d8ca3b70915168cb54","message":""}
+
+[PASS] POST /query reads it back  (HTTP 200)
+       [{"content":"The new sign-up flow drops a step. Worth a look before Friday.","created_at":1784925216,"id":"25db4f5324fe9a7bf90db4f99d57322668f51aba1eeb02d8ca3b70915168cb54","kind":9,"pubkey":"163440f4dcf271a30ff83e9652adce713ad94abd76840265d5ed51f36fe47101","sig":"5273d5b944d1f264ebf06147599514a1882b921688a9483b55835e08adfc60bed79bd384b344b413c08a36dc1bde1af9a3521067f865fdf6ae5a2d74c05af28c","tags
+
+[PASS] the exact event id came back from the relay
+
+=== RESULT: PASS ===

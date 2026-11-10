@@ -1,0 +1,57 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+storybook-static
+*storybook.log
+
+# Local verification scripts and screenshots (session scratch, never committed)
+.verify-*.mjs
+.verify-shots/
+# scripts/ric10-live-check.ts's screenshots
+.ric10/
+
+# Throwaway design explorations and private notes
+design-lab/
+grant-pitch-review.md
+scenario-review.md
+
+# Internal product docs — kept locally, not published
+# `docs/*` rather than `docs/` so the negation below can take effect — git does
+# not descend into an excluded directory, so `!docs/buzz-compat/` would be
+# ignored if the parent were excluded outright.
+docs/*
+# Exception: the Buzz/Nostr interop work is tracked — it holds working code
+# (publish-to-relay.ts) and the interop evidence, not just prose.
+!docs/buzz-compat/
+# Exception: the debt list is a promise about this repository's code, and a
+# promise nobody else can read is not one. Ship has carried its own since
+# UIG-4; the gate checks every app runs name it (UIG-32).
+!docs/GATES-DEBT.md
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# The manifest signing key (PRO-6). A secret; never committed.
+.manifest-key
+
+# The catalogue of Peek's parts (UIG-13): built from the code every time it is read,
+# written to a file only by `npm run registry`, and never committed.
+/registry.json

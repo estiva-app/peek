@@ -1,0 +1,33 @@
+import estiva, { estivaContent } from '@estiva-app/ui/tailwind-preset'
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: 'class',
+  // The package's components are source; their classes must be scanned too.
+  // `estivaContent` is the package's own files. Tailwind does not merge
+  // `content` from a preset — verified — so without spreading it every class
+  // used only by a shared component is purged, and the app builds and tests
+  // clean while rendering at the wrong size.
+  content: [...estivaContent, './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
+  /**
+   * The shared tokens come from @estiva-app/ui (SHA-5, 2026-08-28): the type
+   * ramp, radii, shadows, the skeleton animation and every colour name. What
+   * stays here is Peek's alone — the wordmark and the summary highlight — and
+   * merges over the preset.
+   */
+  presets: [estiva],
+  theme: {
+    extend: {
+      colors: {
+        // brand wordmark (PeekLogo renders in currentColor)
+        logo: 'var(--logo)',
+        // the Summary highlight's colour (src/index.css), so a highlight paints
+        // with a class like the other four, not an inline style (UIG-28)
+        'highlight-summary': 'var(--highlight-summary)',
+      },
+    },
+  },
+  // The `signal:` variant comes from the preset now (2026-08-28): Signal is a
+  // theme in the package, and shared components carry their Signal touches.
+  plugins: [],
+}

@@ -1,0 +1,117 @@
+/**
+ * A Convex topic's cards offer nothing to change — CON-8, *Stop writing
+ * messages to Convex*.
+ *
+ * The mutations refuse topic writes; these pin the other half, that the page
+ * does not offer an action that can only fail (`.claude/rules/peek-ui.md`,
+ * "Only offer actions that can succeed"). Hovering draws no menu, and a reaction pill is not a
+ * button that toggles anything.
+ */
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { DebugProvider } from '@/lib/debug'
+import type { ForeignObject } from '@estiva-app/interop'
+import { valueOfReference } from '@estiva-app/protocol'
+import { PeekDataProvider, type ReactionData } from '@/api'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
+import { ConversationCard } from './ConversationCard'
+import { ReplyCard } from './ReplyCard'
+import { MessageBody } from './ui/MessageBody'
+
+function hover(node: React.ReactElement) {
+  const { container } = render(
+    <MemoryRouter>
+      <DebugProvider>
+        <PeekDataProvider>{node}</PeekDataProvider>
+      </DebugProvider>
+    </MemoryRouter>,
+  )
+  fireEvent.mouseEnter(container.firstElementChild as Element)
+  return container
+}
+
+const reactions: ReactionData[] = [{ emoji: '👍', by: ['Katerina'] }]
+
+describe('a read-only message card', () => {
+  it('draws the hover menu when it is not read-only — the control', () => {
+    hover(<ConversationCard authorName="You" timestamp="10:24" body="Mine." />)
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeNull()
+  })
+
+  it('draws no hover menu, even on your own message', () => {
+    hover(<ConversationCard authorName="You" timestamp="10:24" body="Mine." readOnly />)
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+  })
+
+  it('does not toggle a reaction', () => {
+    const onReactionsChange = vi.fn()
+    hover(
+      <ConversationCard authorName="You" timestamp="10:24" body="Mine." reactions={reactions} onReactionsChange={onReactionsChange} readOnly />,
+    )
+    fireEvent.click(screen.getByText('👍'))
+    expect(onReactionsChange).not.toHaveBeenCalled()
+  })
+
+  it('offers the reaction row\'s add button when it is not read-only — the control', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} />)
+    expect(screen.getAllByRole('button', { name: 'Add a reaction' }).length).toBeGreaterThan(0)
+  })
+
+  it('offers no way to react where nothing writes a reaction', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'React' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
+
+  it('offers no way to react, and its pills cannot be pressed', () => {
+    hover(<ConversationCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'React' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
+})
+
+describe('a read-only reply card', () => {
+  it('draws no hover menu', () => {
+    hover(<ReplyCard authorName="You" timestamp="10:24" body="Mine." readOnly />)
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+  })
+
+  it('does not toggle a reaction', () => {
+    const onReactionsChange = vi.fn()
+    hover(<ReplyCard authorName="You" timestamp="10:24" body="Mine." reactions={reactions} onReactionsChange={onReactionsChange} readOnly />)
+    fireEvent.click(screen.getByText('👍'))
+    expect(onReactionsChange).not.toHaveBeenCalled()
+  })
+
+  it('offers no way to react, and its pills cannot be pressed', () => {
+    hover(<ReplyCard authorName="Katerina" timestamp="10:24" body="Hers." reactions={reactions} onReactionsChange={() => {}} readOnly />)
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Makes sense, 1' })).toBeDisabled()
+  })
+})
+
+/*
+  The message's words, handed the file the relay would answer with (`resolvedObjects`, the body's seam for a
+  surface with no relay): a reply card hands its `readOnly` on to them, and the card under them follows it.
+*/
+describe('the card under a read-only message', () => {
+  const card = {
+    body: `Tracked in nostr:${recorded.naddr} for now.`,
+    embeds: [{ value: valueOfReference(`nostr:${recorded.naddr}`)!, layout: 'detailed' as const }],
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  }
+
+  it('offers its status picker on a message that is not read-only — the control', () => {
+    hover(<MessageBody {...card} />)
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
+  })
+
+  it('reads its status as words, where a change could not be made', () => {
+    hover(<MessageBody {...card} readOnly />)
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(document.querySelector('[data-card="detailed"]')?.textContent).toContain('Todo')
+  })
+})

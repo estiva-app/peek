@@ -1,0 +1,33 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/ClosedBox" />
+
+# ClosedBox
+
+The line that stands where the message box would be, when nothing can be written.
+
+**Seen in** — *Pages/In the shell* (the FileArchived story: "Archived. Unarchive it to comment.").
+
+## When
+
+- A conversation that cannot take a message, such as an archived file. Pass the reason.
+
+## When not
+
+- For a box that is only empty. That is `ConversationBox`.
+- To hide the box from a person who may not write. No alternative: Peek shows the line only when it can say why.
+
+## How
+
+```tsx
+import { ClosedBox } from '@/components/ui/ConversationBox'
+
+<ClosedBox reason="Archived. Unarchive it to comment." />
+```
+
+- `reason` is the only prop, and it is required.
+
+## What it owns
+
+- **Peek's half:** the words of the reason, which the caller gives. It also gives the box a label ("Message") and sends nothing.
+- **The look and the behaviour are the kit's CommentBox**, closed. See CommentBox in the estiva-ui Storybook (Writing / CommentBox).

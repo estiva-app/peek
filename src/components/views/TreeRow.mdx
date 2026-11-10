@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/TreeRow" />
+
+# TreeRow
+
+One file as a row of Peek's list columns: glyph, title, unread dot, menu, and the rows under it.
+
+**Seen in** — every row of *Folders/FileTreeView* and *Folders/TopicsColumn*.
+
+## When
+
+- A file in the Folder tree (`FileTreeView`) or on Topics (`TopicsColumn`). It is a link to the file's page; a plain click goes through Peek's router.
+- With `under`: rows handed in to draw beneath it, as a topic's listed files on Topics.
+
+## When not
+
+- For a Folder's heading. Use **NavTreeSection**.
+- For a file shown as a card under a message. Use **MessageCard**.
+
+## How
+
+```tsx
+import { TreeRow } from '@/components/views/FileTreeView'
+
+<TreeRow file={topic} unread={unread} selectedRef={ref} onControl={openControl} remember under={files.map((f) => <TreeRow key={f.ref} file={f} nested />)} />
+```
+
+- `nested` draws a row that opens onto nothing; `remember` keeps it open or shut on this browser.
+
+## What it owns
+
+- **The menu:** only the controls the file's manifest declares, Join or Leave, Open work, and Archive or Unarchive; read-only when the file is archived.
+- **Opening:** its children (a listing's, a project's fetched issues, or `under`), opened for the selected file below it.
+- **Which column it is in:** a click records it (`TreeColumn`), so the file's page shows that column.

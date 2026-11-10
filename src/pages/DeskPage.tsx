@@ -1,0 +1,758 @@
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLastSelection } from '@/lib/lastSelection'
+import { filePath } from '@/lib/objectUrl'
+import { useToast } from '@/lib/toast'
+import { laterToastLabel } from '@/lib/laterTimes'
+import { usePagePicture } from '@/lib/pagePicture'
+import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
+import { isArchived } from '@estiva-app/interop'
+import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList } from '@estiva-app/ui'
+import { PeekFrame } from '@/layouts/PeekFrame'
+import { RailListColumn } from '@/layouts/RailListColumn'
+import { Divider } from '@/components/ui/Divider'
+import { SectionHeader } from '@/components/ui/SectionHeader'
+import { TopicState } from '@/components/ui/TopicState'
+import { ScreenerSection } from '@/components/ScreenerSection'
+import { useDmConversationView } from '@/components/views/useDmConversationView'
+import { useFilePane } from '@/components/views/useFilePane'
+import { useFileView } from '@/components/views/useFileView'
+import {
+  dmNameById,
+  useUnread,
+  hasRelay,
+  useScreenerItems,
+  useDeskItems,
+  useDeskLoading,
+  usePeekActions,
+  useStarred,
+  useLiveConversationBadges,
+  useOpenWorkFiles,
+  useAvatarSrc,
+  useLoadAhead,
+  useMentionNames,
+  useOpenWorkActivity,
+} from '@/api'
+import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
+import { useDebug } from '@/lib/debug'
+import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
+
+type SectionKey = 'urgent' | 'openWork' | 'starred'
+
+type Selected = { dmId: string; dmName: string; section: SectionKey }
+
+/** How long after a row click its "open the reply's thread" still applies: the views judge within a second or two. */
+const OPEN_REPLY_WINDOW_MS = 5000
+
+/**
+ * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
+ * and the chosen file or direct message beside them.
+ *
+ * A DM or a file. A Convex topic was the third kind until FOL-23: its rows and
+ * the "+" picker that offered only topics went with the Convex topics. A topic
+ * still in somebody's open work or stars stays in their blob and draws nothing
+ * (`internal/openWork.tsx`, `internal/starred.tsx`).
+ */
+export function DeskPage() {
+  const { dmHasUnread } = useUnread()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { state: debug } = useDebug()
+  const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
+  const deskLoading = useDeskLoading()
+  const actions = usePeekActions()
+  const allScreenerItems = useScreenerItems()
+  const { openWork: OPEN_WORK_ITEMS, urgent: URGENT_ITEMS } = useDeskItems()
+  /*
+    What Desk had open comes back when the person returns (Katerina, 5
+    October), as People's last DM does: the file is the URL's, which the
+    rail's Desk link carries; the DM and where the file was clicked from are
+    the session's memory, read once as the page mounts.
+  */
+  const { desk: remembered, setLastDesk } = useLastSelection()
+  const location = useLocation()
+  const [selected, setSelected] = useState<Selected | null>(() =>
+    remembered?.dm && !new URLSearchParams(location.search).get('open') ? (remembered.dm as Selected) : null,
+  )
+  /*
+    The file open beside the lists (SID-3), in the URL rather than in state, so
+    a reload or a pasted Desk link keeps it open — and its thread with it, as
+    on the file's own page. A DM stays in state, as it always has.
+  */
+  const openAddress = searchParams.get('open')
+  const openThreadId = searchParams.get('thread') ?? undefined
+  /** Which section the open file was clicked in, and the title its row showed. Lost on a reload. */
+  const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(() =>
+    remembered?.openedFrom && remembered.search === location.search ? (remembered.openedFrom as { section: SectionKey; title: string }) : null,
+  )
+  useEffect(() => {
+    setLastDesk({ search: location.search, dm: selected ?? undefined, openedFrom: openedFrom ?? undefined })
+  }, [location.search, selected, openedFrom, setLastDesk])
+  const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
+  const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
+  /** The file address or DM a row click just opened, until its view says whether only a reply is new (CON-34). */
+  const openReplyFor = useRef<{ target: string; at?: number } | null>(null)
+  const [rowClicks, setRowClicks] = useState(0)
+  const armOpenReply = (target: string) => {
+    openReplyFor.current = { target }
+    setRowClicks((n) => n + 1)
+  }
+
+  // The 1–2 item caps are a demo-composition affordance for the mock dataset.
+  // With a real backend the Screener IS the inbox and Urgent is real — capping
+  // them would silently hide incoming messages.
+  const urgentItems = debug.desk.showUrgent
+    ? hasRelay
+      ? URGENT_ITEMS
+      : URGENT_ITEMS.slice(0, debug.desk.urgentItemsCount)
+    : []
+
+  /*
+    What Urgent shows is not screened as well (Katerina, 30 October): both
+    lists judge the same unread messages, and an urgent one sat in each. Only
+    what Urgent draws is skipped, so an item is never in neither.
+  */
+  const inUrgent = new Set(urgentItems.map((u) => (u.kind === 'file' ? `file:${u.address}` : `dm:${u.dmId}`)))
+  // A file row's writer, named once for the whole list rather than asked for by every row.
+  const names = useMentionNames()
+  const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n.name]))
+  const bots = new Set((names ?? []).flatMap((n) => (n.bot ? [n.pubkey] : [])))
+  const screened = allScreenerItems
+    .map((i) => (i.kind === 'file' && i.authorPubkey ? { ...i, authorName: nameOf.get(i.authorPubkey), authorBot: bots.has(i.authorPubkey) } : i))
+    .filter((i) => !inUrgent.has(i.kind === 'file' ? `file:${i.address}` : `dm:${i.dmId}`))
+  const screenerItems = (hasRelay ? screened : screened.slice(0, debug.desk.screenerItemsCount))
+    .filter((i) => !dismissedScreenerIds.has(i.id))
+
+  // Section-level unread visibility (per-page debug toggles). A file's dot
+  // follows the topics toggle, as it did when the two shared Open work.
+  const showFileUnreads = debug.unreads.topics
+  const showPeopleUnreads = debug.unreads.people
+
+  /*
+    A file's dot (FOL-34) is the listing's: its own conversation against its own
+    marker, and only for what the person follows. `=== true` — an unjudged file
+    draws no dot, not a dark one. Live: it re-reads when something is said in
+    one of the files' Folders, not only when the list changes.
+  */
+  const openWorkFiles = useOpenWorkFiles()
+  const { unread: fileUnread } = useLiveConversationBadges(
+    OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
+  )
+
+  // Open work holds files and (via Screener "Open") DMs, in the person's order
+  // — new work on the end, like a browser tab (Miky, 2026-09-16). Not sorted
+  // by unread: that moved a row the moment it was read, so opening something
+  // from the Screener put it first and reading it sent it last. The dot says
+  // what is unread. Filter out items dismissed via the row's X.
+  const [openWorkSort, setOpenWorkSort] = useState<OpenWorkSort>(readOpenWorkSort)
+  const activityOf = useOpenWorkActivity()
+  const openWorkItems = sortOpenWork(
+    (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id)),
+    openWorkSort,
+    activityOf,
+  )
+  const chooseOpenWorkSort = (sort: OpenWorkSort) => {
+    setOpenWorkSort(sort)
+    try {
+      localStorage.setItem(OPEN_WORK_SORT_KEY, sort)
+    } catch {
+      // A browser that keeps nothing still sorts, for this visit.
+    }
+  }
+
+  const dismissOpenWork = (id: string) => {
+    // Removing the conversation you're looking at clears the stale selection —
+    // the right panel falls back to "No conversation selected" (QA #2.2).
+    const item = openWorkItems.find((i) => i.id === id)
+    if (item?.kind === 'dm') {
+      if (selected?.dmId === item.dmId) setSelected(null)
+    } else if (item && item.address === openAddress) {
+      closeFile()
+    }
+    setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
+    // Every kind removes by the key the blob holds, never by a row id: since
+    // SHR-9 the list comes from the relay and the rows carry synthetic ids.
+    if (item?.kind === 'file') openWorkFiles.remove(item.address)
+    else if (item?.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
+  }
+
+  // Starred holds DMs. Unread first when the toggle is on.
+  const baseStarred = debug.desk.starredHasData ? starredAll : []
+  const starredEntries = showPeopleUnreads
+    ? [...baseStarred].sort((a, b) => Number(dmHasUnread(b.dmId)) - Number(dmHasUnread(a.dmId)))
+    : baseStarred
+
+  // Selection dedup: the section that owns the selected highlight is wherever
+  // the user last clicked. So clicking the same item from a different section
+  // moves the highlight to that section.
+  const selectionAnchor: SectionKey | null = selected?.section ?? null
+  const isSelectedIn = (section: SectionKey, dmId: string) =>
+    selectionAnchor === section && selected?.dmId === dmId
+
+  const hideScreenerRow = (id: string) => setDismissedScreenerIds((prev) => new Set([...prev, id]))
+  const showScreenerRow = (id: string) =>
+    setDismissedScreenerIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+
+  /*
+    Every Screener decision says so in the package's toast, with Undo
+    (Katerina, 30 October). Dismiss and Later are written to the person's
+    decisions blob, whose instants only ever move forward
+    (`internal/screener.tsx`), so their Undo is a wait: the write happens when
+    the toast closes — on its own timer, which pauses while it is pointed at —
+    unless Undo came first. Leaving the Desk closes its toasts, so a decision
+    is written then rather than lost.
+  */
+  const { showToast, dismissToast } = useToast()
+  const deskToasts = useRef(new Set<string>())
+  useEffect(() => {
+    const open = deskToasts.current
+    return () => {
+      for (const toast of [...open]) dismissToast(toast)
+      open.clear()
+    }
+  }, [dismissToast])
+  const holdForUndo = (id: string, label: string, write: () => void) => {
+    hideScreenerRow(id)
+    let undone = false
+    const toast = showToast({
+      label,
+      type: 'success',
+      actionLabel: 'Undo',
+      onAction: () => {
+        undone = true
+        showScreenerRow(id)
+      },
+      onClose: () => {
+        deskToasts.current.delete(toast)
+        if (!undone) write()
+      },
+    })
+    deskToasts.current.add(toast)
+  }
+
+  const dismissScreener = (id: string) => {
+    // The instant of the click, not of the write: a message that lands while Undo is offered is not dismissed with it.
+    const at = Date.now()
+    holdForUndo(id, 'Dismissed', () => actions.dismissScreenerItem(id, at))
+  }
+
+  /** "Later" hides the item now; it reappears after the chosen reminder time. */
+  const laterScreener = (id: string, untilMs: number) => {
+    holdForUndo(id, laterToastLabel(untilMs, Date.now()), () => actions.snoozeScreenerItem(id, untilMs))
+  }
+
+  /**
+   * "Open work" → the item joins the end of Open work. With nothing open it
+   * opens too, lit there; with something open, that stays (Katerina, 30
+   * October). Written at once, since its row has to appear: Undo takes it off
+   * again, and closes it if it was the one opened.
+   */
+  const openScreener = (id: string) => {
+    const item = screenerItems.find((i) => i.id === id)
+    if (!item) return
+    hideScreenerRow(id)
+    actions.addScreenerToOpenWork(
+      id,
+      item.kind === 'file' ? { kind: 'file', address: item.address } : { kind: 'dm', dmId: item.dmId },
+    )
+    if (!selected && !openAddress) {
+      if (item.kind === 'file') openFile(item.address, item.title, 'openWork')
+      else selectDm(item.dmId, item.authorName, 'openWork')
+    }
+    const toast = showToast({
+      label: 'Added to Open work',
+      type: 'success',
+      actionLabel: 'Undo',
+      onAction: () => {
+        deskToasts.current.delete(toast)
+        if (item.kind === 'file') {
+          openWorkFiles.remove(item.address)
+          setSearchParams((prev) => (prev.get('open') === item.address ? new URLSearchParams() : prev), { replace: true })
+        } else {
+          actions.removeDmFromOpenWork(item.dmId)
+          setSelected((prev) => (prev?.dmId === item.dmId ? null : prev))
+        }
+        // Back in the Screener while it is still unread; read, it has nowhere to come back to.
+        showScreenerRow(id)
+      },
+    })
+    deskToasts.current.add(toast)
+  }
+
+  /**
+   * A click on a Screener row or its card: the item on its own page, where it
+   * lives — a file under Topics, a DM on People (Katerina, 30 October). Open
+   * work is the button's, so the Desk does not open it in place.
+   */
+  const navigate = useNavigate()
+  const readScreener = (id: string) => {
+    const item = screenerItems.find((i) => i.id === id)
+    if (!item) return
+    navigate(item.kind === 'file' ? filePath(item.address, item.title) : personHref(item.dmId))
+  }
+
+  /*
+    A file opens beside the lists, and the rail stays on Desk (SID-3): the
+    file's own relay conversation, the one `FilePage` draws (`useFileView`).
+  */
+  const openFile = (address: string, title: string, section: SectionKey) => {
+    setSelected(null)
+    setOpenedFrom({ section, title })
+    armOpenReply(address)
+    setSearchParams({ open: address })
+  }
+  const closeFile = () => {
+    setOpenedFrom(null)
+    setSearchParams({}, { replace: true })
+  }
+  const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
+    const dmName = dmNameById(dmId) ?? fallbackName
+    if (openAddress) closeFile()
+    armOpenReply(dmId)
+    setSelected({ dmId, dmName, section })
+  }
+  const setOpenThread = useCallback(
+    (id: string | null) => {
+      const next = new URLSearchParams(searchParams)
+      if (id) next.set('thread', id)
+      else next.delete('thread')
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+  /**
+   * Whether a row is the open file. After a reload the section it was clicked
+   * in is not known, so every row naming it is lit — the one case where the
+   * Selection dedup above cannot say which section owns it.
+   */
+  const isOpen = (address: string, section: SectionKey) =>
+    address === openAddress && (openedFrom == null || openedFrom.section === section)
+
+  // On Desk, unstarring a DM clears selection unless it is still reachable via
+  // Urgent. If the selection was anchored to Starred, migrate it there.
+  // Starring is harmless.
+  const handleToggleStarredOnDesk = () => {
+    if (!selected) return
+    const wasStarred = isDmStarred(selected.dmId)
+    toggleDm({ dmId: selected.dmId, name: selected.dmName })
+    if (!wasStarred) return
+    const inUrgent = urgentItems.some((u) => u.kind === 'dm' && u.dmId === selected.dmId)
+    if (!inUrgent) setSelected(null)
+    else if (selected.section === 'starred') setSelected({ ...selected, section: 'urgent' })
+  }
+
+  // Both hooks always run - each only does meaningful work when its id is set
+  const dmView = useDmConversationView({
+    dmId: selected?.dmId ?? null,
+    dmName: selected?.dmName,
+    onToggleStarred: selected ? handleToggleStarredOnDesk : undefined,
+  })
+  /*
+    The open file, as its own page draws it (OPT-12, Miky 7 October: "It
+    should be the very same and no link to full page. There is only one
+    page."): the conversation, a composer, the thread or the Overview in the
+    third column, the read marker, and the page's header — its members, Join,
+    and the file's menu. Only the left column is the Desk's: its lists.
+  */
+  const fileView = useFileView({
+    address: selected ? null : openAddress,
+    openThreadId,
+    onOpenThread: setOpenThread,
+    titleHint: openedFrom?.title,
+  })
+  /*
+    The tab names what the pane shows, as that page's own tab would (SFX-2;
+    Miky, 2026-10-30): the person, the file, or "Desk" with nothing open. A
+    file still resolving, or one that can't be read, is just "Peek".
+  */
+  const openName = selected ? selected.dmName || undefined : fileTabTitle(fileView.file)
+  useTabTitle(selected || openAddress ? openName : 'Desk')
+  const filePaneParts = useFilePane(fileView, {
+    // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file’s pane closes.
+    onDeleted: () => closeFile(),
+  })
+  /*
+    A row lit only by a thread reply opens that thread (CON-34, Miky
+    2026-10-05). Opening a file or DM reads its top-level messages, not the
+    reply, so without this the click leaves the dot lit and the person hunting
+    for why. Armed by every row click and answered once the opened view has
+    judged: nothing new, or a new top-level message, opens it as before.
+
+    Each click is its own answer (`rowClicks`), so a second click on the row
+    already open still opens its thread. A judgement that comes later than
+    `OPEN_REPLY_WINDOW_MS`, or after the person opened a thread themselves,
+    opens nothing: a thread appearing long after a click would be its own surprise.
+  */
+  const openedTarget = selected ? selected.dmId : openAddress
+  const judgedThread = selected ? dmView.replyOnlyThread : fileView.replyOnlyThread
+  const openDmThread = dmView.openThread
+  const openedDm = selected !== null
+  useEffect(() => {
+    const armed = openReplyFor.current
+    // Stamped by the first pass after the click: the render the click caused cannot read the clock.
+    if (armed && armed.at === undefined) armed.at = Date.now()
+    if (!armed || armed.target !== openedTarget || judgedThread === undefined) return
+    openReplyFor.current = null
+    if (!judgedThread || Date.now() - (armed.at ?? 0) > OPEN_REPLY_WINDOW_MS) return
+    if (openedDm) openDmThread(judgedThread)
+    else if (!openThreadId) setOpenThread(judgedThread)
+  }, [rowClicks, openedTarget, judgedThread, openedDm, openDmThread, setOpenThread, openThreadId])
+
+  // A new tab showed the saved Desk until now; a plain Desk is kept for the next one.
+  usePagePicture('desk', !(deskLoading || starredLoading), !openAddress && !selected)
+  // Once Desk has drawn, what is opened next from it loads in the background (PEE-5).
+  useLoadAhead(!(deskLoading || starredLoading))
+
+  const filePane = openAddress ? filePaneParts.pane : null
+
+  const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
+  // Another app's file only: a DM, and Peek's own file, draw their open thread in their own layout's column (B1).
+  const threadPanel = !selected && filePane ? fileView.threadPanel : undefined
+
+  return (
+    <>
+    {filePaneParts.dialogs}
+    <DeskPageView
+      loading={deskLoading || starredLoading}
+      screener={debug.desk.showScreener ? screenerItems : []}
+      onOpenScreener={openScreener}
+      onDismissScreener={dismissScreener}
+      onLaterScreener={laterScreener}
+      onReadScreener={readScreener}
+      openWorkSort={openWorkSort}
+      onOpenWorkSort={chooseOpenWorkSort}
+      urgent={urgentItems.map((item) =>
+        item.kind === 'file'
+          ? {
+              id: item.id,
+              kind: 'file' as const,
+              name: item.title,
+              summary: item.summary,
+              glyph: fileGlyph(item.fileKind),
+              isUnread: true,
+              isUrgent: true,
+              href: deskFileHref(item.address),
+              isSelected: isOpen(item.address, 'urgent'),
+              onClick: () => openFile(item.address, item.title, 'urgent'),
+            }
+          : {
+              id: item.id,
+              kind: 'dm' as const,
+              name: item.name,
+              avatarSrc: item.avatarSrc,
+              isUnread: true,
+              isUrgent: true,
+              href: personHref(item.dmId),
+              isSelected: isSelectedIn('urgent', item.dmId),
+              onClick: () => selectDm(item.dmId, item.name, 'urgent'),
+            },
+      )}
+      openWork={openWorkItems.map((item) =>
+        item.kind === 'file'
+          ? {
+              id: item.id,
+              kind: 'file' as const,
+              name: item.title,
+              summary: item.object.slots?.subtitle?.value,
+              glyph: fileGlyph(item.object.kind),
+              isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
+              // Archived where it lives, and still here: Open work is the person's own list (Katerina, 14 October).
+              archived: isArchived(item.object),
+              href: deskFileHref(item.address),
+              isSelected: isOpen(item.address, 'openWork'),
+              onClick: () => openFile(item.address, item.title, 'openWork'),
+              onRemove: () => dismissOpenWork(item.id),
+            }
+          : {
+              id: item.id,
+              kind: 'dm' as const,
+              name: item.name,
+              avatarSrc: item.avatarSrc,
+              isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
+              href: personHref(item.dmId),
+              isSelected: isSelectedIn('openWork', item.dmId),
+              onClick: () => selectDm(item.dmId, item.name, 'openWork'),
+              onRemove: () => dismissOpenWork(item.id),
+            },
+      )}
+      starred={starredEntries.map((entry) => ({
+        id: entry.id,
+        kind: 'dm' as const,
+        name: entry.name,
+        avatarSrc: entry.avatarSrc,
+        isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
+        href: personHref(entry.dmId),
+        isSelected: isSelectedIn('starred', entry.dmId),
+        onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
+      }))}
+      rightPanel={rightPanel}
+      threadPanel={threadPanel}
+    />
+    </>
+  )
+}
+
+/**
+ * One row on the Desk, whichever section it is in, with every decision already
+ * made — which is what lets the four sections stop repeating the same branch
+ * with the selection worked out inline.
+ */
+export interface DeskRow {
+  id: string
+  /*
+    A file joined DMs on 23 September (FOL-34): Open work holds files. It
+    opens in the Desk's right column like a DM (SID-3), drawing the same
+    conversation as the file's own page.
+  */
+  kind: 'dm' | 'file'
+  name: string
+  /** Files only: its summary (SPEC §6.12), shown when the row's name is hovered. */
+  summary?: string
+  avatarSrc?: string
+  /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
+  glyph?: FileGlyph
+  isUnread: boolean
+  isUrgent?: boolean
+  isSelected: boolean
+  /**
+   * Where the row's link goes: a file's Desk address, a DM's People page. A
+   * plain click opens it here instead, beside the lists (`onClick`); the link
+   * is for a new tab, and for what a link says to assistive tech.
+   */
+  href: string
+  onClick: () => void
+  /** Open work only: the ✕ that takes it off the list. */
+  onRemove?: () => void
+  /** Open work only: archived where it lives. The row stays, and says so while it is pointed at. */
+  archived?: boolean
+}
+
+/**
+ * Open work's orders (Katerina, 30 October). "Order added" is the person's
+ * own, new work on the end like a browser tab (Miky, 2026-09-16) — never
+ * unread first, which moved a row the moment it was read. "Recent activity"
+ * moves a row when somebody writes in it, never when it is read.
+ */
+export type OpenWorkSort = 'added' | 'recent' | 'name'
+const OPEN_WORK_SORTS: { sort: OpenWorkSort; label: string }[] = [
+  { sort: 'added', label: 'Order added' },
+  { sort: 'recent', label: 'Recent activity' },
+  { sort: 'name', label: 'Name A–Z' },
+]
+/** The choice is this browser's, like a folded section. */
+const OPEN_WORK_SORT_KEY = 'peek.desk.openWork.sort'
+function readOpenWorkSort(): OpenWorkSort {
+  try {
+    const saved = localStorage.getItem(OPEN_WORK_SORT_KEY)
+    return OPEN_WORK_SORTS.some((s) => s.sort === saved) ? (saved as OpenWorkSort) : 'added'
+  } catch {
+    return 'added'
+  }
+}
+type OpenWorkRow = ReturnType<typeof useDeskItems>['openWork'][number]
+function sortOpenWork(items: OpenWorkRow[], sort: OpenWorkSort, activityOf: (item: OpenWorkRow) => number | undefined): OpenWorkRow[] {
+  if (sort === 'added') return items
+  const nameOf = (item: OpenWorkRow) => (item.kind === 'file' ? item.title : item.name)
+  if (sort === 'name') return [...items].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+  // Newest first; what has said nothing yet keeps its added order, after the rest.
+  return [...items].sort((a, b) => {
+    const x = activityOf(a)
+    const y = activityOf(b)
+    if (x === undefined || y === undefined) return x === y ? 0 : x === undefined ? 1 : -1
+    return y - x
+  })
+}
+
+/** A file open on the Desk: the address `openFile` puts in the URL. */
+const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ open: address })}`
+/** A DM has no Desk address of its own: its link is the person's page. */
+const personHref = (dmId: string) => `/app/people/${dmId}`
+
+/** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
+function DeskRowItem({ row }: { row: DeskRow }) {
+  const avatarSrcFor = useAvatarSrc()
+  const type = row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')
+  return (
+    <NavItem
+      href={row.href}
+      label={row.name}
+      tooltip={row.summary}
+      icon={
+        <TopicState
+          type={type}
+          status={type === 'topic' ? 'unresolved' : 'default'}
+          avatarSrc={row.avatarSrc ?? (row.kind === 'dm' ? avatarSrcFor(row.name) : undefined)}
+          iconClassName={row.isSelected || row.isUnread ? 'text-text-primary' : undefined}
+        />
+      }
+      active={row.isSelected}
+      unread={row.isUnread}
+      urgent={row.isUrgent}
+      // A plain click opens the row on the Desk; a click with a modifier, or not the main button, is the link's: a new tab (C8).
+      onPlainClick={row.onClick}
+      hint={row.archived ? <Chip type="neutral" label="Archived" /> : undefined}
+      action={row.onRemove ? { icon: <IconX size={16} stroke={1.5} />, tooltip: 'Remove from list', onClick: row.onRemove } : undefined}
+    />
+  )
+}
+
+function DeskRows({ rows }: { rows: DeskRow[] }) {
+  return (
+    <div className="flex flex-col gap-0.5 mt-1">
+      {rows.map((row) => (
+        <DeskRowItem key={row.id} row={row} />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * The Desk's body, handed everything it draws — the half a story can show
+ * (UIG-17). `DeskPage` above reads, selects and routes; this one only draws.
+ *
+ * Every section hides itself when it is empty, except Open work, which says
+ * what it is for instead — an empty Desk with four headings over nothing is a
+ * page that looks broken, and an empty Open work is the one a person is meant
+ * to fill.
+ */
+export function DeskPageView({
+  loading,
+  screener,
+  onOpenScreener,
+  onDismissScreener,
+  onLaterScreener,
+  onReadScreener,
+  openWorkSort = 'added',
+  onOpenWorkSort,
+  screenerPreviewFor,
+  urgent,
+  openWork,
+  starred,
+  rightPanel,
+  threadPanel,
+}: {
+  /** The first read, still in flight. Not the same as an empty Desk. */
+  loading: boolean
+  /** Empty hides the section entirely. */
+  screener: ComponentProps<typeof ScreenerSection>['items']
+  onOpenScreener: ComponentProps<typeof ScreenerSection>['onOpen']
+  onDismissScreener: ComponentProps<typeof ScreenerSection>['onDismiss']
+  onLaterScreener: ComponentProps<typeof ScreenerSection>['onLater']
+  /** A click on a row or its card: the item on its own page. */
+  onReadScreener?: ComponentProps<typeof ScreenerSection>['onRead']
+  /** How Open work is ordered, and the Sort menu's choice; without `onOpenWorkSort` there is no Sort button. */
+  openWorkSort?: OpenWorkSort
+  onOpenWorkSort?: (sort: OpenWorkSort) => void
+  /** Passed straight to the section; see its note. */
+  screenerPreviewFor?: ComponentProps<typeof ScreenerSection>['previewFor']
+  urgent: DeskRow[]
+  openWork: DeskRow[]
+  starred: DeskRow[]
+  rightPanel?: ReactNode
+  threadPanel?: ReactNode
+}) {
+  return (
+    <PeekFrame
+      leftPanel={
+        <RailListColumn title="Desk">
+          {loading ? (
+            <SkeletonList rows={8} />
+          ) : (
+            <>
+              {screener.length > 0 && (
+                <>
+                  <ScreenerSection
+                    items={screener}
+                    onOpen={onOpenScreener}
+                    onDismiss={onDismissScreener}
+                    onLater={onLaterScreener}
+                    onRead={onReadScreener}
+                    previewFor={screenerPreviewFor}
+                  />
+                  <Divider className="my-2" />
+                </>
+              )}
+
+              {urgent.length > 0 && (
+                <>
+                  <div className="flex flex-col">
+                    <SectionHeader title="Urgent" hover="none" />
+                    <DeskRows rows={urgent} />
+                  </div>
+                  <Divider className="my-2" />
+                </>
+              )}
+
+              <div className="flex flex-col">
+                {/* The package's section row (UIG-14, 10.2): its actions always
+                    shown, and the row itself still under the pointer — the
+                    buttons light up on their own (Katerina, 19 September).
+                    "Add to Open work" went with the topic picker it opened
+                    (FOL-23); a DM and a file are added from where they are. */}
+                <SectionHeader
+                  title="Open work"
+                  showActions="always"
+                  hover="none"
+                  actions={
+                    onOpenWorkSort
+                      ? [
+                          {
+                            icon: <IconSortDescending size={16} stroke={1.5} />,
+                            tooltip: 'Sort by',
+                            // The chosen one carries Select's check (Katerina, 30 October).
+                            menu: OPEN_WORK_SORTS.map(({ sort, label }) => (
+                              <MenuItem
+                                key={sort}
+                                label={label}
+                                trailing={sort === openWorkSort ? <IconCheck size={16} stroke={1.5} className="text-text-secondary" /> : undefined}
+                                onClick={() => onOpenWorkSort(sort)}
+                              />
+                            )),
+                          },
+                        ]
+                      : undefined
+                  }
+                />
+                {openWork.length === 0 ? (
+                  // Level with the rows, as Starred's line below (Katerina, 2026-09-14); its lines a little closer, as they were.
+                  <div className="px-2 py-1">
+                    {/* @estiva-escape(no-restyled-part): its three lines keep the closer spacing they had (audit A7); the kit's section line is 120%, Katerina's call whether it takes that */}
+                    <EmptyState
+                      scope="section"
+                      className="leading-snug"
+                      message="Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it."
+                    />
+                  </div>
+                ) : (
+                  <DeskRows rows={openWork} />
+                )}
+              </div>
+
+              <Divider className="my-2" />
+
+              {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
+                  32px row, but the title is a button, the rows slide, and this
+                  browser remembers the fold. It was a hand-drawn copy of
+                  ui/StarredSection until 2026-09-10 (Peek scan F10). */}
+              <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
+                {starred.length === 0 ? (
+                  // Level with the rows (Katerina, 2026-09-14): each row pads itself, and the kit's line for rows takes a row's inset (C9).
+                  <EmptyState scope="rows" message="Favorite the conversations of People you interact mostly with" />
+                ) : (
+                  starred.map((row) => <DeskRowItem key={row.id} row={row} />)
+                )}
+              </CollapsibleSection>
+
+              <Divider className="my-2" />
+            </>
+          )}
+        </RailListColumn>
+      }
+      rightPanel={rightPanel}
+      threadPanel={threadPanel}
+    />
+  )
+}

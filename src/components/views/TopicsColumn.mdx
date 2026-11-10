@@ -1,0 +1,36 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/TopicsColumn docs" />
+
+# TopicsColumn
+
+Peek's Topics column: your topics, one flat list, newest activity first, then Explore topics.
+
+**Seen in** — `/app/topics`, `/app/topics/explore`, and beside a file opened from Topics. Drawn by *Folders/TopicsColumn*.
+
+## When
+
+- The list column of the rail's Topics (TOP-4, TOPI-10): each topic you are a member of, the one where something just happened on top, then one **Explore topics** row (TOPI-6), which opens the page of every topic you can read, archived ones too.
+
+## When not
+
+- For every file you joined, by Folder. Use **FolderTree** (the rail's Folders).
+- For one topic's files at full width. Use **TopicFiles** in the topic's Overview.
+- For topics you are not in, or archived ones. Use **ExploreTopics**, which the last row opens.
+
+## How
+
+```tsx
+import { TopicsColumn } from '@/components/views/TopicsColumn'
+
+<TopicsColumn selectedRef={file?.ref} exploring={onExplorePage} onControl={openControl} />
+```
+
+- `TopicsColumnView` takes the state `useTopicsColumn` reads, for a story or a test.
+
+## What it owns
+
+- **The list:** your topics, with no files under them; a topic's files are in its Overview.
+- **Explore topics:** the last row, with no icon (a way in, not another kind of topic), current while its page is open. It replaced the "Other topics" and "Archived" sections (Miky, 3 Nov).
+- **Its rows:** the Folder tree's `TreeRow`, so a topic has the same menu and dot; a click tells the file's page to show this column beside it.
+- **Its empty, loading and failed lines.**

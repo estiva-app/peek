@@ -1,0 +1,411 @@
+/**
+ * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
+ * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
+ *
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,peek-topic-all,peek-topic-important] [--runs 3]
+ *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
+ *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
+ *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
+ *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
+ *   node scripts/app-speed.mjs --table /tmp/before.json
+ *   node scripts/app-speed.mjs --compare /tmp/before.json /tmp/after.json
+ *
+ * Keep the JSON out of this repository: it holds lines of Weekly Plans, a private Estiva HQ page, and with
+ * `--reads` the filters each read sent (pubkeys, private teams' ids).
+ *
+ * Each browser leg is one headless browser with nothing stored, signed in as QA-1 (or `--as`) (scripts/probe.mjs), with
+ * scripts/app-speed-recorder.js running in every page from its first byte:
+ *
+ * - `weekly`: Miky's Weekly Plans (Estiva HQ) opened in Leaf at its own link.
+ * - `weekly-from-peek`: the same page from Peek — its conversation, then "Open ↗", which opens Leaf in a new tab.
+ * - `ship-project`, `ship-issue`: a Ship project ("Ship: Feedback & Bugs", its Overview) and one of its issues.
+ * - `ship-issues`, `ship-topics`: Ship's Issues and Topics pages, the whole load each, so a Topics read is weighed
+ *   against the Issues open it sits beside (SHIPS-3). `ship-topic`: one topic's page in Ship, opened cold at its
+ *   link, the whole load (SHIPS-4). `ship-projects`: Ship's Projects page, the whole load (SHIPS-7). Not in the
+ *   default set: name them in `--legs`.
+ * - `agent`: the agent's `ship_get_issue` on "Peek opens instantly" and `peek_read_topic` on "Planning and
+ *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
+ *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
+ * - `peek`: Weekly Plans' conversation in Peek.
+ * - `teams`: Peek's Teams column, opened cold at /app/folders (TEA-5): every team's roster, list and chat in one
+ *   read, beside the Folders it replaced. Not in the default set.
+ * - `topics`: Peek's Topics column, opened cold at /app/topics (TOPI-7): QA-1's topics, and since TOPI-7 the teams
+ *   read too, for the row menu's Make it a space and Leave. Not in the default set.
+ * - `peek-topic-all`, `peek-topic-important`: a QA topic that lists a Leaf page in another team, opened cold in Peek
+ *   (TOPI-3): at All it also reads and watches the page's conversation, at Important only its own. Text is its own
+ *   message; the whole load counts the files' read. The kit does not set the level: set QA-1's on that topic with its
+ *   follow switch first, and the leg fails when the level on screen is not its own. Not in the default set.
+ * - `--together` starts Weekly Plans in Leaf (QA-1), the Ship project (QA-2), Peek (QA-1) and the agent's
+ *   `ship_get_issue` at the same moment, then reads the relay's log on the box for "pool timed out" in that window:
+ *   the relay must keep answering when several people load at once (APP-9). "Relay failed" counts answers that are
+ *   not a quota refusal: a 404 "no community is configured", a 5xx, a socket that never opened, a subscription
+ *   closed with an error.
+ *
+ * Per browser leg: when every awaited text was on screen ("text") and when the page also had no placeholder
+ * outside the sidebar ("ready"), both from the first document of the app's sign-in, so the bounce through Estiva ID
+ * is in ("never": not within 150 s in Leaf, 60 s in Ship); then, once no relay read has run for 5 s (at most 180 s
+ * from the page's start), the whole load: relay reads, MB they answered,
+ * and anything the relay refused. Per agent call: ms to answer, relay reads, MB read, and the bytes handed to Claude.
+ *
+ * The awaited texts: Weekly Plans' title and its last plain heading, read through the agent before the Leaf legs,
+ * because Miky rewrites the page every week; Ship's are below. A leg that prints "never" waited on a text that is no
+ * longer on that page: change it here.
+ */
+import { execFile, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const run = promisify(execFile)
+const args = process.argv.slice(2)
+const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback)
+const PROBE = new URL('./probe.mjs', import.meta.url).pathname
+const RECORDER = new URL('./app-speed-recorder.js', import.meta.url).pathname
+const FETCHLOG = new URL('./app-speed-fetchlog.mjs', import.meta.url).href
+const AGENT = option('agent', `${homedir()}/.estiva-agent-runtime`)
+const ENV_FILE = `${homedir()}/.estiva-agent.env`
+/** Who opens the browser legs (not `--together`'s): QA-1, or anyone with a delegated session (`--as miky --session <file>`). */
+const AS = option('as', 'qa1')
+const SESSION = option('session', undefined)
+if (SESSION && AS === 'qa1') throw new Error('--session needs --as <name>: the session file signs in as its owner, not QA-1')
+if (!SESSION && AS !== 'qa1') throw new Error(`--as ${AS} needs --session <file>: only QA-1 signs in by itself here`)
+if (SESSION && args.includes('--together')) throw new Error('--together opens each leg as its own person: no --as/--session')
+/** Legs that read QA-1's own fixtures, measured only as QA-1. */
+const QA1_ONLY = ['teams', 'topics', 'peek-topic-all', 'peek-topic-important']
+/** `--reads`: keep every relay read of a run (when, bytes, filter), to tell which part of the app asked for it. */
+const READS = args.includes('--reads')
+/** The box the relay runs on, for its log (`--together`). */
+const BOX = process.env.ESTIVA_BOX ?? 'root@167.233.252.136'
+/** The CLI that reads Weekly Plans' text: the checkout the `ship` and `peek` wrappers run, at origin/main. */
+const CLI = process.env.ESTIVA_AGENT_DIR ?? `${homedir()}/estiva/estiva-agent-main`
+
+const WEEKLY = {
+  address: '30842:f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1:52a3269d-afc9-4476-a058-9c71c3d92ee9',
+  path: '/document/weekly-plans-52a3269d-afc9-4476-a058-9c71c3d92ee9',
+}
+const SHIP_PROJECT = '/project/cf23dbca-64fb-4802-a804-e0119b0d8584'
+const SHIP_ISSUE = '/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480'
+/** A topic QA-1 reads that lists Ship work, first on QA-1's Topics on 3 Nov (SHIPS-4). */
+const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
+/**
+ * A team QA-1 is in, not archived: a row of the old Folders column's Joined view, then a My teams section of Teams,
+ * which waits on the roster read. ("TEA-3 probe A" was archived, so neither column ever drew it.)
+ */
+const TEAMS_AWAIT = 'Topic-list probe (QA-1 only)'
+/** A topic QA-1 follows, a row of Peek's Topics column (TOPI-7). */
+const TOPICS_AWAIT = 'Switch probe A'
+/** "9127e281 All probe topic" (team QA), listing "9127e281 probe page (other team)" in TEA-8 probe team (TOPI-3). */
+const QA_TOPIC = {
+  address: '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:433a5e04-a7ed-4cec-9845-c0df36485ae1',
+  path: '^/topic/9127e281-all-probe-topic-',
+  own: 'TOPI-3 land check 1794250125 topic own message by QA-1',
+}
+/** The leg's level must be QA-1's on the topic: a run at the wrong level measures the other leg. */
+const atLevel = (word) => [
+  '--until', `!!document.querySelector('[aria-label*="change how you follow"]')`,
+  '--eval', `(() => { const now = document.querySelector('[aria-label*="change how you follow"]').getAttribute('aria-label'); if (!now.startsWith('You follow it at ${word}')) throw new Error('QA-1 is not at ${word} on the QA topic (' + now.split(':')[0] + '): set it with the topic follow switch'); return now.split(':')[0] })()`,
+]
+/**
+ * [host, path, texts] per page: a project counts its issues once they are loaded, as "3/7" beside its ring (ship#362)
+ * and on each project of the Projects page (SHIPS-7).
+ */
+const SHIP_AWAIT = [
+  ['^ship\\.', '^/project/', ['The inbox for bugs and feedback on Ship', { re: '\\d+/\\d+' }]],
+  // Projects opens on Active, each row counting "7 / 11" (SHIPS-7).
+  ['^ship\\.', '^/projects$', ['Active', { re: '\\d+ / \\d+' }]],
+  ['^ship\\.', '^/issue/', ["Ship's address for a file opens it only when one author holds its d", 'Who, when']],
+  ['^ship\\.', '^/issues$', ['Assigned to me']],
+  ['^ship\\.', '^/topics$', ['Other topics', 'Archived']],
+]
+const AGENT_CALLS = [
+  ['ship_get_issue', { ref: 'Peek opens instantly' }],
+  ['peek_read_topic', { topic: 'Planning and sequencing' }],
+]
+
+const agentEnv = () => {
+  const env = { ...process.env, ESTIVA_AGENT_SOURCE: 'pinned' }
+  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    const m = /^\s*(?:export\s+)?([A-Z0-9_]+)=(.*)$/.exec(line)
+    if (m) env[m[1]] = m[2].replace(/^['"]|['"]$/g, '')
+  }
+  return env
+}
+
+/** Weekly Plans' title and its last heading that draws as plain words (no link, chip or mark). */
+async function weeklyTexts(tries = 4) {
+  let stdout
+  try {
+    ;({ stdout } = await run('npx', ['tsx', 'scripts/agent.ts', 'file', 'show', WEEKLY.address], { cwd: CLI, env: agentEnv(), maxBuffer: 1 << 26 }))
+  } catch (error) {
+    // A run straight after another can find the agent's quota spent; the relay says when to come back.
+    const wait = /rate-limited.*retry in (\d+)s/.exec(error.stderr ?? '')?.[1]
+    if (!wait || tries <= 1) throw error
+    await new Promise((r) => setTimeout(r, (Number(wait) + 1) * 1000))
+    return weeklyTexts(tries - 1)
+  }
+  const file = JSON.parse(stdout)
+  const headings = file.text.split('\n').map((l) => /^#{1,3} (.+)$/.exec(l)?.[1]).filter((h) => h && !/[[\]()<>:*_`]/.test(h))
+  if (!headings.length) throw new Error('Weekly Plans has no plain heading to wait for')
+  return [file.title, headings.at(-1)]
+}
+
+const settle = (ms) => ['--until', `'allNoPlaceholder' in __sp.marks || performance.now() > ${ms}`]
+const whole = ['--wait', '1000', '--until', '__sp.quiet() > 5000 || performance.now() > 180000']
+const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)}, ${READS})`]
+
+const LEGS = {
+  weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
+  'weekly-from-peek': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${WEEKLY.address}`,
+    '--until', `!!document.querySelector('a[href^="https://leaf.estiva.app/"]')`,
+    '--follow', `document.querySelector('a[href^="https://leaf.estiva.app/"]').click()`,
+    ...settle(150000), ...whole, ...report('weekly-from-peek')],
+  'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
+  'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
+  'ship-projects': () => ['--base', 'https://ship.estiva.app', '--url', '/projects', ...settle(60000), ...whole, ...report('ship-projects')],
+  'ship-issues': () => ['--base', 'https://ship.estiva.app', '--url', '/issues', ...settle(60000), ...whole, ...report('ship-issues')],
+  'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
+  'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
+  peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
+  teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/folders', ...settle(60000), ...whole, ...report('teams')],
+  topics: () => ['--base', 'https://peek.estiva.app', '--url', '/app/topics', ...settle(60000), ...whole, ...report('topics')],
+  'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
+  'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
+}
+
+/** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
+const TOGETHER = { weekly: 'qa1', 'ship-project': 'qa2', peek: 'qa1', agent: 'agent' }
+
+async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
+  let stdout
+  // Why the probe itself died (its exit and last stderr line), when it printed no report.
+  let died = ''
+  try {
+    const signIn = session ? ['--as', as, '--session', session] : ['--as', as]
+    ;({ stdout } = await run('node', [PROBE, ...signIn, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
+  } catch (error) {
+    stdout = error.stdout
+    died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
+  }
+  let out = {}
+  try { out = JSON.parse(stdout) } catch {}
+  const step = (out.steps ?? []).find((s) => 'eval' in s && typeof s.result === 'string' && s.result.startsWith('{"label"'))
+  const failure = out.failure ?? (out.steps ?? []).filter((s) => s.error).map((s) => s.error).join('; ')
+  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
+}
+
+/** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */
+async function agentCall(name, callArgs) {
+  // Its own process group, so the kill below reaches the node process npx starts, not only npx.
+  const server = spawn('npx', ['tsx', 'scripts/mcp-server.ts'], { cwd: AGENT, env: { ...agentEnv(), NODE_OPTIONS: `--import ${FETCHLOG}` }, stdio: ['pipe', 'pipe', 'pipe'], detached: true })
+  let exited = null
+  const gone = new Promise((resolve) => server.on('exit', (code, signal) => resolve((exited = { error: { message: `the MCP server exited (${signal ?? code})` } }))))
+  const fetches = []
+  let err = ''
+  server.stderr.on('data', (d) => {
+    err += d
+    let i
+    while ((i = err.indexOf('\n')) >= 0) {
+      const line = err.slice(0, i)
+      err = err.slice(i + 1)
+      if (line.startsWith('FETCH ')) fetches.push(JSON.parse(line.slice(6)))
+    }
+  })
+  let buf = ''
+  const waiting = new Map()
+  server.stdout.on('data', (d) => {
+    buf += d
+    let i
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i)
+      buf = buf.slice(i + 1)
+      try {
+        const msg = JSON.parse(line)
+        waiting.get(msg.id)?.(msg)
+      } catch {}
+    }
+  })
+  let id = 0
+  // An answer, the server's exit, or 5 minutes — whichever comes first, so one hung call cannot hold the run.
+  const rpc = (method, params) => {
+    if (exited) return Promise.resolve(exited)
+    const n = ++id
+    const answer = new Promise((resolve) => waiting.set(n, resolve))
+    server.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n')
+    let timer
+    const late = new Promise((resolve) => (timer = setTimeout(() => resolve({ error: { message: `no answer to ${method} in 300 s` } }), 300000)))
+    return Promise.race([answer, gone, late]).finally(() => clearTimeout(timer))
+  }
+  try {
+    await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'app-speed', version: '0' } })
+    server.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n')
+    // Start-up's own reads log a moment after they answer: let them land before counting the call's.
+    await new Promise((r) => setTimeout(r, 1500))
+    fetches.length = 0
+    const started = Date.now()
+    const answer = await rpc('tools/call', { name, arguments: callArgs })
+    const ms = Date.now() - started
+    await new Promise((r) => setTimeout(r, 1500))
+    const text = (answer.result?.content ?? []).map((c) => c.text ?? '').join('')
+    const relay = fetches.filter((f) => /estiva\.estiva\.app/.test(f.host))
+    return {
+      label: name, ms, reads: relay.length, mb: relay.reduce((n, f) => n + (f.bytes ?? 0), 0) / 1e6,
+      refusals: relay.filter((f) => f.status === 429).length, toClaude: text.length,
+      failure: answer.error?.message ?? (answer.result?.isError ? text.slice(0, 200) : undefined),
+    }
+  } finally {
+    try { process.kill(-server.pid) } catch {}
+  }
+}
+
+/** "pool timed out" lines the relay logged between two ISO times, read on the box; null when the box can't be read. */
+async function poolTimeouts(since, until) {
+  // A log that could not be read (no relay container, docker refusing) exits 3, never "0".
+  const cmd = `id=$(cd /opt/buzz && docker compose ps -q relay) && [ -n "$id" ] || exit 3; ` +
+    `{ docker logs --since ${since} --until ${until} "$id" 2>&1 || echo LOGS_UNREAD; } | ` +
+    `awk '/LOGS_UNREAD/ { u = 1 } /pool timed out/ { n++ } END { if (u) exit 3; print n + 0 }'`
+  try {
+    const { stdout } = await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', BOX, cmd], { timeout: 60000 })
+    return Number(stdout.trim())
+  } catch {
+    return null
+  }
+}
+
+// --- the table ----------------------------------------------------------------------------------------------------
+
+const median = (xs) => {
+  const got = xs.filter((x) => typeof x === 'number').sort((a, b) => a - b)
+  return got.length ? got[got.length >> 1] : null
+}
+const range = (xs) => {
+  const got = xs.filter((x) => typeof x === 'number').sort((a, b) => a - b)
+  return got.length > 1 ? [got[0], got.at(-1)] : null
+}
+const sec = (ms) => (ms == null ? 'never' : `${(ms / 1000).toFixed(1)} s`)
+const mbs = (mb) => (mb == null ? '–' : `${mb.toFixed(1)} MB`)
+const kb = (b) => (b == null ? '–' : b >= 1e6 ? `${(b / 1e6).toFixed(2)} MB` : `${Math.round(b / 1000)} KB`)
+
+/** One row's numbers from a leg's runs: medians, and how many runs never showed the text. */
+function summary(runs) {
+  const browser = runs.some((r) => 'marks' in r)
+  const at = (r, mark) => (r.marks?.[mark] === undefined ? null : r.marks[mark] + r.bounceMs)
+  return browser
+    ? {
+        runs: runs.length, never: runs.filter((r) => at(r, 'allTexts') === null).length,
+        text: median(runs.map((r) => at(r, 'allTexts'))), textRange: range(runs.map((r) => at(r, 'allTexts'))),
+        ready: median(runs.map((r) => at(r, 'allNoPlaceholder'))),
+        reads: median(runs.map((r) => r.reads)), mb: median(runs.map((r) => r.mb)),
+        refusals: runs.reduce((n, r) => n + (r.refusals?.length ?? 0), 0),
+        failed: runs.reduce((n, r) => n + (r.failed?.length ?? 0), 0),
+        failures: runs.filter((r) => r.failure).map((r) => r.failure),
+      }
+    : {
+        runs: runs.length, never: runs.filter((r) => r.failure).length,
+        text: median(runs.map((r) => r.ms)), textRange: range(runs.map((r) => r.ms)), ready: null,
+        reads: median(runs.map((r) => r.reads)), mb: median(runs.map((r) => r.mb)), toClaude: median(runs.map((r) => r.toClaude)),
+        refusals: runs.reduce((n, r) => n + (r.refusals ?? 0), 0),
+        // A quota refusal is counted under Refused, as on the browser legs.
+        failed: runs.filter((r) => r.failure && !/rate.?limit|too many|slow down/i.test(r.failure)).length,
+        failures: runs.filter((r) => r.failure).map((r) => r.failure),
+      }
+}
+const cell = (s) => `${sec(s.text)}${s.textRange ? ` (${sec(s.textRange[0])}–${sec(s.textRange[1])})` : ''}${s.never ? `, ${s.never} never` : ''}`
+
+function table(result) {
+  const lines = [
+    '| Leg | Runs | Text on screen / answer (median, range) | Page ready | Relay reads | MB read | Handed to Claude | Refused | Relay failed |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  ]
+  for (const [label, runs] of Object.entries(result.rows)) {
+    const s = summary(runs)
+    lines.push(`| ${label} | ${s.runs} | ${cell(s)} | ${s.ready === null ? '–' : sec(s.ready)} | ${s.reads ?? '–'} | ${mbs(s.mb)} | ${s.toClaude === undefined ? '–' : kb(s.toClaude)} | ${s.refusals} | ${s.failed} |`)
+  }
+  const builds = [...new Set(Object.values(result.rows).flat().map((r) => r.build && `${new URL(r.href).host}${r.build}`).filter(Boolean))]
+  const who = result.relay ? 'together, Leaf and Peek as QA-1, Ship as QA-2' : !result.as || result.as === 'qa1' ? 'as QA-1' : `as ${result.as}`
+  lines.push('', `Measured ${result.at} ${who} (agent: its own key, ${result.agent}). Builds: ${builds.join(', ') || '–'}.`)
+  if (result.relay) lines.push(`Relay "pool timed out" per run: ${result.relay.map((r) => r.timeouts ?? '?').join(', ')}.`)
+  for (const [label, runs] of Object.entries(result.rows)) for (const f of summary(runs).failures) lines.push(`- ${label} failed: ${String(f).slice(0, 200)}`)
+  return lines.join('\n')
+}
+
+function compare(before, after) {
+  const lines = [
+    '| Leg | Text on screen / answer | Relay reads | MB read | Handed to Claude | Refused |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ]
+  for (const label of new Set([...Object.keys(before.rows), ...Object.keys(after.rows)])) {
+    const b = before.rows[label] ? summary(before.rows[label]) : null
+    const a = after.rows[label] ? summary(after.rows[label]) : null
+    const pair = (f) => `${b ? f(b) : '–'} → ${a ? f(a) : '–'}`
+    lines.push(`| ${label} | ${pair((s) => sec(s.text))} | ${pair((s) => s.reads ?? '–')} | ${pair((s) => mbs(s.mb))} | ${pair((s) => (s.toClaude === undefined ? '–' : kb(s.toClaude)))} | ${pair((s) => s.refusals)} |`)
+  }
+  lines.push('', `Medians. Before: ${before.at}, ${Object.values(before.rows)[0]?.length ?? 0} runs. After: ${after.at}, ${Object.values(after.rows)[0]?.length ?? 0} runs.`)
+  return lines.join('\n')
+}
+
+// --- main ---------------------------------------------------------------------------------------------------------
+
+if (args.includes('--compare')) {
+  const [before, after] = args.slice(args.indexOf('--compare') + 1).map((f) => JSON.parse(readFileSync(f, 'utf8')))
+  console.log(compare(before, after))
+} else if (args.includes('--table')) {
+  console.log(table(JSON.parse(readFileSync(option('table'), 'utf8'))))
+} else {
+  const together = args.includes('--together')
+  const legs = option('legs', together ? Object.keys(TOGETHER).join(',') : 'weekly,weekly-from-peek,ship-project,ship-issue,agent').split(',')
+  for (const leg of legs) if (leg !== 'agent' && !LEGS[leg]) throw new Error(`--legs: ${[...Object.keys(LEGS), 'agent'].join(',')}`)
+  const runs = Number(option('runs', '3'))
+  const scratch = mkdtempSync(join(tmpdir(), 'app-speed-'))
+  const out = option('json', join(scratch, 'app-speed.json'))
+  const { stdout: agentRev } = await run('git', ['-C', AGENT, 'log', '-1', '--format=%h %cs']).catch(() => ({ stdout: AGENT }))
+  // Who opened the browser legs goes with the runs, so --table and --compare say it.
+  const result = { at: new Date().toISOString(), agent: agentRev.trim(), as: together ? undefined : AS, rows: {} }
+  if (AS !== 'qa1') for (const leg of legs) if (QA1_ONLY.includes(leg)) throw new Error(`--legs ${leg} reads QA-1's own fixtures: run it without --as`)
+  const awaitList = [...SHIP_AWAIT]
+  if (legs.some((l) => l.startsWith('weekly') || l === 'peek')) {
+    const texts = await weeklyTexts()
+    console.error(`Weekly Plans: waiting for ${JSON.stringify(texts)}`)
+    awaitList.push(['^leaf\\.', '^/(document|f)/', texts])
+    // Peek's leg is the page's conversation, at /document/ since Peek redirects /topic/ there. Its title is also a
+    // row in the topic list inside <main>, so wait for the first message instead. Not "Open in Leaf": that is the
+    // Open button's label and tooltip, never text on screen, and the leg never reached ready waiting for it (TEA-5).
+    awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together']])
+  }
+  // Peek's Teams column (TEA-5), cold: a team QA-1 is in, drawn by the Folders column before it and Teams after.
+  if (legs.includes('teams')) awaitList.push(['^peek\\.', '^/app/folders/?$', [TEAMS_AWAIT]])
+  // Peek's Topics column (TOPI-7), cold: one of QA-1's topics, a row drawn once the column's reads land.
+  if (legs.includes('topics')) awaitList.push(['^peek\\.', '^/app/topics/?$', [TOPICS_AWAIT]])
+  // Before Weekly Plans' Peek entry, whose path pattern would match this topic too.
+  if (legs.some((l) => l.startsWith('peek-topic-'))) awaitList.unshift(['^peek\\.', QA_TOPIC.path, [QA_TOPIC.own]])
+  const awaitFile = join(scratch, 'recorder.js')
+  writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
+  const keep = (n, reports) => {
+    for (const r of reports) {
+      ;(result.rows[r.label] ??= []).push(r)
+      console.error(`run ${n} ${r.label}: ${r.marks ? `text ${sec(r.marks.allTexts === undefined ? null : r.marks.allTexts + r.bounceMs)}` : `answer ${sec(r.ms)}`}, ${r.reads} reads, ${mbs(r.mb)}${r.failed?.length ? `, relay failed ${r.failed.length}×` : ''}${r.failure ? `, FAILED: ${String(r.failure).slice(0, 160)}` : ''}`)
+    }
+    writeFileSync(out, JSON.stringify(result))
+  }
+  for (let n = 1; n <= runs; n++) {
+    if (together) {
+      // Every leg cold at the same moment, as its own person; the agent asks for one issue, as `ship show` does.
+      const since = new Date().toISOString()
+      const reports = await Promise.all(legs.map((leg) => (leg === 'agent' ? agentCall(...AGENT_CALLS[0]) : browserLeg(leg, awaitFile, TOGETHER[leg]))))
+      keep(n, reports)
+      const timeouts = await poolTimeouts(since, new Date().toISOString())
+      ;(result.relay ??= []).push({ run: n, since, timeouts })
+      console.error(`run ${n} relay: ${timeouts ?? '?'} "pool timed out" in the log`)
+      writeFileSync(out, JSON.stringify(result))
+      continue
+    }
+    for (const leg of legs) {
+      const reports = []
+      if (leg === 'agent') for (const [name, a] of AGENT_CALLS) reports.push(await agentCall(name, a))
+      else reports.push(await browserLeg(leg, awaitFile, AS, SESSION))
+      keep(n, reports)
+    }
+  }
+  console.log(table(result))
+  console.error(`\nRaw runs: ${out}`)
+}

@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/FolderActionDialog" />
+
+# FolderActionDialog
+
+The dialog of the action chosen on a team's ⋮: start a topic in it, rename it, archive it or unarchive it.
+
+**Seen in** — No story: every action writes through the relay. The dialogs it opens have their own: `StartTopicDialog`, `CreateFolderDialog` (as Rename), and the kit's `ArchiveDialog`.
+
+## When
+
+- Beside a list of teams whose ⋮ comes from `useFolderActions`: the left column (`FolderTree`) and a team's page (`TeamPage`).
+- Mounted beside the tree, not inside a section: a section is unmounted by the re-read that follows a write, and a dialog unmounted mid-flight loses its own "did this work" reporting.
+
+## When not
+
+- New topic from a column header, where no team is in hand: `HeaderStartTopic`.
+- A file's own actions: `useFileControls` opens those.
+
+## How
+
+```tsx
+import { FolderActionDialog } from '@/components/views/FolderActionDialog'
+
+{action && <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reload} onClose={close} />}
+```
+
+- `key` by the action and the team, so a second pick starts a fresh dialog.
+- `reload` re-reads the listing after a write; `folders` is the listing it names the team from.
+
+## What it owns
+
+- The write for each action, and its toast: `createTopic` then opening the new topic, `renameFolder`, `archiveFolder`.
+- Archive's counts: what archiving would hide is read once as the dialog opens, so the warning never says it hides nothing.

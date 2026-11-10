@@ -1,0 +1,45 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as NewTopicBannerStories from './NewTopicBanner.stories'
+
+<Meta of={NewTopicBannerStories} />
+
+# NewTopicBanner
+
+The strip above the composer of a direct message that has no messages yet —
+"this is the beginning of your conversation with…".
+
+<Canvas of={NewTopicBannerStories.DmBeginning} />
+
+## When
+
+- Above the composer, when a direct message has nothing in it yet.
+
+## When not
+
+- For an empty *list* — a topic with no replies, a folder with nothing in it.
+  That is `EmptyState`. This one is specifically the head of a conversation that
+  is about to have its first message written into it.
+- To announce anything else. It is the package's `Banner` in its `info` tone
+  (Katerina, 18 September); a warning or an error is that component directly,
+  with its own tone.
+
+## How
+
+```tsx
+import { NewTopicBanner } from '@/components/NewTopicBanner'
+
+<NewTopicBanner name={partnerName} />
+```
+
+- `name` is the other person's name.
+
+## What it owns
+
+- **The sentence**, and the emphasis on the name, so it reads as the subject of
+  the sentence rather than as part of it.
+- Its topic version, with **Invite members**, had no caller and went (audit D8,
+  2 November).
+
+## Props
+
+<Controls of={NewTopicBannerStories.DmBeginning} />

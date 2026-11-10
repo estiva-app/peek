@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Frame/DebugProvider" />
+
+# DebugProvider
+
+Peek's test switches for the Desk and the unread dots, given to everything below it.
+
+**Seen in** — No story: it draws nothing itself. The app wraps everything in it once, in `src/main.tsx`.
+
+## When
+
+- Around the app, and around any story or test that draws the Desk or the sidebar. `useDebug` throws outside it.
+
+## When not
+
+No alternative: to change a switch. Nothing sets them now, they sit at their defaults.
+
+## How
+
+```tsx
+import { DebugProvider, useDebug } from '@/lib/debug'
+
+<DebugProvider>
+  <PeekFrame>...</PeekFrame>
+</DebugProvider>
+
+const { state } = useDebug() // state.desk.showScreener, state.unreads.topics
+```
+
+- Takes only `children`.
+
+## What it owns
+
+- **The defaults:** the Screener and Urgent shown with two items each, Open work and Starred with data, unread dots on for topics and people.

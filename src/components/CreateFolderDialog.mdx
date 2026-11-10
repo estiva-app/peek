@@ -1,0 +1,39 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as CreateFolderDialogStories from './CreateFolderDialog.stories'
+
+<Meta of={CreateFolderDialogStories} />
+
+# CreateFolderDialog
+
+The dialog that names a Folder: a new one, or a rename of one that exists.
+
+<Canvas of={CreateFolderDialogStories.Default} />
+
+## When
+
+- New folder, from the column's header in Folders.
+- Rename, from a Folder heading's ⋮ — pass `rename` with the current name, and
+  the dialog says Rename and starts filled in.
+
+## When not
+
+- For a file or a topic. Those are renamed in their details dialog
+  (`FileDetailsDialog`), which owns the file's other fields too.
+- Checking the name yourself. The dialog trims it, and refuses an empty one or, for a rename, the name it already has.
+
+## How
+
+```tsx
+import { CreateFolderDialog } from '@/components/CreateFolderDialog'
+
+<CreateFolderDialog rename={folder.name} onClose={close} onCreate={async (name) => (await renameFolder(folder.id, name)).ok} />
+```
+
+- `onCreate` resolves `false` to keep the dialog open, once the caller has said
+  why in a toast.
+
+## What it owns
+
+- **The one field and its words**, for both uses: the title, the button and
+  the starting value change with `rename`.
+- **Staying open while it writes**, and closing only on success.

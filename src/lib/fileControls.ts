@@ -1,0 +1,94 @@
+import { ARCHIVED_FIELD, SUMMARY_FIELD, type ForeignObject, type ResolvedAction } from '@estiva-app/interop'
+
+/**
+ * Which of a file's controls its manifest offers — Rename and Delete, read off
+ * the resolved `actions` and nothing else (FOL-33).
+ *
+ * The rule FOL-31 set for the conversation view, applied to the header menu
+ * and the tree row: a control is drawn because a declaration says so, never
+ * because the kind is `30840`. A bare file's built-in manifest declares
+ * `rename` and `delete`; Ship's declares neither for an issue, so an issue's
+ * page and row get nothing here — and if Ship declared them tomorrow, the same
+ * two controls would appear with no change in Peek.
+ *
+ * Rename is found by **field, not by id** (PEEK-18): the action that sets the
+ * field the title slot reads is the rename, whatever the manifest called it,
+ * and the two are one fact — a heading and the control that changes it.
+ * Delete is the action resolved as `confirm`, which the runtime reserves for a
+ * NIP-09 request: one button, asks first, no value.
+ *
+ * Neither is gated on who the viewer is. The relay decides who may delete —
+ * the author, or the owner of an agent that wrote it — and a client cannot
+ * evaluate the second half, so it offers the control to everyone and reports
+ * the answer (SPEC §6.5). A rename is a change event, which anyone in the
+ * team may publish.
+ */
+export interface FileControls {
+  /** The action to invoke for a rename, or undefined when the manifest declares none. */
+  rename?: ResolvedAction
+  /** The action to invoke for a deletion, or undefined when the manifest declares none. */
+  delete?: ResolvedAction
+  /**
+   * The action that re-parents the file (FOL-4) — found, like the rename, by
+   * field: the one setting `parentField`. A bare file's manifest declares it,
+   * and Ship's declares an issue's `project` (MAN-4); a project has none. Not
+   * whether Move is offered — any listed file can change Folder (`canMove`).
+   */
+  move?: ResolvedAction
+  /**
+   * The action that archives the file and restores it (FOL-46) — found by
+   * field, `archived`, whatever the manifest called it: Ship's
+   * `archive-project` and `archive-issue`, the bare file's `archive`. The one
+   * concept for every kind, so a project, an issue and a topic offer the same
+   * Archive, and an app that declares none offers nothing.
+   */
+  archive?: ResolvedAction
+  /**
+   * The action that sets the file's summary (SPEC §6.12) — found by field,
+   * `summary`, as every other control here. The bare file's built-in manifest
+   * declares `summarize`; Details offers Edit only when it is here.
+   */
+  summarize?: ResolvedAction
+}
+
+/** The field a file is deleted by (SPEC §6.5): `true` deletes it, the empty value restores it. */
+export const DELETED_FIELD = 'deleted'
+
+export function fileControlsOf(
+  file: Pick<ForeignObject, 'actions' | 'slots' | 'naddr' | 'parentField'> | null | undefined,
+): FileControls {
+  // No address, no actions: a change names its target with `a`, and the
+  // runtime already resolves no actions for such an object. Said here too so a
+  // caller holding a partial object gets the same answer.
+  if (!file?.naddr) return {}
+  const titleField = file.slots.title?.field
+  const rename = titleField ? file.actions.find((a) => a.control === 'text' && a.field === titleField) : undefined
+  // A `kind:5` asks to confirm; a delete declared as a change of `deleted` (SPEC §6.5, ALO-6) is found by field.
+  const remove = file.actions.find((a) => a.control === 'confirm') ?? file.actions.find((a) => a.field === DELETED_FIELD)
+  const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
+  const archive = file.actions.find((a) => a.field === ARCHIVED_FIELD)
+  const summarize = file.actions.find((a) => a.control === 'text' && a.field === SUMMARY_FIELD)
+  return {
+    ...(rename ? { rename } : {}),
+    ...(remove ? { delete: remove } : {}),
+    ...(move ? { move } : {}),
+    ...(archive ? { archive } : {}),
+    ...(summarize ? { summarize } : {}),
+  }
+}
+
+/**
+ * Whether Move is offered (FOL-45). Every file with an address can be listed in
+ * another Folder — a Folder lists addresses, whatever app owns them — and one
+ * whose manifest declares a parent can also be put under another file. Whether
+ * a Folder may be left or entered is the move's to answer (FOL-10), with a
+ * reason, not the menu's.
+ */
+export function canMove(file: Pick<ForeignObject, 'address' | 'naddr'> | null | undefined): boolean {
+  return !!file?.address && !!file.naddr
+}
+
+/** True when the file offers at least one control, so a menu is worth drawing. */
+export function hasFileControls(controls: FileControls): boolean {
+  return !!controls.rename || !!controls.delete || !!controls.move || !!controls.archive
+}

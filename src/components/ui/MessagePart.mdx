@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/MessagePart" />
+
+# MessagePart
+
+The wrapper around a block of another file shown in a message.
+
+**Seen in** — No story: it only wraps `PartCard`, which needs the relay.
+
+## When
+
+- Around each `PartCard` in a message or under the box.
+
+## When not
+
+- For the block itself. That is `PartCard`.
+- For a link. Use **LinkChip**.
+
+## How
+
+```tsx
+import { MessagePart } from '@/components/ui/MessageLinks'
+
+<MessagePart>
+  <PartCard address={address} block={block} />
+</MessagePart>
+```
+
+- Takes only `children`.
+
+## What it owns
+
+- **Peek's half:** the click on a link inside the block. A link to a message lands on that message, scrolled to or opened in its thread, and a click on a link is not a click on the card around it.
+- **Everything it draws is the kit's.** The block is the kit's PartCard. See PartCard in the estiva-ui Storybook (Links / PartCard).
