@@ -343,7 +343,7 @@ export function useFileControls({
           archived: target.archived,
           muted: membershipNow.current.termsOf(target.place.address).muted,
         }).then(async (result) => {
-          if (!result.ok) return showToast({ label: `Nothing changed: “${title}” could not be left. ${result.reason}`, type: 'error' })
+          if (!result.ok) return showToast({ label: `“${title}” could not be left. ${result.reason}`, type: 'error' })
           await membershipNow.current.refresh()
           membershipCallback.current?.(file)
           showToast({ label: `Left “${title}”`, type: 'success' })

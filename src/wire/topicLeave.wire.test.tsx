@@ -132,7 +132,7 @@ describe('Leave on a topic’s row in the Topics column, at the wire (TOPI-7)', 
     relay.seed(root, roster, addedBy(MIKY))
     relay.refuse({ when: (event) => event.kind === 1851 })
     await leaveFromRow()
-    expect((await screen.findAllByText(/^Nothing changed: “Launch” could not be left\./)).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/^“Launch” could not be left\. Nothing changed\./)).length).toBeGreaterThan(0)
     expect(screen.queryByText('Left “Launch”')).toBeNull()
     await waitFor(() => expect(held.refreshed).toBe(0))
   })
