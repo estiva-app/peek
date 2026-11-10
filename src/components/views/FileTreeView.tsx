@@ -240,12 +240,20 @@ export function TreeRow({
             onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
             onRename={renames ? () => onControl?.('rename', file) : undefined}
             onMove={moves ? () => onControl?.('move', file) : undefined}
-            onCopyLink={copies ? () => copyFileLink(followKey!, file.slots.title?.value) : undefined}
+            // Through the page's controls, which say so in a toast; on its own (a story, a test), straight to the clipboard.
+            onCopyLink={copies ? () => (onControl ? onControl('copy-link', file) : void copyFileLink(followKey!, file.slots.title?.value)) : undefined}
             openWorkAction={openWorkAction}
-            openWorkShortcut={listRow ? shortcutLabel(OPEN_WORK_KEY) : undefined}
+            // The key acts on the open topic's page only, so only that topic's row names it.
+            openWorkShortcut={listRow && selected ? shortcutLabel(OPEN_WORK_KEY) : undefined}
             onToggleOpenWork={
               followKey && openWorkAction
-                ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
+                ? () =>
+                    // Through the page's controls, which toast with Undo as the page's button does.
+                    onControl
+                      ? onControl('open-work', file)
+                      : openWorkAction === 'add'
+                        ? openWorkFiles.add(followKey)
+                        : openWorkFiles.remove(followKey)
                 : undefined
             }
             memberAction={memberAction}

@@ -92,16 +92,3 @@ export function canMove(file: Pick<ForeignObject, 'address' | 'naddr'> | null | 
 export function hasFileControls(controls: FileControls): boolean {
   return !!controls.rename || !!controls.delete || !!controls.move || !!controls.archive
 }
-
-/**
- * Whether a topic may be started inside this file (FOL-4, SPEC §6.7).
- *
- * Not a manifest question: a bare file may sit under a file of any kind, and
- * the parent's owner neither declares nor needs to. What it does need is a team
- * — the sub-file goes in its parent's — so a file resolved without one (a
- * record naming neither `h` nor `buzz-channel`, interop 0.61) offers nothing
- * rather than guessing a team.
- */
-export function canStartInside(file: Pick<ForeignObject, 'address' | 'folder'> | null | undefined): boolean {
-  return !!file?.address && !!file.folder
-}

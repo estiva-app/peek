@@ -61,6 +61,11 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
         }),
     }
   }
+  // An archived team's topics are read-only (§3.2): their rows offer no Leave, as their page's switch cannot change.
+  const leaves = (topic: ForeignObject): boolean => {
+    const team = listingOf(teams, topic.address ?? undefined)?.team ?? teams?.find((candidate) => candidate.id === topic.folder)
+    return !team?.archived
+  }
   // The Folder list New topic chooses from, read with the column (one shared read per tab), so its dialog opens on the press.
   useFolders()
   // The open file's Folder is chosen first, as the open Folder is in Folders.
@@ -78,6 +83,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
         onControl={onControl}
         onNewTopic={() => setStarting(true)}
         spaceOf={spaceOf}
+        leavesOf={leaves}
       />
       {starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
     </>
@@ -95,6 +101,7 @@ export function TopicsColumnView({
   onControl,
   onNewTopic,
   spaceOf,
+  leavesOf,
 }: {
   state: TopicsColumnState
   signedOut?: boolean
@@ -105,6 +112,8 @@ export function TopicsColumnView({
   onControl?: (control: FileControl, file: ForeignObject) => void
   /** A topic's Make it a space, for a member of its team (TEA-5, TOPI-7). */
   spaceOf?: (topic: ForeignObject) => SpaceToggle | undefined
+  /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
+  leavesOf?: (topic: ForeignObject) => boolean
   /** The header's New topic (TOP-9), as Folders' header has; none signed out, since starting one acts as somebody. */
   onNewTopic?: () => void
 }) {
@@ -123,7 +132,7 @@ export function TopicsColumnView({
     >
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
-        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} spaceOf={spaceOf} />
+        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} spaceOf={spaceOf} leavesOf={leavesOf} />
       </TreeColumn.Provider>
     </ListColumn>
   )
@@ -137,6 +146,7 @@ function TopicsBody({
   exploring,
   onControl,
   spaceOf,
+  leavesOf,
 }: {
   state: TopicsColumnState
   signedOut: boolean
@@ -145,6 +155,8 @@ function TopicsBody({
   exploring: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
   spaceOf?: (topic: ForeignObject) => SpaceToggle | undefined
+  /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
+  leavesOf?: (topic: ForeignObject) => boolean
 }) {
   if (signedOut) return <EmptyState scope="section" message="Sign in to see topics." />
   if (state === 'loading') return <SkeletonList />
@@ -154,7 +166,7 @@ function TopicsBody({
       {/* The approved story's empty line (Miky, 6 Nov), above Explore topics, where every other topic is. */}
       {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
       {state.mine.map((topic) => (
-        <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves nested />
+        <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves={leavesOf?.(topic) ?? true} nested />
       ))}
       {/* Where every other topic is, archived ones too, in place of the Other topics and Archived sections; no icon: a way in, not another kind of topic (Miky, 6 Nov). */}
       <ExploreRow exploring={exploring} />

@@ -370,11 +370,9 @@ export function DeskPage() {
   */
   const openName = selected ? selected.dmName || undefined : fileTabTitle(fileView.file)
   useTabTitle(selected || openAddress ? openName : 'Desk')
-  const openSection = openedFrom?.section ?? 'openWork'
   const filePaneParts = useFilePane(fileView, {
-    // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file's pane closes, and a new topic opens here.
+    // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file’s pane closes.
     onDeleted: () => closeFile(),
-    onStarted: (created) => openFile(created.address, created.title, openSection),
   })
   /*
     A row lit only by a thread reply opens that thread (CON-34, Miky

@@ -41,6 +41,8 @@ vi.mock('@/api', () => ({
   // Leave on a topic's row (TOPI-7) is tested at the wire in src/wire/topicLeave.wire.test.tsx.
   usePeekActions: () => ({ leavePlace: async () => ({ ok: true }) }),
   topicFollowTarget: () => undefined,
+  placeLevelChanged: () => {},
+  useOpenWorkFiles: () => ({ has: () => false, add: () => {}, remove: () => {} }),
 }))
 const toast = vi.hoisted(() => ({ showToast: (shown: { label: string }) => void toasts.shown.push(shown) }))
 vi.mock('@/lib/toast', () => ({ useToast: () => toast }))

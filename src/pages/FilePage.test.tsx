@@ -1544,6 +1544,16 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
   })
 
+  it('the page’s Copy link says “Link copied” once the clipboard holds it (TOPI-7)', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
+    await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
+  })
+
   it('the header of a Ship issue has nothing from the manifest — only Move and Open work, still in its ⋮', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
@@ -2256,6 +2266,54 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
     expect(within(middle()).getByRole('button', { name: 'In Open work' })).toHaveAttribute('aria-pressed', 'true')
     expect(toasts.shown.at(-1)).toMatchObject({ label: 'Added to Open work', type: 'success' })
     expect(toasts.shown).toHaveLength(2)
+  })
+
+  describe('on a topic’s row', () => {
+    const OTHER_D = '7c2f1d3e-4a5b-4c6d-9e7f-8091a2b3c4d5'
+    const OTHER_ADDRESS = `30840:${CATH}:${OTHER_D}`
+    const other = foreign({ ref: OTHER_ADDRESS, address: OTHER_ADDRESS, kind: 30840, appName: 'File', slots: { title: { value: 'Another topic' } } })
+    const hover = (row: HTMLElement) => fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+    /** The items of a row's ⋮, by the row's file. */
+    const rowMenu = (address: string) => {
+      const row = screen.getByTestId('left').querySelector(`[data-file="${address}"]`) as HTMLElement
+      hover(row)
+      fireEvent.click(within(row.parentElement!).getByRole('button', { name: 'More options' }))
+      return screen.getAllByRole('menuitem')
+    }
+
+    beforeEach(() => {
+      relay.files = [project, topic, other]
+      objects.byAddress[OTHER_ADDRESS] = other
+      topicsColumn.others = [topic, other]
+      teamsHeld.teams = [
+        team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }, { address: OTHER_ADDRESS, space: false }] }),
+      ]
+    })
+
+    // The open topic's row names it: "the team's row of a topic offers Open work…" above.
+    it('another topic’s row does not name Ctrl/Cmd+O, since the key acts on the open topic’s page alone', () => {
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      const otherItem = rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!
+      expect(otherItem.textContent).toBe('Add to Open work')
+    })
+
+    it('Add to Open work says so in a toast with Undo, as the page’s button does', () => {
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!)
+      expect([...openWork.files]).toEqual([OTHER_ADDRESS])
+      expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Added to Open work', type: 'success', actionLabel: 'Undo' })])
+      act(() => toasts.shown[0].onAction!())
+      expect([...openWork.files]).toEqual([])
+    })
+
+    it('Copy link puts the topic’s link on the clipboard and says “Link copied”', async () => {
+      const writeText = vi.fn(async () => {})
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent === 'Copy link')!)
+      await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/topic/another-topic-${OTHER_D}`)
+    })
   })
 
   it('an archived topic has no button, and Ctrl+O is left to the browser and changes nothing', () => {

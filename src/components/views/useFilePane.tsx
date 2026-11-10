@@ -34,13 +34,10 @@ export function useFilePane(
   view: ReturnType<typeof useFileView>,
   {
     onDeleted,
-    onStarted,
     onListingChanged,
   }: {
     /** The open file was deleted. */
     onDeleted: (deleted: ForeignObject) => void
-    /** A topic was started inside the open one: it is what was asked for. */
-    onStarted: (created: { address: string; title: string }) => void
     /** An archive or a move changed where the file is listed. */
     onListingChanged?: () => Promise<unknown> | void
   },
@@ -92,7 +89,6 @@ export function useFilePane(
       if (deleted.address === file?.address) onDeleted(deleted)
     },
     onMoved: () => void Promise.all([reloadConversation(), onListingChanged?.()]),
-    onStarted,
   })
 
   /*
@@ -101,7 +97,12 @@ export function useFilePane(
     same fallback as the topic header's, for a browser that refuses the
     clipboard off a menu.
   */
-  const copyLink = file?.address ? () => copyFileLink(file.address!, file.slots.title?.value) : undefined
+  const copyLink = file?.address
+    ? () =>
+        void copyFileLink(file.address!, file.slots.title?.value).then((copied) => {
+          if (copied) showToast({ label: 'Link copied', type: 'success' })
+        })
+    : undefined
 
   /*
     Join / leave (SPEC §11.8, CON-19): the unread dot exists only for the files
