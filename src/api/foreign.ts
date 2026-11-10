@@ -1203,19 +1203,33 @@ const DEMO_DIRECTORY: People = Object.fromEntries(
 
 /** One fetch per minute, shared by every picker on screen. */
 let directoryCache: { at: number; people: People } | null = null
+/** The directory read in flight, so the pickers and the members reads opened together share one. */
+let directoryAsking: Promise<People> | null = null
+
+/** The directory, from the one-minute cache or one shared read; rejects when the relay did not answer. */
+function loadDirectory(relayUrl: string, token: StoredToken): Promise<People> {
+  const cached = directoryCache
+  if (cached && Date.now() - cached.at < 60_000) return Promise.resolve(cached.people)
+  directoryAsking ??= directoryAsViewer(relayUrl, token)
+    .then((people) => {
+      directoryCache = { at: Date.now(), people }
+      return people
+    })
+    .finally(() => {
+      directoryAsking = null
+    })
+  return directoryAsking
+}
 
 /**
  * Every key with a published profile, from the same one-minute cache the
  * pickers share; `undefined` when the relay did not answer. What a file's
  * members are read by (ALO-19): only the changes naming one of these.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-membership-change-names-the-person-it-is-about.md
  */
 export async function workspaceKeys(relayUrl: string, token: StoredToken): Promise<string[] | undefined> {
-  const cached = directoryCache
-  if (cached && Date.now() - cached.at < 60_000) return Object.keys(cached.people)
   try {
-    const people = await directoryAsViewer(relayUrl, token)
-    directoryCache = { at: Date.now(), people }
-    return Object.keys(people)
+    return Object.keys(await loadDirectory(relayUrl, token))
   } catch {
     return undefined
   }
@@ -1239,17 +1253,14 @@ export function useWorkspaceDirectory(): People | undefined {
     const cached = directoryCache
     // A fresh shared cache is adopted asynchronously — setState stays out of
     // the effect body — and the fetch is skipped for a minute across every
-    // picker on screen.
+    // picker on screen, and shared with a members read in flight.
     const source =
       cached && Date.now() - cached.at < 60_000
         ? Promise.resolve(cached.people)
         : (() => {
             const v = viewer()
             if (!v) return null
-            return directoryAsViewer(v.relayUrl, v.token).then((result) => {
-              directoryCache = { at: Date.now(), people: result }
-              return result
-            })
+            return loadDirectory(v.relayUrl, v.token)
           })()
     // A failed read leaves the picker with Unassigned plus whoever the
     // object itself names — degraded, never broken.
