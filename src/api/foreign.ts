@@ -1205,6 +1205,23 @@ const DEMO_DIRECTORY: People = Object.fromEntries(
 let directoryCache: { at: number; people: People } | null = null
 
 /**
+ * Every key with a published profile, from the same one-minute cache the
+ * pickers share; `undefined` when the relay did not answer. What a file's
+ * members are read by (ALO-19): only the changes naming one of these.
+ */
+export async function workspaceKeys(relayUrl: string, token: StoredToken): Promise<string[] | undefined> {
+  const cached = directoryCache
+  if (cached && Date.now() - cached.at < 60_000) return Object.keys(cached.people)
+  try {
+    const people = await directoryAsViewer(relayUrl, token)
+    directoryCache = { at: Date.now(), people }
+    return Object.keys(people)
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Everyone with a published profile — the assignee picker's list (PEE-1).
  *
  * `undefined` while loading; demo mode answers immediately from the mock

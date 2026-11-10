@@ -4,13 +4,16 @@ import { validToken } from '@/auth/estivaId'
 import { RELAY_URL } from '@/api/relayUrl'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { fetchFileMembers } from '@/nostr/fileMembers'
+import { workspaceKeys } from '@/api/foreign'
 import { isConversationHeld, onFileNews } from '@/api/conversations'
 
 /** One read of a file's members, or `undefined` with no relay, no token, or no answer. */
 async function readMembers(address: string): Promise<Map<string, Membership> | undefined> {
   const token = validToken()
   if (!RELAY_URL || !token) return undefined
-  return fetchFileMembers({ relayUrl: RELAY_URL, accessToken: token.accessToken, pubkey: token.pubkey }, address).catch((error: unknown) => {
+  // Everyone with a profile, so only the changes naming someone are read (ALO-19); no directory, every change.
+  const people = await workspaceKeys(RELAY_URL, token)
+  return fetchFileMembers({ relayUrl: RELAY_URL, accessToken: token.accessToken, pubkey: token.pubkey }, address, people).catch((error: unknown) => {
     console.warn('[membership] could not read the members of', address, error)
     return undefined
   })
