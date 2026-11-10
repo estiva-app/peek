@@ -6,6 +6,7 @@ import { isCurrentUser } from '@/api'
 import { EditBox, type EditSaved } from './ui/ConversationBox'
 import { withoutCard, withoutOwnFileLines } from '@estiva-app/conversation'
 import { MessageBody } from './ui/MessageBody'
+import { QuotedPart, quotesWords } from './ui/PartCard'
 import { takeRefusedEdit, useRefusedEdit, type RefusedEdit } from '@/lib/refusedEdits'
 import { REACTION_OPTIONS, reactorNameIn, toggledReaction, type ReactionAnswer } from '@/lib/reactions'
 import { postedAttachment } from '@/lib/fileAttachments'
@@ -60,7 +61,7 @@ interface ConversationCardProps {
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
   /** The blocks of other objects the message shows (SPEC §13.6.1, COM-2). */
-  parts?: { address: string; block: string; anchor?: true }[]
+  parts?: { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]
   /** The cards its author asked for (SPEC §13.6.2). */
   embeds?: readonly Embed[]
   /** The address of the file it is shown on ("Mentioned in"): no card for that file under it, only its chip (WID-3). */
@@ -292,9 +293,14 @@ export function ConversationCard({
     })
   }
 
+  // A comment on a selection is about its words: they go in the card's `about`, under the name, as Leaf and Ship draw
+  // them (ONE-12); its body draws the rest of its parts.
+  const quoted = parts?.find((part) => part.anchor && quotesWords(part.anchorTags))
+
   return (
     <KitConversationCard
       author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
+      about={quoted?.anchorTags ? <QuotedPart address={quoted.address} block={quoted.block} anchorTags={quoted.anchorTags} quotedBy={authorName} /> : undefined}
       time={timestamp}
       at={createdAtMs}
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}
@@ -353,7 +359,7 @@ export function ConversationCard({
       <MessageBody
         body={bodyState}
         urgentMentions={urgentMentions}
-        parts={parts}
+        parts={quoted ? parts?.filter((part) => part !== quoted) : parts}
         embeds={embeds}
         authorName={authorName}
         here={here}

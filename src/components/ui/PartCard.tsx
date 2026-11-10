@@ -1,6 +1,6 @@
-import { serializeBlockDocument, toRenderTree } from '@estiva-app/protocol'
+import { quoteOf, serializeBlockDocument, toRenderTree } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { PartCard as KitPartCard, RichText, thingKindOf } from '@estiva-app/ui'
+import { PartCard as KitPartCard, QuotedLine, RichText, thingKindOf } from '@estiva-app/ui'
 import { quoteText } from '@estiva-app/ui/editor'
 import { usePart, type PartView } from '@/api'
 import { objectLabel, openInAppUrl } from '@/lib/appName'
@@ -13,6 +13,41 @@ import { DocumentFile } from './DocumentFile'
  * ShowMore (about six table rows), so a short table is still drawn whole.
  */
 const CUT_AT = 160
+
+/** A comment's anchor that quotes words (LEAF-7): its `block` and `quote` tags hold a quote. */
+export const quotesWords = (anchorTags: string[][] | undefined): anchorTags is string[][] => !!anchorTags && !!quoteOf({ tags: anchorTags })
+
+/**
+ * The words a comment written on a selection quotes, as Leaf and Ship draw them: the kit's `QuotedLine`, in the
+ * page's highlight while they are still in the file, "Changed since" once they are not, struck through once their
+ * blocks are gone (SPEC §13.6). The words open the file at that spot, in its own app (Miky, 10 Nov, ONE-12). Read on
+ * the same poll the block's card made. Until the file is read, the words show on the grey with no claim about them. A
+ * file deleted, not the reader's to see, or with no parts says so in the part card's words, as before.
+ *
+ * @registry namesake: reads the comment's anchor from the relay and draws the kit's QuotedLine, as Ship's does.
+ */
+export function QuotedPart({ address, block, anchorTags, quotedBy }: { address: string; block: string; anchorTags: string[][]; quotedBy?: string }) {
+  const view = usePart({ address, block, anchorTags })
+  const quote = quoteOf({ tags: anchorTags })
+  const words = quote ? quoteText(quote) : ''
+  if (view.state === 'loading') {
+    return (
+      <div data-quoted-part="loading" data-part-address={address}>
+        <QuotedLine label={words} />
+      </div>
+    )
+  }
+  const state = view.state === 'resolved' ? 'here' : view.state === 'reworded' ? 'reworded' : view.state === 'detached' ? 'gone' : undefined
+  if (!state || !('object' in view)) return <PartCardView view={view} address={address} block={block} quotedBy={quotedBy} />
+  // The words' spot while the block its link opens at stands; the file itself otherwise, never a spot that is not there.
+  const atBlock = (view.state === 'resolved' || view.state === 'reworded') && view.block.id === block
+  const href = atBlock ? openInAppUrl({ openUrl: view.link }) : openInAppUrl(view.object)
+  return (
+    <div data-quoted-part={state} data-part-address={address} data-part-block={block}>
+      <QuotedLine words={words} state={state} href={href} external={href ? new URL(href).origin !== window.location.origin : undefined} />
+    </div>
+  )
+}
 
 /**
  * One block of another object, live inside a message — SPEC §13.6.1, COM-2.
