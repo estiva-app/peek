@@ -300,7 +300,7 @@ export function ConversationCard({
   return (
     <KitConversationCard
       author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
-      about={quoted?.anchorTags ? <QuotedPart address={quoted.address} block={quoted.block} anchorTags={quoted.anchorTags} /> : undefined}
+      about={quoted?.anchorTags ? <QuotedPart address={quoted.address} block={quoted.block} anchorTags={quoted.anchorTags} quotedBy={authorName} /> : undefined}
       time={timestamp}
       at={createdAtMs}
       edited={editedAt ? `Edited ${formatReplyTimestamp(editedAt)}` : undefined}

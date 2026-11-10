@@ -26,7 +26,7 @@ const ADDRESS = `30851:${'f'.repeat(64)}:${UUID}`
 const LINK = `https://ship.estiva.app/issue/plan-${UUID}#block-p1`
 const PARAGRAPH = 'The quarterly lantern inventory lists every brass fitting in the east warehouse.'
 const object = { slots: { title: { value: 'Plan the launch' } }, noun: 'issue', appName: 'Ship', kind: 30851, openUrl: 'https://ship.estiva.app/o/x' } as never
-const block = markerTextToBlockDocument(PARAGRAPH).content[0]
+const block = { ...markerTextToBlockDocument(PARAGRAPH).content[0], id: 'p1' } as ReturnType<typeof markerTextToBlockDocument>['content'][number]
 
 // The comment's own anchor as Peek reads it off a Leaf comment: its block, and the words selected.
 const anchor = { address: ADDRESS, block: 'p1', anchor: true as const, anchorTags: [blockRunTag(['p1']), quoteTag({ start: 'brass fitting' })] }
@@ -80,14 +80,27 @@ describe('a comment on a few words of an issue', () => {
     const c = show({ state: 'detached', object, link: LINK })
     expect(c.querySelector('[data-quoted]')?.getAttribute('data-quoted')).toBe('gone')
     expect(c.textContent).toContain('Deleted from the page')
-    // Their spot is gone from the file: no link to it.
-    expect(c.querySelector('[data-quoted] a')).toBeNull()
+    // Their spot is gone from the file: the words open the issue itself, never a spot that is not there.
+    expect(c.querySelector('[data-quoted] a')?.getAttribute('href')).toBe('https://ship.estiva.app/o/x')
   })
 
   it('shows the words with no claim about them until the issue is read', () => {
     const c = show({ state: 'loading' })
     expect(c.querySelector('[data-quoted]')?.getAttribute('data-quoted')).toBe('part')
     expect(c.textContent).toContain('brass fitting')
+  })
+
+  // As the paragraph card said before (SPEC §13.6.1): a reader can tell the issue is gone, or not theirs to open.
+  it('says the issue was deleted, or that the reader cannot open it, as the paragraph card did', () => {
+    expect(show({ state: 'deleted' }).querySelector('[data-part="deleted"]')?.textContent).toBe('A part of this issue deleted')
+    expect(show({ state: 'unreadable' }).querySelector('[data-part="unreadable"]')?.textContent).toBe("You can't open this issue")
+  })
+
+  it('opens the issue itself, not a missing spot, once the block its link names is gone and the words are not', () => {
+    // A quote across p1..p2: p1 deleted, the run found from p2, which still holds the words.
+    const p2 = { ...markerTextToBlockDocument(PARAGRAPH).content[0], id: 'p2' } as typeof block
+    const c = show({ state: 'resolved', block: p2, object, link: LINK })
+    expect(c.querySelector('[data-quoted] a')?.getAttribute('href')).toBe('https://ship.estiva.app/o/x')
   })
 
   it('keeps the paragraph card for a comment on a whole block, which quotes no words (Decided 2026-10-07)', () => {
