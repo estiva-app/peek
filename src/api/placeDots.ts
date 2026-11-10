@@ -126,7 +126,7 @@ export interface ListedFill {
 
 /**
  * The files a topic's card reads more of while it is open: each listed file (or one under it) that lights the topic,
- * from its own marker, never before the horizon. A message before the marker is read there, so only what is after
+ * from its own marker, never before the reader's start on the topic nor the horizon. A message before the marker is read there, so only what is after
  * it can still be new (a reply in an unopened thread before it is the exception, and it stays as held).
  */
 export function listedReadsOf({ held, judge }: ListedFill): { file: string; since: number }[] {
@@ -134,7 +134,8 @@ export function listedReadsOf({ held, judge }: ListedFill): { file: string; sinc
   return held.flatMap(({ file, events, under }) => {
     const stream = fileContext(file)
     if (!stream || unreadOnListed(file, events, under, judge).length === 0) return []
-    return [{ file, since: Math.max(judge.floor, streamMarkerOf(judge.merged, stream) ?? 0) }]
+    // Nothing from before the reader's start on the topic lights either.
+    return [{ file, since: Math.max(judge.floor, judge.following.since ?? 0, streamMarkerOf(judge.merged, stream) ?? 0) }]
   })
 }
 

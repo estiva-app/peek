@@ -208,8 +208,9 @@ describe('a file the topic lists (TOPI-3)', () => {
       expect(listedReadsOf({ held, judge: { ...judge(), merged: { [ISSUE_CONTEXT]: T0 + 30 } } })).toEqual([{ file: ISSUE, since: T0 + 30 }])
     })
 
-    it('never before the horizon, for a file never read', () => {
-      expect(listedReadsOf({ held: [{ file: ISSUE, events: [comment('new', T0 + 50)] }], judge: judge() })).toEqual([{ file: ISSUE, since: FLOOR }])
+    it("for a file never read, from the reader's start on the topic, not the horizon", () => {
+      // Added to the topic at T0 + 10; the horizon is far before.
+      expect(listedReadsOf({ held: [{ file: ISSUE, events: [comment('new', T0 + 50)] }], judge: judge() })).toEqual([{ file: ISSUE, since: T0 + 10 }])
     })
 
     it('reads nothing for a file read past its newest comment', () => {

@@ -15,6 +15,12 @@ const ListedFills = createContext<Readonly<Record<string, ListedFill>> | undefin
 
 export const ListedFillsProvider = ListedFills.Provider
 
+/**
+ * What a card read, by reader and by files with their starts, kept for the tab: resting on the same row again asks
+ * nothing, and what was said since arrives through the column's live watch. A moved marker is a new key.
+ */
+const readCache = new Map<string, readonly SignedEvent[]>()
+
 /** The {@link ListedFill} of the topic `ref`, when the column it is in has one. */
 export function useListedFillOf(ref: string): ListedFill | undefined {
   return useContext(ListedFills)?.[ref]
@@ -29,14 +35,23 @@ export function useListedFillOf(ref: string): ListedFill | undefined {
  */
 export function useListedFill(fill: ListedFill | undefined): RowNewsItem[] | undefined {
   const viewer = useRelayViewer()
-  const [read, setRead] = useState<{ key: string; events: readonly SignedEvent[] }>()
   const asks = useMemo(() => (fill ? listedReadsOf(fill) : []), [fill])
-  // The files and where each starts: a live update that moves nothing here asks nothing again.
-  const key = asks.map((ask) => `${ask.file}@${ask.since}`).join(',')
+  // The reader, the files and where each starts: a live update that moves nothing here asks nothing again.
+  const files = asks.map((ask) => `${ask.file}@${ask.since}`).join(',')
+  const key = files ? `${viewer()?.token.pubkey ?? ''}|${files}` : ''
+  const [read, setRead] = useState<{ key: string; events: readonly SignedEvent[] } | undefined>(() => {
+    const events = key ? readCache.get(key) : undefined
+    return events ? { key, events } : undefined
+  })
 
   useEffect(() => {
     const at = viewer()
     if (!hasRelay || !at || !key || read?.key === key) return
+    const cached = readCache.get(key)
+    if (cached) {
+      setRead({ key, events: cached })
+      return
+    }
     let live = true
     const filters = asks.flatMap(({ file, since }) => {
       const id = fileIdOf(file)
@@ -46,7 +61,10 @@ export function useListedFill(fill: ListedFill | undefined): RowNewsItem[] | und
       ]
     })
     viewerQuery(at.relayUrl, at.token)(filters).then(
-      (events) => live && setRead({ key, events: events as readonly SignedEvent[] }),
+      (events) => {
+        readCache.set(key, events as readonly SignedEvent[])
+        if (live) setRead({ key, events: events as readonly SignedEvent[] })
+      },
       // A refused read leaves the card with what the column held.
       () => undefined,
     )

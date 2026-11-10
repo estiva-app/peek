@@ -192,7 +192,10 @@ describe('resting on a lit topic shows what is new there (ACT-3)', () => {
       // A cold open reads nothing more: the dot is lit from what the column holds.
       expect(relay.asked).toHaveLength(0)
       await user.hover(screen.getByText('Launch'))
-      await screen.findByRole('button', { name: '1 more' })
+      // The card opens on the line the column held, then asks for the rest.
+      await screen.findByText(/Note 1/)
+      await waitFor(() => expect(relay.asked).toHaveLength(1))
+      await waitFor(() => expect(screen.queryByRole('button', { name: '1 more' })?.textContent).toBe('1 more'))
       expect(screen.getByText(/Note 5/)).toBeTruthy()
       expect(screen.queryByText(/Note 6/)).toBeNull()
       // One read, of the listed file's comments only, from the reader's start on it.
