@@ -46,6 +46,9 @@ vi.mock('@/api', async () => ({
   // The topic's own conversation holds nothing: only a listed file's news can light it.
   useForeignObjects: () => ({ conversations: async () => ({ [TOPIC]: [] }) }),
   useMembership: membership,
+  // No team is held: the row offers no Make it a space (TOPI-7).
+  useTeams: () => ({ teams: [], failed: false, reload: async () => {} }),
+  usePeekActions: () => ({ markSpace: async () => ({ ok: true }) }),
 }))
 vi.mock('@/auth/heldSession', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/auth/heldSession')),
@@ -55,6 +58,7 @@ vi.mock('@/nostr/useReadStateSync', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/useReadStateSync')),
   useReadFrontier: () => ({ ready: true, marker: () => undefined, merged: {} }),
 }))
+vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
 vi.mock('@/api/useChannelStreams', () => ({ useChannelStreams: () => ({ at: 0, streams: {} }), useHeldChannelEvents: () => [] }))
 vi.mock('@/api/useTeams', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api/useTeams')),
