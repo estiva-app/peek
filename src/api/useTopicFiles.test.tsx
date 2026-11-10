@@ -140,3 +140,73 @@ describe('useTopicFiles', () => {
     ])
   })
 })
+
+describe('useTopicFiles arranging (TOPI-5)', () => {
+  /** The topic listing the project, then the issue: drawn in that order, neither placed. */
+  async function listedTwo() {
+    const hook = renderHook(() => useTopicFiles(TOPIC, FOLDER))
+    await waitFor(() => expect(filesOf(hook.result.current.state)).toEqual([]))
+    await act(async () => void (await hook.result.current.setListed(PROJECT_D, true)))
+    await act(async () => void (await hook.result.current.setListed(ISSUE_D, true)))
+    expect(filesOf(hook.result.current.state)).toEqual([PROJECT_D, ISSUE_D])
+    return hook
+  }
+  const newest = () => relay.entries[relay.entries.length - 1]!
+  const fieldsOf = (e: { tags: string[][] }) => e.tags.filter((t) => t[0] === 'field').map((t) => t[1])
+
+  it('a move signs a place for the file on the topic, in its Folder, and draws the order the relay then holds', async () => {
+    const { result } = await listedTwo()
+
+    let answer: unknown
+    await act(async () => void (answer = await result.current.move(ISSUE_D, null)))
+
+    expect(answer).toEqual({ ok: true })
+    expect(newest().kind).toBe(1851)
+    expect(tag(newest(), 'a')).toBe(TOPIC)
+    expect(tag(newest(), 'h')).toBe(FOLDER)
+    expect(fieldsOf(newest())).toContain(`order:${ISSUE_D}`)
+    expect(filesOf(result.current.state)).toEqual([ISSUE_D, PROJECT_D])
+  })
+
+  it('a move the relay refuses leaves the file where it was, and says it did not save', async () => {
+    const { result } = await listedTwo()
+    relay.publishSigned.mockImplementation(async () => ({ ok: false, reason: 'blocked: not a member' }))
+
+    let answer: unknown
+    await act(async () => void (answer = await result.current.move(ISSUE_D, null)))
+
+    expect(answer).toEqual({ ok: false, reason: 'Couldn’t move the file. It’s back where it was.' })
+    expect(filesOf(result.current.state)).toEqual([PROJECT_D, ISSUE_D])
+  })
+
+  it('Show as Row signs the file’s look on the topic and draws it', async () => {
+    const { result } = await listedTwo()
+
+    await act(async () => void (await result.current.setLook(PROJECT_D, 'row')))
+
+    expect(fieldsOf(newest())).toEqual([`look:${PROJECT_D}`])
+    expect(tag(newest(), 'value')).toBe('row')
+    const files = (result.current.state as { files: Array<{ file: string; listed: { look?: string } }> }).files
+    expect(files.find((f) => f.file === PROJECT_D)?.listed.look).toBe('row')
+  })
+
+  it('Undo of Remove lists the file again, then puts it back in its place with its look', async () => {
+    const { result } = await listedTwo()
+    await act(async () => void (await result.current.setLook(ISSUE_D, 'row')))
+    await act(async () => void (await result.current.move(ISSUE_D, null)))
+    const gone = (result.current.state as unknown as { files: Array<{ file: string; listed: never }> }).files.find((f) => f.file === ISSUE_D)!.listed
+    await act(async () => void (await result.current.setListed(ISSUE_D, false)))
+    expect(filesOf(result.current.state)).toEqual([PROJECT_D])
+    const before = relay.entries.length
+
+    await act(async () => void (await result.current.putBack(gone, null)))
+
+    const sentNow = relay.entries.slice(before)
+    expect(fieldsOf(sentNow[0]!)).toEqual([`lists:${ISSUE_D}`])
+    expect(tag(sentNow[0]!, 'value')).toBe('true')
+    expect(sentNow.slice(1).flatMap(fieldsOf)).toContain(`order:${ISSUE_D}`)
+    expect(filesOf(result.current.state)).toEqual([ISSUE_D, PROJECT_D])
+    const files = (result.current.state as { files: Array<{ file: string; listed: { look?: string } }> }).files
+    expect(files[0]?.listed.look).toBe('row')
+  })
+})

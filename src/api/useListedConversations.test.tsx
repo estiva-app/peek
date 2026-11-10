@@ -97,7 +97,7 @@ const listedOf = (d: string, address: string, folder: string | null): TopicFile 
   file: d,
   address,
   archived: false,
-  listed: { file: d, address, folder, entry: {} as ListedFile['entry'] },
+  listed: { file: d, address, folder, entry: {} as ListedFile['entry'], prev: { order: '', look: '' }, prevAt: 0 },
 })
 const NOTES_LISTED = listedOf('launch-notes', NOTES, NOTES_TEAM)
 const PLAN_LISTED = listedOf('launch-plan', PLAN, PLAN_TEAM)

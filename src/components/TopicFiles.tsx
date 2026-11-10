@@ -1,10 +1,12 @@
 import { useEffect, useReducer, useState } from 'react'
 import { IconArchive, IconPlus } from '@tabler/icons-react'
-import { CollapsibleSection, CommandPalette, CommandPaletteSearch, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
-import { fileChoices, subscribeReferences, type useTopicFiles } from '@/api'
+import { CollapsibleSection, CommandPalette, CommandPaletteSearch, CornerMenu, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
+import type { FileLook } from '@estiva-app/interop'
+import { fileChoices, subscribeReferences, type TopicFile, type useTopicFiles } from '@/api'
 import { MessageCard } from '@/components/ui/MessageLinks'
 import { referenceOfValue } from '@/lib/embedValue'
 import { useToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
 /**
  * **A topic's files, in its Overview column** (TOP-3; why:
@@ -16,11 +18,14 @@ import { useToast } from '@/lib/toast'
  * `Lens.tsx` PeekTopic's Files column), with no app label: the card says what
  * it is.
  *
- * Add file and the card's ✕ are where the prototype draws nothing yet, so they
- * take the kit's places for them: an action on the section's heading, the
- * attached card's Remove (Miky, 1 Nov: Katerina polishes after). Neither is
- * drawn on an archived topic, which is read-only in every app (why:
- * https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md).
+ * In the topic's own order, each as a row or a card, the same for everyone
+ * (TOPI-5; why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md):
+ * a file is dragged to its place, and its "…" shows it as a row or a card, or
+ * removes it, with Undo. Add file is an action on the section's heading. None
+ * of these is drawn on an archived topic, which is read-only in every app (why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-archived-file-is-read-only-in-every-app.md),
+ * nor for someone who cannot add a file here.
  *
  * Its archived files, on their own or with a file above them, wait at the end
  * behind one closed "Archived · n" line (TOPI-10, the approved story): since
@@ -29,7 +34,7 @@ import { useToast } from '@/lib/toast'
  * Above Activity: Peek's Activity is every mention from elsewhere, as long as
  * it grows, and the topic's own files under it would scroll out of sight.
  */
-export function TopicFiles({ topic, files: read, title, readOnly }: {
+export function TopicFiles({ topic, files: read, title, readOnly, mayChange = true }: {
   /** The topic's address. */
   topic: string
   /**
@@ -41,26 +46,53 @@ export function TopicFiles({ topic, files: read, title, readOnly }: {
   title: string
   /** Archived: the files show, with no Add file and no Remove. */
   readOnly: boolean
+  /** The viewer may add a file here (`mayChangeTopicIn`), and so arrange them: without it, no Add file, no "…", no drag. */
+  mayChange?: boolean
 }) {
-  const { state, busy, setListed } = read
+  const { state, busy, setListed, move, setLook, putBack } = read
   const { showToast } = useToast()
   const [picking, setPicking] = useState(false)
+  // The file being dragged, and where it would land: before the live file at that index (the length: after the last).
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
   const files = typeof state === 'object' && 'files' in state ? state.files : []
   const live = files.filter((file) => !file.archived)
   const archived = files.filter((file) => file.archived)
+  const changes = !readOnly && mayChange
 
   const change = async (file: string, listed: boolean) => {
     const result = await setListed(file, listed)
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
   }
+  const told = (result: { ok: true } | { ok: false; reason: string }) => {
+    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+  }
+
+  // Remove, with Undo bringing it back where it was, as it looked (TOPI-5): the file before it in the topic's own order.
+  const remove = async (gone: TopicFile) => {
+    const at = files.findIndex((f) => f.file === gone.file)
+    const after = at > 0 ? files[at - 1].file : null
+    const result = await setListed(gone.file, false)
+    if (!result.ok) return showToast({ label: result.reason, type: 'error' })
+    showToast({ label: `Removed “${nameOf(gone)}”`, type: 'success', actionLabel: 'Undo', onAction: () => void putBack(gone.listed, after).then(told) })
+  }
+
+  const drop = () => {
+    const from = live.findIndex((f) => f.file === dragging)
+    const to = dropAt
+    setDragging(null)
+    setDropAt(null)
+    // Dropped where it already is: nothing moves.
+    if (from < 0 || to === null || to === from || to === from + 1) return
+    void move(live[from].file, to === 0 ? null : live[to - 1].file).then(told)
+  }
 
   return (
     <div className="flex flex-col" data-topic-files={topic}>
-      {/* The heading's 8px inset brought to the cards' 16px edge, as Activity's is: the room on the heading itself. */}
+      {/* The heading's 8px inset brought to the cards' 16px edge, as Activity's is: the room on the heading itself. No count: the files are right under it (TOPI-5). */}
       <SectionHeader
         title="Files"
-        count={live.length > 0 ? live.length : undefined}
-        actions={readOnly ? undefined : [{ icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add file', onClick: () => setPicking(true) }]}
+        actions={changes ? [{ icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add file', onClick: () => setPicking(true) }] : undefined}
         showActions="always"
         className="mx-2 mt-4"
       />
@@ -71,12 +103,58 @@ export function TopicFiles({ topic, files: read, title, readOnly }: {
           <EmptyState scope="section" message="None yet. A topic can be only a conversation." />
         ) : (
           <>
-            {live.map(({ file, address }) => {
+            {live.map((entry, index) => {
+              const { file, address } = entry
               const uri = referenceOfValue(address)
               if (!uri) return null
+              const look = lookOf(entry)
+              const arrangeable = changes && !busy.has(file)
+              /*
+                The whole file is dragged, no grip, so the files keep their alignment; its "…" floats over its corner
+                (Miky, 6 Nov). A drop line in the gap says where it lands, in the accent the editor's drop line uses.
+              */
               return (
-                <div key={file} data-topic-file={address} className={busy.has(file) ? 'opacity-50' : undefined}>
-                  <MessageCard uri={uri} readOnly={readOnly} onRemove={readOnly || busy.has(file) ? undefined : () => void change(file, false)} />
+                <div
+                  key={file}
+                  data-topic-file={address}
+                  className={cn('relative', (busy.has(file) || dragging === file) && 'opacity-50')}
+                  draggable={arrangeable}
+                  onDragStart={(event) => {
+                    // A link inside a file that cannot be moved still drags as a link, and moves nothing here.
+                    if (!arrangeable) return
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('text/plain', address)
+                    event.dataTransfer.setDragImage(event.currentTarget, 16, 16)
+                    setDragging(file)
+                  }}
+                  onDragEnd={() => {
+                    setDragging(null)
+                    setDropAt(null)
+                  }}
+                  onDragOver={(event) => {
+                    if (!dragging) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    const box = event.currentTarget.getBoundingClientRect()
+                    setDropAt(event.clientY < box.top + box.height / 2 ? index : index + 1)
+                  }}
+                  onDrop={(event) => {
+                    if (!dragging) return
+                    event.preventDefault()
+                    drop()
+                  }}
+                >
+                  {dragging && dropAt === index && <DropLine at="top" />}
+                  <CornerMenu
+                    menu={
+                      arrangeable
+                        ? { name: nameOf(entry), look, onLook: (next) => void setLook(file, next).then(told), onRemove: () => void remove(entry) }
+                        : undefined
+                    }
+                  >
+                    <MessageCard uri={uri} compact={look === 'row'} readOnly={readOnly} />
+                  </CornerMenu>
+                  {dragging && dropAt === live.length && index === live.length - 1 && <DropLine at="bottom" />}
                 </div>
               )
             })}
@@ -115,6 +193,25 @@ export function TopicFiles({ topic, files: read, title, readOnly }: {
       )}
     </div>
   )
+}
+
+/** What a file is called, for its "…" and the Removed toast. */
+const nameOf = (file: TopicFile): string => file.object?.slots.title?.value || 'File'
+
+/**
+ * How a file shows (TOPI-5): the look somebody chose on this topic, else as its
+ * own app says, the first row or card in its manifest's widget chain (a project
+ * and a Leaf page as cards, an issue as a row; Miky, 9 Nov), else a card.
+ */
+export function lookOf(file: TopicFile): FileLook {
+  if (file.listed.look) return file.listed.look
+  const chain = file.object ? [file.object.widget].flat() : []
+  return chain.find((widget): widget is FileLook => widget === 'row' || widget === 'card') ?? 'card'
+}
+
+/** Where a dragged file lands: a line in the 12px gap above or below the file, centred in it. */
+function DropLine({ at }: { at: 'top' | 'bottom' }) {
+  return <div aria-hidden className={cn('pointer-events-none absolute inset-x-0 h-0.5 rounded-full bg-accent-primary', at === 'top' ? '-top-2' : '-bottom-2')} />
 }
 
 /** How long "Searching files…" waits for an answer that may already be held, ms. */

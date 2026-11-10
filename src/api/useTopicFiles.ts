@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isArchived, type ForeignObject, type ListedFile } from '@estiva-app/interop'
-import { setTopicFileAsViewer, topicFilesAsViewer } from '@/nostr/foreign'
+import { isArchived, planLookInTopic, planMoveInTopic, planPutBackInTopic, type ArrangedFile, type FileLook, type ForeignObject, type ListedFile } from '@estiva-app/interop'
+import { arrangeTopicAsViewer, publishAsViewer, setTopicFileAsViewer, topicFilesAsViewer } from '@/nostr/foreign'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRelayViewer, useResolvedReferences } from './foreign'
@@ -45,6 +45,12 @@ export function useTopicFiles(
   /** The ids being added or removed right now. */
   busy: ReadonlySet<string>
   setListed: (file: string, listed: boolean) => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Move a file to just after `after` (`null`: first), drawn there at once; put back where it was if the relay refuses. */
+  move: (file: string, after: string | null) => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Show a file as a row or a card, drawn so at once; as it was if the relay refuses. */
+  setLook: (file: string, look: FileLook) => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Undo of Remove: list `gone` (the entry as read before its Remove) again, just after `after`, with its look. */
+  putBack: (gone: ListedFile, after: string | null) => Promise<{ ok: true } | { ok: false; reason: string }>
 } {
   const viewer = useRelayViewer()
   const address = topic ?? null
@@ -108,6 +114,108 @@ export function useTopicFiles(
   )
 
   /*
+    Arranging (TOPI-5; why:
+    https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md):
+    drawn the new way at once, then written, then the topic read back, which is the order and look the relay holds,
+    another person's moves included. A refusal draws what the relay holds, or, with no answer, what was drawn before.
+  */
+  const drawnFiles = held && held.topic === address && typeof held.state === 'object' && 'files' in held.state ? held.state.files : null
+  const arrange = useCallback(
+    async (
+      file: string,
+      shown: (files: TopicFile[]) => TopicFile[],
+      plan: (pubkey: string) => (files: readonly ArrangedFile[], createdAtMs: number) => ReturnType<typeof planLookInTopic> | null,
+      refused: string,
+    ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+      const v = viewer()
+      if (!address || !folder || !v || !drawnFiles) return { ok: false, reason: 'Sign in again to change this topic.' }
+      const before = drawnFiles
+      setHeld({ topic: address, state: { files: shown(before) } })
+      setBusy((now) => new Set(now).add(file))
+      try {
+        const read = async () => topicFilesAsViewer(address, v.relayUrl, v.token)
+        const result = await arrangeTopicAsViewer({ files: before.map((f) => f.listed), read, plan: plan(v.token.pubkey) }, v.relayUrl, v.token)
+        const after = await load()
+        if (after && !(typeof after === 'object' && 'failed' in after)) take(after)
+        else if (!result.ok) setHeld({ topic: address, state: { files: before } })
+        if (result.ok) topicListChanged(address)
+        return result.ok ? { ok: true } : { ok: false, reason: refused }
+      } finally {
+        setBusy((now) => {
+          const next = new Set(now)
+          next.delete(file)
+          return next
+        })
+      }
+    },
+    [address, folder, viewer, drawnFiles, load, take],
+  )
+
+  const move = useCallback(
+    (file: string, after: string | null) =>
+      arrange(
+        file,
+        (files) => {
+          const moved = files.find((f) => f.file === file)
+          if (!moved) return files
+          const rest = files.filter((f) => f.file !== file)
+          rest.splice(after === null ? 0 : rest.findIndex((f) => f.file === after) + 1, 0, moved)
+          return rest
+        },
+        (pubkey) => (files, ms) => {
+          // Planned again on a read after a conflict: a file gone since has nothing left to move.
+          if (!files.some((f) => f.file === file) || (after !== null && !files.some((f) => f.file === after))) return null
+          return planMoveInTopic(pubkey, ms, { topic: { address: address!, folder: folder! }, files, file, after })
+        },
+        'Couldn’t move the file. It’s back where it was.',
+      ),
+    [arrange, address, folder],
+  )
+
+  const setLook = useCallback(
+    (file: string, look: FileLook) =>
+      arrange(
+        file,
+        (files) => files.map((f) => (f.file === file ? { ...f, listed: { ...f.listed, look } } : f)),
+        (pubkey) => (files, ms) => {
+          const now = files.find((f) => f.file === file)
+          return now && now.look !== look ? planLookInTopic(pubkey, ms, { topic: { address: address!, folder: folder! }, file: now, look }) : null
+        },
+        'Couldn’t change how the file shows.',
+      ),
+    [arrange, address, folder],
+  )
+
+  const putBack = useCallback(
+    async (gone: ListedFile, after: string | null): Promise<{ ok: true } | { ok: false; reason: string }> => {
+      const v = viewer()
+      if (!address || !folder || !v) return { ok: false, reason: 'Sign in again to change this topic.' }
+      const back = planPutBackInTopic(v.token.pubkey, Date.now(), { topic: { address, folder }, file: gone, after })
+      setBusy((now) => new Set(now).add(gone.file))
+      try {
+        const listed = await publishAsViewer(back.relist, v.relayUrl, v.token)
+        if (!listed.ok) return { ok: false, reason: 'Couldn’t put the file back.' }
+        const read = async () => topicFilesAsViewer(address, v.relayUrl, v.token)
+        // Back on the list, then back in its place: planned on the list as it is now, after the listing.
+        const placed = await arrangeTopicAsViewer({ files: await read(), read, plan: back.move }, v.relayUrl, v.token)
+        take(await load())
+        topicListChanged(address)
+        return placed.ok ? { ok: true } : { ok: false, reason: 'The file is back, at the end: its place couldn’t be saved.' }
+      } catch {
+        take(await load())
+        return { ok: false, reason: 'Couldn’t put the file back.' }
+      } finally {
+        setBusy((now) => {
+          const next = new Set(now)
+          next.delete(gone.file)
+          return next
+        })
+      }
+    },
+    [address, folder, viewer, load, take],
+  )
+
+  /*
     Which are archived, on their own or with a file above them (TOPI-10; why:
     https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md):
     they wait behind the Overview's Archived line. An Archive or Unarchive in
@@ -128,7 +236,7 @@ export function useTopicFiles(
       }),
     }
   }, [read, objects, rearchived])
-  return { state, busy, setListed }
+  return { state, busy, setListed, move, setLook, putBack }
 }
 
 const ARCHIVED_WITH = { archivedWith: true }

@@ -238,6 +238,18 @@ export function useMayMove(address: string | undefined): boolean {
   return mayMove(useTeams({ read: false }).teams, address)
 }
 
+/**
+ * Whether a topic's files may be added, removed and arranged from here
+ * (TOPI-5: anyone who can add a file can arrange). The relay takes a change
+ * in a team's Folder from a member, and from anyone in one that is not
+ * private. Read from what the tab holds: with the team not held it is
+ * offered, and a refusal says why.
+ */
+export function mayChangeTopicIn(teams: readonly Team[] | null, folder: string | null | undefined): boolean {
+  const team = folder ? teams?.find((t) => t.id === folder) : undefined
+  return !team || team.isMember || !team.private
+}
+
 /** `useMayMove`'s rule, from the teams handed to it. */
 export function mayMove(teams: readonly Team[] | null, address: string | undefined): boolean {
   const team = spaceTeamOf(teams, address)
