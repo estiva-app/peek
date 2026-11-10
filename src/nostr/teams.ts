@@ -164,7 +164,7 @@ export function joinTeamAsViewer(team: string, relayUrl: string, token: StoredTo
   return publish(buildJoinGroup(token.pubkey, Date.now(), { channelUuid: team }), relayUrl, token, 'You did not join the team.')
 }
 
-/** Leave a team: a `kind:9022` the viewer signs. NIP-29 keeps a sole owner in. */
+/** Leave a team: a `kind:9022` the viewer signs. Its last owner may leave too; the relay keeps the Company team's. */
 export function leaveTeamAsViewer(team: string, relayUrl: string, token: StoredToken): Promise<TeamWrite> {
   return publish(buildLeaveGroup(token.pubkey, Date.now(), { channelUuid: team }), relayUrl, token, 'You are still in the team.')
 }
