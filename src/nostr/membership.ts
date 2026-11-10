@@ -28,16 +28,25 @@ export interface MembershipRead extends SharedRead {
    * a topic's or a space's dot (TEA-6), with no read of its own.
    */
   changes: ReadonlyMap<string, readonly SignedEvent[]>
+  /**
+   * The `kind:1111` comments that name the viewer, oldest first: the ones they wrote and the ones tagging them
+   * (`p`). What a topic's dot judges on the files it lists, beside the comments the Topics column holds (ACT-2):
+   * a mention of the viewer, or a reply in a conversation they are in, there.
+   */
+  named: readonly SignedEvent[]
 }
 
 const KIND_CHANGE = 1851
+const KIND_COMMENT = 1111
 
 /** Fold what the three filters returned, with Peek's urgent set. Pure: the clock is `nowSeconds`. */
 export function foldMemberships(pubkey: string, events: readonly SignedEvent[], nowSeconds: number): MembershipRead {
   const urgent = new Set<string>()
   const changes = new Map<string, SignedEvent[]>()
+  const named = new Map<string, SignedEvent>()
   for (const event of events) {
     if (isTaggedUrgentFor(event, pubkey)) urgent.add(event.id)
+    if (event.kind === KIND_COMMENT && (event.pubkey === pubkey || event.tags.some((t) => t[0] === 'p' && t[1] === pubkey))) named.set(event.id, event)
     if (event.kind !== KIND_CHANGE) continue
     const place = event.tags.find((t) => t[0] === 'a')?.[1]
     if (!place) continue
@@ -45,7 +54,8 @@ export function foldMemberships(pubkey: string, events: readonly SignedEvent[], 
     if (list) list.push(event)
     else changes.set(place, [event])
   }
-  return { ...foldShared(pubkey, events, nowSeconds), urgent, changes }
+  const oldestFirst = [...named.values()].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
+  return { ...foldShared(pubkey, events, nowSeconds), urgent, changes, named: oldestFirst }
 }
 
 /** The membership read, or `undefined` when the relay did not answer — never an empty guess. */

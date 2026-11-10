@@ -60,6 +60,8 @@ const seen = vi.hoisted(() => ({
   muted: new Set<string>(),
   /** Every reference a hook asked to resolve. */
   resolved: [] as string[],
+  /** The comments the membership read holds that the viewer wrote or that tag them (ACT-2). */
+  named: [] as Event[],
 }))
 const resolveSeen = vi.hoisted(() => (ref: string, archivedWith = false) => {
   const object = seen.objects[ref] as Record<string, unknown> | undefined
@@ -85,6 +87,7 @@ vi.mock('@/api/internal/membership', () => ({
     floor: Math.floor(Date.now() / 1000) - 90 * 24 * 60 * 60,
     changesOf: (key: string) => seen.horizon.filter((e) => e.tags.some((t) => t[0] === 'a' && t[1] === key)),
     termsOf: (key: string) => ({ member: false, muted: seen.muted.has(key) }),
+    namedComments: seen.named,
   }),
 }))
 
@@ -226,6 +229,7 @@ beforeEach(() => {
   seen.horizon = []
   seen.muted = new Set()
   seen.resolved = []
+  seen.named = []
   relay.changes = []
   relay.activity = []
   socket.subs = []
@@ -433,6 +437,36 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     act(() => socket.subs.find((sub) => !sub.closed)!.onEvent(onTesting('said-live', Math.floor(Date.now() / 1000))))
     expect(result.current.news.get(ALPHA)![0]!.events.map((e) => e.id)).toEqual(['said-before', 'said-live'])
     expect(relay.queryRelay.mock.calls.length).toBe(requests)
+  })
+
+  it('a topic’s news holds the comments naming the viewer on a listed file and one level under it, not two levels down (ACT-2)', async () => {
+    const DOC = `30842:${VIEWER}:5b0c7e1a-1111-4111-8111-000000000001`
+    const PAGE = `30842:${SOMEBODY}:5b0c7e1a-2222-4222-8222-000000000002`
+    const SUBPAGE = `30842:${SOMEBODY}:5b0c7e1a-3333-4333-8333-000000000003`
+    seen.objects[DOC] = object(DOC, 'Handbook')
+    list(ALPHA, DOC, true, 200)
+    // A page under the listed document, and a page under that one.
+    relay.files.push(
+      event(30842, [['d', d(DOC)], ['h', OTHER_FOLDER]], 100),
+      { ...event(30842, [['d', d(PAGE)], ['a', DOC], ['h', OTHER_FOLDER]], 150), pubkey: SOMEBODY },
+      { ...event(30842, [['d', d(SUBPAGE)], ['a', PAGE], ['h', OTHER_FOLDER]], 160), pubkey: SOMEBODY },
+    )
+    const on = (file: string, id: string, at: number, by = SOMEBODY, tag: 'A' | 'O' = 'A'): Event => ({
+      ...event(1111, [[tag, tag === 'A' ? file : d(file)], ['K', '30842'], ['k', '30842'], ['p', VIEWER], ['h', OTHER_FOLDER]], at),
+      id,
+      pubkey: by,
+    })
+    // The order's read holds the page's newest comment; the membership read holds it too, and the rest naming the viewer.
+    const onPage = on(PAGE, 'page-held', 500)
+    relay.activity = [onPage]
+    seen.named = [on(DOC, 'doc-mine', 300, VIEWER), onPage, on(PAGE, 'page-by-id', 400, SOMEBODY, 'O'), on(SUBPAGE, 'subpage', 600)]
+
+    const { result } = renderHook(() => ({ column: useTopicsColumn(), news: useListedNews() }))
+    await waitFor(() => expect(result.current.news.get(ALPHA)?.map((one) => one.file)).toEqual([DOC, PAGE]))
+    expect(result.current.news.get(ALPHA)!.map(({ file, events, under }) => ({ file, ids: events.map((e) => e.id), under: !!under }))).toEqual([
+      { file: DOC, ids: ['doc-mine'], under: false },
+      { file: PAGE, ids: ['page-by-id', 'page-held'], under: true },
+    ])
   })
 
   it('reads none of the listed files’ fields: the column draws no file under a topic (TOPI-10)', async () => {

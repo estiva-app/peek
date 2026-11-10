@@ -57,6 +57,11 @@ export interface MembershipSeam {
   memberFiles: readonly string[]
   /** The changes naming the viewer on one place — a level, an Add, a join, a leave — for the shared `followingOf` (TEA-6). */
   changesOf: (address: string) => readonly SignedEvent[]
+  /**
+   * The comments the viewer wrote or that tag them, within the read's horizon, oldest first: what a topic's dot
+   * judges on the files it lists beside the Topics column's own (ACT-2), with no read of its own.
+   */
+  namedComments: readonly SignedEvent[]
   /** Unix seconds the read reaches back to: a place the viewer made is theirs from here. */
   floor: number
   /** Join or leave a file; local at once, then published. */
@@ -79,6 +84,7 @@ const INERT: MembershipSeam = {
   isUrgent: () => false,
   memberFiles: [],
   changesOf: () => [],
+  namedComments: NO_CHANGES,
   floor: 0,
   setMember: async () => 'Peek is not connected to the relay here.',
   refresh: async () => {},
@@ -131,11 +137,12 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       isUrgent,
       memberFiles,
       changesOf: (address) => sync.changes.get(address) ?? NO_CHANGES,
+      namedComments: sync.named,
       floor: sync.floor,
       setMember: sync.setMember,
       refresh: sync.refresh,
     }),
-    [sync.state, sync.setMember, sync.refresh, sync.changes, sync.floor, me, termsOf, judges, isMentioned, isUrgent, memberFiles],
+    [sync.state, sync.setMember, sync.refresh, sync.changes, sync.named, sync.floor, me, termsOf, judges, isMentioned, isUrgent, memberFiles],
   )
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>
 }

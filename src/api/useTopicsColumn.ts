@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { byActivity, isArchived, relayNamesTeams, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { fileIdOf, type SignedEvent } from '@estiva-app/protocol'
+import { anchorIdsOf, anchorsOf } from '@estiva-app/conversation'
 import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { getLiveClient } from '@/nostr/liveTopics'
 import { peekRelay } from '@/nostr/relayInfo'
@@ -57,6 +58,11 @@ interface Held {
      * with no read of its own (`useListedNews`).
      */
     comments: ReadonlyMap<string, readonly SignedEvent[]>
+    /**
+     * Each file found under a listed one, by address: the file it sits directly under (ACT-2). What tells a listed
+     * project's issue, whose comments naming the viewer light the topic, from a page two levels down.
+     */
+    parents: ReadonlyMap<string, string>
     readAt: number
     live: boolean
   } | null
@@ -220,7 +226,11 @@ async function readActivity(viewer: Viewer, key: string, topics: readonly Foreig
     stopWatch()
     current = { key, activity, since, relayUrl: viewer.relayUrl, watch: null }
     startWatch()
-    put({ ...held, activity: { key, at: new Map(activity.at), comments: commentsOf(activity), readAt: Date.now(), live: !!current.watch }, activityFailed: null })
+    put({
+      ...held,
+      activity: { key, at: new Map(activity.at), comments: commentsOf(activity), parents: parentsOf(activity), readAt: Date.now(), live: !!current.watch },
+      activityFailed: null,
+    })
     writeTopicOrder(pubkey, activity.at)
   } catch (error) {
     failedRead(error, 'topic activity')
@@ -242,7 +252,8 @@ function startWatch() {
     activity,
     () => {
       if (current?.key !== key || held.pubkey !== pubkey || held.activity?.key !== key) return
-      put({ ...held, activity: { ...held.activity, at: new Map(activity.at) } })
+      // A new file under a listed one moves its topic: the watch has recorded its parent, and listens to it from now on.
+      put({ ...held, activity: { ...held.activity, at: new Map(activity.at), parents: parentsOf(activity, held.activity.parents) } })
       if (pubkey) writeTopicOrder(pubkey, activity.at)
     },
     // Asks by file alone on a relay that says it sends a kept-open request what asking again would return
@@ -252,10 +263,10 @@ function startWatch() {
       since: current.since,
       namesTeams: relayNamesTeams(peekRelay()),
       onClosed: (reason) => console.warn('[nostr] topic activity watch closed:', reason),
-      // A new comment on a listed file, whether or not it moved its topic: the topic's dot at All judges it (TOPI-3).
+      // A new comment on a listed file or one level under, whether or not it moved its topic: the topic's dot judges it (TOPI-3, ACT-2).
       onComment: () => {
         if (current?.key !== key || held.pubkey !== pubkey || held.activity?.key !== key) return
-        put({ ...held, activity: { ...held.activity, comments: commentsOf(activity) } })
+        put({ ...held, activity: { ...held.activity, comments: commentsOf(activity), parents: parentsOf(activity, held.activity.parents) } })
       },
     },
   )
@@ -264,6 +275,13 @@ function startWatch() {
 /** The watch appends to `activity.comments` in place: a copy, so what is held changes when it does. */
 const commentsOf = (activity: TopicActivity): ReadonlyMap<string, readonly SignedEvent[]> =>
   new Map([...(activity.comments ?? new Map<string, SignedEvent[]>())].map(([file, events]) => [file, [...events]]))
+
+/**
+ * The watch adds to `activity.parents` in place too: a copy, likewise. It only ever adds, so the copy `held` stands
+ * while the count is the same, and a message that moves a topic does not judge every topic's files again.
+ */
+const parentsOf = (activity: TopicActivity, held?: ReadonlyMap<string, string>): ReadonlyMap<string, string> =>
+  held && held.size === (activity.parents?.size ?? 0) ? held : new Map(activity.parents ?? [])
 
 function stopWatch() {
   current?.watch?.stop()
@@ -334,23 +352,65 @@ export function useRearchived(): ReadonlyMap<string, ForeignObject | null> {
 }
 
 /**
- * What each of your topics' listed files has said lately, by topic address (TOPI-3): every file its list holds
- * directly, with the comments the Topics column's read and its live watch hold for it. What a topic's dot judges at
- * All (`listedHaveUnread`). No read of its own: it is what `useTopicsColumn` already holds, empty until it has read.
+ * What each of your topics' listed files has said lately, by topic address (TOPI-3, ACT-2): every file its list
+ * holds directly, and every file one level under one of those (`under`: a listed project's issue, a listed
+ * document's page), each with the comments the Topics column's read and its live watch hold for it and the comments
+ * naming you the membership read holds on it (yours, and those tagging you). What a topic's dot judges
+ * (`listedHaveUnread`). No read of its own: it is what `useTopicsColumn` and the membership read already hold,
+ * empty until the column has read.
  */
 export function useListedNews(): ReadonlyMap<string, ListedNews> {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
   const now = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const { namedComments } = useMembership()
   const mine = now.pubkey === pubkey
   const lists = now.lists
   const comments = now.activity?.comments
+  const parents = now.activity?.parents
   return useMemo(() => {
     const news = new Map<string, ListedNews>()
     if (!mine || !comments) return news
-    for (const [topic, files] of lists) news.set(topic, files.map((file) => ({ file: file.address, events: comments.get(file.address) ?? [] })))
+    const named = namedByFile(namedComments ?? [])
+    const eventsOn = (file: string) => merged(comments.get(file) ?? [], [...(named.get(file) ?? []), ...(named.get(fileIdOf(file) ?? '') ?? [])])
+    // Each file found under a listed one, by the file it sits directly under.
+    const children = new Map<string, string[]>()
+    for (const [file, parent] of parents ?? []) {
+      const list = children.get(parent)
+      if (list) list.push(file)
+      else children.set(parent, [file])
+    }
+    for (const [topic, files] of lists) {
+      const listed = new Set(files.map((file) => file.address))
+      const under = [...listed].flatMap((parent) => (children.get(parent) ?? []).filter((file) => !listed.has(file)))
+      news.set(topic, [
+        ...[...listed].map((file) => ({ file, events: eventsOn(file) })),
+        ...[...new Set(under)].map((file) => ({ file, events: eventsOn(file), under: true })),
+      ])
+    }
     return news
-  }, [mine, lists, comments])
+  }, [mine, lists, comments, parents, namedComments])
+}
+
+/** The comments naming the viewer, by what they are on: the file's address and its id, as the shared rule reads a comment's file (§6.4). */
+function namedByFile(named: readonly SignedEvent[]): ReadonlyMap<string, readonly SignedEvent[]> {
+  const byFile = new Map<string, SignedEvent[]>()
+  for (const event of named) {
+    for (const key of new Set([...anchorsOf(event), ...anchorIdsOf(event)])) {
+      const list = byFile.get(key)
+      if (list) list.push(event)
+      else byFile.set(key, [event])
+    }
+  }
+  return byFile
+}
+
+/** Both lists as one, each comment once, oldest first. */
+function merged(held: readonly SignedEvent[], named: readonly SignedEvent[]): readonly SignedEvent[] {
+  if (named.length === 0) return held
+  const byId = new Map<string, SignedEvent>()
+  for (const event of [...held, ...named]) byId.set(event.id, event)
+  return [...byId.values()].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
 }
 
 /**
