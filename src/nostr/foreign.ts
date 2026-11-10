@@ -1159,10 +1159,14 @@ export async function moveFileAsViewer(
             ? 'you need to be a member of both teams to move this.'
             : refusal.why === 'changed-meanwhile'
               ? 'the teams changed since you opened this. Try again.'
-              : undefined
+              : refusal.why === 'not-home'
+                ? 'it is in no team yet, so it can go only to the team it was started in, or to the Company team.'
+                : undefined
   if (refusal.nothingMoved) {
     const stillIn = plan.events.flatMap((event) => event.tags.filter((tag) => tag[0] === 'from').map((tag) => tag[1]!))
-    return { ok: false, reason: why ? `Nothing was moved: ${why}` : 'Nothing was moved. Try again.', why, stillIn }
+    // A code Peek does not know (and `leaves-by-moving`: Peek never removes a live topic) says only that nothing moved, never "Try again".
+    const reason = why ? `Nothing was moved: ${why}` : refusal.why === 'refused' ? 'Nothing was moved. Try again.' : 'Nothing was moved.'
+    return { ok: false, reason, why, stillIn }
   }
   // The earlier moves did arrive: each Folder not yet moved from still lists it too, and the caller names them with why.
   return { ok: false, landed: true, why, stillIn: refusal.notMovedFrom }

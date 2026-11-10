@@ -140,6 +140,13 @@ describe('moving a file', () => {
     ['invalid: the team a move leaves lists none of its files', 'Nothing was moved: the teams changed since you opened this. Try again.'],
     ["invalid: a topic is listed by one team: take it off the other team's list first", 'Nothing was moved: the teams changed since you opened this. Try again.'],
     ['invalid: rate-limited', 'Nothing was moved. Try again.'],
+    // TEA-9. A refusal is read by its reason code; a code Peek does not know says only that nothing moved.
+    [
+      'invalid: not-home: a topic on no team\'s list goes only to its home or the Company team',
+      'Nothing was moved: it is in no team yet, so it can go only to the team it was started in, or to the Company team.',
+    ],
+    ['invalid: frozen: the team is frozen until Monday', 'Nothing was moved.'],
+    ['invalid: leaves-by-moving: a topic leaves a team only by a move', 'Nothing was moved.'],
   ])('a refused move says why in Peek’s words, never the relay’s: %s', async (relayText, sentence) => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: relayText, httpStatus: 200 })
 
