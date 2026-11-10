@@ -97,6 +97,9 @@ import {
   planRemoveFromTopic,
   topicList,
   topicLists,
+  writeArrangement,
+  type ArrangedFile,
+  type WriteArrangementArgs,
   type ListedFile,
   type ActivityFile,
   type ActivityTopic,
@@ -902,8 +905,48 @@ export async function topicFilesAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<Array<ListedFile & { address: string }>> {
-  const listed = await topicList(viewerQuery(relayUrl, token), topic)
-  return listed.filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+  return (await topicListAsViewer(topic, relayUrl, token)).filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+}
+
+/**
+ * The whole list, in the topic's order, each with its place and look (TOPI-5): interop sorts them. Once the relay
+ * offers it, by the list read. Files this viewer cannot read are in it, with no address: a move is planned on all of
+ * them, so a file only others can see keeps its place.
+ */
+export async function topicListAsViewer(topic: string, relayUrl: string, token: StoredToken): Promise<ListedFile[]> {
+  return topicList(viewerQuery(relayUrl, token), topic, await listReadOption())
+}
+
+/**
+ * Arrange a topic's files (TOPI-5; why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/each-file-on-a-topic-keeps-its-own-place-and-look.md):
+ * a move or a look, planned on `files` by interop's planners. A `conflict:`
+ * (somebody changed the same field since) is planned again on the topic as
+ * read again, by interop's `writeArrangement`, never sent again as it was.
+ * Any other refusal, or a throw on the way, is `ok: false`.
+ */
+export async function arrangeTopicAsViewer(
+  args: { files: readonly ArrangedFile[]; read: () => Promise<readonly ArrangedFile[]>; plan: WriteArrangementArgs['plan'] },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; refused?: string }> {
+  try {
+    const result = await writeArrangement({
+      ...args,
+      sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
+      publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
+    })
+    return result.ok ? { ok: true } : { ok: false, refused: result.refused }
+  } catch (error) {
+    console.warn('[nostr] arranging a topic failed:', error)
+    return { ok: false }
+  }
+}
+
+/** Put one change on the relay as the viewer, signed: Undo's listing again before its move (TOPI-5). */
+export async function publishAsViewer(event: UnsignedEvent, relayUrl: string, token: StoredToken): Promise<{ ok: true } | { ok: false; refused?: string }> {
+  const result = await publishInOrder([event], relayUrl, token, { caught: true })
+  return result.ok ? { ok: true } : { ok: false, ...(result.reason ? { refused: result.reason } : {}) }
 }
 
 /**

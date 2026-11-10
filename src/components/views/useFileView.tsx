@@ -12,6 +12,7 @@ import { TopicFiles } from '@/components/TopicFiles'
 import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
 import {
   listedFile,
+  mayChangeTopicIn,
   topicFollowTarget,
   useFileThreads,
   useForeignConversation,
@@ -210,7 +211,7 @@ export function useFileView({
     A topic's files (TOP-3), above Activity: a topic keeps its own list, and
     only topics' lists are read in this stage (Miky, 30 Oct).
   */
-  const topicFilesPanel = topic ? <TopicFiles key={topic} topic={topic} files={topicFiles} title={title} readOnly={!!file?.archived} /> : undefined
+  const topicFilesPanel = topic ? <TopicFiles key={topic} topic={topic} files={topicFiles} title={title} readOnly={!!file?.archived} mayChange={mayChangeTopicIn(teams, file?.folder)} /> : undefined
   const aside =
     sidePanel.open && canShow ? (
       <OverviewPanel file={cardFile} files={topicFilesPanel} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
