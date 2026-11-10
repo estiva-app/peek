@@ -54,9 +54,37 @@ vi.mock('@/api', async () => ({
     { pubkey: KATERINA, name: 'Katerina' },
   ],
 }))
+/*
+  The relay, for the test that reads a listed file's other comments when the card opens (383a4d3b): off unless a test
+  turns it on, so the others read nothing. Every filter it is asked is kept, with when.
+*/
+const relay = vi.hoisted(() => ({
+  on: false,
+  events: [] as unknown[],
+  asked: [] as Record<string, unknown>[][],
+  viewer: () => ({ relayUrl: 'wss://relay.test', token: { accessToken: 't', pubkey: 'c'.repeat(64) } }),
+  none: () => undefined,
+}))
+vi.mock('@/api/relayUrl', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/api/relayUrl')
+  return {
+    ...actual,
+    get hasRelay() {
+      return relay.on || actual.hasRelay
+    },
+  }
+})
+vi.mock('@/nostr/foreign', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
+  viewerQuery: () => async (filters: Record<string, unknown>[]) => {
+    relay.asked.push(filters)
+    return relay.events
+  },
+}))
 // The listed issue's title, as the card's one read on opening answers it.
 vi.mock('@/api/foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api/foreign')),
+  useRelayViewer: () => (relay.on ? relay.viewer : relay.none),
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, ref === ISSUE ? { slots: { title: { value: 'Sign-in keeps failing' } } } : null])),
 }))
@@ -148,5 +176,31 @@ describe('resting on a lit topic shows what is new there (ACT-3)', () => {
     const rowHref = document.querySelector(`[data-file="${CSS.escape(TOPIC)}"]`)?.closest('a')?.getAttribute('href')
     expect(rowHref).toBeTruthy()
     expect(screen.getByTestId('where').textContent).toBe(rowHref)
+  })
+
+  it('six comments on a listed file from before the page opened show as five and "1 more", read only once the card opens (383a4d3b)', async () => {
+    const six = [1, 2, 3, 4, 5, 6].map((n) => comment(KATERINA, 60 * n, `Note ${n}`))
+    // The column's cold read holds only the newest comment on each listed file; the relay has all six.
+    news.value = new Map([[TOPIC, [{ file: ISSUE, events: [six[0]] }]]])
+    relay.on = true
+    relay.events = six
+    relay.asked = []
+    try {
+      const user = userEvent.setup()
+      mount()
+      await waitFor(() => expect(dotOf()).toBe(true))
+      // A cold open reads nothing more: the dot is lit from what the column holds.
+      expect(relay.asked).toHaveLength(0)
+      await user.hover(screen.getByText('Launch'))
+      await screen.findByRole('button', { name: '1 more' })
+      expect(screen.getByText(/Note 5/)).toBeTruthy()
+      expect(screen.queryByText(/Note 6/)).toBeNull()
+      // One read, of the listed file's comments only, from the reader's start on it.
+      expect(relay.asked).toHaveLength(1)
+      expect(relay.asked[0].every((filter) => (filter.kinds as number[]).join() === '1111' && typeof filter.since === 'number')).toBe(true)
+      expect(relay.asked[0].some((filter) => (filter['#A'] as string[] | undefined)?.[0] === ISSUE)).toBe(true)
+    } finally {
+      relay.on = false
+    }
   })
 })

@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, MetaText, Person } from '@estiva-app/ui'
 import type { UnreadReason } from '@estiva-app/conversation'
-import { CARD_LINES, formatActive, useAvatarSrc, useMentionNames, useRowNewsDetails, type RowNewsItem } from '@/api'
+import { useMemo } from 'react'
+import { CARD_LINES, formatActive, newestFirst, useAvatarSrc, useListedFill, useListedFillOf, useMentionNames, useRowNewsDetails, type RowNewsItem } from '@/api'
 import { filePath } from '@/lib/objectUrl'
 import { previewText } from '@/lib/textParsing'
 
@@ -20,8 +21,10 @@ const VERB: Record<UnreadReason, string> = {
  * listed file's comment at its thread, a team chat's or a DM's in the place. Only what is new (Miky, 10 November):
  * the row's dot and this card are one list.
  */
-export function RowNewsCard({ items, placeHref, place, onOpen }: {
+export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen }: {
   items: readonly RowNewsItem[]
+  /** A topic's row: its listed files' other new comments are read while the card is open (383a4d3b). */
+  fileRef?: string
   /** The row's own link: where "N more" goes, and where a line with no file opens. */
   placeHref: string
   /** A topic or space (its lines open at their thread), a team's chat, or a DM (its lines open the DM). */
@@ -30,6 +33,9 @@ export function RowNewsCard({ items, placeHref, place, onOpen }: {
   onOpen?: (file: string | undefined) => void
 }) {
   const navigate = useNavigate()
+  // The column holds only each listed file's newest comment from before the page opened: the rest, read now.
+  const filled = useListedFill(useListedFillOf(fileRef ?? ''))
+  const items = useMemo(() => (filled?.length ? newestFirst(held, filled) : held), [held, filled])
   const { wordsOf, titleOf } = useRowNewsDetails(items)
   const names = useMentionNames()
   const avatarSrcFor = useAvatarSrc()

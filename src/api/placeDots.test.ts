@@ -12,7 +12,7 @@ import { buildLevelChange, buildMembershipChange, fileContext, threadContext, ty
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { signed } from '@/test/wireRelay'
-import { listedHaveUnread, placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
+import { listedHaveUnread, listedReadsOf, placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
 
 const ME = 'c'.repeat(64)
 const MIKY = 'a'.repeat(64)
@@ -194,6 +194,27 @@ describe('a file the topic lists (TOPI-3)', () => {
     // The file read past it: a reply is read only in its thread (PEE-44), so it still lights.
     expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 60 })).toBe(true)
     expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 30, [threadContext(root.id) as string]: T0 + 60 })).toBe(false)
+  })
+
+  describe("what a lit topic's card reads more of while open (383a4d3b)", () => {
+    const OTHER = `30851:${MIKY}:issue-13`
+    const judge = (merged: Record<string, number> = {}) => ({ me: ME, following: following(atAll), muted: false, merged, floor: FLOOR })
+
+    it("reads a lit file from its own marker, and a dark file not at all", () => {
+      const held = [
+        { file: ISSUE, events: [comment('new', T0 + 50)] },
+        { file: OTHER, events: [] },
+      ]
+      expect(listedReadsOf({ held, judge: { ...judge(), merged: { [ISSUE_CONTEXT]: T0 + 30 } } })).toEqual([{ file: ISSUE, since: T0 + 30 }])
+    })
+
+    it('never before the horizon, for a file never read', () => {
+      expect(listedReadsOf({ held: [{ file: ISSUE, events: [comment('new', T0 + 50)] }], judge: judge() })).toEqual([{ file: ISSUE, since: FLOOR }])
+    })
+
+    it('reads nothing for a file read past its newest comment', () => {
+      expect(listedReadsOf({ held: [{ file: ISSUE, events: [comment('new', T0 + 50)] }], judge: judge({ [ISSUE_CONTEXT]: T0 + 60 }) })).toEqual([])
+    })
   })
 })
 

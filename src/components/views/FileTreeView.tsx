@@ -235,6 +235,7 @@ export function TreeRow({
         lines?.length ? (
           <RowNewsCard
             items={lines}
+            fileRef={file.ref}
             placeHref={href}
             place="topic"
             // As the row's own click: the page needs no `#d` read, and it shows the column this row is in.
