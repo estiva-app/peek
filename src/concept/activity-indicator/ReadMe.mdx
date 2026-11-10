@@ -1,0 +1,45 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Prototype/Activity indicator/Read me" />
+
+# Activity indicator on each topic and team
+
+A prototype on the `concept/activity-indicator` branch of Peek. It never merges. It draws the project's calls of 10 November **on Peek as it ships today**: Peek's own frame and rows, fed made-up content, with only this project's changes on top. Peek only; Ship and Leaf come later from the same rule.
+
+**Start here:** [Topics, when both, blue wins](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--topics-blue-wins). Rest the pointer on a row with a dot, then move away: Widgets' orange goes, Release notes keeps its blue.
+
+## Choose on the screens
+
+| Choose | Stories |
+| --- | --- |
+| A row with both blue and orange: **blue wins** (the card lists the orange), or **a blue dot with an orange ring** | [Blue wins](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--topics-blue-wins) · [Orange ring](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--topics-ring) |
+| The place's list of what lit it, called **For you** and opened from a bell in the place's header and from the card's last line | [After the hover](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--for-you-after-the-hover) · [Long](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--for-you-long) · [Nothing yet](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--for-you-empty) |
+| The follow switch's words | [On a topic](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--switch-new-words) · [On a team's chat](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--switch-chat) · [Today](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--switch-today) |
+
+## Changed from today
+
+- **A lit row opens a card when you rest the pointer on it**, as a Screener item does: what lit it, newest first. Each line is who, what (started a conversation, replied in your conversation, mentioned you, reacted 👍 to your message, wrote), the file it was on when it was on a listed file, the words, and how long ago. A click opens it where it was said. At most five lines; the rest are "5 more in For you". With nothing to list there is no dot and no card.
+- **The card opens on the whole row, not on the dot alone.** Today a row with a "⋮" hides its dot while the pointer is on the row, so a card on the dot would vanish as you reach it.
+- **Orange: someone reacted to your message**, in the place or on a file it lists. Leaving the card after it was open clears the orange; it never clears blue.
+- **The same on every row:** a topic, a team's chat, a space, a topic a team leads, and a DM. [Teams](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--teams) · [People](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--people)
+- **A team's name has no dot**: everything under it is always on screen with its own (the agent's call, yours to overrule).
+- **An urgent DM with a reaction keeps the urgent mark**; its card lists both. The urgent mark and orange are the same colour today.
+- **For you** is in the right-hand column, where a thread and a file's Overview open: *New* on top, then *Earlier*, which keeps what the hover cleared. It is not called Activity because a file's *Activity* already lists where else the file was mentioned (record activity-lists-only-mentions-from-elsewhere).
+- **On a touch screen there is no hover**, so no card: opening the place clears its orange and what was said in it; blue on a listed file stays until that file is opened; what lit it is under the bell. Today a row with a "⋮" shows the "⋮" in place of its dot on a touch screen, so a phone shows no dot on a topic at all; the story draws the dot where a pointer screen does. [On a touch screen](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--touch)
+- **The follow switch says what the topic shows and what lights it.** Not following: "Shows its own conversation. Nothing lights." Important: "Shows its own conversation. Lights for new conversations, replies in yours, and what names you on its files." All: "Shows its files' threads too. Lights for all of it." A team's chat lists no files, so its words say only what lights.
+
+The card alone, each state without hovering: [blue only](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--card-blue-only) · [orange only](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--card-orange-only) · [both](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--card-both) · [urgent DM](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--card-urgent-dm) · [long](https://concept-activity-indicator.estiva-peek-storybook.pages.dev/?path=/story/prototype-activity-indicator-screens--card-long).
+
+## New here
+
+| New here | What it could have been |
+| --- | --- |
+| The orange dot, and the blue dot with an orange ring | The kit's UnreadDot, which has one colour; extended with a second |
+| Orange in the urgent mark's colour (the kit's warning colour) | A colour of its own, which the kit does not have; Katerina's to pick |
+| The hover card's lines (face, name, what, where, when) | The Screener's preview card, which shows a message and its replies |
+| The bell button in a place's header that opens For you | The file header's Overview button (SidePanelButton) |
+| The For you list | A file's Activity in its Overview, which lists mentions from elsewhere |
+
+Reused as they are: the kit's PreviewCard for the hover, Peek's TreeRow, NavItem and PersonItem rows, the kit's Panel for For you, and the kit's follow switch with its words changed.
+
+**Rougher than the app:** opening a place shows a stand-in for its conversation; a line's click shows a toast in place of opening the message; the rail's Desk does not open; emoji may draw as boxes where the browser has no emoji font.
