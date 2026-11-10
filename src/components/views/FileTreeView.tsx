@@ -231,7 +231,22 @@ export function TreeRow({
       data-file={file.ref}
       // The address the row's click opens, as the page writes it (FOL-37): Cmd-click opens the same in a new tab.
       href={href}
-      preview={lines?.length ? <RowNewsCard items={lines} placeHref={href} place="topic" /> : undefined}
+      preview={
+        lines?.length ? (
+          <RowNewsCard
+            items={lines}
+            placeHref={href}
+            place="topic"
+            // As the row's own click: the page needs no `#d` read, and it shows the column this row is in.
+            onOpen={(listed) => {
+              const address = listed ?? file.address
+              if (!address) return
+              rememberFileAddress(address)
+              rememberOpenedFrom(address, column)
+            }}
+          />
+        ) : undefined
+      }
       label={title}
       icon={
         <TopicState

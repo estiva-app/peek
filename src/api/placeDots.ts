@@ -13,6 +13,7 @@
 import { fileContext, followingOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
+import { rootOf } from '@/nostr/channelStreams'
 import { explainUnread, type RowNewsItem } from './rowNews'
 
 /** What a space's team gives the fold: its roster and list, the viewer's teams list, and whether it is archived. */
@@ -127,10 +128,7 @@ function unreadOnListed(file: string, events: readonly SignedEvent[], under: boo
 export function listedNews(news: ListedNews, judge: ListedJudgeArgs): RowNewsItem[] {
   if (!judge.following.in) return []
   return news.flatMap(({ file, events, under }) =>
-    explainUnread(events, unreadOnListed(file, events, under, judge), judge.me, (event) => ({ root: commentRootOf(event), words: event.content, file })),
+    explainUnread(events, unreadOnListed(file, events, under, judge), judge.me, (event) => ({ root: rootOf(event), words: event.content, file })),
   )
 }
 
-/** A comment's conversation root: its `E`, else its `e`, the comment it answers (§6.4), else itself — as the badges read it. */
-const commentRootOf = (event: SignedEvent) =>
-  event.tags.find((t) => t[0] === 'E' && t[1])?.[1] ?? event.tags.find((t) => t[0] === 'e' && t[1])?.[1] ?? event.id

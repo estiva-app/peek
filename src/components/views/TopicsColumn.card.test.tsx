@@ -75,6 +75,7 @@ vi.mock('@/api/useTeams', async () => ({
   useTeams: () => ({ teams: [], failed: false, reload: async () => {} }),
 }))
 
+import { PeekSetup } from '@/lib/PeekSetup'
 import { TopicsColumn } from './TopicsColumn'
 
 const added = signed({ ...buildMembershipChange(MIKY, (NOW - 3600) * 1000, { file: TOPIC, folder: TEAM, person: ME, member: true }), created_at: NOW - 3600 }, MIKY)
@@ -89,8 +90,11 @@ function Where() {
 const mount = () =>
   render(
     <MemoryRouter initialEntries={['/app/topics']}>
-      <TopicsColumn />
-      <Where />
+      {/* The kit's links go through Peek's router, as in the app. */}
+      <PeekSetup>
+        <TopicsColumn />
+        <Where />
+      </PeekSetup>
     </MemoryRouter>,
   )
 const dotOf = () => !!document.querySelector(`[data-file="${CSS.escape(TOPIC)}"]`)?.parentElement?.querySelector('[data-unread]')
@@ -113,7 +117,7 @@ describe('resting on a lit topic shows what is new there (ACT-3)', () => {
     const lines = screen.getAllByText(/started a conversation/)
     expect(lines).toHaveLength(2)
     // Newest first: Katerina's line comes before Miky's.
-    const text = document.body.textContent ?? ''
+    const text = first.closest('[data-side]')?.textContent ?? ''
     expect(text.indexOf('Katerina')).toBeLessThan(text.indexOf('Miky'))
     await user.click(first)
     expect(screen.getByTestId('where').textContent).toBe(`/topic/${ISSUE}?thread=${newer.id}`)
@@ -140,6 +144,9 @@ describe('resting on a lit topic shows what is new there (ACT-3)', () => {
     const more = await screen.findByRole('button', { name: '1 more' })
     expect(screen.queryByText(/Note 6/)).toBeNull()
     await user.click(more)
-    expect(screen.getByTestId('where').textContent).toMatch(/^\/topic\/|^\/t\//)
+    // Where the row itself goes: the topic, not the file the news came from.
+    const rowHref = document.querySelector(`[data-file="${CSS.escape(TOPIC)}"]`)?.closest('a')?.getAttribute('href')
+    expect(rowHref).toBeTruthy()
+    expect(screen.getByTestId('where').textContent).toBe(rowHref)
   })
 })

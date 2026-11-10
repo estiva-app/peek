@@ -20,12 +20,14 @@ const VERB: Record<UnreadReason, string> = {
  * listed file's comment at its thread, a team chat's or a DM's in the place. Only what is new (Miky, 10 November):
  * the row's dot and this card are one list.
  */
-export function RowNewsCard({ items, placeHref, place }: {
+export function RowNewsCard({ items, placeHref, place, onOpen }: {
   items: readonly RowNewsItem[]
   /** The row's own link: where "N more" goes, and where a line with no file opens. */
   placeHref: string
   /** A topic or space (its lines open at their thread), a team's chat, or a DM (its lines open the DM). */
   place: 'topic' | 'chat' | 'dm'
+  /** What the row's own click does before its page opens (a topic row keeps its column beside it): `file` is a line's listed file, else none. */
+  onOpen?: (file: string | undefined) => void
 }) {
   const navigate = useNavigate()
   const { wordsOf, titleOf } = useRowNewsDetails(items)
@@ -34,10 +36,15 @@ export function RowNewsCard({ items, placeHref, place }: {
   const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n] as const))
   const shown = items.slice(0, CARD_LINES)
   const more = items.length - shown.length
-  // A topic and a file open at the thread (FilePage reads `?thread=`); a team's chat and a DM open the place.
-  const threadable = place === 'topic'
+  // Every line opens at its thread (`?thread=`, read by FilePage, TeamChat and the DM view), except a team chat's or a
+  // DM's message that answers nothing: that one is in the place itself, at the bottom, where it opens.
+  const thread = (item: RowNewsItem) => `?thread=${encodeURIComponent(item.root)}`
   const hrefOf = (item: RowNewsItem) =>
-    item.file ? `${filePath(item.file)}?thread=${encodeURIComponent(item.root)}` : threadable ? `${placeHref}?thread=${encodeURIComponent(item.root)}` : placeHref
+    item.file
+      ? `${filePath(item.file)}${thread(item)}`
+      : place === 'topic' || item.root !== item.id
+        ? `${placeHref}${thread(item)}`
+        : placeHref
   return (
     <>
       {shown.map((item) => {
@@ -47,7 +54,8 @@ export function RowNewsCard({ items, placeHref, place }: {
         const title = item.file ? titleOf(item.file) : undefined
         const words = wordsOf(item)
         return (
-          <Card key={item.id} fill="none" quietUntilHover hover="fill" onClick={() => navigate(hrefOf(item))} className="flex min-w-0 flex-col gap-0.5 p-2">
+          // A link, as the row is: the kit's Link goes through Peek's router, and Cmd- or Ctrl-click opens a new tab.
+          <Card key={item.id} href={hrefOf(item)} fill="none" quietUntilHover hover="fill" onClick={() => onOpen?.(item.file)} className="flex min-w-0 flex-col gap-0.5 p-2">
             <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
               <span className="flex min-w-0 shrink-0 text-h5 leading-tight text-text-primary">
                 <Person size={16} name={name} picture={avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
@@ -67,7 +75,10 @@ export function RowNewsCard({ items, placeHref, place }: {
         )
       })}
       {more > 0 && (
-        <Button variant="muted" size="small" onClick={() => navigate(placeHref)} className="self-start">
+        <Button variant="muted" size="small" onClick={() => {
+            onOpen?.(undefined)
+            navigate(placeHref)
+          }} className="self-start">
           {`${more} more`}
         </Button>
       )}

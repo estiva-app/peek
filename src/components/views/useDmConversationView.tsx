@@ -2,6 +2,7 @@ import { useMarkDmRead } from '@/lib/useMarkRead'
 import { useLastSelection } from '@/lib/lastSelection'
 import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
@@ -51,7 +52,14 @@ interface ViewSlots {
  * Desk, which read the relay now.
  */
 export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm }: UseDmConversationViewArgs): ViewSlots {
-  const [threadConvId, setThreadConvId] = useState<string | null>(null)
+  // A link may name a thread (`?thread=<root>`, a row card's reply line, ACT-3): it opens, and each new one opens again.
+  const linked = useSearchParams()[0].get('thread')
+  const [threadConvId, setThreadConvId] = useState<string | null>(linked)
+  const [seenLink, setSeenLink] = useState(linked)
+  if (linked !== seenLink) {
+    setSeenLink(linked)
+    if (linked) setThreadConvId(linked)
+  }
 
   /*
     Opening the DM also gives it a channel on the relay if it has none (DMS-3):
