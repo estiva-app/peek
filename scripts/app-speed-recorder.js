@@ -144,7 +144,7 @@
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
       biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at, filter: h.filter })),
-      ...(everyRead ? { everyRead: reads.map((h) => ({ at: h.at, ms: h.ms, bytes: h.bytes, filter: h.filter?.slice(0, 300) })) } : {}),
+      ...(everyRead ? { everyRead: reads.map((h) => ({ path: h.path, at: h.at, ms: h.ms, bytes: h.bytes, filter: h.filter?.slice(0, 300) })) } : {}),
     })
   }
 })()
