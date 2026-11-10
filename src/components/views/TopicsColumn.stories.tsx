@@ -5,7 +5,7 @@ import { TopicsColumnView } from './TopicsColumn'
 
 /**
  * Peek's Topics column (TOP-4, TOPI-10): your topics as one flat list, newest
- * activity first, then "Other topics" to open and join. As the approved
+ * activity first, then Explore topics (TOPI-6). As the approved
  * prototype draws it (peek `concept/topics-level-up`).
  */
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -57,16 +57,11 @@ export const YourTopics: Story = {
   },
 }
 
-/** Joined nothing yet: the other topics are there to open and join. */
-export const NoneJoined: Story = { args: { state: { mine: [], others, archived: [] } } }
+/** Explore topics open beside the column: its row is the current one (TOPI-6). */
+export const Exploring: Story = { args: { state: { mine: [widgets, release, speed], others, archived }, exploring: true } }
 
-/** An archived topic open: "Archived" opens onto its row. */
-export const ArchivedOpen: Story = {
-  args: { state: { mine: [widgets], others, archived }, selectedRef: archived[0]!.ref },
-}
-
-/** Every topic archived: you're in none, and the archived ones are still there to open. */
-export const OnlyArchived: Story = { args: { state: { mine: [], others: [], archived } } }
+/** Joined nothing yet: the empty line, above Explore topics, where the other topics are. */
+export const NoneJoined: Story = { args: { state: { mine: [], others, archived } } }
 
 /** No topic at all. */
 export const Empty: Story = { args: { state: { mine: [], others: [], archived: [] } } }

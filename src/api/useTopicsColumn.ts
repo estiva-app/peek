@@ -353,6 +353,25 @@ export function useListedNews(): ReadonlyMap<string, ListedNews> {
   }, [mine, lists, comments])
 }
 
+/**
+ * What the column already holds about each topic's time (TOPI-6), for Explore
+ * topics: your topics' newest activity, Unix seconds, `undefined` until read;
+ * and every readable topic's root time, what a topic's activity falls back to.
+ * No read of its own.
+ */
+export function useTopicTimes(): { yours: ReadonlyMap<string, number> | undefined; createdAt: ReadonlyMap<string, number> } {
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const now = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const mine = now.pubkey === pubkey
+  return { yours: mine ? now.activity?.at : undefined, createdAt: mine ? now.createdAt : EMPTY.createdAt }
+}
+
+/** Explore topics' Try again (TOPI-6): read every topic you can read again now, as a mount a minute later would. */
+export function readTopicsAgain(): void {
+  if (lastViewer) void readTopics(lastViewer)
+}
+
 /** For tests: forget what this tab has read. */
 export function resetTopicsColumn(): void {
   topicsReading = false

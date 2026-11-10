@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { EmptyState, ListColumn, NavTree, NavTreeSection, SkeletonList, Toolbar } from '@estiva-app/ui'
+import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { useConversationBadges, useFolders, useListedNews, useTopicsColumn, type TopicsColumnState } from '@/api'
 import { TreeRow } from '@/components/views/FileTreeView'
@@ -8,30 +8,29 @@ import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
 import { useRailClosed } from '@/layouts/railClosed'
 
-/** Where "Other topics" is kept open or closed on this browser. */
-export const OTHER_TOPICS_KEY = 'peek.topics.others.open'
-/** And "Archived". */
-export const ARCHIVED_TOPICS_KEY = 'peek.topics.archived.open'
+/** Where Explore topics is (TOPI-6). */
+export const EXPLORE_TOPICS_PATH = '/app/topics/explore'
 
 /**
  * **Peek's Topics column** (TOP-4, TOPI-10): the topics you are a member of,
  * one flat list, the one where something just happened on top, re-sorted live
  * (Miky, 3 and 6 Nov: "sort the topics … based on recent activity", "remove
  * the subfiles from topics so it's plain list"). A topic's files, its archived
- * ones included, are in its Overview. Then "Other topics", collapsed until
- * opened, title only: open one to join it. Last "Archived", collapsed too:
- * only active topics are on the list (Miky, 2 Nov, b1ace226). Both sections
- * stay until Explore topics replaces them. Its header has New topic, as
- * Folders' has (Miky, 2 Nov, TOP-9).
+ * ones included, are in its Overview. Then one "Explore topics" row, which
+ * opens the page of every topic you can read, archived ones too (TOPI-6), in
+ * place of the "Other topics" and "Archived" sections. Its header has New
+ * topic, as Folders' has (Miky, 2 Nov, TOP-9).
  * Built from the approved prototype (peek `concept/topics-level-up`,
  * `TopicsColumn.tsx`; Miky, 6 Nov).
  *
  * A row is the Folder tree's own (`TreeRow`): a link that opens its file
  * beside this column, with the same menu and dot.
  */
-export function TopicsColumn({ selectedRef, onControl }: {
+export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   /** `ref` of the open file, whose row is current. */
   selectedRef?: string
+  /** Explore topics is open beside the column: its row is current. */
+  exploring?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { state, signedOut } = useTopicsColumn()
@@ -54,6 +53,7 @@ export function TopicsColumn({ selectedRef, onControl }: {
         railClosed={railClosed}
         unread={unread}
         selectedRef={selectedRef}
+        exploring={exploring}
         onControl={onControl}
         onNewTopic={() => setStarting(true)}
       />
@@ -69,6 +69,7 @@ export function TopicsColumnView({
   railClosed = false,
   unread = {},
   selectedRef,
+  exploring = false,
   onControl,
   onNewTopic,
 }: {
@@ -77,6 +78,7 @@ export function TopicsColumnView({
   railClosed?: boolean
   unread?: Record<string, boolean>
   selectedRef?: string
+  exploring?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
   /** The header's New topic (TOP-9), as Folders' header has; none signed out, since starting one acts as somebody. */
   onNewTopic?: () => void
@@ -96,7 +98,7 @@ export function TopicsColumnView({
     >
       {/* A row clicked here opens its file with this column beside it. */}
       <TreeColumn.Provider value="topics">
-        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} onControl={onControl} />
+        <TopicsBody state={state} signedOut={signedOut} unread={unread} selectedRef={selectedRef} exploring={exploring} onControl={onControl} />
       </TreeColumn.Provider>
     </ListColumn>
   )
@@ -107,57 +109,35 @@ function TopicsBody({
   signedOut,
   unread,
   selectedRef,
+  exploring,
   onControl,
 }: {
   state: TopicsColumnState
   signedOut: boolean
   unread: Record<string, boolean>
   selectedRef?: string
+  exploring: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   if (signedOut) return <EmptyState scope="section" message="Sign in to see topics." />
   if (state === 'loading') return <SkeletonList />
   if ('failed' in state) return <EmptyState scope="section" message="Couldn’t load your topics. Reload to try again." />
-  const { mine, others, archived } = state
-  const otherOpen = others.some((topic) => topic.ref === selectedRef)
-  const archivedOpen = archived.some((topic) => topic.ref === selectedRef)
   return (
     <NavTree selected={selectedRef}>
-      {/* The approved story's empty line (Miky, 6 Nov); the sections below, while they stay, are where the others are. */}
-      {mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
-      {mine.map((topic) => (
+      {/* The approved story's empty line (Miky, 6 Nov), above Explore topics, where every other topic is. */}
+      {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
+      {state.mine.map((topic) => (
         <TreeRow key={topic.ref} file={topic} unread={unread} selectedRef={selectedRef} onControl={onControl} nested />
       ))}
-      {others.length > 0 && (
-        <NavTreeSection
-          id="other-topics"
-          title="Other topics"
-          defaultOpen={false}
-          storageKey={OTHER_TOPICS_KEY}
-          // Opened by link or from here, a topic of the section's keeps it open, so its row is seen.
-          openFor={otherOpen ? selectedRef : undefined}
-        >
-          {others.map((topic) => (
-            <TreeRow key={topic.ref} file={topic} selectedRef={selectedRef} onControl={onControl} nested />
-          ))}
-        </NavTreeSection>
-      )}
-      {/* The way to an archived topic (Miky, 2 Nov): out of the list, closed at its end; each opens read-only, with Unarchive. */}
-      {archived.length > 0 && (
-        <NavTreeSection
-          id="archived-topics"
-          title="Archived"
-          defaultOpen={false}
-          storageKey={ARCHIVED_TOPICS_KEY}
-          openFor={archivedOpen ? selectedRef : undefined}
-        >
-          {archived.map((topic) => (
-            <TreeRow key={topic.ref} file={topic} selectedRef={selectedRef} onControl={onControl} nested />
-          ))}
-        </NavTreeSection>
-      )}
+      {/* Where every other topic is, archived ones too, in place of the Other topics and Archived sections; no icon: a way in, not another kind of topic (Miky, 6 Nov). */}
+      <ExploreRow exploring={exploring} />
     </NavTree>
   )
+}
+
+/** The last row: Explore topics, a link the kit's router follows, current while its page is open. */
+function ExploreRow({ exploring }: { exploring: boolean }) {
+  return <NavItem href={EXPLORE_TOPICS_PATH} label="Explore topics" active={exploring} />
 }
 
 /** The column while the file's page has not yet decided which it shows: a skeleton, under no title. */

@@ -1,9 +1,9 @@
 /**
  * Peek's Topics column as a person sees it (TOP-4, TOPI-10): your topics as
  * one flat list, in the order they come (newest activity first, as the hook
- * orders them), with no files folded under any; "Other topics" shut until
- * opened, and kept as it was left on this browser; "Archived" last, shut the
- * same way (b1ace226); and the approved empty line when you are in none.
+ * orders them), with no files folded under any; then one Explore topics row,
+ * in place of the Other topics and Archived sections (TOPI-6); and the
+ * approved empty line when you are in none.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -25,7 +25,7 @@ const ALPHA = file(30840, 'alpha', 'alpha')
 const STRANGER = file(30840, 'stranger', 'Somebody else’s')
 const OLD = file(30840, 'old', 'Level 2')
 
-function mount(state: TopicsColumnState, props: { selectedRef?: string; unread?: Record<string, boolean> } = {}) {
+function mount(state: TopicsColumnState, props: { selectedRef?: string; unread?: Record<string, boolean>; exploring?: boolean } = {}) {
   return render(
     <MemoryRouter>
       <TopicsColumnView state={state} {...props} />
@@ -59,53 +59,29 @@ describe('the Topics column (TOP-4, TOPI-10)', () => {
     expect(row(WIDGETS).querySelector('[data-unread]')).toBeNull()
   })
 
-  it('keeps the other topics shut until “Other topics” is opened, and remembers it open on this browser', async () => {
-    const state = { mine: [WIDGETS], others: [STRANGER], archived: [] }
-    const first = mount(state)
-    // The section's panel stays mounted while shut, for find-in-page; shut is not seen.
-    expect(screen.getByText('Somebody else’s')).not.toBeVisible()
-    await userEvent.click(screen.getByText('Other topics'))
-    expect(screen.getByText('Somebody else’s')).toBeVisible()
-    first.unmount()
-    mount(state)
-    expect(screen.getByText('Somebody else’s')).toBeVisible()
-  })
-
-  it('opens “Other topics” when the open file is one of them, so its row is seen', () => {
-    mount({ mine: [WIDGETS], others: [STRANGER], archived: [] }, { selectedRef: STRANGER.ref })
-    expect(screen.getByText('Somebody else’s')).toBeVisible()
-  })
-
-  it('keeps archived topics shut under “Archived” at the end until opened, and remembers it open (b1ace226)', async () => {
-    const state = { mine: [WIDGETS], others: [STRANGER], archived: [OLD] }
-    const first = mount(state)
-    expect(screen.getByText('Level 2')).not.toBeVisible()
-    const sections = screen.getAllByRole('button').map((button) => button.textContent?.trim())
-    expect(sections.indexOf('Archived')).toBeGreaterThan(sections.indexOf('Other topics'))
-    await userEvent.click(screen.getByText('Archived'))
-    expect(screen.getByText('Level 2').closest('a')!.getAttribute('href')).toBe(filePath(OLD.address!, 'Level 2'))
-    expect(screen.getByText('Level 2')).toBeVisible()
-    first.unmount()
-    mount(state)
-    expect(screen.getByText('Level 2')).toBeVisible()
-  })
-
-  it('opens “Archived” when the open file is an archived topic, so its row is seen (b1ace226)', () => {
-    mount({ mine: [WIDGETS], others: [], archived: [OLD] }, { selectedRef: OLD.ref })
-    expect(screen.getByText('Level 2')).toBeVisible()
-  })
-
-  it('in no topic at all, says “You’re in no topics yet.” and draws no section', () => {
-    mount({ mine: [], others: [], archived: [] })
-    expect(screen.getByText('You’re in no topics yet.')).toBeInTheDocument()
-    expect(screen.queryByText('Archived')).toBeNull()
+  it('ends with one Explore topics row and no Other topics or Archived section, nor any of their topics (TOPI-6)', () => {
+    mount({ mine: [WIDGETS, DESIGN], others: [STRANGER], archived: [OLD] })
+    const links = [...document.querySelectorAll('a')]
+    expect(links.map((link) => link.textContent)).toEqual(['Widgets', 'Design', 'Explore topics'])
+    expect(links.at(-1)!.getAttribute('href')).toBe('/app/topics/explore')
     expect(screen.queryByText('Other topics')).toBeNull()
+    expect(screen.queryByText('Archived')).toBeNull()
+    expect(screen.queryByText('Somebody else’s')).toBeNull()
+    expect(screen.queryByText('Level 2')).toBeNull()
   })
 
-  it('in no topic, with others and archived ones to read, says so and still offers both sections', () => {
+  it('marks Explore topics as the current row while its page is open, and only then', () => {
+    const first = mount({ mine: [WIDGETS], others: [], archived: [] }, { exploring: true })
+    expect(screen.getByText('Explore topics').closest('a')!.getAttribute('aria-current')).toBe('page')
+    first.unmount()
+    mount({ mine: [WIDGETS], others: [], archived: [] })
+    expect(screen.getByText('Explore topics').closest('a')!.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('in no topic, says “You’re in no topics yet.” above Explore topics', () => {
     mount({ mine: [], others: [STRANGER], archived: [OLD] })
-    expect(screen.getByText('You’re in no topics yet.')).toBeInTheDocument()
-    expect(screen.getByText('Other topics')).toBeInTheDocument()
-    expect(screen.getByText('Archived')).toBeInTheDocument()
+    const empty = screen.getByText('You’re in no topics yet.')
+    const explore = screen.getByText('Explore topics')
+    expect(empty.compareDocumentPosition(explore) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

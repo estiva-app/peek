@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateLabel, formatTimestamp, formatReplyTimestamp } from './format'
+import { formatActive, formatDateLabel, formatTimestamp, formatReplyTimestamp } from './format'
+
+describe('formatActive — Explore topics’ Active (TOPI-6)', () => {
+  const now = Date.UTC(2026, 10, 10, 12)
+  const ago = (minutes: number) => formatActive(now - minutes * 60_000, now)
+  it('says Just now under a minute, then minutes, hours and days', () => {
+    expect(ago(0.5)).toBe('Just now')
+    expect(ago(5)).toBe('5 minutes ago')
+    expect(ago(3 * 60)).toBe('3 hours ago')
+    expect(ago(24 * 60)).toBe('Yesterday')
+  })
+  it('rounds before it picks the unit, so it never says 60 minutes or 24 hours', () => {
+    expect(ago(59.6)).toBe('1 hour ago')
+    expect(ago(23.6 * 60)).toBe('Yesterday')
+  })
+})
 
 // Fixed "now": Tue Sep 3 2024, 10:00:00 local time.
 const NOW = new Date(2024, 8, 3, 10, 0, 0).getTime()

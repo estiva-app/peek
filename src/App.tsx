@@ -43,6 +43,7 @@ function App() {
       <Route path="/app/desk" element={<DeskPage />} />
       {/* Your topics with their files (TOP-4); what was Topics until then is Folders, below. */}
       <Route path="/app/topics" element={<TopicsPage />} />
+      <Route path="/app/topics/explore" element={<TopicsPage explore />} />
       {/* Navigation by Folder (RFC 0.4 §4) — added beside the topic routes,
           not over them. §11.1's topic→file migration is a separate change. */}
       <Route path="/app/folders" element={<FoldersPage />} />
