@@ -55,9 +55,11 @@ describe('a comment on a few words of an issue', () => {
 
   it('puts the words above the comment’s own, under the author', () => {
     const c = show({ state: 'resolved', block, object, link: LINK })
-    const words = c.querySelector('[data-quoted]')!
-    const text = [...c.querySelectorAll('*')].find((el) => el.textContent === 'On these words' && el.children.length === 0)!
-    expect(words.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const words = c.querySelector('[data-quoted]')
+    const text = [...c.querySelectorAll('*')].find((el) => el.textContent === 'On these words' && el.children.length === 0)
+    expect(words).not.toBeNull()
+    expect(text).toBeDefined()
+    expect(words!.compareDocumentPosition(text!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('opens the issue at those words in Ship, in a new tab', () => {
