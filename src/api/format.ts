@@ -80,3 +80,31 @@ export function formatReplyTimestamp(createdAt: number, now: number = Date.now()
     ? `${monthDay} at ${time}`
     : `${monthDay}, ${d.getFullYear()} at ${time}`
 }
+
+const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['minute', 60],
+  ['hour', 24],
+  ['day', 7],
+  ['week', 4.35],
+  ['month', 12],
+  ['year', Infinity],
+]
+
+/**
+ * When something last happened, as Explore topics' Active says it in every
+ * app (TOPI-6, as Ship's and Leaf's rows): `'Just now'`, `'5 minutes ago'`,
+ * `'Yesterday'`, `'Last week'`, `'3 months ago'`.
+ */
+export function formatActive(at: number, now: number = Date.now()): string {
+  let amount = (at - now) / 60_000
+  if (amount > -1) return 'Just now'
+  for (const [unit, next] of RELATIVE_STEPS) {
+    if (Math.abs(amount) < next) {
+      const said = RELATIVE.format(Math.round(amount), unit)
+      return said.charAt(0).toUpperCase() + said.slice(1)
+    }
+    amount /= next
+  }
+  return ''
+}
