@@ -3,14 +3,17 @@
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
  *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,peek-topic-all,peek-topic-important] [--runs 3]
- *     [--json /tmp/before.json] [--agent <estiva-agent dir>]
+ *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
+ *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
+ *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
  *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
  *   node scripts/app-speed.mjs --table /tmp/before.json
  *   node scripts/app-speed.mjs --compare /tmp/before.json /tmp/after.json
  *
- * Keep the JSON out of this repository: it holds lines of Weekly Plans, a private Estiva HQ page.
+ * Keep the JSON out of this repository: it holds lines of Weekly Plans, a private Estiva HQ page, and with
+ * `--reads` the filters each read sent (pubkeys, private teams' ids).
  *
- * Each browser leg is one headless browser with nothing stored, signed in as QA-1 (scripts/probe.mjs), with
+ * Each browser leg is one headless browser with nothing stored, signed in as QA-1 (or `--as`) (scripts/probe.mjs), with
  * scripts/app-speed-recorder.js running in every page from its first byte:
  *
  * - `weekly`: Miky's Weekly Plans (Estiva HQ) opened in Leaf at its own link.
@@ -60,6 +63,16 @@ const RECORDER = new URL('./app-speed-recorder.js', import.meta.url).pathname
 const FETCHLOG = new URL('./app-speed-fetchlog.mjs', import.meta.url).href
 const AGENT = option('agent', `${homedir()}/.estiva-agent-runtime`)
 const ENV_FILE = `${homedir()}/.estiva-agent.env`
+/** Who opens the browser legs (not `--together`'s): QA-1, or anyone with a delegated session (`--as miky --session <file>`). */
+const AS = option('as', 'qa1')
+const SESSION = option('session', undefined)
+if (SESSION && AS === 'qa1') throw new Error('--session needs --as <name>: the session file signs in as its owner, not QA-1')
+if (!SESSION && AS !== 'qa1') throw new Error(`--as ${AS} needs --session <file>: only QA-1 signs in by itself here`)
+if (SESSION && args.includes('--together')) throw new Error('--together opens each leg as its own person: no --as/--session')
+/** Legs that read QA-1's own fixtures, measured only as QA-1. */
+const QA1_ONLY = ['teams', 'peek-topic-all', 'peek-topic-important']
+/** `--reads`: keep every relay read of a run (when, bytes, filter), to tell which part of the app asked for it. */
+const READS = args.includes('--reads')
 /** The box the relay runs on, for its log (`--together`). */
 const BOX = process.env.ESTIVA_BOX ?? 'root@167.233.252.136'
 /** The CLI that reads Weekly Plans' text: the checkout the `ship` and `peek` wrappers run, at origin/main. */
@@ -135,7 +148,7 @@ async function weeklyTexts(tries = 4) {
 
 const settle = (ms) => ['--until', `'allNoPlaceholder' in __sp.marks || performance.now() > ${ms}`]
 const whole = ['--wait', '1000', '--until', '__sp.quiet() > 5000 || performance.now() > 180000']
-const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)})`]
+const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)}, ${READS})`]
 
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
@@ -158,12 +171,13 @@ const LEGS = {
 /** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
 const TOGETHER = { weekly: 'qa1', 'ship-project': 'qa2', peek: 'qa1', agent: 'agent' }
 
-async function browserLeg(leg, awaitFile, as = 'qa1') {
+async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
   let stdout
   // Why the probe itself died (its exit and last stderr line), when it printed no report.
   let died = ''
   try {
-    ;({ stdout } = await run('node', [PROBE, '--as', as, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
+    const signIn = session ? ['--as', as, '--session', session] : ['--as', as]
+    ;({ stdout } = await run('node', [PROBE, ...signIn, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
   } catch (error) {
     stdout = error.stdout
     died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
@@ -303,7 +317,7 @@ function table(result) {
     lines.push(`| ${label} | ${s.runs} | ${cell(s)} | ${s.ready === null ? '–' : sec(s.ready)} | ${s.reads ?? '–'} | ${mbs(s.mb)} | ${s.toClaude === undefined ? '–' : kb(s.toClaude)} | ${s.refusals} | ${s.failed} |`)
   }
   const builds = [...new Set(Object.values(result.rows).flat().map((r) => r.build && `${new URL(r.href).host}${r.build}`).filter(Boolean))]
-  const who = result.relay ? 'together, Leaf and Peek as QA-1, Ship as QA-2' : 'as QA-1'
+  const who = result.relay ? 'together, Leaf and Peek as QA-1, Ship as QA-2' : !result.as || result.as === 'qa1' ? 'as QA-1' : `as ${result.as}`
   lines.push('', `Measured ${result.at} ${who} (agent: its own key, ${result.agent}). Builds: ${builds.join(', ') || '–'}.`)
   if (result.relay) lines.push(`Relay "pool timed out" per run: ${result.relay.map((r) => r.timeouts ?? '?').join(', ')}.`)
   for (const [label, runs] of Object.entries(result.rows)) for (const f of summary(runs).failures) lines.push(`- ${label} failed: ${String(f).slice(0, 200)}`)
@@ -340,7 +354,9 @@ if (args.includes('--compare')) {
   const scratch = mkdtempSync(join(tmpdir(), 'app-speed-'))
   const out = option('json', join(scratch, 'app-speed.json'))
   const { stdout: agentRev } = await run('git', ['-C', AGENT, 'log', '-1', '--format=%h %cs']).catch(() => ({ stdout: AGENT }))
-  const result = { at: new Date().toISOString(), agent: agentRev.trim(), rows: {} }
+  // Who opened the browser legs goes with the runs, so --table and --compare say it.
+  const result = { at: new Date().toISOString(), agent: agentRev.trim(), as: together ? undefined : AS, rows: {} }
+  if (AS !== 'qa1') for (const leg of legs) if (QA1_ONLY.includes(leg)) throw new Error(`--legs ${leg} reads QA-1's own fixtures: run it without --as`)
   const awaitList = [...SHIP_AWAIT]
   if (legs.some((l) => l.startsWith('weekly') || l === 'peek')) {
     const texts = await weeklyTexts()
@@ -379,7 +395,7 @@ if (args.includes('--compare')) {
     for (const leg of legs) {
       const reports = []
       if (leg === 'agent') for (const [name, a] of AGENT_CALLS) reports.push(await agentCall(name, a))
-      else reports.push(await browserLeg(leg, awaitFile))
+      else reports.push(await browserLeg(leg, awaitFile, AS, SESSION))
       keep(n, reports)
     }
   }

@@ -114,7 +114,7 @@
 
   // ms since the last relay read started or finished: the whole load is over once this stays high.
   sp.quiet = () => (sp.http.some((h) => relay(h) && h.pending) ? 0 : now() - Math.max(0, ...sp.http.filter(relay).map((h) => h.done ?? h.at + (h.ms ?? 0))))
-  sp.report = (label) => {
+  sp.report = (label, everyRead = false) => {
     const reads = sp.http.filter(relay)
     const until = (at) => reads.filter((h) => at !== undefined && h.at <= at)
     const mb = (list) => list.reduce((n, h) => n + (h.bytes ?? 0), 0) / 1e6
@@ -144,6 +144,7 @@
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
       biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at, filter: h.filter })),
+      ...(everyRead ? { everyRead: reads.map((h) => ({ path: h.path, at: h.at, ms: h.ms, bytes: h.bytes, filter: h.filter?.slice(0, 300) })) } : {}),
     })
   }
 })()
