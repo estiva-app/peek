@@ -117,6 +117,8 @@ const SHIP_AWAIT = [
   ['^ship\\.', '^/issue/', ["Ship's address for a file opens it only when one author holds its d", 'Who, when']],
   ['^ship\\.', '^/issues$', ['Assigned to me']],
   ['^ship\\.', '^/topics$', ['Other topics', 'Archived']],
+  // A topic's page: its title, and a conversation in its column once that is read (TOPI-8).
+  ['^ship\\.', '^/topic/', ['Conversation across apps', 'Other suggestions and requirements for conversations']],
 ]
 const AGENT_CALLS = [
   ['ship_get_issue', { ref: 'Peek opens instantly' }],
