@@ -92,4 +92,12 @@ describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
   it('reports the horizon floor for a created file the read held no event for', () => {
     expect(foldMemberships(ME, [], NOW).floor).toBe(NOW - 90 * DAY)
   })
+
+  it('keeps the comments the viewer wrote or that tag them, oldest first, and no other event (ACT-2)', () => {
+    const tagsMe = comment(THEIRS, THEM, { created_at: NOW - 200, tags: [['A', THEIRS], ['p', ME]] })
+    const mine = comment(THEIRS, ME, { created_at: NOW - 300 })
+    const someoneElses = comment(THEIRS, THEM, { created_at: NOW - 100, tags: [['A', THEIRS], ['p', THEM]] })
+    const level = change(THEIRS, `follow:${ME}`, 'all', ME, ME)
+    expect(foldMemberships(ME, [tagsMe, someoneElses, level, mine], NOW).named.map((e) => e.id)).toEqual([mine.id, tagsMe.id])
+  })
 })

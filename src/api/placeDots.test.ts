@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { buildLevelChange, buildMembershipChange, fileContext, threadContext, type TeamsList } from '@estiva-app/conversation'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { signed } from '@/test/wireRelay'
 import { listedHaveUnread, placeHasUnread, topicFollowingOf, type TeamFacts } from './placeDots'
@@ -194,5 +194,52 @@ describe('a file the topic lists (TOPI-3)', () => {
     // The file read past it: a reply is read only in its thread (PEE-44), so it still lights.
     expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 60 })).toBe(true)
     expect(listedLights([root, answer], atAll, { [ISSUE_CONTEXT]: T0 + 30, [threadContext(root.id) as string]: T0 + 60 })).toBe(false)
+  })
+})
+
+describe('what names the viewer on a file the topic lists, or one level under it (ACT-2)', () => {
+  const PROJECT = `30850:${MIKY}:project-3`
+  const ISSUE = `30851:${MIKY}:issue-14`
+  const SHIP_TEAM = '3c1d2e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f'
+  const NAMES_ME = `look at this nostr:${encodeNpub(ME)}`
+  const comment = (file: string, id: string, at: number, opts: { by?: string; content?: string } = {}) =>
+    signed(
+      { kind: 1111, created_at: at, content: opts.content ?? id, tags: [['A', file], ['K', file.split(':')[0]!], ['a', file], ['k', file.split(':')[0]!], ['h', SHIP_TEAM]] },
+      opts.by ?? MIKY,
+    )
+  const reply = (file: string, to: SignedEvent, at: number) =>
+    signed({ kind: 1111, created_at: at, content: 'reply', tags: [['A', file], ['K', file.split(':')[0]!], ['e', to.id], ['k', '1111'], ['p', to.pubkey], ['h', SHIP_TEAM]] }, MIKY)
+  /** Whether the topic lights for `events` on `file`, listed directly or (`under`) one level under a listed file. */
+  const lightsOn = (file: string, events: SignedEvent[], changes: SignedEvent[], under = false) =>
+    listedHaveUnread([{ file, events, ...(under ? { under } : {}) }], { me: ME, following: following(changes), muted: false, merged: {}, floor: FLOOR })
+  const atImportant = [added(T0 + 10)]
+  const atAll = [added(T0 + 10), level(T0 + 15, 'all')]
+
+  it('at Important, a mention of the viewer on a listed file lights the topic', () => {
+    expect(lightsOn(PROJECT, [comment(PROJECT, 'mention', T0 + 50, { content: NAMES_ME })], atImportant)).toBe(true)
+  })
+
+  it('at Important, a comment on a listed file naming nobody stays dark, and lights at All', () => {
+    expect(lightsOn(PROJECT, [comment(PROJECT, 'plain', T0 + 50)], atImportant)).toBe(false)
+    expect(lightsOn(PROJECT, [comment(PROJECT, 'plain', T0 + 50)], atAll)).toBe(true)
+  })
+
+  it("at Important, a reply to the viewer's own comment on a listed file lights the topic", () => {
+    const mine = comment(PROJECT, 'mine', T0 + 20, { by: ME })
+    expect(lightsOn(PROJECT, [mine, reply(PROJECT, mine, T0 + 50)], atImportant)).toBe(true)
+    expect(lightsOn(PROJECT, [mine], atImportant)).toBe(false)
+  })
+
+  it('one level under a listed file, a mention of the viewer lights the topic at Important', () => {
+    expect(lightsOn(ISSUE, [comment(ISSUE, 'mention', T0 + 50, { content: NAMES_ME })], atImportant, true)).toBe(true)
+  })
+
+  it('one level under a listed file, a comment naming nobody stays dark, even at All', () => {
+    expect(lightsOn(ISSUE, [comment(ISSUE, 'plain', T0 + 50)], atAll, true)).toBe(false)
+    expect(lightsOn(ISSUE, [comment(ISSUE, 'plain', T0 + 50)], atImportant, true)).toBe(false)
+  })
+
+  it('after the viewer left the topic, a mention on a listed file lights nothing', () => {
+    expect(lightsOn(PROJECT, [comment(PROJECT, 'mention', T0 + 50, { content: NAMES_ME })], [added(T0 + 10), left(T0 + 20)])).toBe(false)
   })
 })

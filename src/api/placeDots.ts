@@ -10,7 +10,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-has-members-and-followers-and-a-place-is-followed-at-a-level.md
  */
-import { fileContext, followingOf, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
+import { fileContext, followingOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
 
@@ -69,37 +69,42 @@ export function placeHasUnread(
   return unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor }).length > 0
 }
 
-/** What a topic's list holds that its dot judges at All (TOPI-3): each file it lists directly, with its comments held. */
-export type ListedNews = readonly { file: string; events: readonly SignedEvent[] }[]
+/**
+ * What a topic's list holds that its dot judges (TOPI-3, ACT-2): each file it lists directly, and each file one level
+ * under one of those (`under`: a listed project's issue, a listed document's page), with the comments held on it.
+ */
+export type ListedNews = readonly { file: string; events: readonly SignedEvent[]; under?: boolean }[]
 
 /**
- * Whether a file the topic lists has something new for `me` — what lights the topic's dot at **All** beside its own
- * stream (TOPI-3): the topic's middle column draws those files' threads there, so the dot says when one has news.
- * Nothing at Important, Not following or when not in: the column draws the topic's own alone then.
+ * Whether a file the topic lists has something new for `me` — what lights the topic's dot beside its own stream
+ * (TOPI-3, ACT-2), by the shared rule (`unreadOnListedFile`):
  *
- * Each file is judged in its own stream, by the shared rule at the topic's level (`unreadOnPlace` with the file's
- * context, as the rule's own words say a listed file is judged), so a file read in Ship, on its own page or in the
- * topic (its own marker moved) stays dark; a reply by its thread's marker. Only what was said after the viewer chose
- * All counts: choosing it never brings back older talk (Miky, 2026-11-03).
+ * - at **Important**, what names `me` on a listed file or on one a level under it: a mention of them, and a reply in
+ *   a conversation they are in (wrote in it, or were mentioned or answered there). A new conversation that names
+ *   nobody stays dark;
+ * - at **All**, on a file the topic lists directly, every message said after `me` chose All too: choosing it never
+ *   brings back older talk (Miky, 2026-11-03). One level under, only what names `me`, at either level;
+ * - a mute keeps the mentions alone; nothing lights when `me` is not in the topic, nor from before their start on it.
+ *
+ * Each file is judged in its own stream (the file's context), so a file read in Ship, on its own page or in the
+ * topic (its own marker moved) stays dark; a reply by its thread's marker.
  *
  * Known limit: the Topics column's read holds only each file's newest comment or two (the ones it already fetched
- * to time its topics; interop's `TopicActivity.comments`), and the live watch adds each new one. An older unread
- * comment from someone else, under your own newer one, is not held, so it does not light the dot until the next
- * comment on that file.
+ * to time its topics; interop's `TopicActivity.comments`), and the live watch adds each new one; the membership
+ * read adds every comment `me` wrote or that tags them, within its horizon. An older unread comment from someone
+ * else, naming nobody, under a newer one, is not held, so at All it does not light the dot until the next comment.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/at-important-what-names-you-on-a-listed-file-lights-the-topic.md
  */
 export function listedHaveUnread(
   news: ListedNews,
   judge: { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number },
 ): boolean {
-  if (!judge.following.in || judge.following.level !== 'all') return false
-  const from = judge.following.allSince
-  return news.some(({ file, events }) => {
+  if (!judge.following.in) return false
+  return news.some(({ file, events, under }) => {
     const stream = fileContext(file)
-    if (!stream) return false
-    const after = from === undefined ? events : events.filter((event) => event.created_at >= from)
-    return (
-      after.length > 0 &&
-      unreadOnPlace(after, judge.merged, { stream, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor }).length > 0
-    )
+    if (!stream || events.length === 0) return false
+    const place = { stream, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor, ...(under ? { under } : {}) }
+    return unreadOnListedFile(events, judge.merged, place).length > 0
   })
 }

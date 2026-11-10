@@ -333,9 +333,11 @@ export function useConversationBadges(
       )
     }
     /*
-      A topic followed at All also lights for news on a file it lists (TOPI-3): its middle column draws those files'
-      threads there. Judged from what the Topics column already holds (`useListedNews`), with no read of its own; each
-      file in its own stream, so one read in Ship or in the topic stays dark.
+      A topic also lights for news on a file it lists (TOPI-3, ACT-2): at either level for what names the viewer there
+      or one level under it (a mention, a reply in a conversation they are in), and at All for every new message on a
+      file it lists directly. Judged from what the Topics column and the membership read already hold
+      (`useListedNews`), with no read of its own; each file in its own stream, so one read in Ship or in the topic
+      stays dark.
     */
     if (listed && me && teamsKnown && frontier.ready && membership.state !== 'unknown') {
       for (const file of files ?? []) {
