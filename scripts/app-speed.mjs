@@ -2,7 +2,7 @@
  * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
- *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,peek-topic-all,peek-topic-important] [--runs 3]
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,peek-topic-all,peek-topic-important] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
@@ -29,6 +29,8 @@
  * - `peek`: Weekly Plans' conversation in Peek.
  * - `teams`: Peek's Teams column, opened cold at /app/folders (TEA-5): every team's roster, list and chat in one
  *   read, beside the Folders it replaced. Not in the default set.
+ * - `topics`: Peek's Topics column, opened cold at /app/topics (TOPI-7): QA-1's topics, and since TOPI-7 the teams
+ *   read too, for the row menu's Make it a space and Leave. Not in the default set.
  * - `peek-topic-all`, `peek-topic-important`: a QA topic that lists a Leaf page in another team, opened cold in Peek
  *   (TOPI-3): at All it also reads and watches the page's conversation, at Important only its own. Text is its own
  *   message; the whole load counts the files' read. The kit does not set the level: set QA-1's on that topic with its
@@ -70,7 +72,7 @@ if (SESSION && AS === 'qa1') throw new Error('--session needs --as <name>: the s
 if (!SESSION && AS !== 'qa1') throw new Error(`--as ${AS} needs --session <file>: only QA-1 signs in by itself here`)
 if (SESSION && args.includes('--together')) throw new Error('--together opens each leg as its own person: no --as/--session')
 /** Legs that read QA-1's own fixtures, measured only as QA-1. */
-const QA1_ONLY = ['teams', 'peek-topic-all', 'peek-topic-important']
+const QA1_ONLY = ['teams', 'topics', 'peek-topic-all', 'peek-topic-important']
 /** `--reads`: keep every relay read of a run (when, bytes, filter), to tell which part of the app asked for it. */
 const READS = args.includes('--reads')
 /** The box the relay runs on, for its log (`--together`). */
@@ -91,6 +93,8 @@ const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
  * which waits on the roster read. ("TEA-3 probe A" was archived, so neither column ever drew it.)
  */
 const TEAMS_AWAIT = 'Topic-list probe (QA-1 only)'
+/** A topic QA-1 follows, a row of Peek's Topics column (TOPI-7). */
+const TOPICS_AWAIT = 'Switch probe A'
 /** "9127e281 All probe topic" (team QA), listing "9127e281 probe page (other team)" in TEA-8 probe team (TOPI-3). */
 const QA_TOPIC = {
   address: '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:433a5e04-a7ed-4cec-9845-c0df36485ae1',
@@ -164,6 +168,7 @@ const LEGS = {
   'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
   peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
   teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/folders', ...settle(60000), ...whole, ...report('teams')],
+  topics: () => ['--base', 'https://peek.estiva.app', '--url', '/app/topics', ...settle(60000), ...whole, ...report('topics')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
 }
@@ -369,6 +374,8 @@ if (args.includes('--compare')) {
   }
   // Peek's Teams column (TEA-5), cold: a team QA-1 is in, drawn by the Folders column before it and Teams after.
   if (legs.includes('teams')) awaitList.push(['^peek\\.', '^/app/folders/?$', [TEAMS_AWAIT]])
+  // Peek's Topics column (TOPI-7), cold: one of QA-1's topics, a row drawn once the column's reads land.
+  if (legs.includes('topics')) awaitList.push(['^peek\\.', '^/app/topics/?$', [TOPICS_AWAIT]])
   // Before Weekly Plans' Peek entry, whose path pattern would match this topic too.
   if (legs.some((l) => l.startsWith('peek-topic-'))) awaitList.unshift(['^peek\\.', QA_TOPIC.path, [QA_TOPIC.own]])
   const awaitFile = join(scratch, 'recorder.js')
