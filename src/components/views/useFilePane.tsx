@@ -1,19 +1,21 @@
 import { useNavigate } from 'react-router-dom'
-import { IconDotsVertical, IconExternalLink, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { IconCheck, IconDotsVertical, IconExternalLink, IconLayoutDashboard, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice } from '@estiva-app/ui'
+import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, shortcutLabel, useShortcut } from '@estiva-app/ui'
+import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
+import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, usePeekActions, useTeams, useWorkspaceDirectory } from '@/api'
+import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useTeams, useWorkspaceDirectory } from '@/api'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
-import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { filePath, shareableFileUrl } from '@/lib/objectUrl'
+import { canMove, fileControlsOf, hasFileControls } from '@/lib/fileControls'
+import { copyFileLink, filePath } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
 import { formatDateLabel } from '@/api'
 
@@ -32,13 +34,10 @@ export function useFilePane(
   view: ReturnType<typeof useFileView>,
   {
     onDeleted,
-    onStarted,
     onListingChanged,
   }: {
     /** The open file was deleted. */
     onDeleted: (deleted: ForeignObject) => void
-    /** A topic was started inside the open one: it is what was asked for. */
-    onStarted: (created: { address: string; title: string }) => void
     /** An archive or a move changed where the file is listed. */
     onListingChanged?: () => Promise<unknown> | void
   },
@@ -60,28 +59,18 @@ export function useFilePane(
   const controls = fileControlsOf(file)
   /*
     The topic's team (TEA-5): Move only where it can succeed, since a space
-    moves only by a member of its team (SPEC §3.3), and Make it a space / Stop
-    being a space for its members. A topic reads its teams, so one opened from
-    a link offers both; any other file reads none.
+    moves only by a member of its team (SPEC §3.3). A topic reads its teams, so
+    one opened from a link offers it; any other file reads none. Make it a
+    space is on the topic's row now (TOPI-7).
   */
   const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
   const { teams } = useTeams({ read: isTopic })
-  const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
   const listing = isTopic ? listingOf(teams, file?.address ?? undefined) : undefined
-  const spaceTeam = listing?.team.isMember && !listing.team.archived ? listing.team : undefined
-  const toggleSpace =
-    spaceTeam && file?.address
-      ? async () => {
-          const result = await markSpace(spaceTeam.id, file.address!, !listing!.space)
-          if (!result.ok) showToast({ label: result.reason, type: 'error' })
-        }
-      : undefined
   // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
-  const startsInside = canStartInside(file)
   const people = useWorkspaceDirectory()
 
   // Who is in the file, for the members pill (REA-3): re-read after a join, a leave or an add.
@@ -100,7 +89,6 @@ export function useFilePane(
       if (deleted.address === file?.address) onDeleted(deleted)
     },
     onMoved: () => void Promise.all([reloadConversation(), onListingChanged?.()]),
-    onStarted,
   })
 
   /*
@@ -110,10 +98,10 @@ export function useFilePane(
     clipboard off a menu.
   */
   const copyLink = file?.address
-    ? () => {
-        const link = shareableFileUrl(file.address!, file.slots.title?.value, window.location.origin)
-        void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this link:', link))
-      }
+    ? () =>
+        void copyFileLink(file.address!, file.slots.title?.value).then((copied) => {
+          if (copied) showToast({ label: 'Link copied', type: 'success' })
+        })
     : undefined
 
   /*
@@ -202,10 +190,28 @@ export function useFilePane(
     menu below opens for one, holding this and nothing else.
   */
   const openWorkFiles = useOpenWorkFiles()
-  const inOpenWork = file?.address ? openWorkFiles.has(file.address) : false
-  const toggleOpenWork = file?.address && !readOnly
-    ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
-    : undefined
+  const openWork = useToggleOpenWork()
+  const inOpenWork = file?.address ? openWork.has(file.address) : false
+  const toggleOpenWork = file?.address && !readOnly ? () => openWork.toggle(file.address!) : undefined
+  /*
+    A topic's Open work is a button in its header, and Ctrl/Cmd+O anywhere on its page, in place of the browser's Open
+    file (Miky, 3 and 6 Nov; the approved story, TOPI-7). Another app's file keeps it in its ⋮.
+  */
+  useShortcut(OPEN_WORK_KEY, () => toggleOpenWork?.(), isTopic && !!toggleOpenWork)
+  const openWorkButton =
+    isTopic && toggleOpenWork ? (
+      <WithTooltip label={inOpenWork ? 'Take out of Open work' : 'Add to Open work'} shortcut={shortcutLabel(OPEN_WORK_KEY)}>
+        <Button
+          size="small"
+          variant="outlined"
+          leadingIcon={inOpenWork ? <IconCheck size={14} stroke={1.5} /> : <IconLayoutDashboard size={14} stroke={1.5} />}
+          aria-pressed={inOpenWork}
+          onClick={toggleOpenWork}
+        >
+          {inOpenWork ? 'In Open work' : 'Add to Open work'}
+        </Button>
+      </WithTooltip>
+    ) : undefined
 
   /*
     Archived (FOL-46): the file is out of every list, and a link still opens
@@ -296,7 +302,10 @@ export function useFilePane(
           members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
           actions={
             file?.folder || view.sidePanel ? (
-              /* One strip: one Tab stop, arrows along it (UIG-14). */
+              // Open work's button 8px before the strip, as the approved story draws it (TOPI-7).
+              <div className="flex items-center gap-2">
+              {openWorkButton}
+              {/* One strip: one Tab stop, arrows along it (UIG-14). */}
               <Toolbar aria-label="File actions" surface={false}>
                 {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
                 {showToggle && (
@@ -315,9 +324,13 @@ export function useFilePane(
                   The topic's menu, when the manifest offers anything for it
                   to hold (FOL-33) — and absent, not inert, when it does not:
                   a Ship issue's header has nothing to put here, and a button
-                  that opens nothing would say otherwise.
+                  that opens nothing would say otherwise. A topic's ⋮ is
+                  what you do to the topic itself — Details, Rename, Move,
+                  Copy link, Archive, Delete (Miky, 3 Nov; Details for its
+                  summary, 9 Nov). Open work is the button beside it, Make it
+                  a space is on its row, Add is in Who follows (TOPI-7).
                 */}
-                {file?.folder && (hasFileControls(controls) || moves || startsInside || toggleOpenWork || toggleSpace || follow.openAdd) && (
+                {file?.folder && (hasFileControls(controls) || moves || (!isTopic && toggleOpenWork)) && (
                   <TopicMoreMenu
                     trigger={
                       <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -328,18 +341,15 @@ export function useFilePane(
                     onCopyLink={hasTopicControls ? copyLink : undefined}
                     archiveAction={archiveAction}
                     onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
-                    openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
-                    onToggleOpenWork={toggleOpenWork}
+                    openWorkAction={toggleOpenWork && !isTopic ? (inOpenWork ? 'remove' : 'add') : undefined}
+                    onToggleOpenWork={isTopic ? undefined : toggleOpenWork}
                     onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
-                    onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
                     onMove={moves && file && !readOnly ? () => fileControls.open('move', file) : undefined}
-                    spaceAction={toggleSpace && !readOnly ? (listing?.space ? 'unmark' : 'mark') : undefined}
-                    onToggleSpace={toggleSpace ? () => void toggleSpace() : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
-                    onAddSomeone={follow.openAdd}
                   />
                 )}
               </Toolbar>
+              </div>
             ) : undefined
           }
         />

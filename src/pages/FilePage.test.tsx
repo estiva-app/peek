@@ -12,7 +12,7 @@
  * which was true of the pane and is the gap this route closes.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -129,7 +129,7 @@ const writes = vi.hoisted(() => ({
   // The delete flow reads the Folder for `hasState` seconds before the write.
   resolveFolderContents: vi.fn(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] })),
 }))
-const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string }[] }))
+const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string; actionLabel?: string; onAction?: () => void }[] }))
 /**
  * The short form's seam, stood in for (FOL-37): the addresses the page has
  * remembered, and a hook that asks `writes.resolveFileAddress` for the rest.
@@ -267,7 +267,31 @@ vi.mock('@/api', async () => ({
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
   useTopicsColumn: () => topicsColumnNow(),
+  /*
+    Open work as the person's list holds it (FOL-34): without a relay the real list ignores a change, so the page's
+    button, its key and the rows read and change this one. Its wire is the openWork tests' (src/api/internal).
+  */
+  useOpenWorkFiles: () => {
+    const files = useSyncExternalStore(openWork.subscribe, () => openWork.files)
+    return {
+      has: (address: string) => files.has(address),
+      add: (address: string) => openWork.set(new Set([...openWork.files, address])),
+      remove: (address: string) => openWork.set(new Set([...openWork.files].filter((held) => held !== address))),
+    }
+  },
 }))
+/** The files in Open work: none, unless a test puts one there. */
+const openWork = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  return {
+    files: new Set<string>(),
+    subscribe: (listener: () => void) => (listeners.add(listener), () => void listeners.delete(listener)),
+    set(files: Set<string>) {
+      this.files = files
+      listeners.forEach((listener) => listener())
+    },
+  }
+})
 // The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same topics there.
 vi.mock('@/api/useTopicsColumn', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -454,6 +478,7 @@ beforeEach(() => {
   writes.resolveObject.mockClear()
   shortForm.known.clear()
   toasts.shown = []
+  openWork.files = new Set()
   peekView.args = []
   mentions.byAddress = {}
   mentions.asked = []
@@ -1470,20 +1495,12 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   }
   const hover = (row: HTMLElement) => fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
 
-  it('the header of a bare file has the menu: details, rename, delete', () => {
+  it('the header of a topic has what is done to the topic itself — details, rename, move, copy link, delete — and nothing done from a list (TOPI-7)', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(openHeaderMenu()).toEqual([
-      'Details',
-      'Rename',
-      'New topic inside',
-      'Move…',
-      // Its team's member may mark it (TEA-5): the default team here leads it and has the person in it.
-      'Make it a space',
-      'Copy link',
-      'Add to Open work',
-      'Delete',
-    ])
+    // Open work is the button beside the ⋮, Make it a space is on the topic's row, Add is in Who follows (TOPI-7);
+    // the default team here leads it and has the person in it, so Make it a space would have been offered.
+    expect(openHeaderMenu()).toEqual(['Details', 'Rename', 'Move…', 'Copy link', 'Delete'])
   })
 
   /*
@@ -1527,34 +1544,48 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
   })
 
-  it('the header of a Ship issue has nothing from the manifest — only Move, a topic inside and Open work', () => {
+  it('the page’s Copy link says “Link copied” once the clipboard holds it (TOPI-7)', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
+    await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
+  })
+
+  it('the header of a Ship issue has nothing from the manifest — only Move and Open work, still in its ⋮', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     expect(within(middle).queryByRole('link', { name: 'Open folder' })).toBeNull()
     // Open work is the reader's, not the manifest's: any addressable file can be put there.
-    // So is a topic inside it (FOL-4): any kind may hold one, and no manifest says so.
     // And Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.
-    expect(openHeaderMenu()).toEqual(['New topic inside', 'Move…', 'Add to Open work'])
+    expect(openHeaderMenu()).toEqual(['Add to Open work', 'Move…'])
+    // Only a topic has Open work as a button beside its ⋮ (TOPI-7).
+    expect(within(middle).queryByRole('button', { name: /Open work/ })).toBeNull()
   })
 
-  it('the team’s row of a bare file has the same menu, and its team’s member may make it a space (TEA-5)', () => {
-    objects.byAddress[TOPIC_ADDRESS] = bareFile
-    topicsColumn.others = [bareFile]
+  it('the team’s row of a topic offers Open work, Copy link and Make it a space — nothing done to the topic itself (TOPI-7)', () => {
+    const archivable = {
+      ...bareFile,
+      actions: [...(bareFile.actions ?? []), { id: 'archive', label: 'Archive', control: 'toggle', effect: 'writes', field: 'archived' }],
+    } as unknown as ForeignObject
+    objects.byAddress[TOPIC_ADDRESS] = archivable
+    topicsColumn.others = [archivable]
     mount(`/topic/${TOPIC_ADDRESS}`)
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     hover(topicRow)
     fireEvent.click(within(topicRow.parentElement!).getByRole('button', { name: 'More options' }))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Details',
-      'Rename',
-      'New topic inside',
-      'Move…',
-      'Make it a space',
-      'Add to Open work',
-      'Delete',
-    ])
+    const items = screen.getAllByRole('menuitem')
+    // Open work names its key, as the topic's page binds it.
+    expect(items.map((item) => item.textContent)).toEqual([expect.stringMatching(/^Add to Open work(Ctrl|⌘)/), 'Copy link', 'Make it a space'])
+    // Details, Rename, Move, Archive and Delete are on the topic's own page, though its manifest offers them;
+    // and Leave only in the Topics column, where every topic is yours.
+    for (const gone of ['Details', 'Rename', 'Move…', 'Archive…', 'Delete', 'Leave', 'New topic inside']) {
+      expect(screen.queryByRole('menuitem', { name: gone })).toBeNull()
+    }
   })
 
   it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {
@@ -2000,53 +2031,26 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   }, 15_000)
 
-  it('starts a topic inside the file, in the file’s own team, and opens it', async () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+  it('offers New topic inside nowhere: not on a topic’s ⋮ or its row, not on a Ship project’s ⋮ (TOPI-7)', () => {
+    const offered = () => screen.queryAllByRole('menuitem').map((item) => item.textContent)
+    const topicPage = mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Transcripts' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
-    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
-    expect(writes.createTopic).toHaveBeenCalledWith(
-      expect.objectContaining({
-        folder: FOLDER,
-        title: 'Transcripts',
-        parent: TOPIC_ADDRESS,
-        hasState: true,
-      }),
-    )
-    // Membership of what you create is the address's: nothing is written for it (§11.8).
-    expect(follows.setMember).not.toHaveBeenCalled()
-  })
+    // The ⋮ opened, with Move in it: what is missing is New topic inside, not the menu.
+    expect(offered()).toContain('Move…')
+    expect(offered()).not.toContain('New topic inside')
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
+    fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+    fireEvent.click(within(row.parentElement!).getByRole('button', { name: 'More options' }))
+    expect(offered().length).toBeGreaterThan(0)
+    expect(offered()).not.toContain('New topic inside')
+    topicPage.unmount()
 
-  it('starts a topic with the summary typed under its title, on one line (SPEC §6.12)', async () => {
-    writes.createTopic.mockClear()
-    mount(`/topic/${TOPIC_ADDRESS}`)
-    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Transcripts' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), { target: { value: ' Every call,\ntranscribed. ' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
-    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
-    expect(writes.createTopic).toHaveBeenCalledWith(expect.objectContaining({ title: 'Transcripts', summary: 'Every call, transcribed.' }))
-  })
-
-  it('starts a topic inside a Ship project in the team that lists it, not in the project’s record channel', async () => {
-    /*
-      Production, "Conversation standard": the project's Folder is its own
-      `buzz-channel`, which has no state and is listed under Estiva HQ. The
-      first topic started there went into the record channel, where neither
-      the team's tree nor Ship's Related shows it.
-    */
-    objects.byAddress[PROJECT_ADDRESS] = { ...project, folder: 'record-channel' }
     mount(`/topic/${PROJECT_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Sub A' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
-    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
-    expect(writes.resolveFolderContents.mock.calls.map(([folder]) => folder)).toContain(FOLDER)
-    expect(writes.createTopic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Sub A', parent: PROJECT_ADDRESS, hasState: true }))
+    expect(offered().length).toBeGreaterThan(0)
+    expect(offered()).not.toContain('New topic inside')
+    expect(writes.createTopic).not.toHaveBeenCalled()
   })
 })
 
@@ -2166,9 +2170,9 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     // Followed, so its section — and the space's row — is drawn for them.
     teamsHeld.teams[0] = { ...teamsHeld.teams[0], isFollowing: true }
     mount(`/topic/${TOPIC_ADDRESS}`)
-    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
-    expect(screen.queryByRole('menuitem', { name: 'Move…' })).toBeNull()
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    // Its manifest offers only Move, so with Move gone its header has no ⋮ at all (TOPI-7: Open work is the button).
+    expect(within(screen.getByTestId('middle')).queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Add to Open work' })).toBeInTheDocument()
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
     fireEvent.click(within(row.parentElement!).getByRole('button', { name: 'More options' }))
@@ -2184,31 +2188,141 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   })
 })
 
-describe('A topic’s own menu marks it a space of its team (TEA-5)', () => {
-  const menu = () => fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+describe('A topic is marked a space of its team from its row, not its page’s ⋮ (TEA-5, TOPI-7)', () => {
+  const headerMenu = () => {
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    return items
+  }
+  const rowMenu = () => {
+    const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
+    fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+    fireEvent.click(within(row.parentElement!).getByRole('button', { name: 'More options' }))
+  }
   beforeEach(() => writes.markSpace.mockClear())
 
-  it('a member of the team that leads it makes it a space', () => {
+  it('a member of the team that leads it makes it a space from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    menu()
+    expect(headerMenu()).not.toContain('Make it a space')
+    rowMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Make it a space' }))
     expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, true)
   })
 
-  it('a member stops one of its spaces being a space', () => {
+  it('a member stops one of its spaces being a space from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    menu()
+    expect(headerMenu()).not.toContain('Stop being a space')
+    rowMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Stop being a space' }))
     expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, false)
   })
 
-  it('somebody not in the team is offered neither', () => {
-    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: false, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
+  it('somebody not in the team is offered neither on its row', () => {
+    // Followed, so its section — and the space's row — is drawn for them.
+    teamsHeld.teams = [{ ...team({ id: FOLDER, name: 'Folders', isMember: false, listed: [{ address: TOPIC_ADDRESS, space: true }] }), isFollowing: true }]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    menu()
+    rowMenu()
+    expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(0)
     expect(screen.queryByRole('menuitem', { name: 'Stop being a space' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'Make it a space' })).toBeNull()
+  })
+})
+
+describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere on it (TOPI-7)', () => {
+  /** Press a key on the page as the browser would; whether the page took it from the browser (its Open file). */
+  const press = (init: KeyboardEventInit) => {
+    const event = createEvent.keyDown(document.body, init)
+    fireEvent(document.body, event)
+    return { prevented: event.defaultPrevented }
+  }
+  const middle = () => screen.getByTestId('middle')
+
+  it('the button adds the topic to Open work, reads pressed, and a toast says so with Undo', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(middle()).queryByRole('button', { name: 'Add to Open work' })).not.toBeNull()
+    fireEvent.click(within(middle()).getByRole('button', { name: 'Add to Open work' }))
+    expect([...openWork.files]).toEqual([TOPIC_ADDRESS])
+    expect(within(middle()).getByRole('button', { name: 'In Open work' })).toHaveAttribute('aria-pressed', 'true')
+    expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Added to Open work', type: 'success', actionLabel: 'Undo' })])
+    // Undo takes it back out.
+    act(() => toasts.shown[0].onAction!())
+    expect([...openWork.files]).toEqual([])
+    expect(within(middle()).getByRole('button', { name: 'Add to Open work' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('Ctrl+O takes it out of Open work and Cmd+O puts it back, each said in a toast, and the browser’s Open file never runs', () => {
+    openWork.files = new Set([TOPIC_ADDRESS])
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(press({ key: 'o', ctrlKey: true }).prevented).toBe(true)
+    expect([...openWork.files]).toEqual([])
+    expect(within(middle()).getByRole('button', { name: 'Add to Open work' })).toHaveAttribute('aria-pressed', 'false')
+    expect(toasts.shown.at(-1)).toMatchObject({ label: 'Taken out of Open work', type: 'neutral', actionLabel: 'Undo' })
+
+    expect(press({ key: 'o', metaKey: true }).prevented).toBe(true)
+    expect([...openWork.files]).toEqual([TOPIC_ADDRESS])
+    expect(within(middle()).getByRole('button', { name: 'In Open work' })).toHaveAttribute('aria-pressed', 'true')
+    expect(toasts.shown.at(-1)).toMatchObject({ label: 'Added to Open work', type: 'success' })
+    expect(toasts.shown).toHaveLength(2)
+  })
+
+  describe('on a topic’s row', () => {
+    const OTHER_D = '7c2f1d3e-4a5b-4c6d-9e7f-8091a2b3c4d5'
+    const OTHER_ADDRESS = `30840:${CATH}:${OTHER_D}`
+    const other = foreign({ ref: OTHER_ADDRESS, address: OTHER_ADDRESS, kind: 30840, appName: 'File', slots: { title: { value: 'Another topic' } } })
+    const hover = (row: HTMLElement) => fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+    /** The items of a row's ⋮, by the row's file. */
+    const rowMenu = (address: string) => {
+      const row = screen.getByTestId('left').querySelector(`[data-file="${address}"]`) as HTMLElement
+      hover(row)
+      fireEvent.click(within(row.parentElement!).getByRole('button', { name: 'More options' }))
+      return screen.getAllByRole('menuitem')
+    }
+
+    beforeEach(() => {
+      relay.files = [project, topic, other]
+      objects.byAddress[OTHER_ADDRESS] = other
+      topicsColumn.others = [topic, other]
+      teamsHeld.teams = [
+        team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }, { address: OTHER_ADDRESS, space: false }] }),
+      ]
+    })
+
+    // The open topic's row names it: "the team's row of a topic offers Open work…" above.
+    it('another topic’s row does not name Ctrl/Cmd+O, since the key acts on the open topic’s page alone', () => {
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      const otherItem = rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!
+      expect(otherItem.textContent).toBe('Add to Open work')
+    })
+
+    it('Add to Open work says so in a toast with Undo, as the page’s button does', () => {
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!)
+      expect([...openWork.files]).toEqual([OTHER_ADDRESS])
+      expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Added to Open work', type: 'success', actionLabel: 'Undo' })])
+      act(() => toasts.shown[0].onAction!())
+      expect([...openWork.files]).toEqual([])
+    })
+
+    it('Copy link puts the topic’s link on the clipboard and says “Link copied”', async () => {
+      const writeText = vi.fn(async () => {})
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      mount(`/topic/${TOPIC_ADDRESS}`)
+      fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent === 'Copy link')!)
+      await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/topic/another-topic-${OTHER_D}`)
+    })
+  })
+
+  it('an archived topic has no button, and Ctrl+O is left to the browser and changes nothing', () => {
+    objects.byAddress[TOPIC_ADDRESS] = { ...topic, archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' } } as ForeignObject
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(middle()).getByText(/^Archived by/)).toBeInTheDocument()
+    expect(within(middle()).queryByRole('button', { name: /Open work/ })).toBeNull()
+    expect(press({ key: 'o', ctrlKey: true }).prevented).toBe(false)
+    expect([...openWork.files]).toEqual([])
+    expect(toasts.shown).toHaveLength(0)
   })
 })

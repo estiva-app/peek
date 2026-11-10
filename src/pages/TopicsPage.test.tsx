@@ -38,6 +38,9 @@ vi.mock('@/api', async () => ({
     reload: async () => {},
   }),
   useForeignObjects: () => ({ createTopic: created.topic }),
+  // No team is held: no row offers Make it a space (TOPI-7), so the column's space mark is never called.
+  useTeams: () => ({ teams: [], failed: false, reload: async () => {} }),
+  usePeekActions: () => ({ markSpace: async () => ({ ok: true }) }),
 }))
 vi.mock('@/components/views/useFileControls', () => ({ useFileControls: () => ({ open: () => {}, dialogs: null }) }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))

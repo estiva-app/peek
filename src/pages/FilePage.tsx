@@ -240,8 +240,6 @@ export function FilePage() {
     // Gone: its Folder's page takes the rail's memory, so Topics does not lead back to it.
     onDeleted: (deleted) =>
       navigate(deleted.folder ? `/app/folders/${deleted.folder}` : '/app/folders', { replace: true }),
-    // Into the new topic, as the header's New topic does: it is what was asked for.
-    onStarted: (created) => navigate(filePath(created.address, created.title)),
     onListingChanged: reloadTeam,
   })
 

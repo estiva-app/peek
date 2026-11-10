@@ -106,5 +106,5 @@ export {
 } from './useNewReplyThreads'
 export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFolders, teamOf, teamPlaces, useMayMove, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'
-export { topicFollowTarget, usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'
+export { placeLevelChanged, topicFollowTarget, usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'
 export { useListedConversations, type ListedSource, type ListedState } from './useListedConversations'

@@ -3,22 +3,23 @@ import { KIND_BARE_FILE, SUMMARY_FIELD, isArchived, topLevelFolders } from '@est
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { fileArchiveChanged, folderLoad, reloadFoldersOnScreen, useForeignObjects, useMembership, useReloadHeldObject, useTeams, entryNames } from '@/api'
+import { fileArchiveChanged, folderLoad, placeLevelChanged, reloadFoldersOnScreen, topicFollowTarget, useForeignObjects, useMembership, usePeekActions, useReloadHeldObject, useTeams, entryNames } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
-import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { ARCHIVE_WORDS, archiveImpactWords, kindNoun } from '@/lib/archiveWords'
-import { canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { fileControlsOf } from '@/lib/fileControls'
+import { copyFileLink } from '@/lib/objectUrl'
+import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
 import { currentFolderOf, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
 import { useToast } from '@/lib/toast'
 
 
 /**
  * What a menu asks for on a file: its details, a rename, a deletion, a move
- * to another Folder or under another file (FOL-45), or a new topic inside it
- * (FOL-4).
+ * to another Folder or under another file (FOL-45), an archive, a join or a
+ * leave, and a row's Open work and Copy link, said in a toast (TOPI-7).
  */
-export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive' | 'join' | 'leave'
+export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'archive' | 'unarchive' | 'join' | 'leave' | 'open-work' | 'copy-link'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
@@ -96,14 +97,13 @@ function moveStateOf(
  * outcome has the same place to land either way: the dialog's own line under
  * the field, as the topic dialog does it.
  *
- * ## Move and "New topic inside" read the team first (FOL-4)
+ * ## Move reads the team first (FOL-4)
  *
- * Both are questions about the whole team, so both open on a fresh read of
+ * It is a question about the whole team, so it opens on a fresh read of
  * its listing — the one read that folds every `parent` change (SPEC §6.7) —
  * rather than on whatever the tree last drew. The team is the top-level Folder
  * that lists the file (`currentFolderOf`), not its `h`: a move between Folders
- * leaves the `h` where the file was filed. A new topic goes in that team, and
- * `hasState` comes from the same read, for the reason the delete takes it fresh.
+ * leaves the `h` where the file was filed.
  *
  * ## Move is one dialog, and the order of its writes is per kind (FOL-45)
  *
@@ -131,7 +131,6 @@ export function useFileControls({
   onRenamed,
   onDeleted,
   onMoved,
-  onStarted,
   onArchived,
   onMembership,
 }: {
@@ -141,8 +140,6 @@ export function useFileControls({
   onDeleted?: (file: ForeignObject) => void
   /** The move went through: re-read what shows the file's place. */
   onMoved?: (file: ForeignObject) => void
-  /** A topic was started inside `parent`. */
-  onStarted?: (created: { address: string; title: string }, parent: ForeignObject) => void
   /** The archive or the unarchive went through: re-read what lists or draws the file. */
   onArchived?: (file: ForeignObject, archived: boolean) => void
   /** A join, a leave or an add went through: re-read who is in the file. */
@@ -159,7 +156,7 @@ export function useFileControls({
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
-  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
+  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
   // The Desk's Open work draws this tab's held copy of a file: asked again after a rename or a summary change, its row shows it.
   const reloadHeld = useReloadHeldObject()
@@ -181,7 +178,6 @@ export function useFileControls({
     // Move pressed, its teams still read: the dialog is up at once, saying so.
     | { kind: 'move-reading'; file: ForeignObject }
     | MoveState
-    | { kind: 'inside'; file: ForeignObject; team: string; teamName: string; hasState: boolean }
     | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
     | null
   >(null)
@@ -195,6 +191,18 @@ export function useFileControls({
   const [teamsWanted, setTeamsWanted] = useState(false)
   const { teams, failed: teamsFailed } = useTeams({ read: teamsWanted })
   const teamsPending = (file: ForeignObject) => !teams && !teamsFailed && isTopic(file)
+  // Read through a ref, as membership is: `open` stays the one stable function every row holds.
+  const teamsNow = useRef({ teams, teamsFailed })
+  useEffect(() => {
+    teamsNow.current = { teams, teamsFailed }
+  })
+  const { leavePlace } = usePeekActions()
+  // A row's Open work, said as the page's button says it (TOPI-7); read through a ref, as membership is, so `open` stays stable.
+  const openWork = useToggleOpenWork()
+  const openWorkNow = useRef(openWork)
+  useEffect(() => {
+    openWorkNow.current = openWork
+  })
 
   const refuse = useCallback(
     (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
@@ -289,12 +297,8 @@ export function useFileControls({
 
   /*
     The team is the top-level Folder that lists the file (SPEC §6.7), never
-    assumed from its `h`: it is where a topic started inside is listed. A Ship
-    project's Folder is its own record channel, listed under the team that holds
-    the project (`listedIn`, interop 0.28): a topic listed there went where
-    neither the team's tree nor Ship's Related lists it (FOL-4, on "Conversation
-    standard"). And a topic moved to another Folder keeps the `h` it was filed
-    with (FOL-45). The new topic is stored in the parent's own Folder all the same.
+    assumed from its `h`: a topic moved to another Folder keeps the `h` it was
+    filed with (FOL-45).
   */
   const readPlace = useCallback(
     async (file: ForeignObject, ownFolder: string) => {
@@ -322,6 +326,43 @@ export function useFileControls({
         them. Said only once the relay holds it — a refused change undoes
         itself, and the toast says so instead.
       */
+      /*
+        Leave on a topic's row (TOPI-7): the topic page's switch at Not following, so the column, the switch and Ship
+        agree on what is yours. Said once the relay holds it, and the column re-reads, so the row goes.
+        why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-persons-level-on-a-place-is-theirs-alone.md
+      */
+      if (control === 'leave' && isTopic(file)) {
+        const title = file.slots.title?.value ?? 'this topic'
+        const target = topicFollowTarget(file, teamsNow.current.teams, teamsNow.current.teamsFailed)
+        if (!target) return refuse(`Peek has not read your teams yet, so “${title}” cannot be left from here. Try again.`)
+        // An archived team's topics are read-only (§3.2), as their page's switch is: nothing is written.
+        if (target.archived) return refuse(`“${title}” is in an archived team, so it cannot be left.`)
+        void leavePlace({
+          place: target.place,
+          folder: target.folder,
+          archived: target.archived,
+          muted: membershipNow.current.termsOf(target.place.address).muted,
+        }).then(async (result) => {
+          if (!result.ok) return showToast({ label: `“${title}” could not be left. ${result.reason}`, type: 'error' })
+          await membershipNow.current.refresh()
+          membershipCallback.current?.(file)
+          // The topic's page, open beside the column, reads its switch again: Not following, as the relay holds it.
+          placeLevelChanged(target.place.address)
+          showToast({ label: `Left “${title}”`, type: 'success' })
+        })
+        return
+      }
+      if (control === 'open-work') {
+        if (file.address) openWorkNow.current.toggle(file.address)
+        return
+      }
+      if (control === 'copy-link') {
+        if (!file.address) return
+        void copyFileLink(file.address, file.slots.title?.value).then((copied) => {
+          if (copied) showToast({ label: 'Link copied', type: 'success' })
+        })
+        return
+      }
       if (control === 'join' || control === 'leave') {
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
@@ -360,17 +401,15 @@ export function useFileControls({
           })
         return
       }
-      if (control !== 'move' && control !== 'inside') {
+      if (control !== 'move') {
         return setDialog({ kind: 'details', file, editing: control === 'rename' })
       }
       const ownFolder = file.folder
-      if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
-        return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
+      if (!ownFolder) {
+        return refuse('This file is in no team Peek can read, so it cannot be moved from here.')
       }
-      if (control === 'move') {
-        setTeamsWanted(true)
-        setDialog({ kind: 'move-reading', file })
-      }
+      setTeamsWanted(true)
+      setDialog({ kind: 'move-reading', file })
       // Only over the Move that is still waiting for it: closed meanwhile, it stays closed.
       const replaceReading = (next: typeof dialog) =>
         setDialog((current) => (current?.kind === 'move-reading' && current.file.ref === file.ref ? next : current))
@@ -383,16 +422,10 @@ export function useFileControls({
           refuse('The team could not be read. Try again.')
           return
         }
-        const { contents, team } = place
-        const teamName = contents.name ?? 'this team'
-        if (control === 'inside') {
-          setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
-          return
-        }
         replaceReading(moveStateOf(file, place))
       })()
     },
-    [refuse, readPlace, archiveImpact, setArchived, showToast],
+    [refuse, readPlace, archiveImpact, setArchived, showToast, leavePlace],
   )
 
   /*
@@ -502,29 +535,6 @@ export function useFileControls({
 
   const targetsIn = async (state: MoveState, folder: string): Promise<MoveTarget[]> =>
     moveTargetsIn((await resolveFolderContents(folder)).files, state.file, { sameFolder: folder === state.from })
-
-  const startInside = async (
-    parent: ForeignObject,
-    team: string,
-    hasState: boolean,
-    teamName: string,
-    title: string,
-    summary: string,
-  ): Promise<boolean> => {
-    /*
-      Listed in the parent's team, never the page's, and stored in the parent's
-      own Folder (SPEC §6.7): a sub-file is readable by exactly its parent's
-      readers. `createTopic` takes that Folder from `parent.folder` — its `h`,
-      or a Ship project's `buzz-channel`.
-    */
-    const result = await createTopic({ folder: team, title, summary, parent: parent.address, hasState, folderName: teamName, parentFile: parent })
-    if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
-      return false
-    }
-    onStarted?.({ address: result.address, title }, parent)
-    return true
-  }
 
   const rename = async (file: ForeignObject, title: string): Promise<RenameOutcome> => {
     const action = fileControlsOf(file).rename
@@ -645,13 +655,6 @@ export function useFileControls({
         topLabel={dialog.file.parentKind === undefined ? undefined : 'None — under none of these'}
         check={keepSpaceCheck(dialog)}
         onMove={(choice) => move(dialog, choice)}
-        onClose={() => setDialog(null)}
-      />
-    ) : dialog.kind === 'inside' ? (
-      <StartTopicDialog
-        folderName={dialog.teamName}
-        parent={dialog.file}
-        onCreate={(title, _chosen, summary) => startInside(dialog.file, dialog.team, dialog.hasState, dialog.teamName, title, summary)}
         onClose={() => setDialog(null)}
       />
     ) : (

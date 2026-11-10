@@ -67,7 +67,6 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
     onArchived: refreshRows,
     onDeleted: refreshRows,
     onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
-    onStarted: (created) => navigate(filePath(created.address, created.title), { state: { column: 'folders' } }),
   })
 
   /*

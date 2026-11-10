@@ -43,6 +43,17 @@ export function topicFollowTarget(
   }
 }
 
+/*
+  A level changed somewhere other than the switch (TOPI-7: Leave on a topic's row): every open switch on that place
+  reads it again, so the page beside the column does not keep showing a level the relay no longer holds.
+*/
+const levelListeners = new Set<(address: string) => void>()
+
+/** The viewer's level on this place changed from outside its switch: every open switch on it re-reads. */
+export function placeLevelChanged(address: string): void {
+  for (const listener of levelListeners) listener(address)
+}
+
 export interface PlaceFollow {
   /** What the switch shows; undefined until the place has been read. */
   state: SwitchState | undefined
@@ -91,6 +102,18 @@ export function usePlaceFollow(target: FollowTarget | undefined): PlaceFollow {
   useEffect(() => {
     void load()
   }, [load])
+
+  const address = target?.place.address
+  useEffect(() => {
+    if (!address) return
+    const listener = (changed: string) => {
+      if (changed === address) void load()
+    }
+    levelListeners.add(listener)
+    return () => {
+      levelListeners.delete(listener)
+    }
+  }, [address, load])
 
   const me = membership.me
   const muted = target ? membership.termsOf(target.place.address).muted : false

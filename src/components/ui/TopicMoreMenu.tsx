@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Menu, MenuItem } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSeparator } from '@estiva-app/ui'
 
 /**
  * The one menu a topic has, wherever you open it from (PEE-2).
@@ -52,9 +52,9 @@ export interface TopicMoreMenuProps {
    */
   memberAction?: 'join' | 'leave'
   onToggleMember?: () => void
+  /** The key that does the same as Add to Open work, shown at the item's edge (`Ctrl+O`, TOPI-7). */
+  openWorkShortcut?: string
   onDeleteTopic?: () => void
-  /** Adds "New topic inside" — a bare file whose parent is this one (FOL-4). */
-  onNewSubTopic?: () => void
   /** Adds "Move…" — a file whose manifest declares a re-parent (FOL-4). */
   onMove?: () => void
   /**
@@ -74,8 +74,6 @@ export interface TopicMoreMenuProps {
   /** A topic's team marks it one of its spaces, or takes the mark off (TEA-5): offered to the team's members only. */
   spaceAction?: 'mark' | 'unmark'
   onToggleSpace?: () => void
-  /** A topic, a space or a team's chat: opens Who follows on its add layer (TEA-6). They join at Important, and can leave. */
-  onAddSomeone?: () => void
 }
 
 export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
@@ -98,44 +96,45 @@ export function TopicMenuItems({
   onCopyLink,
   openWorkAction,
   onToggleOpenWork,
+  openWorkShortcut,
   memberAction,
   onToggleMember,
   onDeleteTopic,
-  onNewSubTopic,
   onMove,
   onHideDm,
   archiveAction,
   onToggleArchive,
   spaceAction,
   onToggleSpace,
-  onAddSomeone,
 }: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
+  const opensWork = !!(openWorkAction && onToggleOpenWork)
+  const spaces = !!(spaceAction && onToggleSpace)
+  const archives = !!(archiveAction && onToggleArchive)
+  const member = !!(memberAction && onToggleMember)
+  const first = !!(opensWork || onOpenDetails || onRename || onMove || onCopyLink || spaces || onHideDm || archives)
+  const last = member || !!onDeleteTopic
   return (
     <>
       {/* The object is the one the menu hangs off, so its items do not name it:
-          a Ship issue is not a topic, and "Delete" is true of both (PEE-41). */}
-      {onAddSomeone && <MenuItem label="Add someone…" onClick={onAddSomeone} />}
-      {onOpenDetails && <MenuItem label="Details" onClick={onOpenDetails} />}
-      {onRename && <MenuItem label="Rename" onClick={onRename} />}
-      {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}
-      {onMove && <MenuItem label="Move…" onClick={onMove} />}
-      {spaceAction && onToggleSpace && (
-        <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />
-      )}
-      {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
-      {openWorkAction && onToggleOpenWork && (
+          a Ship issue is not a topic, and "Delete" is true of both (PEE-41).
+          Open work first, the most used from a list (Miky, 3 Nov: "more prominent"); Leave and Delete apart, at the
+          end, as the approved stories draw them (TOPI-7). No New topic inside: topics have no sub-topics now. */}
+      {opensWork && (
         <MenuItem
           label={openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
+          shortcut={openWorkShortcut}
           onClick={onToggleOpenWork}
         />
       )}
-      {memberAction && onToggleMember && (
-        <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} onClick={onToggleMember} />
-      )}
+      {onOpenDetails && <MenuItem label="Details" onClick={onOpenDetails} />}
+      {onRename && <MenuItem label="Rename" onClick={onRename} />}
+      {onMove && <MenuItem label="Move…" onClick={onMove} />}
+      {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
+      {spaces && <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
-      {archiveAction && onToggleArchive && (
-        <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />
-      )}
+      {archives && <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />}
+      {first && last && <MenuSeparator />}
+      {member && <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} onClick={onToggleMember} />}
       {onDeleteTopic && <MenuItem label="Delete" destructive onClick={onDeleteTopic} />}
     </>
   )

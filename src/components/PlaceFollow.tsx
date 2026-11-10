@@ -14,8 +14,6 @@ export interface PlaceFollowControls {
   pill: ReactNode
   /** The Who follows dialog, while open. */
   dialog: ReactNode
-  /** Opens Who follows on its add layer: the menu's "Add someone…". Absent where nobody can be added: an archived team or topic, and a team's chat, which you come into by joining the team (Miky, 6 Nov). */
-  openAdd?: () => void
 }
 
 /**
@@ -117,5 +115,5 @@ export function usePlaceFollowControls({
     />
   ) : undefined
 
-  return { switcher, pill, dialog, openAdd: target && follow.listed && !frozen && !chat ? () => setOpen('add') : undefined }
+  return { switcher, pill, dialog }
 }

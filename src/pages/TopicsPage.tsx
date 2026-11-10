@@ -29,7 +29,6 @@ export function TopicsPage({ explore = false }: { explore?: boolean }) {
   // A row's menu, the file page's own (FOL-45): Join, Leave, Rename… from either page; Explore's Join too.
   const membership = useMembership()
   const fileControls = useFileControls({
-    onStarted: (created) => navigate(filePath(created.address, created.title), { state: { column: 'topics' } }),
     // A Join or Leave moves the topic in the column and between Explore's tabs at once (Miky, 10 Nov): the column reads membership changes.
     onMembership: () => void membership.refresh(),
   })

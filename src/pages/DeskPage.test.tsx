@@ -49,9 +49,7 @@ vi.mock('@/components/views/useFileView', () => ({
   and where its writes leave the person.
 */
 const filePane = vi.hoisted(() => ({
-  callbacks: undefined as
-    | { onDeleted: (deleted: unknown) => void; onStarted: (created: { address: string; title: string }) => void }
-    | undefined,
+  callbacks: undefined as { onDeleted: (deleted: unknown) => void } | undefined,
 }))
 vi.mock('@/components/views/useFilePane', () => ({
   useFilePane: (
@@ -268,13 +266,6 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
     act(() => filePane.callbacks!.onDeleted({ address: WIDGETS_FILE }))
     expect(url()).toBe('/app/desk')
     expect(screen.queryByTestId('file-pane')).toBeNull()
-  })
-
-  it('a topic started inside the open one opens in the Desk’s pane (OPT-12)', () => {
-    mount(deskWith(WIDGETS_FILE))
-    act(() => filePane.callbacks!.onStarted({ address: ISSUE, title: 'Issue one' }))
-    expect(url()).toBe(deskWith(ISSUE))
-    expect(screen.getByTestId('file-pane').dataset.address).toBe(ISSUE)
   })
 
   it('a DM closes the open file, and the file param goes with it', () => {
