@@ -113,6 +113,23 @@ describe('TopicFiles', () => {
     expect(hook.move).toHaveBeenCalledWith('plan', 'bug')
   })
 
+  it('a drop in the gap between two files, where the line is drawn, moves the dragged one there', () => {
+    render(<TopicFiles />)
+    const [plan, bug, doc] = drawn()
+    // Plan 0–40, Bug 52–92, Doc 104–144: the pointer at 46 is in the gap under Plan.
+    plan.getBoundingClientRect = () => ({ top: 0, height: 40, bottom: 40, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) })
+    bug.getBoundingClientRect = () => ({ top: 52, height: 40, bottom: 92, left: 0, right: 0, width: 0, x: 0, y: 52, toJSON: () => ({}) })
+    doc.getBoundingClientRect = () => ({ top: 104, height: 40, bottom: 144, left: 0, right: 0, width: 0, x: 0, y: 104, toJSON: () => ({}) })
+    const list = plan.parentElement!
+    const dataTransfer = { setData: () => {}, setDragImage: () => {}, effectAllowed: '', dropEffect: '' }
+    fireEvent.dragStart(doc, { dataTransfer })
+    const dragOver = createEvent.dragOver(list, { dataTransfer })
+    Object.defineProperty(dragOver, 'clientY', { value: 46 })
+    fireEvent(list, dragOver)
+    fireEvent.drop(list, { dataTransfer })
+    expect(hook.move).toHaveBeenCalledWith('doc', 'plan')
+  })
+
   it('a drop where the file already is moves nothing', () => {
     render(<TopicFiles />)
     const [plan, bug] = drawn()
@@ -194,7 +211,13 @@ describe('TopicFiles', () => {
   }
 
   it('puts the archived files at the end behind one closed “Archived · n” line, with no “…” and no drag (TOPI-10)', () => {
-    hook.state = { files: [entry('bug', 30851, 'Bug', { archived: true }), { ...PLAN, archived: false }, entry('doc', 30842, 'Doc', { archived: true })] }
+    hook.state = {
+      files: [
+        entry('bug', 30851, 'Bug', { archived: true }),
+        { ...PLAN, archived: false },
+        entry('doc', 30842, 'Doc', { archived: true, listed: { look: 'row' } }),
+      ],
+    }
     render(<TopicFiles />)
 
     const line = screen.getByRole('button', { name: /Archived · 2/ })
@@ -202,6 +225,8 @@ describe('TopicFiles', () => {
     expect(drawn()).toHaveLength(1)
     fireEvent.click(line)
     expect(drawn()).toHaveLength(3)
+    // An archived file keeps the look it was given, as Leaf draws it: the page set as a row stays one.
+    expect(drawn().map((el) => el.querySelector('[data-uri]')?.getAttribute('data-testid'))).toEqual(['card', 'row', 'row'])
     // Only the live one is arranged: an archived file is read-only.
     expect(screen.getAllByRole('button', { name: /^More options/ })).toHaveLength(1)
     expect(drawn().filter((el) => el.getAttribute('draggable') === 'true')).toHaveLength(1)

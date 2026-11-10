@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useReducer, useState, type DragEvent } from 'react'
 import { IconArchive, IconPlus } from '@tabler/icons-react'
 import { CollapsibleSection, CommandPalette, CommandPaletteSearch, CornerMenu, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
 import type { FileLook } from '@estiva-app/interop'
@@ -77,14 +77,32 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
     showToast({ label: `Removed “${nameOf(gone)}”`, type: 'success', actionLabel: 'Undo', onAction: () => void putBack(gone.listed, after).then(told) })
   }
 
+  const from = dragging ? live.findIndex((f) => f.file === dragging) : -1
+  // Where it is now: no line there, and a drop there moves nothing.
+  const lands = (to: number | null): to is number => from >= 0 && to !== null && to !== from && to !== from + 1
   const drop = () => {
-    const from = live.findIndex((f) => f.file === dragging)
     const to = dropAt
     setDragging(null)
     setDropAt(null)
-    // Dropped where it already is: nothing moves.
-    if (from < 0 || to === null || to === from || to === from + 1) return
-    void move(live[from].file, to === 0 ? null : live[to - 1].file).then(told)
+    if (lands(to)) void move(live[from].file, to === 0 ? null : live[to - 1].file).then(told)
+  }
+  /*
+    The whole list takes the drag, its gaps too, since the line is drawn in a gap: over a file, the half it is over
+    says above or below it; between files or below them, the first file whose middle is lower.
+  */
+  const over = (event: DragEvent<HTMLDivElement>) => {
+    if (!dragging) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const middle = (row: Element) => {
+      const box = row.getBoundingClientRect()
+      return box.top + box.height / 2
+    }
+    const row = (event.target as Element).closest?.('[data-drop-index]')
+    const rows = [...event.currentTarget.querySelectorAll('[data-drop-index]')]
+    const below = rows.find((one) => event.clientY < middle(one))
+    const at = row && rows.includes(row) ? (event.clientY < middle(row) ? 0 : 1) + Number(row.getAttribute('data-drop-index')) : below ? Number(below.getAttribute('data-drop-index')) : live.length
+    setDropAt(at)
   }
 
   return (
@@ -96,7 +114,15 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
         showActions="always"
         className="mx-2 mt-4"
       />
-      <div className="flex flex-col gap-3 px-4 pt-2">
+      <div
+        className="flex flex-col gap-3 px-4 pt-2"
+        onDragOver={over}
+        onDrop={(event) => {
+          if (!dragging) return
+          event.preventDefault()
+          drop()
+        }}
+      >
         {state === 'loading' ? null : 'failed' in state ? (
           <EmptyState scope="section" message="Couldn’t load the files. Reload to try again." />
         ) : files.length === 0 ? (
@@ -123,28 +149,18 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
                     // A link inside a file that cannot be moved still drags as a link, and moves nothing here.
                     if (!arrangeable) return
                     event.dataTransfer.effectAllowed = 'move'
-                    event.dataTransfer.setData('text/plain', address)
+                    // Its own type: dropped into a message box or another app, it is no text.
+                    event.dataTransfer.setData('application/x-estiva-topic-file', address)
                     event.dataTransfer.setDragImage(event.currentTarget, 16, 16)
                     setDragging(file)
                   }}
+                  data-drop-index={index}
                   onDragEnd={() => {
                     setDragging(null)
                     setDropAt(null)
                   }}
-                  onDragOver={(event) => {
-                    if (!dragging) return
-                    event.preventDefault()
-                    event.dataTransfer.dropEffect = 'move'
-                    const box = event.currentTarget.getBoundingClientRect()
-                    setDropAt(event.clientY < box.top + box.height / 2 ? index : index + 1)
-                  }}
-                  onDrop={(event) => {
-                    if (!dragging) return
-                    event.preventDefault()
-                    drop()
-                  }}
                 >
-                  {dragging && dropAt === index && <DropLine at="top" />}
+                  {lands(dropAt) && dropAt === index && <DropLine at="top" />}
                   <CornerMenu
                     menu={
                       arrangeable
@@ -154,7 +170,7 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
                   >
                     <MessageCard uri={uri} compact={look === 'row'} readOnly={readOnly} />
                   </CornerMenu>
-                  {dragging && dropAt === live.length && index === live.length - 1 && <DropLine at="bottom" />}
+                  {lands(dropAt) && dropAt === live.length && index === live.length - 1 && <DropLine at="bottom" />}
                 </div>
               )
             })}
@@ -167,11 +183,11 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
                 defaultOpen={false}
                 contentClassName="flex flex-col gap-3 pt-2"
               >
-                {archived.map(({ file, address }) => {
-                  const uri = referenceOfValue(address)
+                {archived.map((entry) => {
+                  const uri = referenceOfValue(entry.address)
                   return uri ? (
-                    <div key={file} data-topic-file={address}>
-                      <MessageCard uri={uri} readOnly />
+                    <div key={entry.file} data-topic-file={entry.address}>
+                      <MessageCard uri={uri} compact={lookOf(entry) === 'row'} readOnly />
                     </div>
                   ) : null
                 })}

@@ -80,8 +80,8 @@ export function useListedConversations(
   const v = viewer()
   const pubkey = v?.token.pubkey
   const relayUrl = v?.relayUrl
-  // The list, by value: the same files in the same order are the same read.
-  const key = listed ? listed.map((file) => file.address).join('\n') : null
+  // The list, by value: the same files are the same read, in any order (a move reads nothing again; TOPI-5).
+  const key = listed ? listed.map((file) => file.address).sort().join('\n') : null
   const latest = useRef(listed)
   useEffect(() => {
     latest.current = listed

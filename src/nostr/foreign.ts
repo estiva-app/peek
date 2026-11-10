@@ -905,9 +905,16 @@ export async function topicFilesAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<Array<ListedFile & { address: string }>> {
-  // In the topic's order, each with its place and look (TOPI-5): interop sorts them. Once the relay offers it, by the list read.
-  const listed = await topicList(viewerQuery(relayUrl, token), topic, await listReadOption())
-  return listed.filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+  return (await topicListAsViewer(topic, relayUrl, token)).filter((entry): entry is ListedFile & { address: string } => entry.address !== null)
+}
+
+/**
+ * The whole list, in the topic's order, each with its place and look (TOPI-5): interop sorts them. Once the relay
+ * offers it, by the list read. Files this viewer cannot read are in it, with no address: a move is planned on all of
+ * them, so a file only others can see keeps its place.
+ */
+export async function topicListAsViewer(topic: string, relayUrl: string, token: StoredToken): Promise<ListedFile[]> {
+  return topicList(viewerQuery(relayUrl, token), topic, await listReadOption())
 }
 
 /**
