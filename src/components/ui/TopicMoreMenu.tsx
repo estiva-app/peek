@@ -74,8 +74,6 @@ export interface TopicMoreMenuProps {
   /** A topic's team marks it one of its spaces, or takes the mark off (TEA-5): offered to the team's members only. */
   spaceAction?: 'mark' | 'unmark'
   onToggleSpace?: () => void
-  /** A topic, a space or a team's chat: opens Who follows on its add layer (TEA-6). They join at Important, and can leave. */
-  onAddSomeone?: () => void
 }
 
 export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
@@ -108,13 +106,12 @@ export function TopicMenuItems({
   onToggleArchive,
   spaceAction,
   onToggleSpace,
-  onAddSomeone,
 }: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
   const opensWork = !!(openWorkAction && onToggleOpenWork)
   const spaces = !!(spaceAction && onToggleSpace)
   const archives = !!(archiveAction && onToggleArchive)
   const member = !!(memberAction && onToggleMember)
-  const first = !!(onAddSomeone || opensWork || onOpenDetails || onRename || onMove || onCopyLink || spaces || onHideDm || archives)
+  const first = !!(opensWork || onOpenDetails || onRename || onMove || onCopyLink || spaces || onHideDm || archives)
   const last = member || !!onDeleteTopic
   return (
     <>
@@ -122,7 +119,6 @@ export function TopicMenuItems({
           a Ship issue is not a topic, and "Delete" is true of both (PEE-41).
           Open work first, the most used from a list (Miky, 3 Nov: "more prominent"); Leave and Delete apart, at the
           end, as the approved stories draw them (TOPI-7). No New topic inside: topics have no sub-topics now. */}
-      {onAddSomeone && <MenuItem label="Add someone…" onClick={onAddSomeone} />}
       {opensWork && (
         <MenuItem
           label={openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}

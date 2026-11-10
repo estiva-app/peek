@@ -70,8 +70,6 @@ function topicMore(props: Partial<ComponentProps<typeof TopicMoreMenu>>) {
            been drawn: Copy link, and Rename (23 September). */
         onCopyLink={noop}
         onRename={noop}
-        /* A topic or space in a live team offers Add someone… (TEA-6). */
-        onAddSomeone={noop}
         openWorkAction="add"
         {...props}
       />
@@ -112,7 +110,6 @@ export const TopicMoreDm: Story = {
       onToggleOpenWork: undefined,
       openWorkAction: undefined,
       onDeleteTopic: undefined,
-      onAddSomeone: undefined,
       onHideDm: noop,
     }),
 }
@@ -257,6 +254,47 @@ export const TopicMenuOnATreeRow: Story = {
             onToggleMember={noop}
           />
         }
+      />
+    </div>
+  ),
+}
+
+/**
+ * The items on a topic's own "⋮", on its page (TOPI-7): what changes the topic
+ * itself. Point at the row and press "…".
+ */
+export const TopicMenuOnItsPage: Story = {
+  render: () => (
+    <div className="w-72 p-4">
+      <NavItem
+        href="#"
+        label="A topic"
+        menuLabel="More options"
+        menu={
+          <TopicMenuItems
+            onOpenDetails={noop}
+            onRename={noop}
+            onMove={noop}
+            onCopyLink={noop}
+            archiveAction="archive"
+            onToggleArchive={noop}
+            onDeleteTopic={noop}
+          />
+        }
+      />
+    </div>
+  ),
+}
+
+/** The items on a DM's row: Open work, and hiding the conversation. */
+export const DmMenuOnATreeRow: Story = {
+  render: () => (
+    <div className="w-72 p-4">
+      <NavItem
+        href="#"
+        label="Katerina"
+        menuLabel="More options"
+        menu={<TopicMenuItems openWorkAction="add" onToggleOpenWork={noop} onHideDm={noop} />}
       />
     </div>
   ),
