@@ -109,7 +109,7 @@ export async function openReadOption(): Promise<{ openRead?: readonly number[] }
 }
 
 /**
- * `options` with interop's `openRead` once switched, and, for an `archivedWith` read, its `listRead` as soon as the
+ * `options` with interop's `openRead` ({@link openReadOption}), and, for an `archivedWith` read, its `listRead` as soon as the
  * relay offers the list read, switched or not: each parent the walk reads costs its current values, not every change
  * (ALO-15). Otherwise `options` as handed: off reads exactly as before.
  *
