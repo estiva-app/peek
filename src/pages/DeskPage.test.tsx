@@ -84,13 +84,24 @@ const desk = vi.hoisted(() => ({
   urgent: [] as unknown[],
   screener: [] as unknown[],
   unread: {} as Record<string, boolean>,
+  /** What lit each file row, by ref, and each DM, by person: the rows' cards (ACT-9). */
+  news: {} as Record<string, unknown[]>,
+  dmUnread: {} as Record<string, boolean>,
+  dmNews: {} as Record<string, unknown[]>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   // Desk's loader reads the providers this file stands in for (PEE-5). Its pacing and HTTP wait are tested in
   // platform and bridge.test.ts; the hook itself is proven by scripts/probe-first-load.mjs on production.
   useLoadAhead: () => {},
-  useUnread: () => ({ dmHasUnread: () => false }),
+  useUnread: () => ({ dmHasUnread: (dmId: string) => desk.dmUnread[dmId] === true, dmNews: (dmId: string) => desk.dmNews[dmId] ?? [] }),
+  useListedNews: () => new Map(),
+  useTopicsColumn: () => ({ state: 'loading', column: () => undefined, signedOut: false }),
+  useMentionNames: () => [{ pubkey: 'qa2', name: 'QA-2' }],
+  useRowNewsDetails: (items: { id: string; words?: string }[]) => ({
+    wordsOf: (item: { words?: string }) => item.words,
+    titleOf: () => undefined,
+  }),
   useStarred: () => ({
     entries: [{ id: 'star-dm', kind: 'dm', dmId: 'dm-1', name: 'Ana' }],
     isDmStarred: () => true,
@@ -101,7 +112,7 @@ vi.mock('@/api', async () => ({
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
   useScreenerItems: () => desk.screener,
   useOpenWorkActivity: () => () => undefined,
-  useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
+  useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread, news: desk.news, fills: {} }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
 }))
@@ -172,6 +183,9 @@ beforeEach(() => {
   desk.screener = []
   openWork.addScreener.mockClear()
   desk.unread = {}
+  desk.news = {}
+  desk.dmUnread = {}
+  desk.dmNews = {}
 })
 
 /** Katerina, 31 October: the fold hides the rail and the page's list column together, on Desk as in Folders. */
@@ -501,5 +515,74 @@ describe('what Urgent shows is not screened as well (Katerina, 30 October)', () 
     expect(leftColumn().queryByText('A message from Dara')).toBeNull()
     expect(leftColumn().queryByText('A comment on Issue one')).toBeNull()
     expect(leftColumn().getByText('A message from Cleo')).toBeTruthy()
+  })
+})
+
+/** Hovers `target` and waits past the card's 350ms. */
+async function hoverCard(target: HTMLElement) {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  try {
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).hover(target)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+}
+
+const PAGE = '30842:bb:page-1'
+const line = (id: string, words: string, extra: Record<string, unknown> = {}) => ({ id, by: 'qa2', at: 1_700_000_000, reason: 'message', root: id, words, ...extra })
+
+describe('resting on a lit Desk row shows what is new there, as in the sidebar (ACT-9)', () => {
+  it('a lit topic lists what lit it, a listed page’s comment too, and a click opens that page here at its thread', async () => {
+    desk.openWork = [{ ...openWorkFile(WIDGETS_FILE, 'Launch plan'), object: { ref: WIDGETS_FILE, kind: 30840 } }]
+    desk.unread = { [WIDGETS_FILE]: true }
+    desk.news = { [WIDGETS_FILE]: [line('c-1', 'Totals moved to Friday', { file: PAGE })] }
+    mount()
+    await hoverCard(leftColumn().getByText('Launch plan'))
+    expect(screen.getByText('QA-2')).toBeTruthy()
+    fireEvent.click(screen.getByText('Totals moved to Friday'))
+    // The Desk stays the page: the listed page opens in its panel, at the comment's thread.
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: PAGE, thread: 'c-1' })}`)
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(PAGE)
+  })
+
+  it('a row with no dot opens no card, whatever its news says', async () => {
+    desk.news = { [ISSUE]: [line('c-2', 'Read already')] }
+    mount()
+    await hoverCard(leftColumn().getByText('Issue one'))
+    expect(screen.queryByText('Read already')).toBeNull()
+  })
+
+  it('a lit starred DM lists its new messages, and a click opens the DM here', async () => {
+    desk.dmUnread = { 'dm-1': true }
+    desk.dmNews = { 'dm-1': [line('m-1', 'Are you free at three?')] }
+    mount()
+    await hoverCard(leftColumn().getByText('Ana'))
+    fireEvent.click(screen.getByText('Are you free at three?'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
+    expect(url()).toBe('/app/desk')
+  })
+
+  it('an Urgent DM lists only the urgent messages that put it there', async () => {
+    desk.urgent = [{ id: 'urg_dm_dm-8', kind: 'dm', dmId: 'dm-8', name: 'Dara' }]
+    desk.dmNews = { 'dm-8': [line('m-2', 'Server is down', { urgent: true }), line('m-3', 'Also, lunch?')] }
+    mount()
+    await hoverCard(leftColumn().getByText('Dara'))
+    expect(screen.getByText('Server is down')).toBeTruthy()
+    expect(screen.queryByText('Also, lunch?')).toBeNull()
+  })
+
+  it('an Urgent file lists its urgent comments', async () => {
+    desk.openWork = []
+    desk.urgent = [
+      { id: `urg_file_${SECOND}`, kind: 'file', address: SECOND, fileKind: 30851, title: 'Urgent issue', news: [line('c-3', 'Totals are off', { reason: 'mention', urgent: true })] },
+    ]
+    mount()
+    await hoverCard(leftColumn().getByText('Urgent issue'))
+    expect(screen.getByText('mentioned you')).toBeTruthy()
+    fireEvent.click(screen.getByText('Totals are off'))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: SECOND, thread: 'c-3' })}`)
   })
 })

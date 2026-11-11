@@ -59,6 +59,8 @@ describe('a DM’s card (ACT-3)', () => {
       ['urgent', urgent.body],
       ['plain', plain.body],
     ])
+    // The Desk's Urgent row lists only the urgent ones (ACT-9).
+    expect(news.filter((line) => line.urgent).map((line) => line.id)).toEqual(['urgent'])
   })
 
   it('a DM’s line is a message, never a new conversation, and a mention of you says so (§11.8)', () => {

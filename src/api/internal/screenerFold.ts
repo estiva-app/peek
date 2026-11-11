@@ -18,6 +18,7 @@
  * them (FOL-23).
  */
 import type { ScreenerItem } from '@/api/types'
+import type { RowNewsItem } from '@/api/rowNews'
 import { fileHasUnread } from '@/api/fileUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
 import {
@@ -143,6 +144,8 @@ export interface FoldedUrgentFile {
   summary?: string
   /** The newest unread urgent comment's instant, unix seconds. */
   at: number
+  /** The unread urgent comments that put it on Urgent, newest first: its row's card (ACT-9). */
+  news: RowNewsItem[]
 }
 
 /**
@@ -167,13 +170,17 @@ export function foldUrgentFiles(
     const context = fileContext(file.address)
     if (!context) continue
     const terms = frontier.termsOf(file.address)
-    let at: number | undefined
+    const news: RowNewsItem[] = []
     for (const comment of file.comments) {
-      if (!frontier.isUrgent(comment.id) || (at !== undefined && comment.createdAt <= at)) continue
+      if (!frontier.isUrgent(comment.id)) continue
       const message = { id: comment.id, at: comment.createdAt, by: comment.author, root: comment.id }
-      if (streamHasUnread([message], context, terms, frontier, frontier.isMentioned)) at = comment.createdAt
+      if (!streamHasUnread([message], context, terms, frontier, frontier.isMentioned)) continue
+      // An urgent comment names the viewer (SPEC §13.1): its line says so.
+      news.push({ id: comment.id, by: comment.author, at: comment.createdAt, reason: 'mention', root: comment.id, words: comment.body, urgent: true })
     }
-    if (at !== undefined) rows.push({ address: file.address, kind: file.kind, title: file.title, ...(file.summary ? { summary: file.summary } : {}), at })
+    if (news.length === 0) continue
+    news.sort((a, b) => b.at - a.at)
+    rows.push({ address: file.address, kind: file.kind, title: file.title, ...(file.summary ? { summary: file.summary } : {}), at: news[0].at, news })
   }
   rows.sort((a, b) => b.at - a.at)
   return rows

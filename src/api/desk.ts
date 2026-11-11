@@ -56,6 +56,7 @@ export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[]
       fileKind: file.kind,
       title: file.title,
       ...(file.summary ? { summary: file.summary } : {}),
+      news: file.news,
     }))
     return [...dms, ...files]
   }, [partners, dmIsUrgent, people, urgentFiles])

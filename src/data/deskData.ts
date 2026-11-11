@@ -1,4 +1,5 @@
 import type { ForeignObject } from '@estiva-app/interop'
+import type { RowNewsItem } from '@/api/rowNews'
 
 /*
   A DM or a file. The third kind, a Convex topic, went with the Convex topics
@@ -42,6 +43,8 @@ export type UrgentItem =
       title: string
       /** Its summary (SPEC §6.12), shown when the row's title is hovered; absent, no tooltip. */
       summary?: string
+      /** The unread urgent comments that put it here, newest first: its card (ACT-9). Absent in the mocks. */
+      news?: readonly RowNewsItem[]
     }
 
 export type StarredEntry = {
