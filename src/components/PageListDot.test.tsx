@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import { fileContext } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
+import type { Team } from '@/api'
 
 const ME = '1'.repeat(64)
 const KATERINA = '2'.repeat(64)
@@ -28,6 +29,9 @@ const relay = vi.hoisted(() => ({
   listReads: [] as unknown[][],
   /** The relay refuses the list's read. */
   refuse: false,
+  /** The files the topic lists, and the comments the relay holds on them. */
+  listed: [] as string[],
+  onFiles: [] as SignedEvent[],
 }))
 
 const comment = (id: string, at: number, content: string, tags: string[][] = []): SignedEvent =>
@@ -82,15 +86,19 @@ vi.mock('@/nostr/useReadStateSync', async (original) => ({
 vi.mock('@/nostr/liveTopics', async (original) => ({ ...(await original<Record<string, unknown>>()), getLiveClient: () => null }))
 vi.mock('@/nostr/foreign', async (original) => ({
   ...(await original<Record<string, unknown>>()),
-  // The list's read: what the relay holds on the topic, whatever it is asked.
+  // The list's read: what the relay holds on the topic and its listed files, whatever it is asked.
   viewerQuery: () => async (filters: unknown[]) => {
     relay.listReads.push(filters)
     if (relay.refuse) throw new Error('429 Too Many Requests')
-    return relay.events
+    return [...relay.events, ...relay.onFiles]
   },
-  // The topic lists no file.
-  topicListsAsViewer: async (topics: string[]) => new Map(topics.map((topic) => [topic, []])),
-  topicActivityAsViewer: async () => ({ at: new Map(), comments: new Map(), parents: new Map() }),
+  // The topic's list (no file unless a test lists one), and each listed file's comments.
+  topicListsAsViewer: async (topics: string[]) => new Map(topics.map((topic) => [topic, relay.listed.map((address) => ({ address, folder: 'team-1' }))])),
+  topicActivityAsViewer: async () => ({
+    at: new Map(),
+    comments: new Map(relay.listed.map((file) => [file, relay.onFiles.filter((event) => event.tags.some((t) => t[0] === 'A' && t[1] === file))])),
+    parents: new Map(),
+  }),
 }))
 
 const topic = { ref: TOPIC, address: TOPIC, kind: 30840, folder: 'team-1', slots: { title: { value: 'Pitch' } } } as unknown as ForeignObject
@@ -122,6 +130,8 @@ beforeEach(() => {
   relay.mentioned = new Set([MENTION.id])
   relay.listReads = []
   relay.refuse = false
+  relay.listed = []
+  relay.onFiles = []
 })
 
 afterEach(() => {
@@ -207,6 +217,88 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
     vi.setSystemTime((start + 61) * 1000)
     await openList()
     expect(await screen.findByText(/Ready for review/)).toBeInTheDocument()
+  })
+
+  it('opens a mention said on a file the topic lists at that file’s thread, not the topic’s', async () => {
+    const ISSUE = `30851:${KATERINA}:launch-checklist`
+    const onIssue = {
+      id: 'd'.repeat(64),
+      pubkey: KATERINA,
+      created_at: NOW - 1500,
+      kind: 1111,
+      content: `Can you take the launch checklist, nostr:${encodeNpub(ME)}`,
+      sig: '',
+      tags: [['A', ISSUE], ['a', ISSUE], ['K', '30851'], ['k', '30851'], ['h', 'team-1'], ['p', ME]],
+    } as SignedEvent
+    relay.listed = [ISSUE]
+    relay.onFiles = [onIssue]
+    relay.merged = { [fileContext(TOPIC)!]: NOW }
+    await mount()
+    await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('lit'))
+    await openList()
+    const said = await screen.findByText(/Can you take the launch checklist/)
+    const link = said.closest('a')
+    expect(link?.getAttribute('href')).toBe(`/topic/${ISSUE}?thread=${onIssue.id}`)
+  })
+})
+
+describe('the dot beside a team’s title (ACT-4)', () => {
+  const TEAM = 'team-design'
+  const SAID = { id: 'e'.repeat(64), pubkey: KATERINA, created_at: NOW - 1200, kind: 9, content: `Sketches are up, nostr:${encodeNpub(ME)}`, sig: '', tags: [['h', TEAM], ['p', ME]] } as SignedEvent
+  const team = (inChat: boolean) =>
+    ({
+      id: TEAM,
+      name: 'Design',
+      archived: false,
+      company: false,
+      private: false,
+      admins: [KATERINA],
+      members: [],
+      isMember: inChat,
+      isFollowing: false,
+      listed: [],
+      chatAddress: `39000:${KATERINA}:${TEAM}`,
+      chat: inChat ? { kind: 'chat', in: true, level: 'important', ways: ['team'] } : { kind: 'chat', in: false, ways: [] },
+    }) as unknown as Team
+
+  async function mountTeam(of: Team) {
+    const { useTeamPageDot } = await import('@/api')
+    const { PageDot } = await import('./PageListDot')
+    function TeamTitle() {
+      const dot = useTeamPageDot(of, [], { chatHref: '/team/design/chat', chatWhere: '# general' })
+      return <PageDot dot={dot} />
+    }
+    return render(
+      <MemoryRouter>
+        <TeamTitle />
+      </MemoryRouter>,
+    )
+  }
+
+  /** The list once its read is back: "Nothing here yet." or its lines. */
+  const listRead = () => waitFor(() => expect(screen.queryByText('Nothing here yet.') ?? document.querySelector('[data-page-list-part="new"]')).not.toBeNull())
+
+  beforeEach(() => {
+    relay.events = [SAID]
+    relay.mentioned = new Set()
+  })
+
+  it('lists a mention in the team’s chat for someone in the chat, naming the chat', async () => {
+    await mountTeam(team(true))
+    await openList()
+    await listRead()
+    const fresh = document.querySelector<HTMLElement>('[data-page-list-part="new"]')
+    expect(fresh).not.toBeNull()
+    expect(within(fresh!).getByText(/Sketches are up/)).toBeInTheDocument()
+    expect(within(fresh!).getByText(/# general/)).toBeInTheDocument()
+  })
+
+  it('never lists the team’s chat to someone who is not in it, even a mention of them', async () => {
+    await mountTeam(team(false))
+    await openList()
+    await listRead()
+    expect(screen.queryByText(/Sketches are up/)).toBeNull()
+    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
   })
 })
 
