@@ -735,7 +735,8 @@ export async function resolveRootsAsViewer(
 ): Promise<Record<string, ForeignObject | null>> {
   const addressOf = (reference: string) => {
     try {
-      return pointerToAddress(referenceToPointer(reference))
+      // A bare `naddr1…` parses only as a NIP-27 reference, as `src/api/foreign.ts` reads one.
+      return pointerToAddress(referenceToPointer(/^(nostr:|\d+:)/.test(reference) ? reference : `nostr:${reference}`))
     } catch {
       return null
     }
