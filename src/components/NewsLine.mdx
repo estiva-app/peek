@@ -1,0 +1,37 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/NewsLine" />
+
+# NewsLine
+
+One line about a message in a list of what is new: who said it, why it is there, and the start of what they said. It is a link to that message (ACT-3, ACT-4).
+
+**Seen in** — No story: Its lines are messages read from the relay. In the app, rest on a lit row (**RowNewsCard**) or on the dot beside a page's title (**PageDot**).
+
+## When
+
+- A line in **RowNewsCard**, the card on a lit sidebar row.
+- A line in a page's list behind **PageDot**: New lines drawn as normal, Earlier lines (`seen`) drawn quieter, and on a team's list the place it was said in (`where`).
+
+## When not
+
+- To show the message itself. Open it in its conversation, where **MessageCard** draws it.
+- For a file's own news in Desk. Desk draws its own rows.
+
+## How
+
+```tsx
+import { NewsLine } from '@/components/RowNewsCard'
+import { useNewsLineDetails } from '@/components/newsLineDetails'
+
+const details = useNewsLineDetails(items, items.length)
+{items.map((item) => <NewsLine key={item.id} item={item} details={details} href={item.href} seen={item.seen} where={item.where} />)}
+```
+
+- `details` resolves names, faces and the words for every line at once. Ask for it once per list, not once per line.
+- `onClick` runs before the link opens. A topic uses it to keep its column beside it.
+
+## What it owns
+
+- **The words of the reason:** "mentioned you", "replied in your conversation", or the message's own start.
+- **The look:** the kit's avatar, the muted reason, and one line of words, cut to fit. A `seen` line uses the secondary text colour.
