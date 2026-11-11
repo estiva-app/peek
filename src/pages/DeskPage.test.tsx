@@ -95,8 +95,7 @@ vi.mock('@/api', async () => ({
   // platform and bridge.test.ts; the hook itself is proven by scripts/probe-first-load.mjs on production.
   useLoadAhead: () => {},
   useUnread: () => ({ dmHasUnread: (dmId: string) => desk.dmUnread[dmId] === true, dmNews: (dmId: string) => desk.dmNews[dmId] ?? [] }),
-  useListedNews: () => new Map(),
-  useTopicsColumn: () => ({ state: 'loading', column: () => undefined, signedOut: false }),
+  useDeskListedNews: () => new Map(),
   useMentionNames: () => [{ pubkey: 'qa2', name: 'QA-2' }],
   useRowNewsDetails: (items: { id: string; words?: string }[]) => ({
     wordsOf: (item: { words?: string }) => item.words,

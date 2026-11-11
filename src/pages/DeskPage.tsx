@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
@@ -32,8 +32,7 @@ import {
   useLoadAhead,
   useMentionNames,
   useOpenWorkActivity,
-  useListedNews,
-  useTopicsColumn,
+  useDeskListedNews,
   ListedFillsProvider,
   type RowNewsItem,
 } from '@/api'
@@ -141,11 +140,14 @@ export function DeskPage() {
   const openWorkFiles = useOpenWorkFiles()
   /*
     A topic here works exactly as in Topics (ACT-9; Miky, 11 Nov): it lights, and its card lists, news on the files it
-    lists too. That news is what the Topics column's read holds (`useListedNews`), so the Desk keeps that read going
-    while it holds a topic (`TopicsRead`): one read per tab, shared with the column. Any other file is its own talk.
+    lists too. The Desk reads that for its own topics only, not all of yours (Miky, 11 Nov), unless the Topics column
+    already holds it in this tab (`useDeskListedNews`). Any other file is its own talk.
   */
-  const listed = useListedNews()
-  const deskHasTopic = OPEN_WORK_ITEMS.some((i) => i.kind === 'file' && fileGlyph(i.object.kind) === 'topic')
+  const deskTopics = useMemo(
+    () => OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' && fileGlyph(i.object.kind) === 'topic' ? [i.object] : [])),
+    [OPEN_WORK_ITEMS],
+  )
+  const listed = useDeskListedNews(deskTopics)
   const {
     unread: fileUnread,
     news: fileNews,
@@ -552,15 +554,8 @@ export function DeskPage() {
       threadPanel={threadPanel}
     />
     </ListedFillsProvider>
-    {deskHasTopic && <TopicsRead />}
     </>
   )
-}
-
-/** The Topics column's read, kept going while the Desk holds a topic: what a topic's listed news comes from (ACT-9). */
-function TopicsRead() {
-  useTopicsColumn()
-  return null
 }
 
 /**

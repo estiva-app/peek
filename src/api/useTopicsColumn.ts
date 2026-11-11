@@ -368,9 +368,25 @@ export function useListedNews(): ReadonlyMap<string, ListedNews> {
   const lists = now.lists
   const comments = now.activity?.comments
   const parents = now.activity?.parents
-  return useMemo(() => {
+  return useMemo(
+    () => (mine && comments ? listedNewsOf(lists, comments, parents, namedComments) : new Map<string, ListedNews>()),
+    [mine, lists, comments, parents, namedComments],
+  )
+}
+
+/**
+ * Each topic's listed files and the files one level under them, with the comments held on each and those naming
+ * you: what a topic's dot judges (`listedHaveUnread`). Pure, so the Topics column and the Desk's own read of its
+ * topics (`useDeskListedNews`, ACT-9) fold the same way.
+ */
+export function listedNewsOf(
+  lists: ReadonlyMap<string, readonly ActivityFile[]>,
+  comments: ReadonlyMap<string, readonly SignedEvent[]>,
+  parents: ReadonlyMap<string, string> | undefined,
+  namedComments: readonly SignedEvent[] | undefined,
+): Map<string, ListedNews> {
+  {
     const news = new Map<string, ListedNews>()
-    if (!mine || !comments) return news
     const named = namedByFile(namedComments ?? [])
     const eventsOn = (file: string) => merged(comments.get(file) ?? [], [...(named.get(file) ?? []), ...(named.get(fileIdOf(file) ?? '') ?? [])])
     // Each file found under a listed one, by the file it sits directly under.
@@ -389,8 +405,12 @@ export function useListedNews(): ReadonlyMap<string, ListedNews> {
       ])
     }
     return news
-  }, [mine, lists, comments, parents, namedComments])
+  }
 }
+
+/** The watch appends to `activity.comments` and `parents` in place: copies, for a fold that must see them change. */
+export const activityCommentsOf = commentsOf
+export const activityParentsOf = (activity: TopicActivity) => parentsOf(activity)
 
 /** The comments naming the viewer, by what they are on: the file's address and its id, as the shared rule reads a comment's file (§6.4). */
 function namedByFile(named: readonly SignedEvent[]): ReadonlyMap<string, readonly SignedEvent[]> {

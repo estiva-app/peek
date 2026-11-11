@@ -52,6 +52,7 @@ export { useTopicFiles, type TopicFile, type TopicFilesState } from './useTopicF
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'
 export { useTopicsColumn, useListedNews, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
+export { useDeskListedNews } from './deskListedNews'
 export { useExploreTopics, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
 export { useFileMembers } from '@/api/internal/fileMembers'
 export type { StreamTerms } from '@estiva-app/conversation'
