@@ -26,7 +26,6 @@ export function TeamPage({
   team,
   folder,
   folders,
-  viewer,
   reloadFolders,
   onControl,
 }: {
@@ -34,7 +33,6 @@ export function TeamPage({
   /** The team's Folder, for its own menu. */
   folder: FolderSummary
   folders: FolderSummary[] | null
-  viewer: string | undefined
   reloadFolders: () => Promise<unknown>
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
@@ -55,13 +53,14 @@ export function TeamPage({
   const { spaces, led } = teamPlaces(team, topics)
 
   /*
-    Nobody leaves the Company team (§3.4). The relay keeps a team's last owner
-    in ("transfer ownership first"), so Leave is not offered to them — until
-    the relay lets them leave and the Company team's owners look after the
-    team (Miky, 4 November).
+    Every member may leave, a team's last owner too; nobody leaves the Company
+    team (§3.4). A team left with no owner is looked after by the workspace's
+    owners and admins.
+
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-teams-last-owner-may-leave-and-the-company-teams-owners-look-after-it.md
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-with-no-owner-is-looked-after-by-the-workspaces-admins.md
   */
-  const soleAdmin = !!viewer && team.admins.length === 1 && team.admins[0] === viewer
-  const canLeave = !team.company && !soleAdmin
+  const canLeave = !team.company
 
   const run = async (write: () => Promise<{ ok: true } | { ok: false; reason: string }>) => {
     setBusy(true)

@@ -1,7 +1,7 @@
 /**
  * A team's page (TEA-5): what it offers depends on who is looking — a member
- * adds someone or leaves, anyone else follows or joins, nobody leaves the
- * Company team, and the only admin is not offered Leave. It shows its places,
+ * adds someone or leaves (its only owner too), anyone else follows or joins,
+ * and nobody leaves the Company team. It shows its places,
  * its files outside any topic (only when it has some), and its people with
  * agents apart. The writes themselves are pinned at the wire in
  * src/wire/teams.wire.test.tsx.
@@ -73,10 +73,10 @@ const team = (over: Partial<Team> = {}): Team => ({
 })
 const FOLDER = { id: 'eng', name: 'Engineering' } as FolderSummary
 
-function mount(t: Team, viewer = ME) {
+function mount(t: Team) {
   return render(
     <MemoryRouter>
-      <TeamPage team={t} folder={FOLDER} folders={[FOLDER]} viewer={viewer} reloadFolders={async () => {}} />
+      <TeamPage team={t} folder={FOLDER} folders={[FOLDER]} reloadFolders={async () => {}} />
     </MemoryRouter>,
   )
 }
@@ -113,7 +113,7 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
   })
 
   it('somebody not in it is offered Follow and Join, and not Add or Leave', async () => {
-    mount(team({ isMember: false }), STRANGER)
+    mount(team({ isMember: false }))
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Join' }))
@@ -123,7 +123,7 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
   })
 
   it('a private team offers no Join: only being added puts someone in it', () => {
-    mount(team({ isMember: false, private: true }), STRANGER)
+    mount(team({ isMember: false, private: true }))
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Follow' })).toBeTruthy()
   })
@@ -141,7 +141,7 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
   })
 
   it('a follower is offered Unfollow, which stops following', async () => {
-    mount(team({ isMember: false, isFollowing: true }), STRANGER)
+    mount(team({ isMember: false, isFollowing: true }))
     await userEvent.click(screen.getByRole('button', { name: 'Unfollow' }))
     expect(api.followTeam).toHaveBeenCalledWith('eng', false)
   })
@@ -152,11 +152,8 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toBeTruthy()
   })
 
-  it('the only admin is not offered Leave; another member is', () => {
-    const { unmount } = mount(team(), KATERINA)
-    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull()
-    unmount()
-    mount(team({ admins: [KATERINA, ME] }), KATERINA)
+  it('a team’s only owner is offered Leave, as any other member is', () => {
+    mount(team({ admins: [ME], members: [{ pubkey: ME, role: 'owner' }, { pubkey: KATERINA }] as unknown as Team['members'] }))
     expect(screen.getByRole('button', { name: 'Leave' })).toBeTruthy()
   })
 
@@ -184,7 +181,7 @@ describe('what a team’s page shows (TEA-5)', () => {
   })
 
   it('no chat among the places for somebody not in it', () => {
-    mount(team({ isMember: false }), STRANGER)
+    mount(team({ isMember: false }))
     expect(within(section(/^Places$/)).queryByRole('link', { name: 'engineering' })).toBeNull()
   })
 

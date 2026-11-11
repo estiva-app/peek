@@ -224,7 +224,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
             team && chat ? (
               <TeamChat team={team} />
             ) : team ? (
-              <TeamPage team={team} folder={selected} folders={folders} viewer={me} reloadFolders={reload} onControl={fileControls.open} />
+              <TeamPage team={team} folder={selected} folders={folders} reloadFolders={reload} onControl={fileControls.open} />
             ) : teamsFailed ? (
               <EmptyState message="Couldn’t load this team. Reload to try again." />
             ) : (
