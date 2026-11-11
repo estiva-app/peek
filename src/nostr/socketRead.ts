@@ -245,6 +245,8 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
           client.relay.subscribe(filters, (event) => events.push(event), {
             onEose: () => finish({ kind: 'events', events }),
             onClosed: (reason) => finish({ kind: 'closed', reason }),
+            // A refused read goes to HTTP now (TRANSIENT), not over the socket after the live client's wait.
+            retryRateLimited: false,
           }),
         )
       sub = first ? sendingFirst(subscribe) : subscribe()
