@@ -38,7 +38,18 @@ interface FakeSub {
   onEvent: (event: SignedEvent) => void
   onEose?: () => void
   onClosed?: (reason: string) => void
+  retryRateLimited?: boolean
   closed: boolean
+}
+
+/**
+ * The relay closes `sub` with `reason`, as `@estiva-app/protocol`'s live client
+ * passes it on: since 0.56.0 it keeps a `rate-limited:` close to itself and asks
+ * again later, unless the read said `retryRateLimited: false`.
+ */
+function refuse(sub: FakeSub, reason: string) {
+  if (reason.startsWith('rate-limited:') && sub.retryRateLimited !== false) return
+  sub.onClosed?.(reason)
 }
 
 function fakeClient(initial: RelayState = 'live') {
@@ -52,7 +63,7 @@ function fakeClient(initial: RelayState = 'live') {
       return () => listeners.delete(listener)
     },
     relay: {
-      subscribe(filters: Record<string, unknown>[], onEvent: (event: SignedEvent) => void, options?: { onEose?: () => void; onClosed?: (reason: string) => void }) {
+      subscribe(filters: Record<string, unknown>[], onEvent: (event: SignedEvent) => void, options?: { onEose?: () => void; onClosed?: (reason: string) => void; retryRateLimited?: boolean }) {
         const sub: FakeSub = { filters, onEvent, ...options, closed: false }
         subs.push(sub)
         return { close: () => void (sub.closed = true) }
@@ -204,7 +215,7 @@ describe('socket reads', () => {
     const { read, budget } = reader(client)
     const answer = read('https://relay', [{ kinds: [9] }], ME)
     await vi.waitFor(() => expect(subs).toHaveLength(1))
-    subs[0].onClosed?.('rate-limited: quota exceeded; retry in 3s')
+    refuse(subs[0], 'rate-limited: quota exceeded; retry in 3s')
     expect(await answer).toBeNull()
     expect(budget.noteRateLimited).toHaveBeenCalledWith('rate-limited: quota exceeded; retry in 3s')
     expect(relayReads(1).rateLimited).toBe(1)
@@ -216,7 +227,7 @@ describe('socket reads', () => {
     const { read, budget } = reader(client)
     const answer = read('https://relay', [{ kinds: [9] }], ME)
     await vi.waitFor(() => expect(subs).toHaveLength(1))
-    subs[0].onClosed?.('rate-limited: too many concurrent requests')
+    refuse(subs[0], 'rate-limited: too many concurrent requests')
     expect(await answer).toBeNull()
     expect(budget.noteRateLimited).not.toHaveBeenCalled()
   })
