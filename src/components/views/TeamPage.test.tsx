@@ -19,6 +19,7 @@ const ME = 'a'.repeat(64)
 const KATERINA = 'b'.repeat(64)
 const AGENT = 'c'.repeat(64)
 const STRANGER = 'd'.repeat(64)
+const NEWCOMER = 'e'.repeat(64)
 const file = (kind: number, d: string, title: string) =>
   ({ ref: `${kind}:${PK}:${d}`, address: `${kind}:${PK}:${d}`, kind, folder: 'eng', slots: { title: { value: title } } }) as unknown as ForeignObject
 const LAUNCH = file(30840, 'launch', 'Launch')
@@ -41,6 +42,13 @@ vi.mock('@/api', async () => ({
     { pubkey: KATERINA, name: 'Katerina' },
     { pubkey: AGENT, name: 'Claude', bot: true },
     { pubkey: STRANGER, name: 'Zoe' },
+  ],
+  // The company's roster as `usePeople` reads it: the viewer and any service key already left out.
+  usePeople: () => [
+    { id: KATERINA, pubkey: KATERINA, name: 'Katerina', role: '' },
+    { id: AGENT, pubkey: AGENT, name: 'Claude', role: '', bot: true },
+    { id: STRANGER, pubkey: STRANGER, name: 'Zoe', role: '' },
+    { id: NEWCOMER, pubkey: NEWCOMER, name: 'Yves', role: '' },
   ],
   useTeamTopics: () => ({ topics: new Map([[LAUNCH.address!, LAUNCH], [BRIEF.address!, BRIEF]]), loading: false, signedOut: false }),
   useTeamFiles: () => ({ files: api.files, failed: false }),
@@ -97,13 +105,45 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
     expect(screen.queryByRole('button', { name: 'Follow' })).toBeNull()
   })
 
-  it('Add lists only the people not in the team, and adds the one chosen', async () => {
+  it('Add opens the standard Add members dialog, offering only the company’s people not in the team, and adds the one chosen (TEA-11)', async () => {
+    api.addToTeam.mockResolvedValue({ ok: true })
     mount(team())
     await userEvent.click(screen.getByRole('button', { name: 'Add' }))
-    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
-    expect(items).toEqual(['Zoe'])
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Zoe' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Add members')).toBeTruthy()
+    // "e" is in every name, so only the team filter can leave a member out.
+    await userEvent.type(within(dialog).getByPlaceholderText('Search people...'), 'e')
+    // An option's text is its avatar's initials, then the name.
+    const offered = screen.getAllByRole('option').map((option) => option.textContent ?? '')
+    expect(offered.some((text) => text.endsWith('Zoe'))).toBe(true)
+    expect(offered.some((text) => text.endsWith('Claude') || text.endsWith('Katerina'))).toBe(false)
+    await userEvent.click(screen.getAllByRole('option').find((option) => option.textContent?.endsWith('Zoe'))!)
+    // The kit's add layer confirms with "Invite", as on a topic's Members.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
     expect(api.addToTeam).toHaveBeenCalledWith('eng', STRANGER)
+  })
+
+  it('no Add once everyone in the company is already in the team (TEA-11)', () => {
+    const everyone = [KATERINA, ME, AGENT, STRANGER, NEWCOMER].map((pubkey) => ({ pubkey }))
+    mount(team({ members: everyone as unknown as Team['members'] }))
+    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeTruthy()
+  })
+
+  it('when the relay refuses the first person chosen, Add members stays open on its picker and adds nobody after them (TEA-11)', async () => {
+    api.addToTeam.mockReset().mockResolvedValue({ ok: false, reason: 'Refused.' })
+    mount(team())
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+    const dialog = screen.getByRole('dialog')
+    const search = within(dialog).getByPlaceholderText('Search people...')
+    for (const name of ['Zoe', 'Yves']) {
+      await userEvent.type(search, name)
+      await userEvent.click(screen.getAllByRole('option').find((option) => option.textContent?.endsWith(name))!)
+    }
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+    expect(api.addToTeam).toHaveBeenCalledTimes(1)
+    // Still on the picker (its Invite button), not back on the roster.
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Invite' })).toBeTruthy()
   })
 
   it('Leave leaves this team', async () => {
