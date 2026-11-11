@@ -179,6 +179,8 @@ export function useFilePane(
   const follow = usePlaceFollowControls({
     follow: view.follow,
     target: view.followTarget,
+    // A topic in a team gets a switch once its teams are read (`topicFollowTarget`).
+    coming: isTopic && !!file?.folder,
     title,
     teamName: listing?.team.name,
     me,
