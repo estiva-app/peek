@@ -10,7 +10,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-has-members-and-followers-and-a-place-is-followed-at-a-level.md
  */
-import { fileContext, followingOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
+import { fileContext, followingOf, streamMarkerOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
 import { rootOf } from '@/nostr/channelStreams'
@@ -112,7 +112,32 @@ export function listedHaveUnread(news: ListedNews, judge: ListedJudgeArgs): bool
   return news.some(({ file, events, under }) => unreadOnListed(file, events, under, judge).length > 0)
 }
 
-type ListedJudgeArgs = { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number }
+export type ListedJudgeArgs = { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number }
+
+/**
+ * A lit topic's card, whole (383a4d3b): what lit it from its listed files, and the judge that lit it. The Topics
+ * column holds only each listed file's newest comment from before the page opened, so the card reads the rest while
+ * it is open (`useListedFill`) and judges them by the same rule.
+ */
+export interface ListedFill {
+  held: ListedNews
+  judge: ListedJudgeArgs
+}
+
+/**
+ * The files a topic's card reads more of while it is open: each listed file (or one under it) that lights the topic,
+ * from its own marker, never before the reader's start on the topic nor the horizon. A message before the marker is read there, so only what is after
+ * it can still be new (a reply in an unopened thread before it is the exception, and it stays as held).
+ */
+export function listedReadsOf({ held, judge }: ListedFill): { file: string; since: number }[] {
+  if (!judge.following.in) return []
+  return held.flatMap(({ file, events, under }) => {
+    const stream = fileContext(file)
+    if (!stream || unreadOnListed(file, events, under, judge).length === 0) return []
+    // Nothing from before the reader's start on the topic lights either.
+    return [{ file, since: Math.max(judge.floor, judge.following.since ?? 0, streamMarkerOf(judge.merged, stream) ?? 0) }]
+  })
+}
 
 function unreadOnListed(file: string, events: readonly SignedEvent[], under: boolean | undefined, judge: ListedJudgeArgs): SignedEvent[] {
   const stream = fileContext(file)

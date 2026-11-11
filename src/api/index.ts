@@ -96,8 +96,10 @@ export {
   type WriteResult,
 } from './useFileConversation'
 export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
-export { CARD_LINES, type RowNewsItem } from './rowNews'
+export { CARD_LINES, newestFirst, type RowNewsItem } from './rowNews'
 export { useRowNewsDetails } from './rowNewsDetails'
+export { ListedFillsProvider, useListedFill, useListedFillOf } from './listedFill'
+export type { ListedFill } from './placeDots'
 export {
   isUrgentForViewer,
   useNewReplyThreads,

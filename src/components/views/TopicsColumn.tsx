@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type RowNewsItem, type TopicsColumnState } from '@/api'
+import { ListedFillsProvider, listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type RowNewsItem, type TopicsColumnState } from '@/api'
 import { useToast } from '@/lib/toast'
 import { TreeRow } from '@/components/views/FileTreeView'
 
@@ -41,7 +41,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   // Your topics carry the dot, as the Folder tree's rows do; the others are not yours to hear about.
   // A topic also lights for news on a file it lists, and for what names you one level under one, from what the column already holds (TOPI-3, ACT-2).
   const listed = useListedNews()
-  const { unread, news } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
+  const { unread, news, fills } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed })
   const [starting, setStarting] = useState(false)
   /*
     A topic's row offers Make it a space to a member of its team, as the Teams column does (TEA-5, TOPI-7). The teams
@@ -72,7 +72,8 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   const openFolder =
     typeof state === 'object' && 'mine' in state ? [...state.mine, ...state.others].find((file) => file.ref === selectedRef)?.folder : undefined
   return (
-    <>
+    // A lit topic's card reads the rest of its listed files' new comments while it is open (383a4d3b).
+    <ListedFillsProvider value={fills}>
       <TopicsColumnView
         state={state}
         signedOut={signedOut}
@@ -87,7 +88,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
         leavesOf={leaves}
       />
       {starting && <HeaderStartTopic column="topics" defaultFolder={openFolder} onClose={() => setStarting(false)} />}
-    </>
+    </ListedFillsProvider>
   )
 }
 

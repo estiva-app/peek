@@ -40,3 +40,4 @@ import { RowNewsCard } from '@/components/RowNewsCard'
 - "N more" past five, which opens the place.
 - Where a line leads: a listed file's comment at its thread, a topic's message at its thread, and a team chat's or a DM's reply at its thread. A chat or DM message that answers nothing opens the place.
 - The words of a topic's own messages and the titles of listed files, read once when the card opens (`useRowNewsDetails`). Nothing is read on a cold open.
+- On a topic lit by a file it lists, the other new comments on that file: the Topics column holds only its newest from before the page opened, so the card reads the rest from the file's own marker when it opens and judges them by the rule that lit the dot (`useListedFill`).

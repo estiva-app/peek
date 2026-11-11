@@ -7,7 +7,7 @@ import { fileContext, isCommentOn, isReply, streamHasUnread, THREAD_RULE_FROM } 
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
-import { listedNews, placeNews, topicFollowingOf, type ListedNews } from './placeDots'
+import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews } from './placeDots'
 import { newestFirst, type RowNewsItem } from './rowNews'
 import { listingOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
@@ -154,6 +154,8 @@ export function useConversationBadges(
   unread: Record<string, boolean>
   /** A lit topic's or space's card lines, newest first (ACT-3); absent for a row with nothing new, and for other files. */
   news: Record<string, RowNewsItem[]>
+  /** A topic lit by its listed files: what lit it there and the judge, for its card to read the rest while open (383a4d3b). */
+  fills: Record<string, ListedFill>
 } {
   // Read again once a renewal ends a stretch on an expired token (AUT-3).
   const resumed = useSessionResumed()
@@ -275,6 +277,8 @@ export function useConversationBadges(
     const unread: Record<string, boolean> = {}
     /** A lit topic's card: what lit it, newest first (ACT-3). Only topics and spaces have one. */
     const news: Record<string, RowNewsItem[]> = {}
+    /** A topic lit by its listed files: what its card reads more of while open (383a4d3b). */
+    const fills: Record<string, ListedFill> = {}
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
     const me = heldToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
@@ -352,14 +356,16 @@ export function useConversationBadges(
         const held = file.address ? listed.get(file.address) : undefined
         if (!held?.length || !file.folder) continue
         const address = file.address!
-        const lines = listedNews(held, { me, following: followingOfTopic(address, file.folder, me), muted: membership.termsOf(address).muted, merged: frontier.merged, floor })
+        const judge = { me, following: followingOfTopic(address, file.folder, me), muted: membership.termsOf(address).muted, merged: frontier.merged, floor }
+        const lines = listedNews(held, judge)
         if (lines.length === 0) continue
         unread[file.ref] = true
         news[file.ref] = newestFirst(news[file.ref] ?? [], lines)
+        fills[file.ref] = { held, judge }
       }
     }
     for (const ref of Object.keys(news)) news[ref] = newestFirst(news[ref])
-    return { counts, unread, news }
+    return { counts, unread, news, fills }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key, listed])
