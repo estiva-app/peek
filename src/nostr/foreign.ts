@@ -485,7 +485,7 @@ export async function resolveObjectAsViewer(
     if (isEventReference(reference)) {
       return await resolveForeignEvent(reference, query, cachedPeople(query), manifests)
     }
-    // A project once switched is opened by the relay's open read: its current fields and text, not its history (ALO-6).
+    // A file is opened by the relay's open read where it offers one: its current fields and text, not its history (ALO-6, ALO-13).
     // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
     return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests, await withOpenRead(options))
   } catch (error) {

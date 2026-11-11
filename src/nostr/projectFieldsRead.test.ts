@@ -213,3 +213,66 @@ describe('a deleted project, whichever way the switch is', () => {
     expect(await deletedProjectsAsViewer('https://relay.test', token)).toBeNull()
   })
 })
+
+/*
+  Topics, documents and issues are not kept in order yet, but the relay's open read answers them too (ALO-13): a
+  cold open read every change of each one it drew, 13.8 of Miky's 18.9 MB on 11 Nov.
+*/
+describe('an issue or a topic on screen, before they are kept in order', () => {
+  const ISSUE = `30851:${AUTHOR}:7a2d4c5e-0000-4000-8000-00000000cccc`
+  const TOPIC = `30840:${AUTHOR}:7a2d4c5e-0000-4000-8000-00000000dddd`
+  const files = {
+    ...event(31990, [['d', 'estiva-files'], ['k', '30851'], ['k', '30840']]),
+    content: JSON.stringify({
+      name: 'Estiva Ship',
+      records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value', order: ['created_at', 'id'], rule: 'last-write-wins-per-field' },
+      projections: {
+        30851: { widget: 'card', slots: { title: { tag: 'title', fold: 'title' } } },
+        30840: { widget: 'card', slots: { title: { tag: 'title', fold: 'title' } } },
+      },
+      actions: [],
+    }),
+  }
+  const issue = event(30851, [['d', ISSUE.split(':')[2]], ['title', 'Draft title'], ['h', FOLDER]])
+  const topic = event(30840, [['d', TOPIC.split(':')[2]], ['title', 'Planning'], ['h', FOLDER]])
+  const oldRename = event(1851, [['a', ISSUE], ['field', 'title'], ['value', 'Older title'], ['h', FOLDER]])
+  const rename = event(1851, [['a', ISSUE], ['field', 'title'], ['value', 'Peek opens fast'], ['h', FOLDER]])
+  const filesWorld = [files, issue, topic, oldRename, rename]
+  /** The open read answers each named file's first record and its newest change per field (SPEC §6.13). */
+  const answerFiles = (_url: string, filters: Record<string, unknown>[]) => {
+    const opened = filters.filter((f) => f.fields === 'newest')
+    const plain = filters.filter((f) => f.fields !== 'newest')
+    const roots = opened.flatMap((f) => [issue, topic].filter((e) => (f.kinds as number[]).includes(e.kind) && (f['#d'] as string[]).includes(e.tags[0][1])))
+    const newest = roots.some((e) => e === issue) ? [rename] : []
+    return answerFrom(filesWorld, plain).then((r) => ({ ok: true, events: [...r.events, ...roots, ...newest] }))
+  }
+  /** Every change asked for by `#a` naming one of the files: their whole history. */
+  const historyReads = () =>
+    requests()
+      .flat()
+      .filter((f) => (f.kinds as number[] | undefined)?.includes(1851) && ((f['#a'] as string[] | undefined) ?? []).some((a) => a === ISSUE || a === TOPIC))
+
+  it('opens them by the relay’s open read, with each field’s current value and none of their older changes', async () => {
+    relayInfo('list')
+    queryRelay.mockImplementation(answerFiles)
+
+    const objects = await resolveObjectsAsViewer([ISSUE, TOPIC], 'https://relay.test', token)
+
+    expect(objects[ISSUE]?.slots.title?.value).toBe('Peek opens fast')
+    expect(objects[TOPIC]?.slots.title?.value).toBe('Planning')
+    const named = listReads().filter((f) => f.text === true).flatMap((f) => (f['#d'] as string[] | undefined) ?? [])
+    expect(named).toEqual(expect.arrayContaining([ISSUE.split(':')[2], TOPIC.split(':')[2]]))
+    expect(historyReads()).toEqual([])
+  })
+
+  it('reads every change, as before, where the relay has no open read', async () => {
+    relayInfo(false)
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(filesWorld, filters))
+
+    const objects = await resolveObjectsAsViewer([ISSUE, TOPIC], 'https://relay.test', token)
+
+    expect(objects[ISSUE]?.slots.title?.value).toBe('Peek opens fast')
+    expect(listReads()).toEqual([])
+    expect(historyReads().length).toBeGreaterThan(0)
+  })
+})
