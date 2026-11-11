@@ -38,7 +38,10 @@ export function usePlaceFollowControls({
   people,
   coming = false,
 }: {
-  /** A switch will be drawn once `target` is known (a topic whose teams are still read): its room is held meanwhile. */
+  /**
+   * A switch will be drawn here (a topic in a team): its room is held while the teams and the place are read. Off for a
+   * caller that draws something of its own meanwhile (a team chat's people icon).
+   */
   coming?: boolean
   /** The place as read (`usePlaceFollow(target)`): the caller's, so a topic's view reads its level from the same read. */
   follow: PlaceFollow
@@ -94,7 +97,7 @@ export function usePlaceFollowControls({
         readOnlyReason={readOnlyReason}
         backTo={!frozen && state.againstDefault ? teamName : undefined}
       />
-    ) : (target || coming) && !follow.failed ? (
+    ) : coming && !follow.failed ? (
       <span aria-hidden="true" className="size-6" data-follow-switch-pending />
     ) : undefined
 

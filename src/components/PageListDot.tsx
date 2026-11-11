@@ -29,7 +29,7 @@ export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: Pa
 /** The list's content: mounted only while the card is open, so this is when its read is asked. */
 function PageListRead({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: PageLine) => void }) {
   const lines = usePageLines(dot.sources, dot.held)
-  return <PageList lines={lines} held={dot.held} {...(onOpen ? { onOpen } : {})} />
+  return <PageList lines={lines === 'failed' ? undefined : lines} failed={lines === 'failed'} held={dot.held} {...(onOpen ? { onOpen } : {})} />
 }
 
 /**
@@ -38,8 +38,10 @@ function PageListRead({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: Page
  * already held draw at once, and Earlier waits with a skeleton line; "Nothing here yet." only once the read returned
  * empty.
  */
-export function PageList({ lines, held, onOpen }: {
+export function PageList({ lines, held, onOpen, failed = false }: {
   lines: readonly PageLine[] | undefined
+  /** The read was refused: New's held lines, and Earlier says it could not be read rather than waiting for good. */
+  failed?: boolean
   /** The New lines the page already holds, drawn while `lines` is read. */
   held?: readonly PageLine[]
   /** What a plain click on a line does before its link opens (a topic keeps the column beside it). */
@@ -74,7 +76,7 @@ export function PageList({ lines, held, onOpen }: {
       {(earlier.length > 0 || !lines) && (
         <div className="flex flex-col gap-0.5" data-page-list-part="earlier">
           <SectionHeader title="Earlier" />
-          {lines ? earlier.map(line) : <SkeletonRow />}
+          {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
         </div>
       )}
     </div>

@@ -99,8 +99,13 @@ export function useTopicPageDot(file: ForeignObject | undefined, placeHref: stri
     return {
       lit: unread[topic.ref] === true,
       held: asLines(news[topic.ref] ?? NO_LINES, placeHref, 'topic'),
-      // A topic in no Folder is never judged (nothing there lights): its list has nothing to read.
-      sources: judged ? [{ type: 'topic', address: topic.address, href: placeHref, judges: judged, listed: listed.get(topic.address) }] : topic.folder ? undefined : [],
+      // A topic in no Folder, or with no context for this viewer, is never judged (nothing there lights): its list has
+      // nothing to read, rather than a loading line for good.
+      sources: judged
+        ? [{ type: 'topic', address: topic.address, href: placeHref, judges: judged, listed: listed.get(topic.address) }]
+        : topic.folder && fileContext(topic.address)
+          ? undefined
+          : [],
     }
   }, [topic, judges, unread, news, listed, placeHref])
 }
@@ -155,8 +160,8 @@ export function useTeamPageDot(
   places: readonly ForeignObject[],
   { chatHref, chatWhere }: { chatHref: string; chatWhere: string },
 ): PageDot {
-  const key = places.map((place) => place.address ?? place.ref).join(',')
-  // Keyed on the places, not the array the page builds on each render.
+  // Keyed on the places and their titles (a line names where it was said), not the array the page builds on each render.
+  const key = places.map((place) => `${place.address ?? place.ref}|${place.slots.title?.value ?? ''}`).join(',')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const files = useMemo(() => places.filter((place) => place.address), [key])
   const listed = useDeskListedNews(files)
@@ -170,8 +175,13 @@ export function useTeamPageDot(
       ...asLines(chat.news[team.id] ?? NO_LINES, chatHref, 'chat', chatWhere),
       ...files.flatMap((file) => asLines(badges.news[file.ref] ?? NO_LINES, filePath(file.address!, file.slots.title?.value), 'topic', titleOf(file))),
     ]
-    // Every place that can be judged (one in a team's Folder) is, before the list reads: one left out would read as having nothing.
-    const judged = files.every((file) => !file.folder || badges.judges[file.ref])
+    /*
+      The list reads once the places are judged, so none is left out as having nothing. They are judged together, once
+      read state, membership and the teams are in (`useConversationBadges`); a place with no context for this viewer
+      (`fileContext`) never is, and is skipped rather than holding the whole list on its loading line.
+    */
+    const judgeable = files.filter((file) => file.folder && fileContext(file.address))
+    const judged = judgeable.length === 0 || judgeable.some((file) => badges.judges[file.ref])
     return {
       lit: chat.unread[team.id] === true || files.some((file) => badges.unread[file.ref] === true),
       held: newestFirstLines(held),
@@ -220,15 +230,30 @@ function filtersOf(source: PageSource, since: number): Record<string, unknown>[]
   }
 }
 
-/** What a list read, by reader and filters, kept for the tab: opening the same list again asks nothing. */
-const readCache = new Map<string, readonly SignedEvent[]>()
+/**
+ * What a list read, by reader and filters, kept for a minute: opening the same list again at once asks nothing, and
+ * later reads again, so what was said since is in it. The newest few only.
+ */
+const readCache = new Map<string, { at: number; events: readonly SignedEvent[] }>()
+const FRESH_MS = 60_000
+const CACHED_LISTS = 20
+const cachedRead = (key: string) => {
+  const hit = readCache.get(key)
+  return hit && Date.now() - hit.at < FRESH_MS ? hit.events : undefined
+}
+const cacheRead = (key: string, events: readonly SignedEvent[]) => {
+  readCache.delete(key)
+  readCache.set(key, { at: Date.now(), events })
+  while (readCache.size > CACHED_LISTS) readCache.delete(readCache.keys().next().value!)
+}
 
 /**
  * A page's list, read once it is open: undefined while it reads. New is everything unread now, and every line the page
  * already held (`held`) stays in it, so the list never says less than the dot; Earlier is what was about you. Newest
- * first in each, at most {@link PAGE_LINES} (never cutting a new line). A refused read lists what the page held.
+ * first in each, at most {@link PAGE_LINES} (never cutting a new line). A refused read is `'failed'`: the list then
+ * draws what the page held and says Earlier could not be read, never "Nothing here yet.".
  */
-export function usePageLines(sources: readonly PageSource[] | undefined, held: readonly PageLine[] = NO_LINES): readonly PageLine[] | undefined {
+export function usePageLines(sources: readonly PageSource[] | undefined, held: readonly PageLine[] = NO_LINES): readonly PageLine[] | 'failed' | undefined {
   const viewer = useRelayViewer()
   const { merged } = useReadFrontier()
   const filters = useMemo(() => {
@@ -238,14 +263,14 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
   }, [sources])
   const key = filters ? `${viewer()?.token.pubkey ?? ''}|${JSON.stringify(filters)}` : ''
   const [read, setRead] = useState<{ key: string; events: readonly SignedEvent[] | 'failed' } | undefined>(() => {
-    const events = key ? readCache.get(key) : undefined
+    const events = key ? cachedRead(key) : undefined
     return events ? { key, events } : undefined
   })
 
   useEffect(() => {
     const at = viewer()
     if (!filters || !key || read?.key === key) return
-    const cached = readCache.get(key)
+    const cached = cachedRead(key)
     if (cached) {
       setRead({ key, events: cached })
       return
@@ -261,7 +286,7 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
     Promise.all(batches.map((batch) => query(batch))).then(
       (answers) => {
         const events = answers.flat() as SignedEvent[]
-        readCache.set(key, events)
+        cacheRead(key, events)
         if (live) setRead({ key, events })
       },
       () => {
@@ -277,7 +302,7 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
 
   return useMemo(() => {
     if (!sources || !read || read.key !== key) return undefined
-    if (read.events === 'failed') return held
+    if (read.events === 'failed') return 'failed'
     const events = read.events
     // The read's lists first, so a line the read judged wins; the page's held New lines last, for any the read missed.
     return pageList([...sources.flatMap((source) => linesOf(source, events, merged)), heldList(held)])

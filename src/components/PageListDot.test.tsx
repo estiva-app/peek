@@ -4,7 +4,7 @@
  * repeated there. The topic's dot and its list are judged by the real rule over relay answers stood in for here: the
  * topic's conversation (the badges read), the read markers, and the list's own read, which waits for the list to open.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -26,6 +26,8 @@ const relay = vi.hoisted(() => ({
   mentioned: new Set<string>(),
   /** The list's own reads, each a set of filters. */
   listReads: [] as unknown[][],
+  /** The relay refuses the list's read. */
+  refuse: false,
 }))
 
 const comment = (id: string, at: number, content: string, tags: string[][] = []): SignedEvent =>
@@ -83,6 +85,7 @@ vi.mock('@/nostr/foreign', async (original) => ({
   // The list's read: what the relay holds on the topic, whatever it is asked.
   viewerQuery: () => async (filters: unknown[]) => {
     relay.listReads.push(filters)
+    if (relay.refuse) throw new Error('429 Too Many Requests')
     return relay.events
   },
   // The topic lists no file.
@@ -118,6 +121,11 @@ beforeEach(() => {
   relay.events = [PLAIN, MENTION]
   relay.mentioned = new Set([MENTION.id])
   relay.listReads = []
+  relay.refuse = false
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('the dot beside a topic’s title (ACT-4)', () => {
@@ -168,6 +176,37 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
     await openList()
     expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
     expect(screen.queryByText(/Totals moved/)).toBeNull()
+  })
+
+  it('says Earlier could not be read when the relay refuses the list, never "Nothing here yet."', async () => {
+    relay.refuse = true
+    relay.merged = { [fileContext(TOPIC)!]: NOW }
+    await mount()
+    await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
+    await openList()
+    expect(await screen.findByText('Earlier could not be read.')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+  })
+
+  it('opened again a minute later, lists a mention said and read since it was first opened', async () => {
+    // Only the clock is faked; a minute past the first open, inside the same hour, so the read's horizon is the same.
+    const start = NOW % 3600 > 3500 ? (Math.floor(NOW / 3600) + 1) * 3600 + 600 : NOW
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(start * 1000)
+    relay.merged = { [fileContext(TOPIC)!]: NOW }
+    await mount()
+    await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
+    await openList()
+    await screen.findByText(/Can you check the numbers/)
+    await openList()
+    await waitFor(() => expect(document.querySelector('[data-page-list]')).toBeNull())
+    // Said after the first open, and read since: the page holds nothing new, so only a fresh read lists it.
+    const later = comment('c', NOW - 1000, `Ready for review, nostr:${encodeNpub(ME)}`, [['p', ME]])
+    relay.events = [...relay.events, later]
+    relay.mentioned = new Set([...relay.mentioned, later.id])
+    vi.setSystemTime((start + 61) * 1000)
+    await openList()
+    expect(await screen.findByText(/Ready for review/)).toBeInTheDocument()
   })
 })
 
