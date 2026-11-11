@@ -1,4 +1,4 @@
-import { fieldsOptedIn, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
+import { FILE_KINDS, fieldsOptedIn, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
 import { forgetRelayInfo, relayInfo } from './relayInfo'
 
 /** The kind a project is written as: the type the switch names, protocol's `PROJECT_TYPE` (TYPES.md). */
@@ -29,9 +29,11 @@ interface Switch {
   inOrder: readonly string[]
   /** The relay answers the list read (NIP-11 `file_list.newest`), switched or not. */
   list: boolean
+  /** It also returns a named file's current text with it (`file_list.text`): the open read. */
+  text: boolean
 }
 
-const OFF: Switch = { fields: undefined, inOrder: [], list: false }
+const OFF: Switch = { fields: undefined, inOrder: [], list: false, text: false }
 
 let held: Promise<Switch> | undefined
 
@@ -46,7 +48,7 @@ function relaySwitch(): Promise<Switch> {
           return OFF
         }
         const reads: RelayFileReads = relayFileReadsOf(info)
-        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list }
+        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list, text: reads.text }
       },
       () => {
         held = undefined
@@ -88,9 +90,22 @@ export async function byFields(address: string | undefined): Promise<boolean> {
   return isProject(address) && !!(await projectFields())
 }
 
-/** The kinds the open read opens, for interop's `openRead`: projects once switched. */
+/**
+ * The kinds the open read opens, for interop's `openRead`: projects once switched, and every other file kind — topics,
+ * documents, issues — as soon as the relay offers the open read (NIP-11 `file_list` newest and text), switched or
+ * not, since reading needs no order kept (ALO-13). A file it does not answer is read as before. Before, Peek's cold
+ * open read every change of each topic, document and issue it drew: 13.8 of Miky's 18.9 MB on 11 Nov.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
+ */
 export async function openReadOption(): Promise<{ openRead?: readonly number[] }> {
-  return (await projectFields()) ? { openRead: [PROJECT_KIND] } : {}
+  const relay = await relaySwitch()
+  const kinds = [
+    ...(relay.fields ? [PROJECT_KIND] : []),
+    ...(relay.list && relay.text ? FILE_KINDS.filter((kind) => kind !== PROJECT_KIND) : []),
+  ]
+  return kinds.length ? { openRead: kinds } : {}
 }
 
 /**
