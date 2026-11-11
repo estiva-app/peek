@@ -10,7 +10,8 @@ import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useTeams, useWorkspaceDirectory } from '@/api'
+import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useTeams, useTopicPageDot, useWorkspaceDirectory } from '@/api'
+import { PageDot } from '@/components/PageListDot'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
@@ -68,6 +69,7 @@ export function useFilePane(
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
   const listing = isTopic ? listingOf(teams, file?.address ?? undefined) : undefined
+  const pageDot = useTopicPageDot(file ?? undefined, file?.address ? filePath(file.address, file.slots.title?.value) : '')
   // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
@@ -177,6 +179,8 @@ export function useFilePane(
   const follow = usePlaceFollowControls({
     follow: view.follow,
     target: view.followTarget,
+    // A topic in a team gets a switch once its teams are read (`topicFollowTarget`).
+    coming: isTopic && !!file?.folder,
     title,
     teamName: listing?.team.name,
     me,
@@ -282,7 +286,13 @@ export function useFilePane(
             app is named (PRO-24). A file of Peek's own gets nothing. The
             address is the manifest's, a web page only (`openInAppUrl`).
             */
-            file && elsewhereAppName(file) && openInAppUrl(file) ? (
+            /*
+              A topic's or a space's dot beside its title (ACT-4): what is new there, then what was about you
+              earlier, when you rest on it or tap it. A file of another app has its Open here instead.
+            */
+            pageDot ? (
+              <PageDot dot={pageDot} />
+            ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
               <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
                 <Button
                   href={openInAppUrl(file)}

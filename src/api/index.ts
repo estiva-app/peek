@@ -99,6 +99,7 @@ export {
 export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
 export { CARD_LINES, newestFirst, type RowNewsItem } from './rowNews'
 export { useRowNewsDetails } from './rowNewsDetails'
+export { PAGE_LINES, useDmPageDot, usePageLines, useTeamChatPageDot, useTeamPageDot, useTopicPageDot, type PageDot, type PageLine, type PageSource } from './pageLines'
 export { ListedFillsProvider, useListedFill, useListedFillOf } from './listedFill'
 export type { ListedFill } from './placeDots'
 export {

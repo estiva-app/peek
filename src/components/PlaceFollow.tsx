@@ -36,7 +36,13 @@ export function usePlaceFollowControls({
   me,
   directory,
   people,
+  coming = false,
 }: {
+  /**
+   * A switch will be drawn here (a topic in a team): its room is held while the teams and the place are read. Off for a
+   * caller that draws something of its own meanwhile (a team chat's people icon).
+   */
+  coming?: boolean
   /** The place as read (`usePlaceFollow(target)`): the caller's, so a topic's view reads its level from the same read. */
   follow: PlaceFollow
   target: FollowTarget | undefined
@@ -77,6 +83,10 @@ export function usePlaceFollowControls({
     return result.ok
   }
 
+  // While the place is read, or its target is still being worked out (`coming`: the teams are not read yet), its
+  // switch's 24px is held empty: both can take seconds on a large workspace (about 20 on Miky's, 11 November), and the
+  // title and the dot beside it (ACT-4) jumping right when it lands moved them out from under the pointer resting on
+  // the dot, which closed its list. A failed read draws no switch, so nothing is held.
   const switcher =
     target && state ? (
       <FollowSwitch
@@ -87,6 +97,8 @@ export function usePlaceFollowControls({
         readOnlyReason={readOnlyReason}
         backTo={!frozen && state.againstDefault ? teamName : undefined}
       />
+    ) : coming && !follow.failed ? (
+      <span aria-hidden="true" className="size-6" data-follow-switch-pending />
     ) : undefined
 
   const pill =

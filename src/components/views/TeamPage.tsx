@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { IconDotsVertical, IconUserPlus, IconUsers } from '@tabler/icons-react'
 import { EmptyState, IconButton, MembersDialog, Menu, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList, type MembersDialogCandidate } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamTopics, type Team } from '@/api'
+import { teamPlaces, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamPageDot, useTeamTopics, type Team } from '@/api'
+import { PageDot } from '@/components/PageListDot'
 import { Button } from '@/components/ui/Button'
 import { PersonItem } from '@/components/ui/PersonItem'
 import { TreeRow } from '@/components/views/FileTreeView'
@@ -61,6 +62,11 @@ export function TeamPage({
   const [adding, setAdding] = useState(false)
 
   const { spaces, led } = teamPlaces(team, topics)
+  /*
+    The dot beside the team's name (ACT-4): lit when its chat, a space or a topic it leads is, and its list is theirs
+    together, each line naming where it was said.
+  */
+  const pageDot = useTeamPageDot(team, [...spaces, ...led], { chatHref: teamChatPath(team.id), chatWhere: `# ${chatLabel(team)}` })
 
   /*
     Every member may leave, a team's last owner too; nobody leaves the Company
@@ -121,6 +127,7 @@ export function TeamPage({
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title={team.name}
+        after={<PageDot dot={pageDot} />}
         actions={
           <>
             {actions}

@@ -1,0 +1,35 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/PageDot" />
+
+# PageDot
+
+The dot beside a page's title. It is blue with something new for you there, and a quiet ring with nothing new. Resting on it, or tapping it on a touch screen, opens the page's list: **New**, then **Earlier**, what was about you and is seen now (ACT-4).
+
+**Seen in** — No story: Its list is read from the relay when it opens. In the app it sits beside the title on a topic's, a space's, a team's, a team chat's and a DM's page.
+
+## When
+
+- Beside the title of a place's own page, given the page's dot state (`useTopicPageDot`, `useTeamPageDot`, `useTeamChatPageDot`, `useDmPageDot`).
+
+## When not
+
+- On a sidebar row. A row has its **RowNewsCard**, and a tap on a row opens the row.
+- Beside the title of another app's file. That place shows its "Open in" button.
+
+## How
+
+```tsx
+import { PageDot } from '@/components/PageListDot'
+
+const dot = useTeamPageDot(team, places, { chatHref, chatWhere })
+<PageHeader title={team.name} after={<PageDot dot={dot} />} />
+```
+
+- The list mounts only while it is open, so its one pooled read is asked then, never when the page opens.
+- `onOpen` runs on a plain click on a line, before its link opens.
+
+## What it owns
+
+- **The words:** "New", "Earlier", "Nothing here yet." and "Earlier could not be read.".
+- **The look is the kit's:** PreviewCard with `openOnTap`, UnreadDot (`quiet` for the ring), SectionHeader, EmptyState and SkeletonRow. Each line is a **NewsLine**.

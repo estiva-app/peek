@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { IconStar, IconStarFilled, IconDotsVertical } from '@tabler/icons-react'
 import { Avatar, ConversationLayout, PageHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
@@ -14,6 +15,8 @@ interface HeaderProps extends Partial<ConversationParts> {
   onToggleOpenWork?: () => void
   /** Hide this DM from the viewer's sidebar (DMS-6) — see `TopicMoreMenu`. */
   onHideDm?: () => void
+  /** The dot beside the name (ACT-4): what is new in the DM, then what was about you earlier. */
+  titleDot?: ReactNode
   className?: string
 }
 
@@ -33,6 +36,7 @@ export function Header({
   openWorkAction,
   onToggleOpenWork,
   onHideDm,
+  titleDot,
   className,
   items = [],
   ...conversation
@@ -59,6 +63,7 @@ export function Header({
         <PageHeader
           title={name ?? ''}
           leading={<Avatar size={16} alt={name} />}
+          after={titleDot}
           actions={
             /* One strip: one Tab stop, arrows along it (the package Toolbar, no box of its own; UIG-14). */
             <Toolbar aria-label="Conversation actions" surface={false}>

@@ -10,7 +10,7 @@
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-team-has-members-and-followers-and-a-place-is-followed-at-a-level.md
  */
-import { fileContext, followingOf, streamMarkerOf, unreadOnListedFile, unreadOnPlace, type Following, type TeamsList } from '@estiva-app/conversation'
+import { fileContext, followingOf, streamMarkerOf, unreadOnListedFile, unreadOnPlace, type Following, type PlaceJudge, type TeamsList } from '@estiva-app/conversation'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import type { StreamMessage } from '@estiva-app/conversation'
 import { rootOf } from '@/nostr/channelStreams'
@@ -113,6 +113,15 @@ export function listedHaveUnread(news: ListedNews, judge: ListedJudgeArgs): bool
 }
 
 export type ListedJudgeArgs = { me: string; following: Following; muted: boolean; merged: Readonly<Record<string, number>>; floor: number }
+
+/**
+ * How a topic or a space is judged for `me` (ACT-4): its own stream by the place rule, and each file it lists in that
+ * file's own stream. The read markers are not in it: a page's list judges with the ones the tab holds now.
+ */
+export interface TopicJudges {
+  place: PlaceJudge
+  listed: Omit<ListedJudgeArgs, 'merged'>
+}
 
 /**
  * A lit topic's card, whole (383a4d3b): what lit it from its listed files, and the judge that lit it. The Topics
