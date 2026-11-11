@@ -42,6 +42,12 @@ vi.mock('@/api', async () => ({
     { pubkey: AGENT, name: 'Claude', bot: true },
     { pubkey: STRANGER, name: 'Zoe' },
   ],
+  // The company's roster as `usePeople` reads it: the viewer and any service key already left out.
+  usePeople: () => [
+    { id: KATERINA, pubkey: KATERINA, name: 'Katerina', role: '' },
+    { id: AGENT, pubkey: AGENT, name: 'Claude', role: '', bot: true },
+    { id: STRANGER, pubkey: STRANGER, name: 'Zoe', role: '' },
+  ],
   useTeamTopics: () => ({ topics: new Map([[LAUNCH.address!, LAUNCH], [BRIEF.address!, BRIEF]]), loading: false, signedOut: false }),
   useTeamFiles: () => ({ files: api.files, failed: false }),
   useMayMove: () => true,
@@ -97,12 +103,20 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
     expect(screen.queryByRole('button', { name: 'Follow' })).toBeNull()
   })
 
-  it('Add lists only the people not in the team, and adds the one chosen', async () => {
+  it('Add opens the standard Add members dialog, offering only the company’s people not in the team, and adds the one chosen (TEA-11)', async () => {
+    api.addToTeam.mockResolvedValue({ ok: true })
     mount(team())
     await userEvent.click(screen.getByRole('button', { name: 'Add' }))
-    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent)
-    expect(items).toEqual(['Zoe'])
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Zoe' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Add members')).toBeTruthy()
+    await userEvent.type(within(dialog).getByPlaceholderText('Search people...'), 'o')
+    // An option's text is its avatar's initials, then the name.
+    const offered = screen.getAllByRole('option').map((option) => option.textContent ?? '')
+    expect(offered.some((text) => text.endsWith('Zoe'))).toBe(true)
+    expect(offered.some((text) => text.endsWith('Miky') || text.endsWith('Claude') || text.endsWith('Katerina'))).toBe(false)
+    await userEvent.click(screen.getAllByRole('option').find((option) => option.textContent?.endsWith('Zoe'))!)
+    // The kit's add layer confirms with "Invite", as on a topic's Members.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
     expect(api.addToTeam).toHaveBeenCalledWith('eng', STRANGER)
   })
 

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { IconDotsVertical, IconUserPlus, IconUsers } from '@tabler/icons-react'
-import { EmptyState, IconButton, Menu, MenuItem, MenuSection, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList } from '@estiva-app/ui'
+import { EmptyState, IconButton, MembersDialog, Menu, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList, type MembersDialogCandidate } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useMentionNames, usePeekActions, useTeamFiles, useTeamTopics, type Team } from '@/api'
+import { teamPlaces, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamTopics, type Team } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PersonItem } from '@/components/ui/PersonItem'
 import { TreeRow } from '@/components/views/FileTreeView'
@@ -48,7 +48,17 @@ export function TeamPage({
   const people = team.members.filter((member) => !nameOf.get(member.pubkey)?.bot)
   const agents = team.members.filter((member) => nameOf.get(member.pubkey)?.bot)
   const inTeam = new Set(team.members.map((member) => member.pubkey))
-  const candidates = (names ?? []).filter((person) => !inTeam.has(person.pubkey)).sort((a, b) => a.name.localeCompare(b.name))
+  /*
+    Add offers the company's people and agents not on the team — the roster,
+    never an app's or the server's own key, and never the viewer (TEA-11).
+
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-service-key-is-let-in-but-is-not-in-the-company.md
+  */
+  const roster = usePeople()
+  const candidates: MembersDialogCandidate[] = (roster ?? []).flatMap((person) =>
+    person.pubkey && !inTeam.has(person.pubkey) ? [{ id: person.pubkey, label: person.name, picture: person.avatarSrc, bot: person.bot }] : [],
+  )
+  const [adding, setAdding] = useState(false)
 
   const { spaces, led } = teamPlaces(team, topics)
 
@@ -82,20 +92,9 @@ export function TeamPage({
   const actions = team.archived ? undefined : team.isMember ? (
     <>
       {candidates.length > 0 && (
-        <Menu
-          align="right"
-          trigger={
-            <Button variant="muted" size="small" leadingIcon={<IconUserPlus size={14} stroke={1.5} />} disabled={busy}>
-              Add
-            </Button>
-          }
-        >
-          <MenuSection label={`Add to ${team.name}`}>
-            {candidates.map((person) => (
-              <MenuItem key={person.pubkey} label={person.name} onClick={() => void run(() => addToTeam(team.id, person.pubkey))} />
-            ))}
-          </MenuSection>
-        </Menu>
+        <Button variant="muted" size="small" leadingIcon={<IconUserPlus size={14} stroke={1.5} />} disabled={busy} onClick={() => setAdding(true)}>
+          Add
+        </Button>
       )}
       {canLeave && (
         <Button variant="muted" size="small" disabled={busy} onClick={() => void run(() => leaveTeam(team.id))}>
@@ -178,6 +177,25 @@ export function TeamPage({
           )}
         </div>
       </ScrollArea>
+      {adding && (
+        // The kit's Add members, as a topic's Members opens it (TEA-11): straight on its add layer, back to the roster once the relay took them. Leave stays in the header.
+        <MembersDialog
+          members={team.members.map((member) => ({ id: member.pubkey, name: nameOf.get(member.pubkey)?.name ?? '—', bot: nameOf.get(member.pubkey)?.bot }))}
+          candidates={candidates}
+          initialView="add"
+          onAdd={async (chosen) => {
+            for (const person of chosen) {
+              const result = await addToTeam(team.id, person.id)
+              if (!result.ok) {
+                showToast({ label: result.reason, type: 'error' })
+                return false
+              }
+            }
+            return true
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
       {action && <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reloadFolders} onClose={close} />}
     </div>
   )
