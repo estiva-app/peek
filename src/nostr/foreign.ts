@@ -712,6 +712,59 @@ export async function resolveObjectsAsViewer(
 }
 
 /**
+ * Files by address as their first records and current fields draw them — title,
+ * summary, parent, own archive — without the comments and children
+ * `resolveObjectsAsViewer` reads for each (ALO-14). For a list that names files
+ * and opens none: Peek's Teams draws its topics from this, and the three
+ * filters a topic cost in the full read (its last 200 comments, the files it
+ * lists, the files moved into it) were 128-filter POSTs ahead of Teams' own.
+ *
+ * Every address asked is a key: `null` for one the relay did not hand back
+ * (deleted, or in a Folder this viewer cannot read). From the copy, only the
+ * files it holds — as `resolveObjectsAsViewer` answers from it — and a read the
+ * copy cannot answer is no answer, not a throw.
+ *
+ * **Throws `RelayReadError` when the relay refuses the read.**
+ */
+export async function resolveRootsAsViewer(
+  references: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+  source: ReadSource = 'relay',
+  options?: ArchiveReadOptions,
+): Promise<Record<string, ForeignObject | null>> {
+  const addressOf = (reference: string) => {
+    try {
+      // A bare `naddr1…` parses only as a NIP-27 reference, as `src/api/foreign.ts` reads one.
+      return pointerToAddress(referenceToPointer(/^(nostr:|\d+:)/.test(reference) ? reference : `nostr:${reference}`))
+    } catch {
+      return null
+    }
+  }
+  const asked = references.flatMap((reference) => {
+    const address = addressOf(reference)
+    return address ? [[reference, address] as const] : []
+  })
+  if (!asked.length) return source === 'copy' ? {} : Object.fromEntries(references.map((reference) => [reference, null]))
+  const addresses = asked.map(([, address]) => address)
+  if (source === 'copy') {
+    const objects = await resolveForeignRoots(addresses, copyQuery(relayUrl, token), createProjectionCache(0), options).catch(
+      (missed: unknown) => {
+        if (missed instanceof RelayReadError) return []
+        throw missed
+      },
+    )
+    const byAddress = new Map(objects.map((object) => [object.address, drawOnly(object)]))
+    return Object.fromEntries(asked.flatMap(([reference, address]) => (byAddress.has(address) ? [[reference, byAddress.get(address)!]] : [])))
+  }
+  // The list read as the full read takes it: offered is enough with `archivedWith` (`withOpenRead`), else once switched.
+  const listRead = (options?.archivedWith ? await listReadOffered() : (await listReadOption()).listRead) ? { listRead: true } : {}
+  const objects = await resolveForeignRoots(addresses, viewerQuery(relayUrl, token), manifests, { ...options, ...listRead })
+  const byAddress = new Map(objects.map((object) => [object.address, object]))
+  return Object.fromEntries(references.map((reference) => [reference, byAddress.get(addressOf(reference) ?? '') ?? null]))
+}
+
+/**
  * The parent each file sits under, for a set — FOL-50.
  *
  * Interop's `resolveParents`: the roots, and the moves where a kind can be

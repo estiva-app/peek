@@ -52,6 +52,7 @@ import {
   resolveObjectAsViewer,
   resolveObjectFromCopy,
   resolveObjectsAsViewer,
+  resolveRootsAsViewer,
   searchMessagesAsViewer,
   searchFileReferencesAsViewer,
   threadsAsViewer,
@@ -363,8 +364,9 @@ const following = new Map<string, { count: number; leave: () => void }>()
  * nothing of the project above, and drawn there it would drop the row's
  * "Archived" for an issue of an archived project.
  */
-const heldKey = (pubkey: string, reference: string, archivedWith = false) =>
-  `${pubkey} ${reference.replace(/^nostr:/i, '')}${archivedWith ? ' archived-with' : ''}`
+// A roots-only answer is held apart: it has no comments or children, and a widget drawing the whole file must not get it.
+const heldKey = (pubkey: string, reference: string, archivedWith = false, roots = false) =>
+  `${pubkey} ${reference.replace(/^nostr:/i, '')}${archivedWith ? ' archived-with' : ''}${roots ? ' roots' : ''}`
 
 /**
  * Keep a held object in step with its file while something draws it.
@@ -420,11 +422,15 @@ function followHeld(key: string, folder: string | undefined, address: string | u
 }
 
 /** One reference's object, resolved as the viewer — the held objects' load. `archivedWith` as it was held. */
-function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>, archivedWith = false): HeldLoad {
+function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>, archivedWith = false, roots = false): HeldLoad {
   return async () => {
     const v = viewer()
     if (!v) return { ok: true, value: null }
     try {
+      if (roots) {
+        const objects = await resolveRootsAsViewer([reference], v.relayUrl, v.token, 'relay', archivedWith ? ARCHIVED_WITH : undefined)
+        return { ok: true, value: objects[reference] ?? null }
+      }
       return { ok: true, value: await pooledResolve(reference, v.relayUrl, v.token, archivedWith) }
     } catch {
       return { ok: false, failure: true }
@@ -1075,13 +1081,28 @@ export function useResolvedReferences(
      * "Archived". One more request when a file has a parent, so only asked here.
      */
     archivedWith?: boolean
+    /**
+     * Each file as its first record and current fields draw it, without its
+     * comments and children (`resolveRootsAsViewer`, ALO-14): for a list that
+     * names files and opens none. Held apart from the whole answer.
+     */
+    roots?: boolean
   },
 ): Record<string, ForeignObject | null> {
   const live = options?.live ?? false
   const archivedWith = options?.archivedWith ?? false
-  const { resolveObjects } = useForeignObjects()
+  const roots = options?.roots ?? false
+  const { resolveObjects: resolveWhole } = useForeignObjects()
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey ?? ''
+  const resolveObjects = useCallback(
+    (refs: readonly string[], source: ReadSource, opts?: ArchiveReadOptions): Promise<Record<string, ForeignObject | null>> => {
+      if (!roots) return resolveWhole(refs, source, opts)
+      const v = viewer()
+      return v ? resolveRootsAsViewer(refs, v.relayUrl, v.token, source, opts) : Promise.resolve(Object.fromEntries(refs.map((ref) => [ref, null])))
+    },
+    [roots, resolveWhole, viewer],
+  )
   const [objects, setObjects] = useState<Record<string, ForeignObject | null>>({})
   // The identity of the array changes on every render; the list of references
   // in a message does not. Keying the effect on the contents rather than the
@@ -1097,7 +1118,7 @@ export function useResolvedReferences(
     if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
     const ask = refs.filter((ref) => {
-      const held = heldObjects.peek(heldKey(pubkey, ref, archivedWith))
+      const held = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))
       return held?.value === undefined || Date.now() - held.at >= HELD_OBJECT_FRESH_MS
     })
     if (!ask.length) return
@@ -1110,7 +1131,7 @@ export function useResolvedReferences(
       it is held, so the next ask goes to the relay. Only what this tab never
       held: a stale one is on screen already (PEE-4).
     */
-    const unheld = ask.filter((ref) => heldObjects.peek(heldKey(pubkey, ref, archivedWith))?.value === undefined)
+    const unheld = ask.filter((ref) => heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))?.value === undefined)
     if (unheld.length) resolveObjects(unheld, 'copy', archivedWith ? ARCHIVED_WITH : undefined)
       .then((objects) => {
         if (cancelled || answered) return
@@ -1126,14 +1147,14 @@ export function useResolvedReferences(
         if (cancelled) return
         answered = true
         for (const [ref, value] of Object.entries(objects)) {
-          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref, archivedWith), async () => ({ ok: true, value }))
+          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref, archivedWith, roots), async () => ({ ok: true, value }))
         }
         setObjects(objects)
       })
     return () => {
       cancelled = true
     }
-  }, [key, resolveObjects, pubkey, archivedWith])
+  }, [key, resolveObjects, pubkey, archivedWith, roots])
 
   /*
     A held object is asked again when its file changes (`followHeld`), so it is
@@ -1143,20 +1164,20 @@ export function useResolvedReferences(
   useEffect(() => {
     // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
     if (!live || !hasRelay || !pubkey || !key) return
-    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref, archivedWith), () => setHeldChanges((n) => n + 1)))
+    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref, archivedWith, roots), () => setHeldChanges((n) => n + 1)))
     return () => leave.forEach((each) => each())
-  }, [live, key, pubkey, archivedWith])
+  }, [live, key, pubkey, archivedWith, roots])
 
   const merged = useMemo(() => {
     void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
       // A listing keeps its own answer first, as before; it fills only what it has not answered.
       if (!live && objects[ref]) return []
-      const value = heldObjects.peek(heldKey(pubkey, ref, archivedWith))?.value
+      const value = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))?.value
       return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [live, key, objects, pubkey, heldChanges, archivedWith])
+  }, [live, key, objects, pubkey, heldChanges, archivedWith, roots])
 
   // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
   const follow = live
@@ -1171,10 +1192,10 @@ export function useResolvedReferences(
     if (!follow || !pubkey) return
     const leave = follow.split('\u0000').map((each) => {
       const [ref, folder, address] = each.split('\u0001')
-      return followHeld(heldKey(pubkey, ref, archivedWith), folder, address, heldLoad(ref, viewer, archivedWith))
+      return followHeld(heldKey(pubkey, ref, archivedWith, roots), folder, address, heldLoad(ref, viewer, archivedWith, roots))
     })
     return () => leave.forEach((each) => each())
-  }, [follow, pubkey, viewer, archivedWith])
+  }, [follow, pubkey, viewer, archivedWith, roots])
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a
