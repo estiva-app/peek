@@ -3,8 +3,7 @@
  * Topics (Miky, 11 Nov). Only the Desk's own topics are read, not all of yours (Miky, 11 Nov: the Desk grows only by
  * that read): their lists (one request), then those files' recent comments and the files one level under them (one
  * request), then a live watch over the answer while the Desk is open. Folded by the column's own `listedNewsOf`, so a
- * topic's dot is judged the same on the Desk and in Topics. When the Topics column already holds a topic's news in
- * this tab, that is used and the topic is not read again.
+ * topic's dot is judged the same on the Desk and in Topics.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { relayNamesTeams, watchTopicActivity, type ActivityFile, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
@@ -14,7 +13,7 @@ import { peekRelay } from '@/nostr/relayInfo'
 import { useMembership } from '@/api/internal/membership'
 import { useRelayViewer } from './foreign'
 import type { ListedNews } from './placeDots'
-import { activityCommentsOf, activityParentsOf, listedNewsOf, useListedNews } from './useTopicsColumn'
+import { activityCommentsOf, activityParentsOf, listedNewsOf } from './useTopicsColumn'
 import { hasRelay } from './relayUrl'
 
 interface Read {
@@ -27,12 +26,14 @@ interface Read {
 
 export function useDeskListedNews(topics: readonly ForeignObject[]): ReadonlyMap<string, ListedNews> {
   const viewer = useRelayViewer()
-  const column = useListedNews()
   const { namedComments } = useMembership()
-  // The topics the column has not read: only those are the Desk's to read.
+  /*
+    Always its own read, never the Topics column's held answer: that one stops being kept current once no Topics
+    mount is left, so a comment said while the Desk is open would not light the topic.
+  */
   const ask = useMemo(
-    () => topics.filter((topic) => topic.address && !column.has(topic.address)).sort((a, b) => (a.address! < b.address! ? -1 : 1)),
-    [topics, column],
+    () => topics.filter((topic) => topic.address).sort((a, b) => (a.address! < b.address! ? -1 : 1)),
+    [topics],
   )
   const key = ask.map((topic) => topic.address).join(',')
   const [read, setRead] = useState<Read | null>(null)
@@ -83,16 +84,13 @@ export function useDeskListedNews(topics: readonly ForeignObject[]): ReadonlyMap
   }, [who, key])
 
   const tick = read?.tick
-  return useMemo(() => {
-    const own =
+  return useMemo(
+    () =>
       read && read.key === key
         ? listedNewsOf(read.lists, activityCommentsOf(read.activity), activityParentsOf(read.activity), namedComments)
-        : new Map<string, ListedNews>()
-    if (column.size === 0) return own
-    const both = new Map(own)
-    for (const topic of topics) if (topic.address && column.has(topic.address)) both.set(topic.address, column.get(topic.address)!)
-    return both
+        : new Map<string, ListedNews>(),
     // `tick` stands for the watch's appends to `read.activity`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [read, tick, key, column, topics, namedComments])
+    [read, tick, key, namedComments],
+  )
 }

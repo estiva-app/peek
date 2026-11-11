@@ -385,7 +385,6 @@ export function listedNewsOf(
   parents: ReadonlyMap<string, string> | undefined,
   namedComments: readonly SignedEvent[] | undefined,
 ): Map<string, ListedNews> {
-  {
     const news = new Map<string, ListedNews>()
     const named = namedByFile(namedComments ?? [])
     const eventsOn = (file: string) => merged(comments.get(file) ?? [], [...(named.get(file) ?? []), ...(named.get(fileIdOf(file) ?? '') ?? [])])
@@ -405,7 +404,6 @@ export function listedNewsOf(
       ])
     }
     return news
-  }
 }
 
 /** The watch appends to `activity.comments` and `parents` in place: copies, for a fold that must see them change. */
