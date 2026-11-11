@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
-import { useMembership, usePlaceFollow, useWorkspaceDirectory, type Team } from '@/api'
+import { useMembership, usePlaceFollow, useTeamChatPageDot, useWorkspaceDirectory, type Team } from '@/api'
+import { PageDot } from '@/components/PageListDot'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { chatLabel } from '@/components/views/TeamsColumn'
+import { chatLabel, teamChatPath } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { draftKeys } from '@/lib/drafts'
 import { useMarkChannelRead } from '@/lib/useMarkRead'
@@ -51,6 +52,8 @@ export function TeamChat({ team }: { team: Team }) {
     [team.chatAddress, team.id, team.archived],
   )
   const follow = usePlaceFollowControls({ follow: usePlaceFollow(target), target, title: name, teamName: team.name, me, directory: people })
+  // The dot beside the title (ACT-4): what is new in the chat, then what was about you earlier.
+  const pageDot = useTeamChatPageDot(team, teamChatPath(team.id))
   return (
     <>
       <ConversationLayout
@@ -61,6 +64,7 @@ export function TeamChat({ team }: { team: Team }) {
           <PageHeader
             title={name}
             leading={follow.switcher ?? <IconUsers size={16} stroke={1.5} aria-hidden />}
+            after={<PageDot dot={pageDot} />}
             members={follow.pill}
           />
         }

@@ -25,6 +25,8 @@ vi.mock('@/api', async () => ({
   useStarred: () => ({ isDmStarred: () => false, toggleDm: vi.fn() }),
   useDmChannels: () => ({ state: 'present', channelOf: () => 'channel-1', ensureChannel: vi.fn() }),
   useDmVisibility: () => ({ state: 'present', isDmHidden: () => false, reopenDm: vi.fn() }),
+  // The title dot reads the DMs' unread through the provider this test does not mount; its own test is PageListDot's.
+  useDmPageDot: () => ({ lit: false, held: [], sources: [] }),
   useOpenWorkDms: () =>
     list.mounted ? { has: (id: string) => list.ids.has(id), add: list.add, remove: list.remove } : null,
 }))

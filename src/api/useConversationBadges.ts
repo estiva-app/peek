@@ -7,7 +7,7 @@ import { fileContext, isCommentOn, isReply, streamHasUnread, THREAD_RULE_FROM } 
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
-import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews } from './placeDots'
+import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews, type TopicJudges } from './placeDots'
 import { newestFirst, type RowNewsItem } from './rowNews'
 import { listingOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
@@ -156,6 +156,8 @@ export function useConversationBadges(
   news: Record<string, RowNewsItem[]>
   /** A topic lit by its listed files: what lit it there and the judge, for its card to read the rest while open (383a4d3b). */
   fills: Record<string, ListedFill>
+  /** How each topic or space was judged, lit or not: what its page's list judges its own and its listed files' talk by (ACT-4). */
+  judges: Record<string, TopicJudges>
 } {
   // Read again once a renewal ends a stretch on an expired token (AUT-3).
   const resumed = useSessionResumed()
@@ -279,6 +281,7 @@ export function useConversationBadges(
     const news: Record<string, RowNewsItem[]> = {}
     /** A topic lit by its listed files: what its card reads more of while open (383a4d3b). */
     const fills: Record<string, ListedFill> = {}
+    const judges: Record<string, TopicJudges> = {}
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
     const me = heldToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
@@ -317,6 +320,8 @@ export function useConversationBadges(
       if (me && file?.address && file.folder && Number(file.address.split(':')[0]) === KIND_BARE_FILE) {
         if (!teamsKnown) continue
         const following = followingOfTopic(file.address, file.folder, me)
+        const muted = membership.termsOf(file.address).muted
+        judges[ref] = { place: { stream: context, me, following, muted, floor }, listed: { me, following, muted, floor } }
         // The lines of the row's card are the dot's own unread messages (ACT-3): lit exactly when there are some.
         const lines = placeNews(
           messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
@@ -324,7 +329,7 @@ export function useConversationBadges(
             context,
             me,
             following,
-            muted: membership.termsOf(file.address).muted,
+            muted,
             merged: frontier.merged,
             floor,
             isMentioned: membership.isMentioned,
@@ -365,7 +370,7 @@ export function useConversationBadges(
       }
     }
     for (const ref of Object.keys(news)) news[ref] = newestFirst(news[ref])
-    return { counts, unread, news, fills }
+    return { counts, unread, news, fills, judges }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key, listed])

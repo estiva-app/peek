@@ -6,7 +6,8 @@ import { useSearchParams } from 'react-router-dom'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
-import { useStarred, useDmChannels, useDmVisibility, useOpenWorkDms } from '@/api'
+import { useStarred, useDmChannels, useDmPageDot, useDmVisibility, useOpenWorkDms } from '@/api'
+import { PageDot } from '@/components/PageListDot'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -118,6 +119,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   // dwell already (Katerina, 30 October), and keeps reading what arrives while it
   // is open (PEE-44); an open thread reads its replies, inside the view.
   useMarkDmRead(dmId, dm.seenAt, 0)
+  // The dot beside the name (ACT-4): the one the DM's row has in People, with its list.
+  const pageDot = useDmPageDot(dmId ?? '', channelUuid, `/app/people/${dmId ?? ''}`)
 
   /*
     A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the
@@ -154,6 +157,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
       isStarred={isDmStarred(dmId)}
       onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
       onHideDm={onHideDm}
+      titleDot={<PageDot dot={pageDot} />}
       openWorkAction={openWorkDms ? (openWorkDms.has(dmId) ? 'remove' : 'add') : undefined}
       onToggleOpenWork={openWorkDms ? () => (openWorkDms.has(dmId) ? openWorkDms.remove(dmId) : openWorkDms.add(dmId)) : undefined}
       {...dm.conversationParts}

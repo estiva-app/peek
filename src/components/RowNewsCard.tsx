@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, MetaText, Person, isPlainClick } from '@estiva-app/ui'
 import type { UnreadReason } from '@estiva-app/conversation'
-import { useMemo } from 'react'
-import { CARD_LINES, formatActive, newestFirst, useAvatarSrc, useListedFill, useListedFillOf, useMentionNames, useRowNewsDetails, type RowNewsItem } from '@/api'
+import { useMemo, type MouseEvent } from 'react'
+import { CARD_LINES, formatActive, newestFirst, useListedFill, useListedFillOf, type RowNewsItem } from '@/api'
+import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { filePath } from '@/lib/objectUrl'
 import { previewText } from '@/lib/textParsing'
 
@@ -41,10 +42,7 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
   // The column holds only each listed file's newest comment from before the page opened: the rest, read now.
   const filled = useListedFill(useListedFillOf(fileRef ?? ''))
   const items = useMemo(() => (filled?.length ? newestFirst(held, filled) : held), [held, filled])
-  const { wordsOf, titleOf } = useRowNewsDetails(items)
-  const names = useMentionNames()
-  const avatarSrcFor = useAvatarSrc()
-  const nameOf = new Map((names ?? []).map((n) => [n.pubkey, n] as const))
+  const details = useNewsLineDetails(items)
   const shown = items.slice(0, CARD_LINES)
   const more = items.length - shown.length
   // Every line opens at its thread (`?thread=`, read by FilePage, TeamChat and the DM view), except a team chat's or a
@@ -58,48 +56,22 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
         : placeHref
   return (
     <>
-      {shown.map((item) => {
-        const person = nameOf.get(item.by)
-        // Never the viewer: their own message lights nothing.
-        const name = person?.name ?? 'Someone'
-        const title = item.file ? titleOf(item.file) : undefined
-        const words = wordsOf(item)
-        return (
-          // A link, as the row is: the kit's Link goes through Peek's router, and Cmd- or Ctrl-click opens a new tab.
-          <Card
-            key={item.id}
-            href={hrefOf(item)}
-            fill="none"
-            quietUntilHover
-            hover="fill"
-            onClick={(event) => {
-              if (openHere && isPlainClick(event)) {
-                event.preventDefault()
-                openHere(item)
-                return
-              }
-              onOpen?.(item.file)
-            }}
-            className="flex min-w-0 flex-col gap-0.5 p-2"
-          >
-            <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
-              <span className="flex min-w-0 shrink-0 text-h5 leading-tight text-text-primary">
-                <Person size={16} name={name} picture={avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
-              </span>
-              <span className="truncate">{VERB[item.reason]}</span>
-              <MetaText size="chip" className="ml-auto shrink-0">
-                {formatActive(item.at * 1000)}
-              </MetaText>
-            </div>
-            {(title || words) && (
-              <div className="truncate text-caption text-text-muted">
-                {title && <span className="text-text-secondary">{title}{words ? ' · ' : ''}</span>}
-                {words ? previewText(words) : null}
-              </div>
-            )}
-          </Card>
-        )
-      })}
+      {shown.map((item) => (
+        <NewsLine
+          key={item.id}
+          item={item}
+          details={details}
+          href={hrefOf(item)}
+          onClick={(event) => {
+            if (openHere && isPlainClick(event)) {
+              event.preventDefault()
+              openHere(item)
+              return
+            }
+            onOpen?.(item.file)
+          }}
+        />
+      ))}
       {more > 0 && (
         <Button variant="muted" size="small" onClick={() => {
             if (openHere) return openHere(undefined)
@@ -110,5 +82,46 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
         </Button>
       )}
     </>
+  )
+}
+
+/**
+ * One line, as a lit row's card and a page's list both draw it: who, why, when, then where (a place on a team's list,
+ * a listed file) and the words. A link, as the row is: the kit's Link goes through Peek's router, and Cmd- or
+ * Ctrl-click opens a new tab. `seen` draws it quieter: an Earlier line on a page's list (ACT-4).
+ */
+export function NewsLine({ item, details, href, onClick, where, seen = false }: {
+  item: RowNewsItem
+  details: ReturnType<typeof useNewsLineDetails>
+  href: string
+  onClick?: (event: MouseEvent<HTMLElement>) => void
+  /** The place it was said in, on a team's list. */
+  where?: string
+  seen?: boolean
+}) {
+  const person = details.nameOf.get(item.by)
+  // Never the viewer: their own message lights nothing.
+  const name = person?.name ?? 'Someone'
+  const title = item.file ? details.titleOf(item.file) : undefined
+  const words = details.wordsOf(item)
+  const place = [where, title].filter(Boolean).join(' › ')
+  return (
+    <Card href={href} fill="none" quietUntilHover hover="fill" onClick={onClick} className="flex min-w-0 flex-col gap-0.5 p-2" data-seen={seen || undefined}>
+      <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
+        <span className={`flex min-w-0 shrink-0 text-h5 leading-tight ${seen ? 'text-text-secondary' : 'text-text-primary'}`}>
+          <Person size={16} name={name} picture={details.avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
+        </span>
+        <span className="truncate">{VERB[item.reason]}</span>
+        <MetaText size="chip" className="ml-auto shrink-0">
+          {formatActive(item.at * 1000)}
+        </MetaText>
+      </div>
+      {(place || words) && (
+        <div className="truncate text-caption text-text-muted">
+          {place && <span className="text-text-secondary">{place}{words ? ' · ' : ''}</span>}
+          {words ? previewText(words) : null}
+        </div>
+      )}
+    </Card>
   )
 }

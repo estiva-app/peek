@@ -2,7 +2,7 @@
  * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
- *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,peek-topic-all,peek-topic-important] [--runs 3]
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,peek-topic-all,peek-topic-important,page-topic,page-team,page-chat,page-dm] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
@@ -104,6 +104,19 @@ const QA_TOPIC = {
   path: '^/topic/9127e281-all-probe-topic-',
   own: 'TOPI-3 land check 1794250125 topic own message by QA-1',
 }
+/**
+ * Pages with the dot beside their title (ACT-4), opened cold at their own link, Miky's by default (`--as miky`): a
+ * topic's page, a team's page, its chat and a DM. `--page-<leg> <path>|<awaited text>` measures another. The whole load
+ * is the measure: the awaited text is also a row of the column beside, so "text" is reached early.
+ */
+const PAGES = {
+  'page-topic': ['/topic/planning-and-sequencing-fd4257be-1ace-4710-9284-c620507c3278', 'Planning and sequencing'],
+  'page-team': ['/app/folders/05bebd5b-b699-4bd4-af50-f5377df0fd67', 'Estiva HQ'],
+  'page-chat': ['/app/folders/05bebd5b-b699-4bd4-af50-f5377df0fd67/chat', 'general'],
+  'page-dm': ['/app/people/a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697', 'Katerina Kelepouri'],
+}
+for (const leg of Object.keys(PAGES)) if (option(leg, undefined)) PAGES[leg] = option(leg).split('|')
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** The leg's level must be QA-1's on the topic: a run at the wrong level measures the other leg. */
 const atLevel = (word) => [
   '--until', `!!document.querySelector('[aria-label*="change how you follow"]')`,
@@ -177,6 +190,7 @@ const LEGS = {
   desk: () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...whole, ...report('desk')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
+  ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
 }
 
 /** `--together`: who opens each leg when they all start at the same moment — three people, as on a working day. */
@@ -388,6 +402,9 @@ if (args.includes('--compare')) {
   if (legs.includes('desk')) awaitList.push(['^peek\\.', '^/app/desk/?$', ['Open work']])
   // Before Weekly Plans' Peek entry, whose path pattern would match this topic too.
   if (legs.some((l) => l.startsWith('peek-topic-'))) awaitList.unshift(['^peek\\.', QA_TOPIC.path, [QA_TOPIC.own]])
+  // The title-dot pages (ACT-4), each by its own path, ahead of the patterns above that would match a topic's too.
+  // A topic's path matches at /topic/ and /document/ alike.
+  for (const leg of legs) if (PAGES[leg]) awaitList.unshift(['^peek\\.', `${escapeRe(PAGES[leg][0].split('?')[0].replace(/^\/(topic|document)\//, '/'))}/?$`, [PAGES[leg][1]]])
   const awaitFile = join(scratch, 'recorder.js')
   writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
   const keep = (n, reports) => {

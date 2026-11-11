@@ -12,11 +12,15 @@ const NOTHING_READ = { asked: new Set<string>(), byId: new Map<string, string>()
  * open (the card's content mounts with it), for the lines it shows: one read of at most five messages by id, and one
  * pooled read of their files, shared with every other title on screen. Nothing on a cold open or a live update.
  */
-export function useRowNewsDetails(items: readonly RowNewsItem[]): {
+export function useRowNewsDetails(
+  items: readonly RowNewsItem[],
+  /** How many lines are drawn: a card's five, or a page's list (ACT-4), whose lines mostly come with their words. */
+  drawn: number = CARD_LINES,
+): {
   wordsOf: (item: RowNewsItem) => string | undefined
   titleOf: (file: string) => string | undefined
 } {
-  const shown = items.slice(0, CARD_LINES)
+  const shown = items.slice(0, drawn)
   const missing = shown.filter((item) => item.words === undefined).map((item) => item.id)
   const files = [...new Set(shown.flatMap((item) => (item.file ? [item.file] : [])))]
   const objects = useResolvedReferences(files)
