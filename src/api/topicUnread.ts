@@ -80,6 +80,12 @@ function channelNews(all: readonly StreamMessage[], unread: readonly StreamMessa
   const rules = all.map(asRule)
   const byId = new Map(all.map((m) => [m.id, m]))
   return newestFirst(
-    explainUnread(rules, rules.filter((m) => ids.has(m.id)), me, (m) => ({ root: byId.get(m.id)!.root, words: byId.get(m.id)!.body }), { dm: true }),
+    explainUnread(
+      rules,
+      rules.filter((m) => ids.has(m.id)),
+      me,
+      (m) => ({ root: byId.get(m.id)!.root, words: byId.get(m.id)!.body, ...(byId.get(m.id)!.urgent ? { urgent: true } : {}) }),
+      { dm: true },
+    ),
   )
 }

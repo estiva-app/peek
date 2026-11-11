@@ -23,6 +23,8 @@ export interface RowNewsItem {
   words?: string
   /** The file it was said on, when that is not the row's own place: a file a topic lists, or one under it. */
   file?: string
+  /** It is urgent for the viewer: what put a DM on the Desk's Urgent, whose card lists only these (ACT-9). */
+  urgent?: boolean
 }
 
 /** The most a card lists; the rest are its "N more". */
@@ -39,7 +41,7 @@ export function explainUnread<E extends RuleMessage>(
   all: readonly E[],
   unread: readonly E[],
   me: string,
-  line: (message: E) => Pick<RowNewsItem, 'root'> & Partial<Pick<RowNewsItem, 'words' | 'file'>>,
+  line: (message: E) => Pick<RowNewsItem, 'root'> & Partial<Pick<RowNewsItem, 'words' | 'file' | 'urgent'>>,
   options: UnreadReasonOptions = {},
 ): RowNewsItem[] {
   if (unread.length === 0) return []

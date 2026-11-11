@@ -385,14 +385,15 @@ export function useConversationBadges(
  * Its answers are held past the Desk (OPT-4): coming back draws the rows' dots
  * from the last answer.
  */
-export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
-  counts: Record<string, number>
-  unread: Record<string, boolean>
-} {
+export function useLiveConversationBadges(
+  files: ForeignObject[] | undefined,
+  { listed }: { listed?: ReadonlyMap<string, ListedNews> } = {},
+): ReturnType<typeof useConversationBadges> {
   const folders = useMemo(
     () => [...new Set((files ?? []).flatMap((f) => (f.folder ? [f.folder] : [])))],
     [files],
   )
   useChannelStreams(folders)
-  return useConversationBadges(files, { hold: true })
+  // A topic on the Desk lights as it does in Topics, for its listed files too (ACT-9; Miky, 11 Nov).
+  return useConversationBadges(files, { hold: true, listed })
 }

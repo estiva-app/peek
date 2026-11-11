@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, MetaText, Person } from '@estiva-app/ui'
+import { Button, Card, MetaText, Person, isPlainClick } from '@estiva-app/ui'
 import type { UnreadReason } from '@estiva-app/conversation'
 import { useMemo } from 'react'
 import { CARD_LINES, formatActive, newestFirst, useAvatarSrc, useListedFill, useListedFillOf, useMentionNames, useRowNewsDetails, type RowNewsItem } from '@/api'
@@ -21,7 +21,7 @@ const VERB: Record<UnreadReason, string> = {
  * listed file's comment at its thread, a team chat's or a DM's in the place. Only what is new (Miky, 10 November):
  * the row's dot and this card are one list.
  */
-export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen }: {
+export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, openHere }: {
   items: readonly RowNewsItem[]
   /** A topic's row: its listed files' other new comments are read while the card is open (383a4d3b). */
   fileRef?: string
@@ -31,6 +31,11 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen }: 
   place: 'topic' | 'chat' | 'dm'
   /** What the row's own click does before its page opens (a topic row keeps its column beside it): `file` is a line's listed file, else none. */
   onOpen?: (file: string | undefined) => void
+  /**
+   * A plain click opens the line where the row's own click does, not at its page: the Desk's panel (ACT-9). `undefined`
+   * is "N more", the row's place. A click with a modifier is still the link's: a new tab.
+   */
+  openHere?: (item: RowNewsItem | undefined) => void
 }) {
   const navigate = useNavigate()
   // The column holds only each listed file's newest comment from before the page opened: the rest, read now.
@@ -61,7 +66,22 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen }: 
         const words = wordsOf(item)
         return (
           // A link, as the row is: the kit's Link goes through Peek's router, and Cmd- or Ctrl-click opens a new tab.
-          <Card key={item.id} href={hrefOf(item)} fill="none" quietUntilHover hover="fill" onClick={() => onOpen?.(item.file)} className="flex min-w-0 flex-col gap-0.5 p-2">
+          <Card
+            key={item.id}
+            href={hrefOf(item)}
+            fill="none"
+            quietUntilHover
+            hover="fill"
+            onClick={(event) => {
+              if (openHere && isPlainClick(event)) {
+                event.preventDefault()
+                openHere(item)
+                return
+              }
+              onOpen?.(item.file)
+            }}
+            className="flex min-w-0 flex-col gap-0.5 p-2"
+          >
             <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
               <span className="flex min-w-0 shrink-0 text-h5 leading-tight text-text-primary">
                 <Person size={16} name={name} picture={avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
@@ -82,6 +102,7 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen }: 
       })}
       {more > 0 && (
         <Button variant="muted" size="small" onClick={() => {
+            if (openHere) return openHere(undefined)
             onOpen?.(undefined)
             navigate(placeHref)
           }} className="self-start">

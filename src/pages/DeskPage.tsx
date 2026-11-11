@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
@@ -32,7 +32,11 @@ import {
   useLoadAhead,
   useMentionNames,
   useOpenWorkActivity,
+  useDeskListedNews,
+  ListedFillsProvider,
+  type RowNewsItem,
 } from '@/api'
+import { RowNewsCard } from '@/components/RowNewsCard'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { useDebug } from '@/lib/debug'
 import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
@@ -54,7 +58,7 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
-  const { dmHasUnread } = useUnread()
+  const { dmHasUnread, dmNews } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()
   const { state: debug } = useDebug()
   const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
@@ -134,8 +138,23 @@ export function DeskPage() {
     one of the files' Folders, not only when the list changes.
   */
   const openWorkFiles = useOpenWorkFiles()
-  const { unread: fileUnread } = useLiveConversationBadges(
+  /*
+    A topic here works exactly as in Topics (ACT-9; Miky, 11 Nov): it lights, and its card lists, news on the files it
+    lists too. The Desk reads that for its own topics only, not all of yours (Miky, 11 Nov), unless the Topics column
+    already holds it in this tab (`useDeskListedNews`). Any other file is its own talk.
+  */
+  const deskTopics = useMemo(
+    () => OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' && fileGlyph(i.object.kind) === 'topic' ? [i.object] : [])),
+    [OPEN_WORK_ITEMS],
+  )
+  const listed = useDeskListedNews(deskTopics)
+  const {
+    unread: fileUnread,
+    news: fileNews,
+    fills,
+  } = useLiveConversationBadges(
     OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
+    { listed },
   )
 
   // Open work holds files and (via Screener "Open") DMs, in the person's order
@@ -323,6 +342,26 @@ export function DeskPage() {
     },
     [searchParams, setSearchParams],
   )
+  /*
+    A card's line opens here, in the Desk's panel, as the row's click does (ACT-9): the file it was said on (the row's
+    own, or a file the topic lists) at its thread. `undefined` is "N more": the row itself.
+  */
+  const openFileLine = (address: string, title: string, section: SectionKey) => (item: RowNewsItem | undefined) => {
+    if (!item) return openFile(address, title, section)
+    const at = item.file ?? address
+    setSelected(null)
+    setOpenedFrom({ section, title: at === address ? title : '' })
+    setSearchParams({ open: at, thread: item.root })
+  }
+  // A DM's line opens the DM, and a reply its thread once the DM is the one open.
+  const pendingDmThread = useRef<{ dmId: string; root: string } | null>(null)
+  const openDmLine = (dmId: string, name: string, section: SectionKey) => (item: RowNewsItem | undefined) => {
+    if (!item || item.root === item.id) return selectDm(dmId, name, section)
+    if (openAddress) closeFile()
+    setSelected({ dmId, dmName: dmNameById(dmId) ?? name, section })
+    pendingDmThread.current = { dmId, root: item.root }
+    setRowClicks((n) => n + 1)
+  }
   /**
    * Whether a row is the open file. After a reload the section it was clicked
    * in is not known, so every row naming it is lit — the one case where the
@@ -400,6 +439,12 @@ export function DeskPage() {
     if (openedDm) openDmThread(judgedThread)
     else if (!openThreadId) setOpenThread(judgedThread)
   }, [rowClicks, openedTarget, judgedThread, openedDm, openDmThread, setOpenThread, openThreadId])
+  useEffect(() => {
+    const pending = pendingDmThread.current
+    if (!pending || selected?.dmId !== pending.dmId) return
+    pendingDmThread.current = null
+    openDmThread(pending.root)
+  }, [rowClicks, selected, openDmThread])
 
   // A new tab showed the saved Desk until now; a plain Desk is kept for the next one.
   usePagePicture('desk', !(deskLoading || starredLoading), !openAddress && !selected)
@@ -415,6 +460,8 @@ export function DeskPage() {
   return (
     <>
     {filePaneParts.dialogs}
+    {/* A topic's card reads the rest of its listed files' new comments while it is open, as in Topics (ACT-8). */}
+    <ListedFillsProvider value={fills}>
     <DeskPageView
       loading={deskLoading || starredLoading}
       screener={debug.desk.showScreener ? screenerItems : []}
@@ -437,6 +484,8 @@ export function DeskPage() {
               href: deskFileHref(item.address),
               isSelected: isOpen(item.address, 'urgent'),
               onClick: () => openFile(item.address, item.title, 'urgent'),
+              // Urgent lists the urgent comments that put it here (ACT-9; Miky, 11 Nov).
+              card: { items: item.news ?? [], place: 'topic' as const, open: openFileLine(item.address, item.title, 'urgent') },
             }
           : {
               id: item.id,
@@ -448,6 +497,11 @@ export function DeskPage() {
               href: personHref(item.dmId),
               isSelected: isSelectedIn('urgent', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'urgent'),
+              card: {
+                items: dmNews(item.dmId).filter((line) => line.urgent),
+                place: 'dm' as const,
+                open: openDmLine(item.dmId, item.name, 'urgent'),
+              },
             },
       )}
       openWork={openWorkItems.map((item) =>
@@ -465,6 +519,12 @@ export function DeskPage() {
               isSelected: isOpen(item.address, 'openWork'),
               onClick: () => openFile(item.address, item.title, 'openWork'),
               onRemove: () => dismissOpenWork(item.id),
+              card: {
+                items: fileNews[item.object.ref] ?? [],
+                fileRef: item.object.ref,
+                place: 'topic' as const,
+                open: openFileLine(item.address, item.title, 'openWork'),
+              },
             }
           : {
               id: item.id,
@@ -476,6 +536,7 @@ export function DeskPage() {
               isSelected: isSelectedIn('openWork', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'openWork'),
               onRemove: () => dismissOpenWork(item.id),
+              card: { items: dmNews(item.dmId), place: 'dm' as const, open: openDmLine(item.dmId, item.name, 'openWork') },
             },
       )}
       starred={starredEntries.map((entry) => ({
@@ -487,10 +548,12 @@ export function DeskPage() {
         href: personHref(entry.dmId),
         isSelected: isSelectedIn('starred', entry.dmId),
         onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
+        card: { items: dmNews(entry.dmId), place: 'dm' as const, open: openDmLine(entry.dmId, entry.name, 'starred') },
       }))}
       rightPanel={rightPanel}
       threadPanel={threadPanel}
     />
+    </ListedFillsProvider>
     </>
   )
 }
@@ -524,6 +587,16 @@ export interface DeskRow {
    */
   href: string
   onClick: () => void
+  /**
+   * What lit the row, for the card resting on a lit row opens (ACT-9): the sidebar's card, with its lines opening
+   * here. No dot, or nothing listed, no card. A topic's `fileRef` reads the rest of its listed files' news.
+   */
+  card?: {
+    items: readonly RowNewsItem[]
+    fileRef?: string
+    place: 'topic' | 'dm'
+    open: (item: RowNewsItem | undefined) => void
+  }
   /** Open work only: the ✕ that takes it off the list. */
   onRemove?: () => void
   /** Open work only: archived where it lives. The row stays, and says so while it is pointed at. */
@@ -589,6 +662,11 @@ function DeskRowItem({ row }: { row: DeskRow }) {
         />
       }
       active={row.isSelected}
+      preview={
+        row.isUnread && row.card?.items.length ? (
+          <RowNewsCard items={row.card.items} fileRef={row.card.fileRef} placeHref={row.href} place={row.card.place} openHere={row.card.open} />
+        ) : undefined
+      }
       unread={row.isUnread}
       urgent={row.isUrgent}
       // A plain click opens the row on the Desk; a click with a modifier, or not the main button, is the link's: a new tab (C8).

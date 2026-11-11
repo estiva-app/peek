@@ -153,7 +153,14 @@ describe('a file is in Urgent while a comment urgent for the viewer is unread (C
 
   it('an unread urgent comment puts the file in, once, at that comment', () => {
     const f = file([comment('plain', { createdAt: S + 5 }), comment('urgent')])
-    expect(fold([f, f], S - 10, ['urgent'])).toEqual([{ address: ADDRESS, kind: 30840, title: 'The file', at: S }])
+    expect(fold([f, f], S - 10, ['urgent']).map(({ news: _news, ...row }) => row)).toEqual([{ address: ADDRESS, kind: 30840, title: 'The file', at: S }])
+  })
+
+  it('its card lists the unread urgent comments that put it in, and not the plain one (ACT-9)', () => {
+    const f = file([comment('plain', { createdAt: S + 5 }), comment('urgent', { body: 'Totals are off' })])
+    expect(fold([f], S - 10, ['urgent'])[0].news).toEqual([
+      { id: 'urgent', by: 'someone', at: S, reason: 'mention', root: 'urgent', words: 'Totals are off', urgent: true },
+    ])
   })
 
   it('reading the file takes it out, and a plain unread comment never puts it in', () => {
