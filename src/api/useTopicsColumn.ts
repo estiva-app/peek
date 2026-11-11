@@ -464,7 +464,13 @@ export function resetTopicsColumn(): void {
   put(EMPTY)
 }
 
-const ARCHIVED_WITH = { archivedWith: true }
+/*
+  Roots only (ALO-14): both screens draw a topic's title, summary and archive,
+  never its comments or children — Topics reads its lists itself (`readLists`).
+  The whole read asked three filters a topic, and on QA-1's 25 topics those
+  were the 128-filter reads Teams' own waited behind.
+*/
+const TOPIC_READ = { archivedWith: true, roots: true }
 
 const byTitle = (a: ForeignObject, b: ForeignObject) =>
   (a.slots.title?.value ?? '').localeCompare(b.slots.title?.value ?? '', undefined, { sensitivity: 'base' })
@@ -667,7 +673,7 @@ function useReadableTopicsHeld() {
   }, [viewer, pubkey])
 
   // `archivedWith`: a topic under an archived project is archived with it, and its own `archived` does not say so.
-  const topicObjects = useResolvedReferences(mineHeld.topics ?? [], ARCHIVED_WITH)
+  const topicObjects = useResolvedReferences(mineHeld.topics ?? [], TOPIC_READ)
   const { rearchived } = mineHeld
   const objectOf = useCallback(
     (address: string, objects: Record<string, ForeignObject | null>) => (rearchived.has(address) ? rearchived.get(address) : objects[address]),
