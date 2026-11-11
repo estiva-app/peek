@@ -180,7 +180,12 @@ export function TeamPage({
       {adding && (
         // The kit's Add members, as a topic's Members opens it (TEA-11): straight on its add layer, back to the roster once the relay took them. Leave stays in the header.
         <MembersDialog
-          members={team.members.map((member) => ({ id: member.pubkey, name: nameOf.get(member.pubkey)?.name ?? '—', bot: nameOf.get(member.pubkey)?.bot }))}
+          members={team.members.map((member) => ({
+            id: member.pubkey,
+            name: nameOf.get(member.pubkey)?.name ?? '—',
+            picture: roster?.find((person) => person.pubkey === member.pubkey)?.avatarSrc,
+            bot: nameOf.get(member.pubkey)?.bot,
+          }))}
           candidates={candidates}
           initialView="add"
           onAdd={async (chosen) => {
