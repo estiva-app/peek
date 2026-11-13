@@ -29,7 +29,10 @@
  * inside the budget at every step, and what the cap has cost is on the
  * diagnostic rather than in a log line: `evicted.total`.
  */
-import { type ReadStateBlob, MAX_CONTEXTS_BYTES, REPLY_FLOOR_CONTEXT, advanceContexts } from '@estiva-app/conversation'
+import { type ReadStateBlob, MAX_CONTEXTS_BYTES, REACTIONS_FLOOR_CONTEXT, REPLY_FLOOR_CONTEXT, advanceContexts } from '@estiva-app/conversation'
+
+/** The floors a cap raises (§11.6): `advanceContexts` refuses either among the updates, so each goes in as `current`. */
+const FLOORS = [REPLY_FLOOR_CONTEXT, REACTIONS_FLOOR_CONTEXT] as const
 
 /** Long enough to batch a burst of navigation, short enough to survive a tab close. */
 export const READ_STATE_DEBOUNCE_MS = 3000
@@ -177,9 +180,14 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
           // `known` is what the tab has recorded since load. A blob already over
           // budget — one written before SHR-4, or by a reader that never had the
           // cap — is trimmed here and heals on the next publish.
-          // The tab's own reply floor goes in as `current`: `advanceContexts` refuses one among the updates (CON-34).
-          const { [REPLY_FLOOR_CONTEXT]: floor, ...recorded } = known
-          const held = floor === undefined ? contexts : { ...contexts, [REPLY_FLOOR_CONTEXT]: Math.max(floor, contexts[REPLY_FLOOR_CONTEXT] ?? 0) }
+          // The tab's own floors go in as `current`: `advanceContexts` refuses one among the updates (CON-34, ACT-7).
+          const recorded = { ...known }
+          const held = { ...contexts }
+          for (const floor of FLOORS) {
+            const at = recorded[floor]
+            delete recorded[floor]
+            if (at !== undefined) held[floor] = Math.max(at, contexts[floor] ?? 0)
+          }
           known = advance(held, recorded, { ...contexts, ...known })
           published = contexts
           hydrated = true

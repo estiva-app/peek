@@ -1,4 +1,4 @@
-import { CollapsibleSection, EmptyState } from '@estiva-app/ui'
+import { CollapsibleSection, EmptyState, type UnreadDotTone } from '@estiva-app/ui'
 import { PersonItem } from './PersonItem'
 import type { RowNewsItem } from '@/api'
 
@@ -10,6 +10,8 @@ export interface StarredItem {
   isUrgent?: boolean
   /** What lit the DM (ACT-3), for its card. */
   news?: readonly RowNewsItem[]
+  /** The dot's colour (ACT-7): orange when reactions to you are all that is new. */
+  tone?: UnreadDotTone
   avatarSrc?: string
 }
 
@@ -59,6 +61,7 @@ export function StarredSection({
             unread={item.isUnread}
             urgent={item.isUrgent}
             news={item.news}
+            unreadTone={item.tone}
             active={selectedId === item.id}
             openWorkAction={openWorkActionFor?.(item.id)}
             onToggleOpenWork={onToggleOpenWork ? () => onToggleOpenWork(item.id) : undefined}

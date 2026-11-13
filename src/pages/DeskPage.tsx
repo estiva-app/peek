@@ -7,7 +7,7 @@ import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
@@ -34,6 +34,7 @@ import {
   useOpenWorkActivity,
   useDeskListedNews,
   ListedFillsProvider,
+  useReactionsSeenOnClose,
   type RowNewsItem,
 } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
@@ -58,7 +59,7 @@ const OPEN_REPLY_WINDOW_MS = 5000
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
-  const { dmHasUnread, dmNews } = useUnread()
+  const { dmHasUnread, dmNews, dmTone } = useUnread()
   const [searchParams, setSearchParams] = useSearchParams()
   const { state: debug } = useDebug()
   const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
@@ -152,6 +153,7 @@ export function DeskPage() {
     unread: fileUnread,
     news: fileNews,
     fills,
+    tones: fileTones,
   } = useLiveConversationBadges(
     OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
     { listed },
@@ -513,6 +515,7 @@ export function DeskPage() {
               summary: item.object.slots?.subtitle?.value,
               glyph: fileGlyph(item.object.kind),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
+              tone: fileTones[item.object.ref],
               // Archived where it lives, and still here: Open work is the person's own list (Katerina, 14 October).
               archived: isArchived(item.object),
               href: deskFileHref(item.address),
@@ -532,6 +535,7 @@ export function DeskPage() {
               name: item.name,
               avatarSrc: item.avatarSrc,
               isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
+              tone: dmTone(item.dmId),
               href: personHref(item.dmId),
               isSelected: isSelectedIn('openWork', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'openWork'),
@@ -545,6 +549,7 @@ export function DeskPage() {
         name: entry.name,
         avatarSrc: entry.avatarSrc,
         isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
+        tone: dmTone(entry.dmId),
         href: personHref(entry.dmId),
         isSelected: isSelectedIn('starred', entry.dmId),
         onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
@@ -578,6 +583,8 @@ export interface DeskRow {
   /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
   glyph?: FileGlyph
   isUnread: boolean
+  /** The dot's colour (ACT-7): orange when reactions to you are all that is new. */
+  tone?: UnreadDotTone
   isUrgent?: boolean
   isSelected: boolean
   /**
@@ -644,13 +651,18 @@ const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ ope
 /** A DM has no Desk address of its own: its link is the person's page. */
 const personHref = (dmId: string) => `/app/people/${dmId}`
 
-/** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
-function DeskRowItem({ row }: { row: DeskRow }) {
+/** One Desk row on the package's sidebar row, as the Folders tree's rows are. Exported for its tests. */
+export function DeskRowItem({ row }: { row: DeskRow }) {
   const avatarSrcFor = useAvatarSrc()
   const type = row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')
+  const lines = row.isUnread && row.card?.items.length ? row.card.items : undefined
+  // A file's or a DM's Desk row turns orange too (ACT-7); leaving its card, or opening it on a touch screen, sees it.
+  const reactionsSeen = useReactionsSeenOnClose(lines)
   return (
     <NavItem
       href={row.href}
+      unreadTone={row.isUnread ? row.tone : undefined}
+      onPreviewOpenChange={reactionsSeen.onPreviewOpenChange}
       label={row.name}
       tooltip={row.summary}
       icon={
@@ -663,14 +675,17 @@ function DeskRowItem({ row }: { row: DeskRow }) {
       }
       active={row.isSelected}
       preview={
-        row.isUnread && row.card?.items.length ? (
-          <RowNewsCard items={row.card.items} fileRef={row.card.fileRef} placeHref={row.href} place={row.card.place} openHere={row.card.open} />
+        lines && row.card ? (
+          <RowNewsCard items={lines} fileRef={row.card.fileRef} placeHref={row.href} place={row.card.place} openHere={row.card.open} />
         ) : undefined
       }
       unread={row.isUnread}
       urgent={row.isUrgent}
       // A plain click opens the row on the Desk; a click with a modifier, or not the main button, is the link's: a new tab (C8).
-      onPlainClick={row.onClick}
+      onPlainClick={() => {
+        reactionsSeen.onOpenRow()
+        row.onClick()
+      }}
       hint={row.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       action={row.onRemove ? { icon: <IconX size={16} stroke={1.5} />, tooltip: 'Remove from list', onClick: row.onRemove } : undefined}
     />

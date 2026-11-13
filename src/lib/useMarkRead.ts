@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { READ_DWELL_MS, useReadActions } from '@/api'
+import { READ_DWELL_MS, useReactionsSeenOn, useReadActions } from '@/api'
 
 /**
  * What is open gets marked read once it has been on screen for a moment — SPEC
@@ -73,14 +73,17 @@ export function newestMessageAt(...lists: readonly (readonly { createdAt: number
  * thread is opened (Miky, 2026-10-03).
  */
 export function useMarkDmRead(dmId: string | null, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
-  const { markContainerRead } = useReadActions()
+  const { markContainerRead, dmChannelOf } = useReadActions()
   useDwell(dmId, newestAt, markContainerRead, dwellMs)
+  // A reaction to your message drawn under it is seen here too (ACT-7; Miky, 13 Nov).
+  useReactionsSeenOn({ places: [dmId ? dmChannelOf(dmId) : null], drawn: newestAt !== undefined, dwellMs })
 }
 
 /** Mark an open team chat read up to its newest top-level message, as a DM is (TEA-5). */
 export function useMarkChannelRead(channelUuid: string | null, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markChannelRead } = useReadActions()
   useDwell(channelUuid, newestAt, markChannelRead, dwellMs)
+  useReactionsSeenOn({ places: [channelUuid], drawn: newestAt !== undefined, dwellMs })
 }
 
 /**
@@ -93,6 +96,7 @@ export function useMarkChannelRead(channelUuid: string | null, newestAt: number 
 export function useMarkFileRead(address: string | null | undefined, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markFileRead } = useReadActions()
   useDwell(address, newestAt, markFileRead, dwellMs)
+  useReactionsSeenOn({ places: [address], drawn: newestAt !== undefined, dwellMs })
 }
 
 /**
@@ -104,14 +108,19 @@ export function useMarkFileRead(address: string | null | undefined, newestAt: nu
  * As the view's own mark: no dwell of its own (being seen already took one), never past the clock (a comment ahead
  * of it is read once the clock gets there, while the view is open), nothing while the tab is hidden, and one
  * `markFileRead` per file whose newest seen comment moved.
+ *
+ * `onScreen` is the ids of the comments seen on screen: a reaction to your message under one of them is seen once it
+ * has been there for `dwellMs`, as an open file's are (ACT-7).
  */
-export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefined) {
+export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefined, onScreen?: ReadonlySet<string>, dwellMs = READ_DWELL_MS) {
   const { markFileRead } = useReadActions()
   const marked = useRef(new Map<string, number>())
   // By value: the view builds the map on every render.
   const seen = seenAtOf ? [...seenAtOf].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : []
   // A newline: no address holds one, where a `d` may hold a comma.
   const signature = seen.map(([address, at]) => `${address}@${at}`).join('\n')
+  // The reactions to your messages under the comments on screen are seen too (ACT-7), after the dwell an open file's take.
+  useReactionsSeenOn({ places: seen.map(([address]) => address), drawn: seen.length > 0 && !!onScreen, ...(onScreen ? { onScreen } : {}), dwellMs })
   useEffect(() => {
     if (!signature) return
     const wanted = signature.split('\n').map((one) => {
@@ -158,4 +167,5 @@ export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefin
 export function useMarkThreadRead(rootId: string | null | undefined, newestAt: number | undefined, dwellMs = READ_DWELL_MS) {
   const { markThreadRead } = useReadActions()
   useDwell(rootId, newestAt, markThreadRead, dwellMs)
+  useReactionsSeenOn({ thread: rootId, drawn: newestAt !== undefined, dwellMs })
 }

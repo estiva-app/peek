@@ -44,9 +44,36 @@ function safeLocalStorage(): Storage | undefined {
   }
 }
 
-/** This installation's slot, minted once and then reused. */
+/** Where the version of the slot's contents lives, beside the slot: what {@link loadSlotIdentity} rotates the slot once for. */
+export const SLOT_VERSION_STORAGE_KEY = 'estiva-peek:read-state-slot-version'
+
+/**
+ * The slot's version: `reactions` once this installation writes `reactions:` keys (ACT-7). A tab still on an older
+ * bundle republishes its slot with only the keys it knows, which would wipe them; so the first bundle that writes them
+ * moves to a new slot id, once, and an older tab keeps writing the old slot. The merge keeps both.
+ */
+const SLOT_VERSION = 'reactions'
+
+/** This installation's slot, minted once and then reused; moved to a new id once when its version changes. */
 export function loadSlotIdentity(storage: Storage | undefined = safeLocalStorage()): SlotIdentity {
-  return loadSlot({ storage, storageKey: SLOT_STORAGE_KEY, clientPrefix: CLIENT_PREFIX, random })
+  let had = false
+  let version: string | null = null
+  try {
+    had = !!storage?.getItem(SLOT_STORAGE_KEY)
+    version = storage?.getItem(SLOT_VERSION_STORAGE_KEY) ?? null
+  } catch {
+    // Unreadable storage: an ephemeral slot below, which nothing older shares.
+  }
+  const identity = loadSlot({ storage, storageKey: SLOT_STORAGE_KEY, clientPrefix: CLIENT_PREFIX, random })
+  if (!storage || version === SLOT_VERSION) return identity
+  // A slot minted just now has no older tab writing it: only a slot this browser already had is moved.
+  const current = had ? rotateSlot(identity, { storage, storageKey: SLOT_STORAGE_KEY, random }) : identity
+  try {
+    storage.setItem(SLOT_VERSION_STORAGE_KEY, SLOT_VERSION)
+  } catch {
+    // Not kept: the next load moves again, which costs a slot and loses nothing.
+  }
+  return current
 }
 
 /**

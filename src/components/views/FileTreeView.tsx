@@ -1,9 +1,9 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen } from '@estiva-app/ui'
+import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState, RowNewsItem } from '@/api'
-import { rememberFileAddress, useConversationBadges, useForeignChildren, useMayMove, useMembership, useOpenWorkFiles } from '@/api'
+import { rememberFileAddress, useConversationBadges, useForeignChildren, useMayMove, useMembership, useOpenWorkFiles, useReactionsSeenOnClose } from '@/api'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { RowNewsCard } from '@/components/RowNewsCard'
@@ -115,6 +115,7 @@ export function TreeRow({
   space,
   leaves = false,
   news,
+  tones,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -145,6 +146,8 @@ export function TreeRow({
   leaves?: boolean
   /** What lit each row, by ref (ACT-3): a lit row with lines opens their card while it is pointed at. */
   news?: Record<string, readonly RowNewsItem[]>
+  /** A lit row's dot colour, by ref (ACT-7): orange when reactions to you are all that is new there. */
+  tones?: Record<string, UnreadDotTone>
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -228,9 +231,13 @@ export function TreeRow({
   const href = file.address ? filePath(file.address, file.slots.title?.value) : '#'
   // A lit row says why (ACT-3): its card lists what lit the dot. Nothing new, no dot and no card.
   const lines = isUnread ? news?.[file.ref] : undefined
+  // Leaving its card, or opening the row on a touch screen, sees the reactions to you it listed (ACT-7).
+  const reactionsSeen = useReactionsSeenOnClose(lines)
 
   return (
     <NavItem
+      unreadTone={isUnread ? tones?.[file.ref] : undefined}
+      onPreviewOpenChange={reactionsSeen.onPreviewOpenChange}
       data-file={file.ref}
       // The address the row's click opens, as the page writes it (FOL-37): Cmd-click opens the same in a new tab.
       href={href}
@@ -317,6 +324,8 @@ export function TreeRow({
         rememberFileAddress(file.address)
         // The file's page shows the column this row is in (TOP-4).
         rememberOpenedFrom(file.address, column)
+        // A touch screen has no resting on the row: opening it sees what its card lists (ACT-7, the touch story).
+        reactionsSeen.onOpenRow()
       }}
     >
       {expandable

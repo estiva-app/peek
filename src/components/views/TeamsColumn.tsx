@@ -1,9 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
-import { EmptyState, NavItem, NavTree, SectionHeader, SkeletonList } from '@estiva-app/ui'
+import { EmptyState, NavItem, NavTree, SectionHeader, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useConversationBadges, useLeavesTopic, usePeekActions, useTeamChatNews, useTeams, useTeamTopics, type RowNewsItem, type Team } from '@/api'
+import { teamPlaces, useConversationBadges, useLeavesTopic, usePeekActions, useReactionsSeenOnClose, useTeamChatNews, useTeams, useTeamTopics, type RowNewsItem, type Team } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
 import { TreeRow } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
@@ -50,14 +50,15 @@ export function TeamsColumn({
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { teams, failed } = useTeams()
-  const { unread: chatUnread, news: chatNews } = useTeamChatNews(teams)
+  const { unread: chatUnread, news: chatNews, tones: chatTones } = useTeamChatNews(teams, { reactions: true })
   const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const leaves = useLeavesTopic(teams)
 
   const drawn = useMemo(() => (teams ? [...topics.values()] : undefined), [teams, topics])
-  const { unread, news } = useConversationBadges(drawn)
+  // A reaction to your message turns a space or a topic orange too (ACT-7).
+  const { unread, news, tones } = useConversationBadges(drawn, { reactions: true })
 
   if (signedOut) return <EmptyState scope="section" message="Sign in to see teams." />
   if (failed) return <EmptyState scope="section" message="Couldn’t load your teams. Reload to try again." />
@@ -75,8 +76,10 @@ export function TeamsColumn({
       topics={topics}
       chatUnread={chatUnread}
       chatNews={chatNews}
+      chatTones={chatTones}
       unread={unread}
       news={news}
+      tones={tones}
       show={show}
       selectedRef={selectedRef}
       openTeam={openTeam}
@@ -88,14 +91,36 @@ export function TeamsColumn({
   )
 }
 
+/** A team's chat row: its dot, orange when reactions to you are all that is new (ACT-7), and its card. */
+function TeamChatRow({ team, unread, news, tone, active }: { team: Team; unread: boolean; news?: readonly RowNewsItem[]; tone?: UnreadDotTone; active: boolean }) {
+  const lines = unread ? news : undefined
+  // Leaving its card, or opening it on a touch screen, sees the reactions to you it listed.
+  const reactionsSeen = useReactionsSeenOnClose(lines)
+  return (
+    <NavItem
+      href={teamChatPath(team.id)}
+      label={chatLabel(team)}
+      icon={<IconUsers size={16} stroke={1.5} aria-hidden />}
+      unread={unread}
+      unreadTone={unread ? tone : undefined}
+      preview={lines?.length ? <RowNewsCard items={lines} placeHref={teamChatPath(team.id)} place="chat" /> : undefined}
+      onPreviewOpenChange={reactionsSeen.onPreviewOpenChange}
+      onClick={reactionsSeen.onOpenRow}
+      active={active}
+    />
+  )
+}
+
 /** The column's body, handed what it draws: the part a story or a test shows. */
 export function TeamsColumnView({
   teams,
   topics,
   chatUnread,
   chatNews,
+  chatTones,
   unread,
   news,
+  tones,
   show = 'all',
   selectedRef,
   openTeam,
@@ -110,9 +135,13 @@ export function TeamsColumnView({
   chatUnread: Record<string, boolean>
   /** What lit each lit chat and row (ACT-3), for their cards. */
   chatNews?: Record<string, readonly RowNewsItem[]>
+  /** Each lit chat's dot colour (ACT-7). */
+  chatTones?: Record<string, UnreadDotTone>
   /** Today's dot on a topic's row, by `ref`. */
   unread: Record<string, boolean>
   news?: Record<string, readonly RowNewsItem[]>
+  /** Each lit row's dot colour (ACT-7). */
+  tones?: Record<string, UnreadDotTone>
   show?: TreeShow
   selectedRef?: string
   openTeam?: string | null
@@ -142,6 +171,7 @@ export function TeamsColumnView({
         file={topic}
         unread={unread}
         news={news}
+        tones={tones}
         selectedRef={selectedRef}
         onControl={onControl}
         nested
@@ -158,12 +188,11 @@ export function TeamsColumnView({
           render={<Link to={`/app/teams/${team.id}`} aria-label={`Open ${team.name}`} />}
         />
         {chat && (
-          <NavItem
-            href={teamChatPath(team.id)}
-            label={chatLabel(team)}
-            icon={<IconUsers size={16} stroke={1.5} aria-hidden />}
+          <TeamChatRow
+            team={team}
             unread={chatUnread[team.id] === true}
-            preview={chatUnread[team.id] === true && chatNews?.[team.id]?.length ? <RowNewsCard items={chatNews[team.id]} placeHref={teamChatPath(team.id)} place="chat" /> : undefined}
+            news={chatNews?.[team.id]}
+            tone={chatTones?.[team.id]}
             active={chatOpenHere}
           />
         )}
