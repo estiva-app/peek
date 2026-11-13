@@ -100,6 +100,16 @@ function parentIn(key: string, v: Viewer, id: string): string | undefined {
   return Object.keys(replies).find((root) => replies[root].some((reply) => reply.id === id))
 }
 
+/** A message the conversation holds, by id — a comment or a reply at any depth: whose a reaction to it names (ACT-6). */
+function heldIn(key: string, v: Viewer, id: string): ConversationEvent | undefined {
+  const held = conversationsFor(v.relayUrl, v.token.pubkey).value(key)
+  if (!held) return undefined
+  return held.roots.find((root) => root.id === id) ?? Object.values(held.replies).flat().find((reply) => reply.id === id)
+}
+
+/** Why a reaction to a message that is not drawn was not sent: it could not name whose message it is. */
+const REACTION_TARGET_NOT_HELD = 'This message is no longer here, so your reaction was not sent.'
+
 /** The Folder of the thread `id` opens, as the shared fold read it: where its resolve is written (§6.4, C51). */
 function folderIn(key: string, relayUrl: string, pubkey: string, id: string): string | undefined {
   return conversationsFor(relayUrl, pubkey).value(key)?.threads[id]?.folder
@@ -115,8 +125,10 @@ const sentBeforeRead = new Map<string, string[]>()
 async function afterSend(id: string): Promise<WriteResult | null> {
   const flight = sending.get(id)
   if (!flight) return null
-  return (await flight).ok ? null : { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
+  return (await flight).ok ? null : EARLIER_NOT_SENT
 }
+
+const EARLIER_NOT_SENT: WriteResult = { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
 
 /**
  * One sync per conversation at a time. A sync asked for while one runs is
@@ -305,21 +317,33 @@ export function conversationActions({
     const v = viewer()
     if (!v || !container || !key) return SIGNED_OUT
     const drafted = draft ? await drawDraft(v, draft) : undefined
-    let event: UnsignedEvent
-    let id: string
-    try {
-      event = await build(v)
-      id = await eventIdOf(event)
-    } catch (error) {
-      console.warn('[nostr] building a change failed:', error)
-      if (drafted) {
-        await withdrawOwnEvent(conversationsFor(v.relayUrl, v.token.pubkey), key, container, ids ? ids.split(',') : [], drafted, viewerQuery(v.relayUrl, v.token)).catch(
-          (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
-        )
+    const finish = async (): Promise<WriteResult> => {
+      if (!container || !key) return SIGNED_OUT
+      let event: UnsignedEvent
+      let id: string
+      try {
+        event = await build(v)
+        id = await eventIdOf(event)
+      } catch (error) {
+        console.warn('[nostr] building a change failed:', error)
+        if (drafted) {
+          await withdrawOwnEvent(conversationsFor(v.relayUrl, v.token.pubkey), key, container, ids ? ids.split(',') : [], drafted, viewerQuery(v.relayUrl, v.token)).catch(
+            (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
+          )
+        }
+        return { ok: false, reason: builtFailure(error) }
       }
-      return { ok: false, reason: builtFailure(error) }
+      return publishOwn(v, event, id, refusal, drafted)
     }
-    return publishOwn(v, event, id, refusal, drafted)
+    if (!drafted) return finish()
+    // A drawn draft can be acted on — a reaction taken back — before its signed one is sent: that waits for it.
+    const flight = finish()
+    if (!sending.has(drafted)) sending.set(drafted, flight)
+    const settled = () => {
+      if (sending.get(drafted) === flight) sending.delete(drafted)
+    }
+    flight.then(settled, settled)
+    return flight
   }
 
   /** A change drawn before its signed event is built: its id when it was drawn. */
@@ -405,9 +429,33 @@ export function conversationActions({
         composeEdit({ container, targetEventId, parentId: parentIn(key, v, targetEventId), body, files, embeds }, v.relayUrl, v.token, { at, waitMs })
       return change(targetEventId, (v) => compose(v), 'The relay refused the edit.', (v) => compose(v, 0))
     },
-    remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
-    react: (targetEventId, emoji) =>
-      change(targetEventId, (v) => composeReaction({ targetEventId, emoji }, v.token.pubkey), 'The relay refused the reaction.'),
+    /*
+      Taking back what is still being sent waits for it, and deletes what was sent: a reaction drawn before the
+      relay's key was read can go out under another id (ACT-6), which its send answers.
+    */
+    remove: async (targetEventId) => {
+      const flight = sending.get(targetEventId)
+      const sent = flight ? await flight : undefined
+      if (sent && !sent.ok) return EARLIER_NOT_SENT
+      const target = sent?.ok ? sent.id : targetEventId
+      return change(target, (v) => composeDeletion(target, v.token.pubkey), 'The relay refused the deletion.')
+    },
+    /*
+      The reaction names whose message it is on (ACT-6), from the message as it is held — never sent without that
+      name: a message that is not held, or a stand-in nobody wrote, is refused before anything is drawn. It is drawn
+      at once, naming the signer, and only then is the relay's key read where the message needs it; the two share an
+      `at`, so they are one event unless the relay signed the message for someone, whose reaction then takes the
+      drawn one's place.
+    */
+    react: (targetEventId, emoji) => {
+      const at = Date.now()
+      const compose = (v: Viewer, readKey: boolean) => {
+        const target = heldIn(key, v, targetEventId)
+        if (!target?.author) throw new Error(REACTION_TARGET_NOT_HELD)
+        return composeReaction({ target, emoji }, v.relayUrl, v.token, { at, readKey })
+      }
+      return change(targetEventId, (v) => compose(v, true), 'The relay refused the reaction.', (v) => compose(v, false))
+    },
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>

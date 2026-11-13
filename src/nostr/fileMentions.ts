@@ -46,7 +46,7 @@ import { embedsOf, KIND, type Embed, type SignedEvent } from '@estiva-app/protoc
 import { readMentionedIn, type MentionedIn, type QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { parentOf } from '@estiva-app/conversation'
-import { attachmentsOf, decorate, urgentOf, type ConversationEvent, type FileConversation, type RelayAttachment } from './fileConversation'
+import { attachmentsOf, authorshipOf, decorate, urgentOf, type ConversationEvent, type FileConversation, type RelayAttachment } from './fileConversation'
 import { linkReaderAsViewer, relaySigningKeyAsViewer, viewerQuery } from './foreign'
 import { TOPIC_KIND } from './manifest'
 
@@ -76,6 +76,8 @@ export interface FileMention {
   files: RelayAttachment[]
   /** The cards its author asked for — its `embed` tags (SPEC §13.6.2). Absent: none. */
   embeds?: Embed[]
+  /** Its `actor` and `p` tags: what a reaction to it names (`ConversationEvent.authorship`). Absent: none. */
+  authorship?: string[][]
 }
 
 const tagsNamed = (event: SignedEvent, name: string): string[] =>
@@ -112,6 +114,7 @@ export function fileMentionsOf(mentioned: readonly MentionedIn[], relayKey?: str
       urgent: urgentOf(event),
       files: attachmentsOf(event),
       embeds: embedsOf(event),
+      authorship: authorshipOf(event),
     })
   }
   return out
@@ -197,6 +200,7 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
     references: [],
     urgent: urgentOf(event),
     embeds: embedsOf(event),
+    authorship: authorshipOf(event),
   })
   const roots: ConversationEvent[] = mentions.map((m) => ({
     id: m.id,
@@ -208,6 +212,7 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
     references: m.references,
     urgent: m.urgent,
     embeds: m.embeds,
+    authorship: m.authorship,
   }))
   const threadIds = new Set(mentions.filter((m) => m.threadId === m.id).map((m) => m.id))
   const events = threadIds.size

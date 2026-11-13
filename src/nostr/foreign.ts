@@ -832,6 +832,29 @@ export async function relaySigningKeyAsViewer(relayUrl: string, token: StoredTok
   }
 }
 
+const relayKeys = new Map<string, Promise<string | null>>()
+
+/**
+ * {@link relaySigningKeyAsViewer}, read once per relay and person and kept for
+ * the session: the key is one per deployment. Callers at once share one read.
+ * No key (no team record this person can read) is not kept, nor is a failed
+ * read, so a team joined later still answers it.
+ */
+export function relaySigningKeyOnce(relayUrl: string, token: StoredToken): Promise<string | null> {
+  const slot = `${relayUrl}|${token.pubkey}`
+  const held = relayKeys.get(slot)
+  if (held) return held
+  const read = relaySigningKeyAsViewer(relayUrl, token)
+  relayKeys.set(slot, read)
+  read.then(
+    (key) => {
+      if (!key) relayKeys.delete(slot)
+    },
+    () => relayKeys.delete(slot),
+  )
+  return read
+}
+
 /**
  * The project in a Folder, for the topic sidebar.
  *
