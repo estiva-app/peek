@@ -32,6 +32,7 @@ export const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, queryRelayWithMatches, signViaEstivaId, type QueryLane } from './bridge'
 import { readFrom, type ReadSource } from './readFrom'
+import { MAX_FILTERS_PER_REQ } from './socketRead'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
 import { dmChannelFilters, dmChannelsOf, dmConversationsOf, dmPeopleOf, KIND_CHANNEL_MEMBERS, unnamedDmsOf } from './dms'
@@ -154,6 +155,18 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  *  means refused" in this app started here, one layer below where it was
  *  visible. Callers that must degrade quietly catch it explicitly, which is
  *  better than the information never existing. */
+/**
+ * {@link viewerQuery} for what a screen draws first (ALO-14): a read that fits one REQ goes in the first-page lane
+ * (PEE-7), past the pacer and into the room the shaper keeps; a wider one — a Folder listing's archive reads grow with
+ * the Folders — takes a click's slot, since a first-page read takes none and the slots are what keep the relay's
+ * per-connection queue from filling.
+ */
+export function firstReadQuery(relayUrl: string, token: StoredToken): QueryFn {
+  const first = viewerQuery(relayUrl, token, 'first')
+  const click = viewerQuery(relayUrl, token)
+  return (filters) => (filters.length <= MAX_FILTERS_PER_REQ ? first : click)(filters)
+}
+
 export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLane | (() => QueryLane) = 'click'): QueryFn {
   return async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
@@ -1511,7 +1524,12 @@ export async function listFoldersAsViewer(
   if (source === 'copy') return listFolders(copyQuery(relayUrl, token))
   // Once switched, the projects it names by the relay's list read (ALO-6).
   const { listRead } = await listReadOption()
-  const query = read ?? folderLoadAsViewer(relayUrl, token, source)
+  /*
+    The navigation's own listing (no load given) is the first thing every screen draws, Teams' text waits on it, and
+    its first reads are a REQ each: the first-page lane, rather than behind a second's twelve frames of other reads
+    (ALO-14: they went out 1.0–1.4 s after they were asked). Its wider reads take a slot (`firstReadQuery`).
+  */
+  const query = read ?? (source === 'relay' ? createLoadQuery(firstReadQuery(relayUrl, token)) : folderLoadAsViewer(relayUrl, token, source))
   return listRead ? listFolders(query, { listRead }) : listFolders(query)
 }
 
