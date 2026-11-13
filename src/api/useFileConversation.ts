@@ -108,7 +108,7 @@ function heldIn(key: string, v: Viewer, id: string): ConversationEvent | undefin
 }
 
 /** Why a reaction to a message that is not drawn was not sent: it could not name whose message it is. */
-const REACTION_TARGET_NOT_HELD = 'This message is not loaded here, so the reaction was not sent.'
+const REACTION_TARGET_NOT_HELD = 'This message is no longer here, so your reaction was not sent.'
 
 /** The Folder of the thread `id` opens, as the shared fold read it: where its resolve is written (§6.4, C51). */
 function folderIn(key: string, relayUrl: string, pubkey: string, id: string): string | undefined {
@@ -125,8 +125,10 @@ const sentBeforeRead = new Map<string, string[]>()
 async function afterSend(id: string): Promise<WriteResult | null> {
   const flight = sending.get(id)
   if (!flight) return null
-  return (await flight).ok ? null : { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
+  return (await flight).ok ? null : EARLIER_NOT_SENT
 }
+
+const EARLIER_NOT_SENT: WriteResult = { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
 
 /**
  * One sync per conversation at a time. A sync asked for while one runs is
@@ -427,7 +429,17 @@ export function conversationActions({
         composeEdit({ container, targetEventId, parentId: parentIn(key, v, targetEventId), body, files, embeds }, v.relayUrl, v.token, { at, waitMs })
       return change(targetEventId, (v) => compose(v), 'The relay refused the edit.', (v) => compose(v, 0))
     },
-    remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
+    /*
+      Taking back what is still being sent waits for it, and deletes what was sent: a reaction drawn before the
+      relay's key was read can go out under another id (ACT-6), which its send answers.
+    */
+    remove: async (targetEventId) => {
+      const flight = sending.get(targetEventId)
+      const sent = flight ? await flight : undefined
+      if (sent && !sent.ok) return EARLIER_NOT_SENT
+      const target = sent?.ok ? sent.id : targetEventId
+      return change(target, (v) => composeDeletion(target, v.token.pubkey), 'The relay refused the deletion.')
+    },
     /*
       The reaction names whose message it is on (ACT-6), from the message as it is held — never sent without that
       name: a message that is not held, or a stand-in nobody wrote, is refused before anything is drawn. It is drawn

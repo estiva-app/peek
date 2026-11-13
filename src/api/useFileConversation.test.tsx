@@ -112,9 +112,9 @@ vi.mock('@/nostr/fileConversation', () => ({
     const at = links.drafted.get(slot)!
     return { kind: 40003, content: args.body, tags: signed && links.named ? [['a', `30851:${'d'.repeat(64)}:linked`]] : [], created_at: at, pubkey: 'c'.repeat(64) }
   },
-  composeDeletion: () => {
+  composeDeletion: (targetEventId: string) => {
     relay.composed += 1
-    return { kind: 5, content: '', tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) }
+    return { kind: 5, content: '', tags: [['e', targetEventId]], created_at: relay.composed, pubkey: 'c'.repeat(64) }
   },
   resolveAsViewer: () => relay.resolve(),
 }))
@@ -728,7 +728,7 @@ describe('useFileConversation — a channel (REM-1)', () => {
     await act(async () => {
       expect(await result.current.actions.react('9'.repeat(64), '👍')).toEqual({
         ok: false,
-        reason: 'This message is not loaded here, so the reaction was not sent.',
+        reason: 'This message is no longer here, so your reaction was not sent.',
       })
     })
     expect(relay.publish).not.toHaveBeenCalled()
@@ -753,7 +753,9 @@ describe('useFileConversation — a channel (REM-1)', () => {
       answerKey('f'.repeat(64))
       expect(await sent).toEqual({ ok: true, id: idOf(1) })
     })
-    expect(relay.publish.mock.calls.map(([event]) => event?.tags)).toEqual([[['e', 'd'.repeat(64)], ['p', REPLIER]]])
+    expect(relay.publish.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ kind: 7, content: '👍', pubkey: 'c'.repeat(64), tags: [['e', 'd'.repeat(64)], ['p', REPLIER]] }),
+    ])
     expect(relay.own).toEqual([`shown ${idOf(1)}`, `confirmed ${idOf(1)}`])
   })
 
@@ -777,7 +779,36 @@ describe('useFileConversation — a channel (REM-1)', () => {
       answerKey(null)
       expect(await taken).toEqual({ ok: true, id: idOf(2) })
     })
-    expect(relay.publish.mock.calls.map(([event]) => event?.kind)).toEqual([7, 5])
+    expect(relay.publish.mock.calls.map(([event]) => [event?.kind, event?.tags])).toEqual([
+      [7, [['e', 'd'.repeat(64)], ['p', REPLIER]]],
+      [5, [['e', idOf(1)]]],
+    ])
+  })
+
+  it('taking back a reaction to a message the relay signed for someone deletes the reaction that was sent, not the one first drawn (ACT-6)', async () => {
+    const RELAY = 'f'.repeat(64)
+    const workflow = { ...empty, roots: [{ id: 'e'.repeat(64), author: RELAY, authorship: [['p', THEIRS]] }] } as unknown as FileConversation
+    const answerKey = keyReadHeld()
+    relay.publish.mockResolvedValueOnce({ ok: true, id: idOf(2) }).mockResolvedValueOnce({ ok: true, id: idOf(3) })
+    relay.read.mockResolvedValue({ value: workflow, events: [] })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(workflow))
+    await act(async () => {
+      void result.current.actions.react('e'.repeat(64), '👍')
+    })
+    await waitFor(() => expect(relay.own).toEqual([`shown ${idOf(1)}`]))
+    let taken: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      taken = result.current.actions.remove(idOf(1))
+    })
+    await act(async () => {
+      answerKey(RELAY)
+      expect(await taken).toEqual({ ok: true, id: idOf(3) })
+    })
+    expect(relay.publish.mock.calls.map(([event]) => [event?.kind, event?.tags])).toEqual([
+      [7, [['e', 'e'.repeat(64)], ['p', THEIRS]]],
+      [5, [['e', idOf(2)]]],
+    ])
   })
 
   it('a reaction to a message the relay signed for someone is drawn at once, then sent naming them in its place (ACT-6)', async () => {

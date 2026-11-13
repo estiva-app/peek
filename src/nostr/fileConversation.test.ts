@@ -723,6 +723,25 @@ describe('the decorations are written as the suite agrees them', () => {
       expect(signed().tags).toEqual([['e', onBehalf.id], ['p', CATH]])
     })
 
+    it('a relay key no team record answered yet is not kept: once one does, reactions name the actor, and the key is read once for them all', async () => {
+      // Another relay, so no key read for the cases above is held for it.
+      const joinedLater = 'https://joined-later.test'
+      const onBehalf = event({ kind: 9, pubkey: RELAY, content: 'Deployed', tags: [['h', FOLDER], ['actor', CATH]] })
+      const target = await held(onBehalf)
+      queryRelay.mockImplementation(relayOver([]))
+      await expect(reactAsViewer({ target, emoji: '👍' }, joinedLater, token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', RELAY]])
+      signViaEstivaId.mockClear()
+      queryRelay.mockImplementation(relayOver([team]))
+      queryRelay.mockClear()
+      await expect(reactAsViewer({ target, emoji: '🎉' }, joinedLater, token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', CATH]])
+      signViaEstivaId.mockClear()
+      await expect(reactAsViewer({ target, emoji: '🚀' }, joinedLater, token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', CATH]])
+      expect(keyReads()).toHaveLength(1)
+    })
+
     it('a relay key that cannot be read does not stop the reaction: it names the signer, and the next reaction reads the key again', async () => {
       // Another relay, so no key read for the cases above is held for it.
       const elsewhere = 'https://elsewhere.test'
