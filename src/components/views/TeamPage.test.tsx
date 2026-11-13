@@ -115,7 +115,11 @@ describe('leaving a topic from its row on a team’s page (Miky, 13 Nov)', () =>
     const onControl = vi.fn()
     mount(team(), onControl)
     await openMenu('Launch')
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Leave' }))
+    // The menu is open once any item is; then Leave is there or not, with no wait of its own.
+    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
+    const leave = screen.queryByRole('menuitem', { name: 'Leave' })
+    expect(leave).not.toBeNull()
+    await userEvent.click(leave!)
     expect(onControl).toHaveBeenCalledWith('leave', LAUNCH)
   })
 

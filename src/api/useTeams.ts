@@ -244,12 +244,14 @@ export function leavesTopicIn(
   const team = listing?.team ?? teams?.find((candidate) => candidate.id === topic.folder)
   if (!team || team.archived) return false
   // The team whose list holds it brings its default, as the dots read it (`useConversationBadges`).
-  const facts = listing?.team.facts
-  const following = followingOfTopic(
-    topic,
-    facts && listing ? { team: listing.team.id, roster: facts.roster, listing: facts.listing, archived: listing.team.archived, ...(facts.teams ? { teams: facts.teams } : {}) } : undefined,
-  )
+  const following = followingOfTopic(topic, listing ? teamFactsOf(listing.team) : undefined)
   return !!following?.in && !!following.level
+}
+
+/** What the shared fold reads for a space's team default (TEA-6), from the teams read: the dots and the row's Leave alike. */
+export function teamFactsOf(team: Team): TeamFacts | undefined {
+  const facts = team.facts
+  return facts ? { team: team.id, roster: facts.roster, listing: facts.listing, archived: team.archived, ...(facts.teams ? { teams: facts.teams } : {}) } : undefined
 }
 
 /** A team's spaces and the topics it leads, in its list's order, from the topics this viewer can read; archived ones left out. */

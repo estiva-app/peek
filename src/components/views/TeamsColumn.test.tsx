@@ -168,7 +168,11 @@ describe('marking a space from the Teams column (TEA-5)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Leave' })).toBeNull()
     await userEvent.keyboard('{Escape}')
     await openMenu(sectionOf('Engineering'), 'General')
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Leave' }))
+    // The menu is open once any item is; then Leave is there or not, with no wait of its own.
+    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
+    const leave = screen.queryByRole('menuitem', { name: 'Leave' })
+    expect(leave).not.toBeNull()
+    await userEvent.click(leave!)
     expect(onControl).toHaveBeenCalledWith('leave', GENERAL)
   })
 

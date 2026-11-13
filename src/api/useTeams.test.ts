@@ -212,7 +212,8 @@ describe('which of a team’s rows offer Leave', () => {
     expect(leaves(archived, KATERINA, TOPIC, [joined(KATERINA, TOPIC)])).toBe(false)
   })
 
-  it('a topic whose following is not known yet, or that the viewer muted, offers none', () => {
+  // A muted topic reaches here as undefined too; that the hook says so is useTopicsColumn.test's "a muted topic is not yours".
+  it('a topic whose following is not known offers none', () => {
     expect(leavesTopicIn([teamOf(folder, read([MIKY, KATERINA]), KATERINA)], place(SPACE), () => undefined)).toBe(false)
   })
 })
