@@ -217,7 +217,10 @@ export function readTeamsListAsViewer(relayUrl: string, token: StoredToken): Pro
   return readTeamsList(token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
 }
 
-/** {@link readTeams} as the viewer. */
+/**
+ * {@link readTeams} as the viewer: what Teams draws, so the first-page lane (PEE-7) — it is asked once the Folders
+ * are listed, when a cold open's other reads fill the second's frames (ALO-14: 0.8–1.1 s held there otherwise).
+ */
 export function readTeamsAsViewer(teams: readonly string[], chats: readonly string[], relayUrl: string, token: StoredToken): Promise<TeamsRead> {
-  return readTeams(teams, chats, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
+  return readTeams(teams, chats, token.pubkey, viewerQuery(relayUrl, token, 'first'), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
 }

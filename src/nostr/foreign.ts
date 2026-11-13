@@ -1511,7 +1511,12 @@ export async function listFoldersAsViewer(
   if (source === 'copy') return listFolders(copyQuery(relayUrl, token))
   // Once switched, the projects it names by the relay's list read (ALO-6).
   const { listRead } = await listReadOption()
-  const query = read ?? folderLoadAsViewer(relayUrl, token, source)
+  /*
+    The navigation's own listing (no load given) is the first thing every screen draws, Teams' text waits on it, and
+    it is two REQs: the first-page lane (PEE-7), past the pacer and into the room the shaper keeps, rather than behind
+    a second's twelve frames of other reads (ALO-14: it went out 1.0–1.4 s after it was asked).
+  */
+  const query = read ?? (source === 'relay' ? createLoadQuery(viewerQuery(relayUrl, token, 'first')) : folderLoadAsViewer(relayUrl, token, source))
   return listRead ? listFolders(query, { listRead }) : listFolders(query)
 }
 
