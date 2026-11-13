@@ -32,12 +32,12 @@ function mount(opened: Parameters<typeof Opened>[0], at = '/app/people') {
 const hrefOf = (name: string) => screen.getByRole('link', { name }).getAttribute('href')
 const lit = (name: string) => screen.getByRole('link', { name }).getAttribute('aria-current') === 'page'
 
-// "Folders" until the Teams stage (TEA-5): the rail says Teams, and its route stays /app/folders.
+// "Folders" until the Teams stage (TEA-5): the rail says Teams, and its route stays /app/teams.
 describe('the rail’s Topics and Teams', () => {
   it('lead to their own screens when no file was open there', () => {
     mount({})
     expect(hrefOf('Topics')).toBe('/app/topics')
-    expect(hrefOf('Teams')).toBe('/app/folders')
+    expect(hrefOf('Teams')).toBe('/app/teams')
   })
 
   it('each lead back to the file last open under it', () => {

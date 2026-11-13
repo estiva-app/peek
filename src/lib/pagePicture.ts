@@ -24,7 +24,7 @@ export const PICTURE_KEYS: Record<PicturePage, string> = { desk: 'peek-desk-pict
 /** Whether a location is the plain page a picture is of: nothing open, no query. */
 function isPlain(page: PicturePage, path: string, search: string): boolean {
   if (search) return false
-  return page === 'desk' ? path === '/' || path === '/app' || path === '/app/desk' : path === '/app/folders'
+  return page === 'desk' ? path === '/' || path === '/app' || path === '/app/desk' : path === '/app/teams'
 }
 
 /** The copy's owner on this device (`nostr/deviceCopy.ts` OWNER_KEY), read here without importing the store. */
@@ -178,7 +178,7 @@ export function revealWhenPageDrawn(): void {
 
 /**
  * Keep what a plain page shows now, for the next tab. Only a fully drawn page
- * with nothing open is kept — what a new tab at `/app/desk` or `/app/folders`
+ * with nothing open is kept — what a new tab at `/app/desk` or `/app/teams`
  * draws — and only for the copy's owner. Element ids are dropped (the live
  * page has its own), and so are pictures this page made for itself, which mean
  * nothing in another.

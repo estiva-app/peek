@@ -131,7 +131,7 @@ else {
 
 const { stdout } = await promisify(execFile)(
   'node',
-  [probe, '--as', as, '--base', base, '--url', '/app/folders', '--timeout', '60000', ...steps.flat()],
+  [probe, '--as', as, '--base', base, '--url', '/app/teams', '--timeout', '60000', ...steps.flat()],
   { maxBuffer: 32 * 1024 * 1024 },
 ).catch((error) => ({ stdout: error.stdout ?? '', failed: error }))
 let report

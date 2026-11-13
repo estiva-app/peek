@@ -19,6 +19,18 @@ function MovedUnderApp() {
 }
 
 /**
+ * A team's page before its links said teams: `/app/folders/…`, and `/folders/…`
+ * before FOL-39. Those links sit in messages and descriptions on the relay, so
+ * they are kept for good and land on the same view at `/app/teams/…` in one hop.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-teams-link-says-teams-and-an-old-folder-link-still-opens-it.md
+ */
+function TeamMoved() {
+  const { pathname, search, hash } = useLocation()
+  const rest = pathname.replace(/^(\/app)?\/folders/, '')
+  return <Navigate to={`/app/teams${rest}${search}${hash}`} replace />
+}
+
+/**
  * Peek's pages by address — RFC 0.5 §7.7 (FOL-39).
  *
  * **The root belongs to files.** `/<word>/<slug>-<d>` opens the file of any
@@ -46,16 +58,21 @@ function App() {
       <Route path="/app/topics/explore" element={<TopicsPage explore />} />
       {/* Navigation by Folder (RFC 0.4 §4) — added beside the topic routes,
           not over them. §11.1's topic→file migration is a separate change. */}
-      <Route path="/app/folders" element={<FoldersPage />} />
-      <Route path="/app/folders/:id" element={<FoldersPage />} />
+      <Route path="/app/teams" element={<FoldersPage />} />
+      <Route path="/app/teams/:id" element={<FoldersPage />} />
       {/* A team's chat (TEA-5), beside its page. */}
-      <Route path="/app/folders/:id/chat" element={<FoldersPage chat />} />
+      <Route path="/app/teams/:id/chat" element={<FoldersPage chat />} />
+      {/* Where a team's page was until its links said teams. */}
+      <Route path="/app/folders" element={<TeamMoved />} />
+      <Route path="/app/folders/:id" element={<TeamMoved />} />
+      <Route path="/app/folders/:id/chat" element={<TeamMoved />} />
       <Route path="/app/people" element={<PeoplePage />} />
       <Route path="/app/people/:id" element={<PeoplePage />} />
       {/* Where those pages were until FOL-39. */}
       <Route path="/desk" element={<MovedUnderApp />} />
-      <Route path="/folders" element={<MovedUnderApp />} />
-      <Route path="/folders/:id" element={<MovedUnderApp />} />
+      <Route path="/folders" element={<TeamMoved />} />
+      <Route path="/folders/:id" element={<TeamMoved />} />
+      <Route path="/folders/:id/chat" element={<TeamMoved />} />
       <Route path="/people" element={<MovedUnderApp />} />
       <Route path="/people/:id" element={<MovedUnderApp />} />
       {/* The retired Topics view (FOL-26). Its list is the Folder tree now, and

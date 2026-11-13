@@ -87,7 +87,7 @@ const act = (label, texts, find, path = null) =>
 // The row under one of Desk's headings: QA-2's "QA-1" is in the Screener as well as in Starred.
 const under = (heading, text) =>
   `[...document.querySelectorAll('main *')].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)} && ${leaf(heading)}?.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)`
-const topicsLink = `document.querySelector('a[href="/app/folders"]')`
+const topicsLink = `document.querySelector('a[href="/app/teams"]')`
 // A reload is no sign-in bounce: the next document starts the count again (the recorder's `fl.first`).
 const reload = (texts) => ['--eval', `(() => { sessionStorage.setItem('fl.texts', ${JSON.stringify(JSON.stringify(texts))}); sessionStorage.removeItem('fl.first'); setTimeout(() => location.reload(), 20); return 'reloading' })()`, '--wait', '1500']
 const report = ['--eval', '__fl.report()']
@@ -183,7 +183,7 @@ const AHEAD_OFF = `try { localStorage.setItem('peek.ahead', 'off') } catch {}\n`
   the meter saw the writes at all.
 */
 const refuseLeg = (title, send) => ({
-  url: '/app/folders',
+  url: '/app/teams',
   first: TREE,
   probe: ['--refuse-kind', String(KIND_BARE_FILE), '--refuse-hold', '1500'],
   steps: [
@@ -206,7 +206,7 @@ const legs = {
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
       ...reload(w.desk), ...settled(), '--wait', '3000', ...report,
-      ...act('desk→topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      ...act('desk→topics', TREE, topicsLink, '/app/teams'), ...settled(), '--wait', '3000',
       ...reload(TREE), ...settled(), '--wait', '3000', ...report,
       // A new tab has an empty sessionStorage: the recorder's texts are Desk's again, from __flDefault.
       '--tab', '/app/desk', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
@@ -243,7 +243,7 @@ const legs = {
       // Desk's rows open in Desk's own pane since OPT-12, and stay on screen beside it.
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
       ...reached('Starred'), ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('composer'), '--wait', '3000',
-      ...reached('Topics'), ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      ...reached('Topics'), ...act('Topics', TREE, topicsLink, '/app/teams'), ...settled(), '--wait', '3000',
       '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })',
       ...report,
     ],
@@ -269,7 +269,7 @@ const legs = {
     first: w.desk,
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '10000',
-      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      ...act('Topics', TREE, topicsLink, '/app/teams'), ...settled(), '--wait', '3000',
       '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })', ...report,
     ],
     phases: [['Topics, 10 s after Desk', 0, 'Topics']],
@@ -295,12 +295,12 @@ const legs = {
   // minute later, since the copy answers at any time.
   again: (w) => ({
     url: '/app/desk',
-    first: { '/app/desk': w.desk, '/app/folders': TREE },
+    first: { '/app/desk': w.desk, '/app/teams': TREE },
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '3000',
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000',
-      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), ...loaded(), '--wait', '3000', ...report,
+      ...act('Topics', TREE, topicsLink, '/app/teams'), ...settled(), ...loaded(), '--wait', '3000', ...report,
       // The tree's rows and unread dots as first drawn (the saved picture), and once the relay has answered: the same.
       ...reload(TREE), ...settled(), '--eval', treeDrawn('picture'), '--wait', '3000', '--eval', treeDrawn('after the relay'), ...report,
       '--eval', `(() => { document.querySelector('a[href="/app/desk"]').click(); return 'desk' })()`, '--wait', '2000',
@@ -313,7 +313,7 @@ const legs = {
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '1000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000', ...report,
       // A new tab at Topics (Miky, 13 Oct: in this ticket); its recorder takes the tree's texts by path.
-      '--tab', '/app/folders', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
+      '--tab', '/app/teams', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
     ],
     phases: [
       ['visit: Topics, first open', 0, 'Topics'], ['reload → Topics', 1, 'load'], ['reload → Desk', 2, 'load'],
@@ -323,7 +323,7 @@ const legs = {
     ],
   }),
   long: (w) => ({
-    url: '/app/folders',
+    url: '/app/teams',
     first: TREE,
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '3000',
@@ -338,7 +338,7 @@ const legs = {
     phases: [['200-message topic, first open', 0, 'long topic', 'messages']],
   }),
   new: (w, title) => ({
-    url: '/app/folders',
+    url: '/app/teams',
     first: TREE,
     // PEE-6: a message sent as soon as the composer is there, while the topic may still be publishing.
     steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...fromHeader, ...start(title), ...settled('composer', 5000), ...type(FIRST), '--press', 'Enter', ...startSettled, ...at, ...report],
@@ -346,14 +346,14 @@ const legs = {
   }),
   // PEE-6: the same, from the QA Folder's own menu.
   'new-folder': (w, title) => ({
-    url: '/app/folders',
+    url: '/app/teams',
     first: TREE,
     steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...menuOf('QA'), '--click', 'Start a topic', '--wait', '600', ...start(title), ...startSettled, ...at, ...report],
     phases: [['Folder menu, Start → composer', 0, 'start', 'composer']],
   }),
   // PEE-6: "New topic inside" a fixture topic; its dialog read the team first before PEE-6.
   'new-inside': (w, title) => ({
-    url: '/app/folders',
+    url: '/app/teams',
     first: TREE,
     steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...menuOf(w.long), '--click', 'New topic inside', '--until', `!!document.querySelector('input[aria-label="Topic title"]') || performance.now() > 60000`, ...start(title), ...startSettled, ...at, ...report],
     phases: [['Inside a topic, Start → composer', 0, 'start', 'composer']],
@@ -501,7 +501,7 @@ async function seenBy(as, page, title, message, parent = null) {
     ...(message ? ['--eval', `(() => { location.assign(${JSON.stringify(page)}); return 'opening' })()`, '--wait', '1500', '--until', `document.body.innerText.includes(${JSON.stringify(message)}) || performance.now() > 15000`, '--eval', `document.body.innerText.includes(${JSON.stringify(message)}) ? 'message there' : 'no message'`] : []),
   ]
   // Topics in "All": a fresh browser opens on "Mine", which lists only the topics this identity has joined.
-  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--init', ALL_VIEW, '--timeout', '45000', ...steps])
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/teams', '--init', ALL_VIEW, '--timeout', '45000', ...steps])
   const outcomes = probe.steps.filter((s) => s.eval && !String(s.result).startsWith('opening')).map((s) => s.result ?? s.error)
   console.log(`  ${as} in Topics: ${outcomes.join(', ') || probe.failure}`)
   // A parent with no chevron is printed among them ("…: no chevron"), so the verdicts are found, not indexed.
@@ -515,7 +515,7 @@ async function seenBy(as, page, title, message, parent = null) {
  */
 async function deleteTopic(as, title, parent = null, absent = false) {
   if (absent) {
-    const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', '--until', `!!${leaf(title)} || performance.now() > 8000`, '--eval', `${leaf(title)} ? 'listed' : 'absent'`])
+    const probe = await probeRun([PROBE, '--as', as, '--url', '/app/teams', '--timeout', '45000', '--until', `!!${leaf(title)} || performance.now() > 8000`, '--eval', `${leaf(title)} ? 'listed' : 'absent'`])
     const outcome = probe.steps.at(-1)?.result ?? probe.failure
     console.log(`  refused "${title}" after a fresh load: ${outcome}`)
     if (outcome === 'absent') return
@@ -530,7 +530,7 @@ async function deleteTopic(as, title, parent = null, absent = false) {
     '--eval', `${leaf(title)} ? 'still listed' : 'gone'`,
   ]
   // A sub-topic shows once its parent's row is unfolded.
-  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...(parent ? unfold(parent) : []), ...steps])
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/teams', '--timeout', '45000', ...(parent ? unfold(parent) : []), ...steps])
   const outcome = probe.steps.at(-1)?.result ?? probe.failure ?? probe.steps.find((s) => s.error)?.error
   console.log(`  deleted "${title}": ${outcome}${outcome === 'gone' ? '' : ` ${JSON.stringify(probe.steps.filter((s) => s.eval).map((s) => s.result ?? s.error))}`}`)
   if (outcome !== 'gone') failed = true

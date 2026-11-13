@@ -27,7 +27,7 @@
  *   sequencing", each through a fresh MCP server (the pinned runtime, `~/.estiva-agent-runtime`, what Claude
  *   sessions run; `--agent <dir>` for a worktree with a fix), signed in as the agent's own key.
  * - `peek`: Weekly Plans' conversation in Peek.
- * - `teams`: Peek's Teams column, opened cold at /app/folders (TEA-5): every team's roster, list and chat in one
+ * - `teams`: Peek's Teams column, opened cold at /app/teams (TEA-5): every team's roster, list and chat in one
  *   read, beside the Folders it replaced. Not in the default set.
  * - `topics`: Peek's Topics column, opened cold at /app/topics (TOPI-7): QA-1's topics, and since TOPI-7 the teams
  *   read too, for the row menu's Make it a space and Leave. Not in the default set. `--topics-await <a topic's title>`
@@ -111,8 +111,8 @@ const QA_TOPIC = {
  */
 const PAGES = {
   'page-topic': ['/topic/planning-and-sequencing-fd4257be-1ace-4710-9284-c620507c3278', 'Planning and sequencing'],
-  'page-team': ['/app/folders/05bebd5b-b699-4bd4-af50-f5377df0fd67', 'Estiva HQ'],
-  'page-chat': ['/app/folders/05bebd5b-b699-4bd4-af50-f5377df0fd67/chat', 'general'],
+  'page-team': ['/app/teams/05bebd5b-b699-4bd4-af50-f5377df0fd67', 'Estiva HQ'],
+  'page-chat': ['/app/teams/05bebd5b-b699-4bd4-af50-f5377df0fd67/chat', 'general'],
   'page-dm': ['/app/people/a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697', 'Katerina Kelepouri'],
 }
 for (const leg of Object.keys(PAGES)) if (option(leg, undefined)) PAGES[leg] = option(leg).split('|')
@@ -185,7 +185,7 @@ const LEGS = {
   'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
   'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
   peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
-  teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/folders', ...settle(60000), ...whole, ...report('teams')],
+  teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/teams', ...settle(60000), ...whole, ...report('teams')],
   topics: () => ['--base', 'https://peek.estiva.app', '--url', '/app/topics', ...settle(60000), ...whole, ...report('topics')],
   desk: () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...whole, ...report('desk')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
@@ -395,7 +395,7 @@ if (args.includes('--compare')) {
     awaitList.push(['^peek\\.', '^/(topic|document)/', ['I would love us to work together']])
   }
   // Peek's Teams column (TEA-5), cold: a team QA-1 is in, drawn by the Folders column before it and Teams after.
-  if (legs.includes('teams')) awaitList.push(['^peek\\.', '^/app/folders/?$', [TEAMS_AWAIT]])
+  if (legs.includes('teams')) awaitList.push(['^peek\\.', '^/app/teams/?$', [TEAMS_AWAIT]])
   // Peek's Topics column (TOPI-7), cold: one of QA-1's topics, a row drawn once the column's reads land.
   if (legs.includes('topics')) awaitList.push(['^peek\\.', '^/app/topics/?$', [option('topics-await', TOPICS_AWAIT)]])
   // Peek's Desk (ACT-9), cold: its Open work heading; the whole load is the measure, the rows' dots read what it holds.

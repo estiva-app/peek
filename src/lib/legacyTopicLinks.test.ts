@@ -19,7 +19,7 @@ describe('legacyTopicFile (SID-3)', () => {
 describe('legacyTopicDestination', () => {
   it('lands a topic on its file, a team’s channel on its Folder, and nothing on null', () => {
     expect(legacyTopicDestination('t_1788532283888_1')).toBe(filePath(WIDGETS_FILE, 'Widgets'))
-    expect(legacyTopicDestination('x-FD03975A-EB00-49D6-A4B7-33EAD1854672')).toBe('/app/folders/fd03975a-eb00-49d6-a4b7-33ead1854672')
+    expect(legacyTopicDestination('x-FD03975A-EB00-49D6-A4B7-33EAD1854672')).toBe('/app/teams/fd03975a-eb00-49d6-a4b7-33ead1854672')
     expect(legacyTopicDestination('t_never')).toBeNull()
   })
 })

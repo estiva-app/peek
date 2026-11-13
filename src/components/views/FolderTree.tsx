@@ -73,7 +73,7 @@ export function FolderTree({
   /** The Folder holding the open page. Its section starts open. */
   currentFolder?: string | null
   /**
-   * The page is a Folder's own link (`/app/folders/<id>`): the column turns to
+   * The page is a Folder's own link (`/app/teams/<id>`): the column turns to
    * Folders, where every Folder is, with that one open.
    */
   showFolder?: boolean
@@ -163,7 +163,7 @@ export function FolderTree({
     }
   }
   useEffect(() => {
-    if (closing) navigate('/app/folders')
+    if (closing) navigate('/app/teams')
   }, [closing, navigate])
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
@@ -218,7 +218,7 @@ export function FolderTree({
             draws only what is archived; Teams only what is not.
           */
           if (selectedRef && next !== view && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
-            navigate('/app/folders')
+            navigate('/app/teams')
           }
         }}
         show={show}
@@ -285,7 +285,7 @@ function NewFolderDialog({ reload, onClose }: { reload: () => Promise<unknown>; 
           hand does not have it yet. The new Folder's link opens it, in Folders.
         */
         await reload()
-        navigate(`/app/folders/${result.id}`)
+        navigate(`/app/teams/${result.id}`)
         return true
       }}
     />
@@ -490,7 +490,7 @@ export function ArchiveTreeView({
   /** Every top-level Folder, the archived included. `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
   signedOut: boolean
-  /** The Folder a link opened (`/app/folders/<id>`): it opens, and is scrolled to. */
+  /** The Folder a link opened (`/app/teams/<id>`): it opens, and is scrolled to. */
   linkedFolder?: string | null
   currentFolder?: string | null
   selectedRef?: string

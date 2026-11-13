@@ -20,7 +20,7 @@ import { useTabTitle } from '@/lib/useTabTitle'
 import { formatDateLabel } from '@/api'
 
 /**
- * `/app/folders` and `/app/folders/:id` — the Folders column, with no file open.
+ * `/app/teams` and `/app/teams/:id` — the Folders column, with no file open.
  * It was the rail's Topics until TOP-4, and moved to Folders as it was.
  *
  * It was the Folders page: the Folders on the left and one Folder's contents
@@ -76,7 +76,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
   */
   const topic = id ? legacyTopicByChannel(id) : undefined
   useEffect(() => {
-    if (topic && channelDestination(topic.channel) !== `/app/folders/${id}`) navigate(channelDestination(topic.channel), { replace: true })
+    if (topic && channelDestination(topic.channel) !== `/app/teams/${id}`) navigate(channelDestination(topic.channel), { replace: true })
   }, [topic, id, navigate])
 
   /*
@@ -270,7 +270,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
               return false
             }
             await reload()
-            navigate('/app/folders')
+            navigate('/app/teams')
             return true
           }}
         >

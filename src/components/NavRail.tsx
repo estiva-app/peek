@@ -47,10 +47,10 @@ export function NavRail() {
         team's: a remembered team would be a guess about which one somebody
         meant.
       */
-      to: foldersPath ?? '/app/folders',
+      to: foldersPath ?? '/app/teams',
       icon: <IconUsers size={16} stroke={1.5} />,
       label: 'Teams',
-      active: isAt(pathname, '/app/folders') || fileIn('folders'),
+      active: isAt(pathname, '/app/teams') || fileIn('folders'),
     },
     {
       to: dmId != null ? `/app/people/${dmId}` : '/app/people',

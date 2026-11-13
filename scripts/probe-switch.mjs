@@ -390,12 +390,12 @@ const hammerTargets = [
   ['link', B],
   ['link', '/app/desk'],
   ['rail', 'Topics'],
-  ['link', `/app/folders/${QA_FOLDER}`],
+  ['link', `/app/teams/${QA_FOLDER}`],
   ['link', A],
   ['link', '/app/people'],
   ['exact', QA2_NAME],
   ['rail', 'Topics'],
-  ['link', `/app/folders/${QA_FOLDER}`],
+  ['link', `/app/teams/${QA_FOLDER}`],
 ]
 /*
   `--qa2-post`: a step with `postIn` asks this process, through probe.mjs's PROBE_HOOK (`window.__probeHook`),
@@ -444,7 +444,7 @@ try {
       '--base',
       base,
       '--url',
-      `/app/folders/${QA_FOLDER}`,
+      `/app/teams/${QA_FOLDER}`,
       '--timeout',
       String(Math.max(60000, ((hammerSeconds ?? 0) + 30) * 1000 + Number(option('settle', 8000)))),
       '--net',

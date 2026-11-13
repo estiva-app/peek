@@ -103,14 +103,14 @@ describe('the saved Topics (PEE-4)', () => {
   afterEach(() => resetDeviceCopyForTest())
 
   it('keeps a drawn plain Topics under its own key, and not a Folder’s own page or Desk’s', () => {
-    history.replaceState(null, '', '/app/folders')
+    history.replaceState(null, '', '/app/teams')
     drawDesk('<span>Switch probe A</span>')
     savePagePicture('topics')
     expect(topics()).toEqual({ owner: 'relay|pubkey', css: '/assets/index-abc.css', html: '<main><span>Switch probe A</span></main>' })
     expect(localStorage.getItem(PICTURE_KEYS.desk)).toBeNull()
 
     localStorage.removeItem(PICTURE_KEYS.topics)
-    history.replaceState(null, '', '/app/folders/abc')
+    history.replaceState(null, '', '/app/teams/abc')
     savePagePicture('topics')
     history.replaceState(null, '', '/app/desk')
     savePagePicture('topics')
@@ -119,7 +119,7 @@ describe('the saved Topics (PEE-4)', () => {
 
   it('goes with the copy on sign-out, as Desk’s does', async () => {
     resetDeviceCopyForTest(memorySnapshotStorage())
-    history.replaceState(null, '', '/app/folders')
+    history.replaceState(null, '', '/app/teams')
     drawDesk('<span>Switch probe A</span>')
     savePagePicture('topics')
     history.replaceState(null, '', '/app/desk')

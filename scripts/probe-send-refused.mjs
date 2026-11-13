@@ -144,7 +144,7 @@ for (const leg of legs) {
         ? ['--wait', '300', ...openLink(B), '--until', `location.pathname.startsWith(${JSON.stringify(B)}) && !!${editorOf}`]
         : []
   const after = leg === 'moved' ? ['--eval', REPORT, ...openLink(A), ...EDITOR_READY, '--eval', `(() => { ${FIND} return { composer: ${COMPOSER}, rows: findAll(${JSON.stringify(text)}).length } })()`] : []
-  const [url, open] = leg === 'dm' ? [`/app/people/${QA2}`, EDITOR_READY] : [`/app/folders/${QA_FOLDER}`, OPEN_A]
+  const [url, open] = leg === 'dm' ? [`/app/people/${QA2}`, EDITOR_READY] : [`/app/teams/${QA_FOLDER}`, OPEN_A]
   const report = await probe('qa1', url, [...open, '--eval', INSTRUMENT(text), '--eval', insert(text), ...send, ...during, '--wait', '7000', '--eval', REPORT, ...after], refuse)
   const out = evals(report)
   const stepError = (report.steps ?? []).find((s) => s.error)
@@ -181,7 +181,7 @@ for (const leg of legs) {
 const inA = legs.filter((leg) => leg !== 'dm')
 const texts = inA.map(marker)
 const COUNT = `(() => { ${FIND} return Object.fromEntries(${JSON.stringify(texts)}.map((t) => [t, findAll(t).length])) })()`
-const qa2 = await probe('qa2', `/app/folders/${QA_FOLDER}`, [...OPEN_A, '--wait', '3000', '--eval', COUNT])
+const qa2 = await probe('qa2', `/app/teams/${QA_FOLDER}`, [...OPEN_A, '--wait', '3000', '--eval', COUNT])
 const counts = evals(qa2).at(-1)
 results.qa2 = counts ?? qa2.failure
 for (const leg of inA) {

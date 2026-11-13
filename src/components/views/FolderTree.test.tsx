@@ -288,7 +288,7 @@ describe('the page only shows a file the column draws (Katerina, 5 October)', ()
   it('a file archived while it is open closes: it left the list it was in', () => {
     const { rerender } = mount(LIVE)
     rerender(ARCHIVED_FILE)
-    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
   })
 
   it('a file unarchived while it is open in Archive stays open, and the column goes where it now is', () => {
@@ -335,7 +335,7 @@ describe('the Archive view (Katerina, 5 October)', () => {
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     await userEvent.click(title('Teams'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
   })
 
   it('an archived file open in Archive closes when the column turns to Teams', async () => {
@@ -343,7 +343,7 @@ describe('the Archive view (Katerina, 5 October)', () => {
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
     await userEvent.click(title('Archive'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Teams' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
   })
 
   /*

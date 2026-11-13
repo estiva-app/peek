@@ -1,5 +1,5 @@
 /**
- * `/app/folders`, `/app/folders/:id` and `/app/folders/:id/chat` — the Teams
+ * `/app/teams`, `/app/teams/:id` and `/app/teams/:id/chat` — the Teams
  * column with no file open (TEA-5: a Folder with state is a team; its link
  * opens the team's page, where its ⋮ manages it, and `/chat` its chat). What
  * the route still decides for itself is pinned here: a team's page or chat,
@@ -255,9 +255,9 @@ function mount(url: string) {
         {/* Peek's router handed to every kit link, as main.tsx does: a tree row's click changes page through it. */}
         <PeekSetup>
         <Routes>
-          <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
-          <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
-          <Route path="/app/folders/:id/chat" element={<><FoldersPage chat /><Probe /></>} />
+          <Route path="/app/teams" element={<><FoldersPage /><Probe /></>} />
+          <Route path="/app/teams/:id" element={<><FoldersPage /><Probe /></>} />
+          <Route path="/app/teams/:id/chat" element={<><FoldersPage chat /><Probe /></>} />
           {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
           <Route path="*" element={<Probe />} />
         </Routes>
@@ -286,7 +286,7 @@ describe('FoldersPage opens a file at its own address', () => {
   it("a team's link opens the column on Teams and the team's page beside it, where a place leads to the file's own page", async () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { listed: [{ address: FILE_ADDRESS, space: false }] })]
     places.topics = [topic]
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     expect(title('Teams')).toBeTruthy()
     expect(await screen.findByText(/^Members · /)).toBeTruthy()
     expect(screen.queryByText('No file selected')).toBeNull()
@@ -299,24 +299,24 @@ describe('FoldersPage opens a file at its own address', () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { listed: [{ address: FILE_ADDRESS, space: false }] })]
     places.topics = [topic]
     // A channel drawn as a Folder page with no project (FOL-9): the tab names it as its heading does.
-    mount(`/app/folders/${RECORD_CHANNEL}`)
+    mount(`/app/teams/${RECORD_CHANNEL}`)
     await waitFor(() => expect(document.title).toBe('project-0804b906 – Peek'))
     cleanup()
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await waitFor(() => expect(document.title).toBe('Folders – Peek'))
     await userEvent.click(await screen.findByText('FOL-15 test topic 2'))
     expect(document.title).toBe('Peek')
   })
 
   it('with no team open, draws no pane of its own and no cards: the right side waits for a file', () => {
-    mount('/app/folders')
+    mount('/app/teams')
     expect(screen.getByText('No file selected')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Conversation/i })).toBeNull()
   })
 
   it('marks nothing read: a listing is not a reading', () => {
     relay.files = [topic]
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     expect(marks.file).not.toHaveBeenCalled()
     expect(marks.container).not.toHaveBeenCalled()
     expect(marks.thread).not.toHaveBeenCalled()
@@ -330,7 +330,7 @@ describe('FoldersPage opens a file at its own address', () => {
 */
 describe('a Folder that was one of Peek’s topics', () => {
   it('its link leads to where the topic went', async () => {
-    mount(`/app/folders/${TOPIC_CHANNEL}`)
+    mount(`/app/teams/${TOPIC_CHANNEL}`)
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL)))
   })
 
@@ -340,7 +340,7 @@ describe('a Folder that was one of Peek’s topics', () => {
 // The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
 describe("a team's page offers the team's own actions, in its ⋮, to who may take them (TEA-5)", () => {
   it('Start a topic to anyone; Rename and Archive… only to its owners and admins', async () => {
-    const { unmount } = mount(`/app/folders/${FOLDER}`)
+    const { unmount } = mount(`/app/teams/${FOLDER}`)
     await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
@@ -348,7 +348,7 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     unmount()
 
     viewer.admins.push(viewer.me)
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
@@ -356,7 +356,7 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
 
   it('never Delete on a team, and never asks the relay about one (FOL-9)', async () => {
     viewer.admins.push(viewer.me)
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await teamMenu()
     await screen.findByRole('menuitem', { name: 'Rename' })
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
@@ -372,15 +372,15 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
 */
 describe('the rail’s memory of Folders (Katerina, 5 October; TOP-4)', () => {
   it('the Folders page with no file open is where the rail comes back to: a closed file is not brought back', () => {
-    mount('/app/folders')
-    expect(screen.getByTestId('folders-path').textContent).toBe('/app/folders')
+    mount('/app/teams')
+    expect(screen.getByTestId('folders-path').textContent).toBe('/app/teams')
   })
 })
 
 describe('a stateless channel’s link (5 October)', () => {
   it('a Ship project’s channel opens the project, to be drawn open under its Folder', async () => {
     projects.resolve.mockResolvedValueOnce({ project: { address: SHIP_PROJECT, slots: { title: { value: 'Launch' } } } })
-    mount(`/app/folders/${PROJECT_CHANNEL}`)
+    mount(`/app/teams/${PROJECT_CHANNEL}`)
     // On its way there the tab never names the channel's machine id (SFX-2 review).
     expect(document.title).toBe('Peek')
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(filePath(SHIP_PROJECT, 'Launch')))
@@ -388,7 +388,7 @@ describe('a stateless channel’s link (5 October)', () => {
   })
 
   it('a channel with no project lists what it holds, not a sentence about folder state', async () => {
-    mount(`/app/folders/${BARE_CHANNEL}`)
+    mount(`/app/teams/${BARE_CHANNEL}`)
     expect(await screen.findByText('Nothing in this team yet.')).toBeTruthy()
     expect(screen.queryByText(/no folder state/)).toBeNull()
   })
@@ -396,14 +396,14 @@ describe('a stateless channel’s link (5 October)', () => {
 
 describe('a stateless channel’s link offers Delete only where it loses nothing but the Folder', () => {
   it('offers it on an empty channel the relay says may go, and says what goes', async () => {
-    mount(`/app/folders/${BARE_CHANNEL}`)
+    mount(`/app/teams/${BARE_CHANNEL}`)
     await userEvent.click(await screen.findByRole('button', { name: 'Delete team' }))
     expect(await screen.findByText(/every message in it disappear for everyone/)).toBeTruthy()
     expect(screen.queryByText(/not deleted/)).toBeNull()
   })
 
   it('does not offer it on a Ship record channel', async () => {
-    mount(`/app/folders/${RECORD_CHANNEL}`)
+    mount(`/app/teams/${RECORD_CHANNEL}`)
     await waitFor(() => expect(deletable.check).toHaveBeenCalledWith(RECORD_CHANNEL))
     await new Promise((r) => setTimeout(r, 0))
     expect(screen.queryByRole('button', { name: 'Delete team' })).toBeNull()
@@ -417,12 +417,12 @@ describe('a stateless channel’s link offers Delete only where it loses nothing
 */
 describe('FoldersPage never treats a DM channel as a Folder', () => {
   it('opens the viewer’s DM as the DM', async () => {
-    mount(`/app/folders/${DM_CHANNEL}`)
+    mount(`/app/teams/${DM_CHANNEL}`)
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/people/${PARTNER}`))
   })
 
   it('says a DM with no single partner is not a folder, and offers nothing on it', async () => {
-    mount(`/app/folders/${GROUP_DM_CHANNEL}`)
+    mount(`/app/teams/${GROUP_DM_CHANNEL}`)
     expect(await screen.findByText('This is not a team.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Delete team' })).toBeNull()
   })
@@ -433,7 +433,7 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
   */
   it('says a channel the relay does not list is not a folder, and never shows its uuid', async () => {
     const unlisted = 'cccccccc-0000-4000-8000-000000000000'
-    mount(`/app/folders/${unlisted}`)
+    mount(`/app/teams/${unlisted}`)
     expect(await screen.findByText('This is not a team.')).toBeTruthy()
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(unlisted))
     expect(screen.queryByText(unlisted)).toBeNull()
@@ -443,7 +443,7 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
   it('does not call a Folder "not a folder" when the listing read failed', async () => {
     listing.failed = true
     try {
-      mount(`/app/folders/${FOLDER}`)
+      mount(`/app/teams/${FOLDER}`)
       await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
       await new Promise((r) => setTimeout(r, 0))
       expect(screen.queryByText('This is not a team.')).toBeNull()
@@ -454,28 +454,28 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 })
 
 /*
-  A team's link and its chat's (TEA-5): `/app/folders/<id>` is the team's
-  page, `/app/folders/<id>/chat` its chat, which anyone in the company reads
+  A team's link and its chat's (TEA-5): `/app/teams/<id>` is the team's
+  page, `/app/teams/<id>/chat` its chat, which anyone in the company reads
   until teams can be private; only its members are told about it.
 */
 describe("a team's page and its chat, at their own links (TEA-5)", () => {
   it('the chat’s link opens the chat for a member of the team', async () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { isMember: true })]
-    mount(`/app/folders/${FOLDER}/chat`)
+    mount(`/app/teams/${FOLDER}/chat`)
     expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
     expect(screen.queryByText(/^Members · /)).toBeNull()
   })
 
   it('the chat’s link opens the chat for someone not in the team too: a person named there can read it', async () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { isFollowing: true })]
-    mount(`/app/folders/${FOLDER}/chat`)
+    mount(`/app/teams/${FOLDER}/chat`)
     expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
     expect(screen.queryByText(/to read its chat/)).toBeNull()
   })
 
   it('draws a skeleton while the teams are read, and neither the page nor No file selected', async () => {
     teamsRead.teams = null
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
     await waitFor(() => expect(document.querySelector('.animate-skeleton-in')).not.toBeNull())
     expect(screen.queryByText(/^Members · /)).toBeNull()
@@ -485,7 +485,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
   it('says the team could not be read when the read failed, rather than waiting for ever', async () => {
     teamsRead.teams = null
     teamsRead.failed = true
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     expect(await screen.findByText('Couldn’t load this team. Reload to try again.')).toBeTruthy()
     expect(document.querySelector('.animate-skeleton-in')).toBeNull()
   })
@@ -496,7 +496,7 @@ describe('FoldersPage makes a Folder from its name, in Teams', () => {
 
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
     const user = userEvent.setup()
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New team' }))
     const name = screen.getByRole('textbox', { name: 'Team name' })
     await user.type(name, 'Launch notes{Shift>}{Enter}{/Shift}')
@@ -516,7 +516,7 @@ describe('FoldersPage starts a topic from the header', () => {
 
   it("starts it in the link's Folder by default", async () => {
     const user = userEvent.setup()
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
@@ -525,7 +525,7 @@ describe('FoldersPage starts a topic from the header', () => {
 
   it('starts it in the Folder that was chosen', async () => {
     const user = userEvent.setup()
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.click(screen.getByRole('combobox', { name: 'Team' }))
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
@@ -541,7 +541,7 @@ describe('FoldersPage starts a topic from the header', () => {
   */
   it('offers only the Folders the tree draws', async () => {
     const user = userEvent.setup()
-    mount(`/app/folders/${FOLDER}`)
+    mount(`/app/teams/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.click(screen.getByRole('combobox', { name: 'Team' }))
     expect(await screen.findByRole('option', { name: 'For testing' })).toBeTruthy()

@@ -239,7 +239,7 @@ export function FilePage() {
   const pane = useFilePane(view, {
     // Gone: its Folder's page takes the rail's memory, so Topics does not lead back to it.
     onDeleted: (deleted) =>
-      navigate(deleted.folder ? `/app/folders/${deleted.folder}` : '/app/folders', { replace: true }),
+      navigate(deleted.folder ? `/app/teams/${deleted.folder}` : '/app/teams', { replace: true }),
     onListingChanged: reloadTeam,
   })
 
