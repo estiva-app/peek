@@ -52,7 +52,7 @@ export const SLOT_VERSION_STORAGE_KEY = 'estiva-peek:read-state-slot-version'
  * bundle republishes its slot with only the keys it knows, which would wipe them; so the first bundle that writes them
  * moves to a new slot id, once, and an older tab keeps writing the old slot. The merge keeps both.
  */
-const SLOT_VERSION = 'reactions'
+export const SLOT_VERSION = 'reactions'
 
 /** This installation's slot, minted once and then reused; moved to a new id once when its version changes. */
 export function loadSlotIdentity(storage: Storage | undefined = safeLocalStorage()): SlotIdentity {
