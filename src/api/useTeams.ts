@@ -12,6 +12,9 @@ import { useFolderContents, useFolders } from './useFolderContents'
 import { useReadableTopics, useTopicFollowing } from './useTopicsColumn'
 import { explainUnread, newestFirst, type RowNewsItem } from './rowNews'
 import type { TeamFacts } from './placeDots'
+import { reactionNews } from './reactionNews'
+import { useReactionsToMe } from './useReactionsToMe'
+import type { UnreadDotTone } from '@estiva-app/ui'
 
 export { entryNames, type ListedEntry }
 
@@ -369,22 +372,35 @@ export function useTeamChatUnread(teams: readonly Team[] | null): Record<string,
 }
 
 /** {@link useTeamChatUnread}, with each lit chat's card lines (ACT-3): the same messages, read once. */
-export function useTeamChatNews(teams: readonly Team[] | null): { unread: Record<string, boolean>; news: Record<string, RowNewsItem[]> } {
+export function useTeamChatNews(teams: readonly Team[] | null): {
+  unread: Record<string, boolean>
+  news: Record<string, RowNewsItem[]>
+  /** A lit chat's dot colour (ACT-7): `reaction` when reactions to you are all that is new in it. */
+  tones: Record<string, UnreadDotTone>
+} {
   const viewer = heldToken()?.pubkey
   const ids = useMemo(() => (teams ?? []).filter((team) => team.chat.in).map((team) => team.id), [teams])
   const { streams } = useChannelStreams(ids)
   const { merged, ready } = useReadFrontier()
+  const reactions = useReactionsToMe()
   return useMemo(() => {
     const unread: Record<string, boolean> = {}
     const news: Record<string, RowNewsItem[]> = {}
-    if (!viewer || !ready) return { unread, news }
+    const tones: Record<string, UnreadDotTone> = {}
+    if (!viewer || !ready) return { unread, news, tones }
     for (const team of teams ?? []) {
       const stream = team.chat.in ? streams[team.id] : []
       if (!stream) continue
       const lines = chatNews(team, stream, merged, viewer)
-      unread[team.id] = lines.length > 0
-      if (lines.length > 0) news[team.id] = lines
+      // A reaction to your message in the chat, at the level you follow it at (ACT-7).
+      const reacted = reactionNews(reactions, team.id, merged, { following: team.chat })
+      const all = reacted.length > 0 ? newestFirst(lines, reacted) : lines
+      unread[team.id] = all.length > 0
+      if (all.length > 0) {
+        news[team.id] = all
+        tones[team.id] = lines.length > 0 ? 'blue' : 'reaction'
+      }
     }
-    return { unread, news }
-  }, [teams, streams, merged, ready, viewer])
+    return { unread, news, tones }
+  }, [teams, streams, merged, ready, viewer, reactions])
 }

@@ -1,5 +1,5 @@
-import { NavItem } from '@estiva-app/ui'
-import { useAvatarSrc, type RowNewsItem } from '@/api'
+import { NavItem, type UnreadDotTone } from '@estiva-app/ui'
+import { useAvatarSrc, useReactionsSeenOnClose, type RowNewsItem } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
 import { TopicState } from './TopicState'
 import { TopicMenuItems } from './TopicMoreMenu'
@@ -16,6 +16,7 @@ export function PersonItem({
   avatarSrc,
   unread,
   urgent,
+  unreadTone,
   active,
   onHide,
   openWorkAction,
@@ -27,6 +28,8 @@ export function PersonItem({
   avatarSrc?: string
   unread?: boolean
   urgent?: boolean
+  /** The dot's colour (ACT-7): orange when reactions to you are all that is new. An urgent DM keeps its mark. */
+  unreadTone?: UnreadDotTone
   active: boolean
   onHide?: () => void
   /** Whether the ⋮ adds this DM to Open work or takes it off; absent where adding cannot succeed. */
@@ -37,15 +40,21 @@ export function PersonItem({
 }) {
   const avatarSrcFor = useAvatarSrc()
   const href = `/app/people/${id}`
+  const lines = (unread || urgent) && news?.length ? news : undefined
+  // Leaving its card, or opening it on a touch screen, sees the reactions to you it listed (ACT-7).
+  const reactionsSeen = useReactionsSeenOnClose(lines)
   return (
     <NavItem
       href={href}
-      preview={(unread || urgent) && news?.length ? <RowNewsCard items={news} placeHref={href} place="dm" /> : undefined}
+      preview={lines ? <RowNewsCard items={lines} placeHref={href} place="dm" /> : undefined}
+      onPreviewOpenChange={reactionsSeen.onPreviewOpenChange}
+      onClick={reactionsSeen.onOpenRow}
       label={name}
       icon={<TopicState type="DM" avatarSrc={avatarSrc ?? avatarSrcFor(name)} />}
       active={active}
       unread={unread}
       urgent={urgent}
+      unreadTone={unread ? unreadTone : undefined}
       menu={
         onHide || (openWorkAction && onToggleOpenWork) ? (
           <TopicMenuItems onHideDm={onHide} openWorkAction={openWorkAction} onToggleOpenWork={onToggleOpenWork} />

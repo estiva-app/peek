@@ -354,6 +354,19 @@ export function recordThreadRead(rootEventId: string | null | undefined, atMs: n
   frontierChanged()
 }
 
+/**
+ * Record that reactions to the viewer were seen (ACT-7): each write is a conversation's `reactions:` key, at the
+ * newest reaction shown there (`reactionsSeenWrites`), never the clock. It has no parent (§11.3): it reads no message,
+ * and no read of a message reaches it.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-is-seen-once-in-its-conversation.md
+ */
+export function recordReactionsSeen(writes: readonly { context: string; atMs: number }[]): void {
+  if (writes.length === 0) return
+  for (const { context, atMs } of writes) ensureQueue().record(context, toContextSeconds(atMs))
+  frontierChanged()
+}
+
 /** Publish anything pending now. Exposed for tests and for the tab-hidden flush. */
 export function flushReadState(): Promise<void> {
   return ensureQueue().flush()

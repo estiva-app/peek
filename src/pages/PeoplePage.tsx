@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ConversationLayout, SkeletonList } from '@estiva-app/ui'
+import { ConversationLayout, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { PersonItem } from '@/components/ui/PersonItem'
@@ -28,7 +28,7 @@ import { useTabTitle } from '@/lib/useTabTitle'
  * and the direct message with the chosen person beside them.
  */
 export function PeoplePage() {
-  const { dmHasUnread, dmIsUrgent, dmNews } = useUnread()
+  const { dmHasUnread, dmIsUrgent, dmNews, dmTone } = useUnread()
   const navigate = useNavigate()
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
   const { id: routeId } = useParams<{ id: string }>()
@@ -66,6 +66,7 @@ export function PeoplePage() {
         isUnread: (showUnreads && dmHasUnread(e.dmId)) || urgent,
         isUrgent: urgent,
         news: showUnreads ? dmNews(e.dmId) : undefined,
+        tone: dmTone(e.dmId),
       }
     })
     .sort((a, b) => Number(b.isUnread) - Number(a.isUnread))
@@ -140,6 +141,7 @@ export function PeoplePage() {
           isUnread: (showUnreads && dmHasUnread(dm.id)) || urgent,
           isUrgent: urgent,
           news: showUnreads ? dmNews(dm.id) : undefined,
+          tone: dmTone(dm.id),
           canHide: canHideDm(dm.id),
         }
       })}
@@ -168,6 +170,8 @@ export interface PeopleListItem {
   isUnread: boolean
   isUrgent: boolean
   news?: readonly RowNewsItem[]
+  /** The dot's colour (ACT-7): orange when reactions to you are all that is new. */
+  tone?: UnreadDotTone
   /** Hiding is offered only where it can succeed (DMS-6). */
   canHide: boolean
 }
@@ -233,6 +237,7 @@ export function PeoplePageView({
                   unread={dm.isUnread}
                   urgent={dm.isUrgent}
                   news={dm.news}
+                  unreadTone={dm.tone}
                   active={selectedId === dm.id}
                   onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
                   openWorkAction={openWorkActionFor?.(dm.id)}

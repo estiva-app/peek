@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
-import { EmptyState, IconButton, PreviewCard, SectionHeader, SkeletonRow, UnreadDot, isPlainClick } from '@estiva-app/ui'
-import { usePageLines, type PageDot as PageDotState, type PageLine } from '@/api'
+import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { EmptyState, IconButton, PreviewCard, SectionHeader, SkeletonRow, UnreadDot, isPlainClick, type UnreadDotTone } from '@estiva-app/ui'
+import { seeReactions, usePageLines, type PageDot as PageDotState, type PageLine } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { NewsLine } from '@/components/RowNewsCard'
 
@@ -11,24 +11,51 @@ export type { PageLine }
  * navigation prototype drew it): blue with something new for you here, a quiet ring with nothing new. Resting on it, or
  * a tap on a touch screen, opens the page's list. `list` is drawn only while it is open, so its read waits for that.
  */
-export function PageListDot({ lit, list }: { lit: boolean; list: ReactNode }) {
+export function PageListDot({ lit, tone = 'blue', list, onOpenChange }: {
+  lit: boolean
+  /** Its colour when lit, as the page's row's (ACT-7). */
+  tone?: UnreadDotTone
+  list: ReactNode
+  onOpenChange?: (open: boolean) => void
+}) {
   return (
-    <PreviewCard side="bottom" openOnTap contentClassName="p-1" content={list}>
+    <PreviewCard side="bottom" openOnTap contentClassName="p-1" content={list} {...(onOpenChange ? { onOpenChange } : {})}>
       <IconButton aria-label={lit ? 'Something new here; show what' : 'Show what happened here'} data-page-dot={lit ? 'lit' : 'quiet'}>
-        <UnreadDot quiet={!lit} />
+        <UnreadDot quiet={!lit} {...(lit ? { tone } : {})} />
       </IconButton>
     </PreviewCard>
   )
 }
 
-/** A page's title dot with its list, from the page's {@link PageDotState}: the list reads only once it is open. */
+/**
+ * A page's title dot with its list, from the page's {@link PageDotState}: the list reads only once it is open. Opening
+ * the list counts as resting on the place's row (SPEC §11.8): when it closes, the new reactions to you it listed are
+ * seen (ACT-7), and stay under Earlier.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-is-seen-once-in-its-conversation.md
+ */
 export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: PageLine) => void }) {
-  return <PageListDot lit={dot.lit} list={<PageListRead dot={dot} {...(onOpen ? { onOpen } : {})} />} />
+  /** The new reaction lines the list drew since it opened: it is mounted only while open. */
+  const listed = useRef<PageLine[]>([])
+  const onOpenChange = useCallback((open: boolean) => {
+    if (open) return
+    const lines = listed.current
+    listed.current = []
+    if (lines.length) seeReactions(lines)
+  }, [])
+  const onListed = useCallback((lines: readonly PageLine[]) => {
+    listed.current = [...listed.current, ...lines.filter((line) => line.reaction && !line.seen)]
+  }, [])
+  return <PageListDot lit={dot.lit} tone={dot.tone} onOpenChange={onOpenChange} list={<PageListRead dot={dot} onListed={onListed} {...(onOpen ? { onOpen } : {})} />} />
 }
 
 /** The list's content: mounted only while the card is open, so this is when its read is asked. */
-function PageListRead({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: PageLine) => void }) {
+function PageListRead({ dot, onOpen, onListed }: { dot: PageDotState; onOpen?: (line: PageLine) => void; onListed?: (lines: readonly PageLine[]) => void }) {
   const lines = usePageLines(dot.sources, dot.held)
+  const shown = lines === 'failed' || lines === undefined ? dot.held : lines
+  useEffect(() => {
+    onListed?.(shown)
+  }, [shown, onListed])
   return <PageList lines={lines === 'failed' ? undefined : lines} failed={lines === 'failed'} held={dot.held} {...(onOpen ? { onOpen } : {})} />
 }
 

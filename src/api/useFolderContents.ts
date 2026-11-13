@@ -360,6 +360,11 @@ function subscribeListingFromCopy(listener: () => void): () => void {
 }
 const listingFromCopySnapshot = () => listingFromCopy
 
+/** The ids of the Folders this tab's listing holds now (the relay's, else the copy's), with no read: what a live watch names by `#h` on a relay that needs it. */
+export function heldFolderIds(): string[] {
+  return (folderListing.snapshot().value ?? listingFromCopy ?? []).map((folder) => folder.id)
+}
+
 /** Empty the held listing — what `clearListingCaches` does for the others. Tests call it between cases. */
 export function clearFolderListing(): void {
   folderListing.clear()

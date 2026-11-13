@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { MAX_BLOB_BYTES } from '@estiva-app/conversation'
 import { MAX_PLAINTEXT_BYTES } from './appData'
-import { SLOT_STORAGE_KEY, loadSlotIdentity, readStateSlotFilter, rotateSlotId } from './readState'
+import { SLOT_STORAGE_KEY, SLOT_VERSION_STORAGE_KEY, loadSlotIdentity, readStateSlotFilter, rotateSlotId } from './readState'
 
 /**
  * Peek's half of read state (CON-19). The grammar, the cap and the merge are
@@ -32,9 +32,24 @@ describe('slot identity', () => {
     expect(loadSlotIdentity(storage)).toEqual(first)
   })
 
-  it('reads a slot an older Peek stored', () => {
+  it('reads a slot this Peek stored', () => {
     const stored = { slotId: '0123456789abcdef0123456789abcdef', clientId: 'peek-1a2b3c4d' }
-    expect(loadSlotIdentity(memoryStorage(JSON.stringify(stored)))).toEqual(stored)
+    const storage = memoryStorage(JSON.stringify(stored))
+    storage.setItem(SLOT_VERSION_STORAGE_KEY, 'reactions')
+    expect(loadSlotIdentity(storage)).toEqual(stored)
+  })
+
+  it('moves a slot an older Peek stored to a new id once, keeping its client id (ACT-7)', () => {
+    // A tab on an older bundle republishes its slot without the reactions keys: this one must not share it.
+    const stored = { slotId: '0123456789abcdef0123456789abcdef', clientId: 'peek-1a2b3c4d' }
+    const storage = memoryStorage(JSON.stringify(stored))
+    const moved = loadSlotIdentity(storage)
+    expect(moved.slotId).not.toBe(stored.slotId)
+    expect(moved.slotId).toMatch(/^[0-9a-f]{32}$/)
+    expect(moved.clientId).toBe(stored.clientId)
+    // Once: every later load keeps the moved slot.
+    expect(loadSlotIdentity(storage)).toEqual(moved)
+    expect(loadSlotIdentity(storage)).toEqual(moved)
   })
 
   it('degrades to an ephemeral slot when storage throws or is absent', () => {

@@ -6,7 +6,8 @@ const markContainerRead = vi.fn()
 const markThreadRead = vi.fn()
 vi.mock('@/api', () => ({
   READ_DWELL_MS: 1500,
-  useReadActions: () => ({ markFileRead, markContainerRead, markThreadRead }),
+  useReadActions: () => ({ markFileRead, markContainerRead, markThreadRead, dmChannelOf: (dmId: string) => dmId }),
+  useReactionsSeenOn: () => {},
 }))
 
 const { useMarkDmRead, useMarkFileRead, useMarkFilesRead, useMarkThreadRead } = await import('./useMarkRead')

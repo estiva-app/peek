@@ -16,6 +16,16 @@ const VERB: Record<UnreadReason, string> = {
 }
 
 /**
+ * What a reaction line says someone did (ACT-7): "reacted 👍 to your message", and "on <file>" when it is on a file the
+ * row's place lists.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
+ */
+function reactedWords(emoji: string, file: string | undefined): string {
+  return `reacted ${emoji} to your message${file ? ` on ${file}` : ''}`
+}
+
+/**
  * The card on a lit row in Topics, Teams or People (ACT-3; the activity indicator prototype Miky approved on 10
  * November): what is new there, newest first — who, what, on which file, the words and when. At most five lines;
  * more than that ends with "N more", which opens the place. A line opens where it was said: a topic's message or a
@@ -48,10 +58,11 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
   // Every line opens at its thread (`?thread=`, read by FilePage, TeamChat and the DM view), except a team chat's or a
   // DM's message that answers nothing: that one is in the place itself, at the bottom, where it opens.
   const thread = (item: RowNewsItem) => `?thread=${encodeURIComponent(item.root)}`
+  // A reaction opens where the message it reacts to was said (ACT-7).
   const hrefOf = (item: RowNewsItem) =>
     item.file
       ? `${filePath(item.file)}${thread(item)}`
-      : place === 'topic' || item.root !== item.id
+      : place === 'topic' || item.root !== (item.reaction?.target ?? item.id)
         ? `${placeHref}${thread(item)}`
         : placeHref
   return (
@@ -104,14 +115,18 @@ export function NewsLine({ item, details, href, onClick, where, seen = false }: 
   const name = person?.name ?? 'Someone'
   const title = item.file ? details.titleOf(item.file) : undefined
   const words = details.wordsOf(item)
-  const place = [where, title].filter(Boolean).join(' › ')
+  // A reaction names the file in its own words ("… to your message on <file>"), so its place line does not repeat it.
+  const place = [where, item.reaction ? undefined : title].filter(Boolean).join(' › ')
   return (
-    <Card href={href} fill="none" quietUntilHover hover="fill" onClick={onClick} className="flex min-w-0 flex-col gap-0.5 p-2" data-seen={seen || undefined}>
+    <Card href={href} fill="none" quietUntilHover hover="fill" onClick={onClick} className="flex min-w-0 flex-col gap-0.5 p-2" data-seen={seen || undefined} data-reaction={item.reaction ? '' : undefined}>
       <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
         <span className={`flex min-w-0 shrink-0 text-h5 leading-tight ${seen ? 'text-text-secondary' : 'text-text-primary'}`}>
           <Person size={16} name={name} picture={details.avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
         </span>
-        <span className="truncate">{VERB[item.reason]}</span>
+        {/* A reaction to you, in the reaction's orange while it is new (ACT-7; the approved card). */}
+        <span className={`truncate ${item.reaction && !seen ? 'text-warning-default' : ''}`}>
+          {item.reaction ? reactedWords(item.reaction.emoji, title) : VERB[item.reason as UnreadReason]}
+        </span>
         <MetaText size="chip" className="ml-auto shrink-0">
           {formatActive(item.at * 1000)}
         </MetaText>

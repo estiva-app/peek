@@ -16,8 +16,11 @@ import { mockConvIdFor } from './directory'
 import { hasRelay } from './relayUrl'
 import { useTopicUnread } from './useTopicUnread'
 import { useDmChannels } from './internal/dms'
-import type { RowNewsItem } from './rowNews'
-import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
+import { newestFirst, type RowNewsItem } from './rowNews'
+import { reactionNews } from './reactionNews'
+import { useReactionsToMe } from './useReactionsToMe'
+import type { UnreadDotTone } from '@estiva-app/ui'
+import { recordContainerRead, recordFileRead, recordThreadRead, useReadFrontier } from '@/nostr/useReadStateSync'
 
 /**
  * Sidebar indicators, per viewer:
@@ -38,6 +41,8 @@ export function useUnread(): {
   dmHasUnread: (dmId: string) => boolean
   dmIsUrgent: (dmId: string) => boolean
   dmNews: (dmId: string) => readonly RowNewsItem[]
+  /** A lit DM's dot colour (ACT-7): `reaction` when reactions to you are all that is new in it. An urgent DM keeps its mark. */
+  dmTone: (dmId: string) => UnreadDotTone
 } {
   const { partners, channelOf } = useDmChannels()
   const dmChannels = useMemo(
@@ -45,6 +50,22 @@ export function useUnread(): {
     [partners, channelOf],
   )
   const dmFold = useTopicUnread(dmChannels)
+  const reactions = useReactionsToMe(hasRelay)
+  const { merged, ready } = useReadFrontier()
+
+  /*
+    A reaction to your message in a DM (ACT-7; Miky, 10 Nov): a DM is one conversation you are in, from the day it
+    starts counting. Its card lists it beside the messages, newest first.
+  */
+  const dmReactions = useMemo(() => {
+    const out = new Map<string, RowNewsItem[]>()
+    if (!hasRelay || !ready) return out
+    for (const pubkey of partners) {
+      const lines = reactionNews(reactions, channelOf(pubkey), merged, { following: null })
+      if (lines.length > 0) out.set(pubkey, lines)
+    }
+    return out
+  }, [partners, channelOf, reactions, merged, ready])
 
   const dmHasUnread = useCallback(
     (dmId: string) => {
@@ -52,17 +73,31 @@ export function useUnread(): {
         const convId = mockConvIdFor(dmId)
         return convId === undefined ? false : mockDmHasUnread(convId)
       }
-      return dmFold.unread[dmId] ?? false
+      return (dmFold.unread[dmId] ?? false) || dmReactions.has(dmId)
     },
-    [dmFold],
+    [dmFold, dmReactions],
   )
 
   const dmIsUrgent = useCallback((dmId: string) => (hasRelay ? (dmFold.urgent[dmId] ?? false) : false), [dmFold])
 
-  // What lit a DM, for its row's card (ACT-3): the channel's own unread messages, words and all.
-  const dmNews = useCallback((dmId: string): readonly RowNewsItem[] => (hasRelay ? (dmFold.news[dmId] ?? NO_NEWS) : NO_NEWS), [dmFold])
+  // What lit a DM, for its row's card (ACT-3): the channel's own unread messages, words and all, and the reactions to you.
+  const dmNews = useCallback(
+    (dmId: string): readonly RowNewsItem[] => {
+      if (!hasRelay) return NO_NEWS
+      const lines = dmFold.news[dmId] ?? NO_NEWS
+      const reacted = dmReactions.get(dmId)
+      return reacted ? newestFirst(lines, reacted) : lines
+    },
+    [dmFold, dmReactions],
+  )
 
-  return { dmHasUnread, dmIsUrgent, dmNews }
+  // Blue wins (Miky, 10 Nov): an unread message, urgent or not, keeps the dot blue.
+  const dmTone = useCallback(
+    (dmId: string): UnreadDotTone => (hasRelay && !dmFold.unread[dmId] && !dmFold.urgent[dmId] && dmReactions.has(dmId) ? 'reaction' : 'blue'),
+    [dmFold, dmReactions],
+  )
+
+  return { dmHasUnread, dmIsUrgent, dmNews, dmTone }
 }
 
 const NO_NEWS: readonly RowNewsItem[] = []
@@ -93,6 +128,8 @@ export function useReadActions() {
   }, [channelOf])
 
   return {
+    /** A DM's channel uuid by its partner: the context its reactions are seen under (ACT-7). */
+    dmChannelOf: channelOf,
     /**
      * A DM was read, up to `newestAt` — its newest top-level message, in unix
      * seconds (PEE-44). Its context is its channel uuid, never an app id (SPEC §11.1).

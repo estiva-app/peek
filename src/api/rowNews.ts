@@ -15,8 +15,8 @@ export interface RowNewsItem {
   by: string
   /** When, unix seconds. */
   at: number
-  /** Why it is unread for the viewer: what the message is to them, never which level lit it. */
-  reason: UnreadReason
+  /** Why it is unread for the viewer: what the message is to them, never which level lit it; or a reaction to their message (ACT-7). */
+  reason: UnreadReason | 'reaction'
   /** Its conversation's root: what a click opens (`?thread=`). */
   root: string
   /** The words, when the dot's read held them; a card that opens asks for the rest. */
@@ -25,6 +25,12 @@ export interface RowNewsItem {
   file?: string
   /** It is urgent for the viewer: what put a DM on the Desk's Urgent, whose card lists only these (ACT-9). */
   urgent?: boolean
+  /**
+   * A reaction to the viewer's message (ACT-7): its emoji, the message it reacts to (where the line opens) and the
+   * conversation it is seen in (`reactionStreamOf`). The line's `id`, `by` and `at` are the reaction's; `words` are the
+   * message's.
+   */
+  reaction?: { emoji: string; target: string; contexts: readonly string[] }
 }
 
 /** The most a card lists; the rest are its "N more". */

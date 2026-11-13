@@ -9,6 +9,9 @@ import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
 import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews, type TopicJudges } from './placeDots'
 import { newestFirst, type RowNewsItem } from './rowNews'
+import { reactionNews } from './reactionNews'
+import { useReactionsToMe } from './useReactionsToMe'
+import type { UnreadDotTone } from '@estiva-app/ui'
 import { listingOf, teamFactsOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
 
@@ -144,10 +147,17 @@ export function useConversationBadges(
   {
     hold = false,
     listed,
+    reactions: withReactions = false,
   }: {
     hold?: boolean
     /** Your topics' listed files' news, by topic (`useListedNews`): a topic followed at All lights for it too (TOPI-3). */
     listed?: ReadonlyMap<string, ListedNews>
+    /**
+     * A reaction to your message lights the row too (ACT-7): on a topic's or space's own talk at the level you follow it,
+     * on a file it lists (`listed`), and on any other file you are a member of. The rows that draw orange ask for it:
+     * Topics, Teams and the Desk, and a page's title dot.
+     */
+    reactions?: boolean
   } = {},
 ): {
   counts: Record<string, number>
@@ -158,6 +168,8 @@ export function useConversationBadges(
   fills: Record<string, ListedFill>
   /** How each topic or space was judged, lit or not: what its page's list judges its own and its listed files' talk by (ACT-4). */
   judges: Record<string, TopicJudges>
+  /** A lit row's dot colour (ACT-7): `reaction` when reactions to you are all that is new there, else `blue`. */
+  tones: Record<string, UnreadDotTone>
 } {
   // Read again once a renewal ends a stretch on an expired token (AUT-3).
   const resumed = useSessionResumed()
@@ -165,6 +177,8 @@ export function useConversationBadges(
   const frontier = useReadFrontier()
   const membership = useMembership()
   const live = useHeldChannelEvents()
+  const reactionsSource = useReactionsToMe(withReactions)
+  const reacted = withReactions ? reactionsSource : undefined
   // A space lights by its team's default: the teams read, one per tab, shared with the Teams column (TEA-6).
   const hasTopic = (files ?? []).some((file) => Number(file.address?.split(':')[0]) === KIND_BARE_FILE)
   const { teams, failed: teamsFailed } = useTeams({ read: hasTopic })
@@ -282,6 +296,9 @@ export function useConversationBadges(
     /** A topic lit by its listed files: what its card reads more of while open (383a4d3b). */
     const fills: Record<string, ListedFill> = {}
     const judges: Record<string, TopicJudges> = {}
+    /** A lit row's dot colour (ACT-7), and the rows lit by something blue. */
+    const tones: Record<string, UnreadDotTone> = {}
+    const blue = new Set<string>()
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
     const me = heldToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
@@ -335,11 +352,23 @@ export function useConversationBadges(
             isMentioned: membership.isMentioned,
           },
         )
-        unread[ref] = lines.length > 0
-        if (lines.length > 0) news[ref] = lines
+        if (lines.length > 0) blue.add(ref)
+        // A reaction to your message on its own talk, at any level you follow it at (ACT-7).
+        const reactions = reacted ? reactionNews(reacted, file.address, frontier.merged, { following, muted }) : []
+        const all = reactions.length > 0 ? newestFirst(lines, reactions) : lines
+        unread[ref] = all.length > 0
+        if (all.length > 0) news[ref] = all
         continue
       }
-      unread[ref] = streamHasUnread(
+      // Any other file (the Desk's): a reaction to your message there, when you are a member of it (ACT-7).
+      const terms = reacted ? membership.termsOf(context) : undefined
+      const reactions =
+        reacted && terms?.member
+          ? reactionNews(reacted, file?.address, frontier.merged, { following: null, muted: terms.muted, ...(terms.since !== undefined ? { since: terms.since } : {}) })
+          : []
+      if (reactions.length > 0) news[ref] = reactions
+      unread[ref] = reactions.length > 0
+      if (streamHasUnread(
         // A reply from before the thread rule's cut-over never lit a row, and
         // stays dark (CON-34's Done-when: lit rows the same before and after).
         messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
@@ -347,7 +376,10 @@ export function useConversationBadges(
         membership.termsOf(context),
         { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 },
         membership.isMentioned,
-      )
+      )) {
+        unread[ref] = true
+        blue.add(ref)
+      }
     }
     /*
       A topic also lights for news on a file it lists (TOPI-3, ACT-2): at either level for what names the viewer there
@@ -363,17 +395,27 @@ export function useConversationBadges(
         const address = file.address!
         const judge = { me, following: followingOfTopic(address, file.folder, me), muted: membership.termsOf(address).muted, merged: frontier.merged, floor }
         const lines = listedNews(held, judge)
-        if (lines.length === 0) continue
+        // A reaction to your message on a file the topic lists, or one a level under, at either level (ACT-7): the
+        // same files the listed rule walks, each its own conversation.
+        const reactions = reacted
+          ? held.flatMap(({ file: listedFile }) => reactionNews(reacted, listedFile, frontier.merged, { following: judge.following, muted: judge.muted }, listedFile))
+          : []
+        if (lines.length === 0 && reactions.length === 0) continue
         unread[file.ref] = true
-        news[file.ref] = newestFirst(news[file.ref] ?? [], lines)
-        fills[file.ref] = { held, judge }
+        news[file.ref] = newestFirst(news[file.ref] ?? [], lines, reactions)
+        if (lines.length > 0) {
+          blue.add(file.ref)
+          fills[file.ref] = { held, judge }
+        }
       }
     }
     for (const ref of Object.keys(news)) news[ref] = newestFirst(news[ref])
-    return { counts, unread, news, fills, judges }
+    // Blue wins (Miky, 10 Nov): orange only where reactions to you are all that is new.
+    for (const [ref, lit] of Object.entries(unread)) if (lit) tones[ref] = blue.has(ref) ? 'blue' : 'reaction'
+    return { counts, unread, news, fills, judges, tones }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key, listed])
+  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, membership.changesOf, membership.floor, teams, teamsKnown, key, listed, reacted])
 }
 
 /**
@@ -400,5 +442,6 @@ export function useLiveConversationBadges(
   )
   useChannelStreams(folders)
   // A topic on the Desk lights as it does in Topics, for its listed files too (ACT-9; Miky, 11 Nov).
-  return useConversationBadges(files, { hold: true, listed })
+  // A file's or a topic's Desk row turns orange for a reaction to your message there too (ACT-7).
+  return useConversationBadges(files, { hold: true, listed, reactions: true })
 }

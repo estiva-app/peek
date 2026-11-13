@@ -26,7 +26,9 @@ import {
   type LitLine,
   type PlaceJudge,
   type StreamJudge,
+  type UnreadReason,
 } from '@estiva-app/conversation'
+import type { UnreadDotTone } from '@estiva-app/ui'
 import { fileIdOf, KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { heldToken } from '@/auth/heldSession'
 import { channelStreamFilters, rootOf, streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
@@ -39,7 +41,9 @@ import { useRelayViewer } from './foreign'
 import type { ListedNews, TopicJudges } from './placeDots'
 import { hasRelay } from './relayUrl'
 import type { RowNewsItem } from './rowNews'
+import { reactionLine, reactionsIn, streamContextsOf } from './reactionNews'
 import { useConversationBadges } from './useConversationBadges'
+import { useReactionsToMe, type ReactionsToMe } from './useReactionsToMe'
 import { chatMessagesOf, useTeamChatNews, type Team } from './useTeams'
 import { useUnread } from './unread'
 
@@ -68,16 +72,19 @@ export type PageSource =
 /** The dot beside a page's title: lit, the New lines the page already holds, and what its list reads once open. */
 export interface PageDot {
   lit: boolean
+  /** Its colour when lit, as its row's (ACT-7): orange when reactions to you are all that is new here. */
+  tone?: UnreadDotTone
   held: readonly PageLine[]
   /** Undefined until the page knows how it is judged: the list waits with its loading line. */
   sources: readonly PageSource[] | undefined
 }
 
 /** Where a line opens (as a row card's): a listed file's at its thread, a topic's at its thread, a chat's or DM's reply at its thread, a chat message in the place. */
-function hrefOf(item: Pick<RowNewsItem, 'id' | 'root' | 'file'>, placeHref: string, place: 'topic' | 'chat' | 'dm'): string {
+function hrefOf(item: Pick<RowNewsItem, 'id' | 'root' | 'file' | 'reaction'>, placeHref: string, place: 'topic' | 'chat' | 'dm'): string {
   const thread = `?thread=${encodeURIComponent(item.root)}`
   if (item.file) return `${filePath(item.file)}${thread}`
-  return place === 'topic' || item.root !== item.id ? `${placeHref}${thread}` : placeHref
+  // A reaction opens where the message it reacts to was said (ACT-7).
+  return place === 'topic' || item.root !== (item.reaction?.target ?? item.id) ? `${placeHref}${thread}` : placeHref
 }
 
 const asLines = (items: readonly RowNewsItem[], placeHref: string, place: 'topic' | 'chat' | 'dm', where?: string): PageLine[] =>
@@ -92,12 +99,13 @@ export function useTopicPageDot(file: ForeignObject | undefined, placeHref: stri
   const topic = isPlace(file) && file?.address ? file : undefined
   const files = useMemo(() => (topic ? [topic] : undefined), [topic])
   const listed = useDeskListedNews(files ?? NO_FILES)
-  const { unread, news, judges } = useConversationBadges(files, { hold: true, listed })
+  const { unread, news, judges, tones } = useConversationBadges(files, { hold: true, listed, reactions: true })
   return useMemo(() => {
     if (!topic?.address) return undefined
     const judged = judges[topic.ref]
     return {
       lit: unread[topic.ref] === true,
+      tone: tones[topic.ref] ?? 'blue',
       held: asLines(news[topic.ref] ?? NO_LINES, placeHref, 'topic'),
       // A topic in no Folder, or with no context for this viewer, is never judged (nothing there lights): its list has
       // nothing to read, rather than a loading line for good.
@@ -107,21 +115,22 @@ export function useTopicPageDot(file: ForeignObject | undefined, placeHref: stri
           ? undefined
           : [],
     }
-  }, [topic, judges, unread, news, listed, placeHref])
+  }, [topic, judges, unread, news, listed, placeHref, tones])
 }
 
 /** A team's chat (`TeamChat`): the dot its row has in Teams, for someone in the chat. */
 export function useTeamChatPageDot(team: Team, placeHref: string): PageDot {
   const teams = useMemo(() => [team], [team])
-  const { unread, news } = useTeamChatNews(teams)
+  const { unread, news, tones } = useTeamChatNews(teams)
   const me = heldToken()?.pubkey
   return useMemo(
     () => ({
       lit: unread[team.id] === true,
+      tone: tones[team.id] ?? 'blue',
       held: asLines(news[team.id] ?? NO_LINES, placeHref, 'chat'),
       sources: me ? chatSource(team, me, placeHref) : undefined,
     }),
-    [team, unread, news, me, placeHref],
+    [team, unread, news, tones, me, placeHref],
   )
 }
 
@@ -131,14 +140,16 @@ const chatSource = (team: Team, me: string, href: string, where?: string): PageS
 
 /** A DM (`Header`): the dot its row has in People. `channel` is the DM's channel uuid, once it has one. */
 export function useDmPageDot(dmId: string, channel: string | undefined, placeHref: string): PageDot {
-  const { dmHasUnread, dmNews } = useUnread()
+  const { dmHasUnread, dmNews, dmTone } = useUnread()
   const me = heldToken()?.pubkey
   const lit = dmHasUnread(dmId)
+  const tone = dmTone(dmId)
   const items = dmNews(dmId)
   const stream = channel ? channelContext(channel) : undefined
   return useMemo(
     () => ({
       lit,
+      tone,
       held: asLines(items, placeHref, 'dm'),
       sources:
         me && channel && stream
@@ -147,7 +158,7 @@ export function useDmPageDot(dmId: string, channel: string | undefined, placeHre
             ? []
             : undefined,
     }),
-    [lit, items, me, channel, stream, placeHref],
+    [lit, tone, items, me, channel, stream, placeHref],
   )
 }
 
@@ -165,7 +176,7 @@ export function useTeamPageDot(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const files = useMemo(() => places.filter((place) => place.address), [key])
   const listed = useDeskListedNews(files)
-  const badges = useConversationBadges(files, { hold: true, listed })
+  const badges = useConversationBadges(files, { hold: true, listed, reactions: true })
   const teams = useMemo(() => [team], [team])
   const chat = useTeamChatNews(teams)
   const me = heldToken()?.pubkey
@@ -182,8 +193,12 @@ export function useTeamPageDot(
     */
     const judgeable = files.filter((file) => file.folder && fileContext(file.address))
     const judged = judgeable.length === 0 || judgeable.some((file) => badges.judges[file.ref])
+    const lit = chat.unread[team.id] === true || files.some((file) => badges.unread[file.ref] === true)
+    // Blue wins: orange only when every lit place under the team is lit by reactions to you alone (ACT-7).
+    const blue = (chat.unread[team.id] === true && chat.tones[team.id] !== 'reaction') || files.some((file) => badges.unread[file.ref] === true && badges.tones[file.ref] !== 'reaction')
     return {
-      lit: chat.unread[team.id] === true || files.some((file) => badges.unread[file.ref] === true),
+      lit,
+      tone: lit && !blue ? 'reaction' : 'blue',
       held: newestFirstLines(held),
       sources:
         me && judged
@@ -256,6 +271,8 @@ const cacheRead = (key: string, events: readonly SignedEvent[]) => {
 export function usePageLines(sources: readonly PageSource[] | undefined, held: readonly PageLine[] = NO_LINES): readonly PageLine[] | 'failed' | undefined {
   const viewer = useRelayViewer()
   const { merged } = useReadFrontier()
+  // The reactions to you, new and seen (ACT-7): a seen one stays under Earlier, as what was about you does.
+  const reactions = useReactionsToMe(!!sources)
   const filters = useMemo(() => {
     if (!sources) return undefined
     const since = horizon()
@@ -305,8 +322,8 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
     if (read.events === 'failed') return 'failed'
     const events = read.events
     // The read's lists first, so a line the read judged wins; the page's held New lines last, for any the read missed.
-    return pageList([...sources.flatMap((source) => linesOf(source, events, merged)), heldList(held)])
-  }, [sources, read, key, merged, held])
+    return pageList([...sources.flatMap((source) => linesOf(source, events, merged, reactions)), heldList(held)])
+  }, [sources, read, key, merged, held, reactions])
 }
 
 /** A message as the shared rule's lines carry one. */
@@ -321,12 +338,16 @@ interface SourceList {
 /** The page's held New lines (the row card's) as a list of their own: each new, as the dot judged it. */
 function heldList(held: readonly PageLine[]): SourceList {
   return {
-    lit: held.map((line) => ({
-      type: 'message' as const,
-      message: { id: line.id, pubkey: line.by, kind: 9, created_at: line.at, content: line.words ?? '', tags: [] },
-      reason: line.reason,
-      seen: false,
-    })),
+    lit: held.map((line): LitLine<RuleMessage> =>
+      line.reaction
+        ? { type: 'reaction', reaction: { id: line.id, by: line.by, at: line.at, emoji: line.reaction.emoji, target: line.reaction.target }, seen: false }
+        : {
+            type: 'message',
+            message: { id: line.id, pubkey: line.by, kind: 9, created_at: line.at, content: line.words ?? '', tags: [] },
+            reason: line.reason as UnreadReason,
+            seen: false,
+          },
+    ),
     lines: new Map(held.map((line) => [line.id, line] as const)),
   }
 }
@@ -342,7 +363,10 @@ function pageList(lists: readonly SourceList[]): PageLine[] {
     lists.map((list) => list.lit),
     { limit: PAGE_LINES },
   ).flatMap((lit) => {
-    if (lit.type !== 'message') return []
+    if (lit.type === 'reaction') {
+      const line = lineOf.get(lit.reaction.id)
+      return line ? [{ ...line, seen: lit.seen }] : []
+    }
     const line = lineOf.get(lit.message.id)
     return line ? [{ ...line, reason: lit.reason, seen: lit.seen }] : []
   })
@@ -359,13 +383,19 @@ const asRule = (message: StreamMessage) => ({
 })
 
 /** One source's lists, judged with the markers the tab holds now: a topic's own stream's and each listed file's. */
-function linesOf(source: PageSource, events: readonly SignedEvent[], merged: Readonly<Record<string, number>>): SourceList[] {
+function linesOf(source: PageSource, events: readonly SignedEvent[], merged: Readonly<Record<string, number>>, reactions: ReactionsToMe): SourceList[] {
   const where = 'where' in source && source.where ? { where: source.where } : {}
   const place = source.type
+  // The reactions to you in one of the source's conversations, for the shared rule's list (ACT-7).
+  const reactionsOn = (conversation: string) => ({ limit: PAGE_LINES, reactions: reactionsIn(reactions, streamContextsOf(conversation)) })
   const list = (lit: readonly LitLine<RuleMessage>[], rootOfId: (message: RuleMessage) => string, file?: string): SourceList => {
     const lines = new Map<string, PageLine>()
     for (const one of lit) {
-      if (one.type !== 'message') continue
+      if (one.type === 'reaction') {
+        const item = reactionLine(one.reaction, reactions, file)
+        lines.set(item.id, { ...item, seen: one.seen, href: hrefOf(item, source.href, place), ...where })
+        continue
+      }
       const { message } = one
       const item = { id: message.id, by: message.pubkey, at: message.created_at, reason: one.reason, root: rootOfId(message), words: message.content, ...(file ? { file } : {}) }
       lines.set(message.id, { ...item, seen: one.seen, href: hrefOf(item, source.href, place), ...where })
@@ -376,25 +406,25 @@ function linesOf(source: PageSource, events: readonly SignedEvent[], merged: Rea
     case 'topic': {
       // A reply from before the thread rule's cut-over never lit a row (CON-34), as the row's own judge reads them.
       const own = byTime(events.filter((event) => isAbout(event, source.address) && (!isReply(event) || event.created_at >= THREAD_RULE_FROM)))
-      const lists = [list(whatLitPlace(own, merged, source.judges.place, { limit: PAGE_LINES }), (m) => rootOf(m as SignedEvent))]
+      const lists = [list(whatLitPlace(own, merged, source.judges.place, reactionsOn(source.address)), (m) => rootOf(m as SignedEvent))]
       for (const { file, events: heldOnFile, under } of source.listed ?? []) {
         const stream = fileContext(file)
         if (!stream) continue
         const onFile = byTime([...heldOnFile, ...events.filter((event) => isAbout(event, file))])
         const judge = { ...source.judges.listed, stream, ...(under ? { under } : {}) }
-        lists.push(list(whatLitListedFile(onFile, merged, judge, { limit: PAGE_LINES }), (m) => rootOf(m as SignedEvent), file))
+        lists.push(list(whatLitListedFile(onFile, merged, judge, reactionsOn(file)), (m) => rootOf(m as SignedEvent), file))
       }
       return lists
     }
     case 'chat': {
       const chat = chatMessagesOf(streamMessagesByFolder(events as SignedEvent[], [source.team], source.judge.me)[source.team] ?? [])
       const roots = new Map(chat.map((m) => [m.id, m.root]))
-      return [list(whatLitPlace(chat.map(asRule), merged, source.judge, { limit: PAGE_LINES }), (m) => roots.get(m.id) ?? m.id)]
+      return [list(whatLitPlace(chat.map(asRule), merged, source.judge, reactionsOn(source.team)), (m) => roots.get(m.id) ?? m.id)]
     }
     case 'dm': {
       const dm = streamMessagesByFolder(events as SignedEvent[], [source.channel], source.judge.me)[source.channel] ?? []
       const roots = new Map(dm.map((m) => [m.id, m.root]))
-      return [list(whatLitStream(dm.map(asRule), merged, source.judge, { dm: true, limit: PAGE_LINES }), (m) => roots.get(m.id) ?? m.id)]
+      return [list(whatLitStream(dm.map(asRule), merged, source.judge, { dm: true, ...reactionsOn(source.channel) }), (m) => roots.get(m.id) ?? m.id)]
     }
   }
 }
