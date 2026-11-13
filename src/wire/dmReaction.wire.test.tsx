@@ -31,8 +31,9 @@ vi.mock('@/api/internal/dms', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/internal/dms')>()),
   useDmChannels: () => ({ partners: ['b'.repeat(64)], channelOf: () => '0f1e2d3c-4b5a-4968-8776-655443322110' }),
 }))
-// The DM's own messages: nothing unread there, so the reaction is all that is new.
-vi.mock('@/api/useTopicUnread', () => ({ useTopicUnread: () => ({ unread: {}, urgent: {}, news: {} }) }))
+// The DM's own messages: nothing unread there, so the reaction is all that is new — unless a test puts an urgent one in.
+const fold = vi.hoisted(() => ({ current: { unread: {}, urgent: {}, news: {} } as { unread: Record<string, boolean>; urgent: Record<string, boolean>; news: Record<string, unknown[]> } }))
+vi.mock('@/api/useTopicUnread', () => ({ useTopicUnread: () => fold.current }))
 vi.mock('@/api/useFolderContents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/useFolderContents')>()),
   heldFolderIds: () => [],
@@ -47,6 +48,8 @@ import { resetReactionsToMeForTests } from '@/api/useReactionsToMe'
 import { useUnread } from '@/api/unread'
 import { PeekSetup } from '@/lib/PeekSetup'
 import { PersonItem } from '@/components/ui/PersonItem'
+import { DeskRowItem } from '@/pages/DeskPage'
+import { urgentNews, type RowNewsItem } from '@/api/rowNews'
 
 const KATERINA = 'b'.repeat(64)
 const CHANNEL = '0f1e2d3c-4b5a-4968-8776-655443322110'
@@ -63,6 +66,7 @@ beforeEach(() => {
   resetReadStateQueueForTests()
   resetReactionsToMeForTests()
   window.localStorage.clear()
+  fold.current = { unread: {}, urgent: {}, news: {} }
 })
 afterEach(() => vi.useRealTimers())
 afterAll(() => vi.unstubAllGlobals())
@@ -104,5 +108,63 @@ describe('a reaction to your message in a DM, on the People list (ACT-7)', () =>
     await waitFor(() => expect(dot()).toBeNull())
     await act(() => flushReadState())
     expect(blobOf(slots().at(-1)!).contexts[`reactions:${CHANNEL}`]).toBe(thumbs.created_at)
+  })
+})
+
+/** Katerina's row in the Desk's Urgent, as the page builds it from `useUnread`: lit, urgent, no tone. */
+function KaterinaUrgentRow() {
+  const { dmNews } = useUnread()
+  return (
+    <DeskRowItem
+      row={{
+        id: `urg_dm_${KATERINA}`,
+        kind: 'dm',
+        name: 'Katerina',
+        isUnread: true,
+        isUrgent: true,
+        href: `/app/people/${KATERINA}`,
+        isSelected: false,
+        onClick: () => {},
+        card: { items: urgentNews(dmNews(KATERINA)), place: 'dm', open: () => {} },
+      }}
+    />
+  )
+}
+
+describe('a reaction to your message in an urgent DM, on the Desk’s Urgent (ACT-7)', () => {
+  it('keeps the urgent mark, never orange, its card lists the urgent message and the reaction, and leaving the card sees the reaction', async () => {
+    const urgentLine: RowNewsItem = { id: 'u'.repeat(64), by: KATERINA, at: NOW - 30, reason: 'mention', root: 'u'.repeat(64), words: 'Prod is down', urgent: true }
+    const plainLine: RowNewsItem = { id: 'p'.repeat(64), by: KATERINA, at: NOW - 20, reason: 'message', root: 'p'.repeat(64), words: 'Lunch?' }
+    fold.current = { unread: { [KATERINA]: true }, urgent: { [KATERINA]: true }, news: { [KATERINA]: [plainLine, urgentLine] } }
+    relay.seed(message, thumbs)
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter initialEntries={['/app/desk']}>
+        <PeekSetup>
+          <ReadStateSync />
+          <KaterinaUrgentRow />
+        </PeekSetup>
+      </MemoryRouter>,
+    )
+    expect(document.querySelector('[data-urgent]')).not.toBeNull()
+
+    const row = screen.getByText('Katerina')
+    await user.hover(row)
+    expect((await screen.findByText('Prod is down')).closest('a')?.textContent).toContain('mentioned you')
+    const reactionLine = () => document.querySelector('[data-reaction]')?.textContent ?? ''
+    await waitFor(() => expect(reactionLine()).toContain('reacted 👍 to your message'))
+    expect(reactionLine()).toContain('Sent the draft')
+    // Urgent lists what is urgent and what is yours, never the DM's other unread messages (ACT-9).
+    expect(screen.queryByText('Lunch?')).toBeNull()
+    expect(document.querySelector('[data-urgent]')).not.toBeNull()
+    expect(document.querySelector('[data-tone="reaction"]')).toBeNull()
+
+    await user.unhover(row)
+    await user.hover(document.body)
+    await waitFor(async () => {
+      await act(() => flushReadState())
+      expect(blobOf(slots().at(-1)!).contexts[`reactions:${CHANNEL}`]).toBe(thumbs.created_at)
+    })
+    expect(document.querySelector('[data-urgent]')).not.toBeNull()
   })
 })
