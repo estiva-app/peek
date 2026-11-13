@@ -19,7 +19,7 @@ import { KIND_BARE_FILE, KIND_FOLDER_STATE, listEntries, planMarkSpace, type Que
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { decryptBlob, encryptBlob } from './appData'
-import { viewerQuery } from './foreign'
+import { firstReadQuery, viewerQuery } from './foreign'
 
 /** A team's roster as the relay keeps it: `kind:39002`, relay-signed, `d` the team. */
 export const KIND_ROSTER = 39002
@@ -222,5 +222,5 @@ export function readTeamsListAsViewer(relayUrl: string, token: StoredToken): Pro
  * are listed, when a cold open's other reads fill the second's frames (ALO-14: 0.8–1.1 s held there otherwise).
  */
 export function readTeamsAsViewer(teams: readonly string[], chats: readonly string[], relayUrl: string, token: StoredToken): Promise<TeamsRead> {
-  return readTeams(teams, chats, token.pubkey, viewerQuery(relayUrl, token, 'first'), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
+  return readTeams(teams, chats, token.pubkey, firstReadQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
 }

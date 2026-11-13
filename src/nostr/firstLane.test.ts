@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { queryRelay } = vi.hoisted(() => ({ queryRelay: vi.fn() }))
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
-import { folderLoadAsViewer, listFoldersAsViewer } from './foreign'
+import { firstReadQuery, folderLoadAsViewer, listFoldersAsViewer } from './foreign'
 import { readTeamsAsViewer } from './teams'
 
 const VIEWER = 'b'.repeat(64)
@@ -36,6 +36,13 @@ describe('the reads Teams draws first', () => {
     await readTeamsAsViewer([TEAM], [], 'https://relay.test', token)
     expect(queryRelay).toHaveBeenCalled()
     expect(new Set(lanes())).toEqual(new Set(['first']))
+  })
+
+  it('sends a first read wider than one REQ in a click’s lane, where it waits for a slot', async () => {
+    const wide = Array.from({ length: 11 }, (_, i) => ({ kinds: [30890], '#d': [`f${i}`] }))
+    await firstReadQuery('https://relay.test', token)(wide)
+    await firstReadQuery('https://relay.test', token)(wide.slice(0, 10))
+    expect(lanes()).toEqual(['click', 'first'])
   })
 
   it("leaves a listing that is part of another load in that load's lane", async () => {
