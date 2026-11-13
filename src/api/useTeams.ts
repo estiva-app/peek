@@ -371,8 +371,11 @@ export function useTeamChatUnread(teams: readonly Team[] | null): Record<string,
   return useTeamChatNews(teams).unread
 }
 
-/** {@link useTeamChatUnread}, with each lit chat's card lines (ACT-3): the same messages, read once. */
-export function useTeamChatNews(teams: readonly Team[] | null): {
+/**
+ * {@link useTeamChatUnread}, with each lit chat's card lines (ACT-3): the same messages, read once. `reactions`: a
+ * reaction to your message lights the chat too (ACT-7), asked only by the rows that draw it orange.
+ */
+export function useTeamChatNews(teams: readonly Team[] | null, { reactions: withReactions = false }: { reactions?: boolean } = {}): {
   unread: Record<string, boolean>
   news: Record<string, RowNewsItem[]>
   /** A lit chat's dot colour (ACT-7): `reaction` when reactions to you are all that is new in it. */
@@ -382,7 +385,7 @@ export function useTeamChatNews(teams: readonly Team[] | null): {
   const ids = useMemo(() => (teams ?? []).filter((team) => team.chat.in).map((team) => team.id), [teams])
   const { streams } = useChannelStreams(ids)
   const { merged, ready } = useReadFrontier()
-  const reactions = useReactionsToMe()
+  const reactions = useReactionsToMe(withReactions)
   return useMemo(() => {
     const unread: Record<string, boolean> = {}
     const news: Record<string, RowNewsItem[]> = {}

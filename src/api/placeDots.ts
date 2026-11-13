@@ -65,19 +65,34 @@ export function placeHasUnread(messages: readonly StreamMessage[], judge: PlaceJ
  * `placeHasUnread` lights for. The stream holds no words, so the lines carry none; the card asks for them.
  */
 export function placeNews(messages: readonly StreamMessage[], judge: PlaceJudgeArgs): RowNewsItem[] {
-  // The messages carry no body: one that names the viewer is handed to the rule as the body it would have had.
-  const named = `nostr:${encodeNpub(judge.me)}`
-  const asPlace = messages.map((m) => ({
+  const asPlace = asRuleMessages(messages, judge.me, judge.isMentioned)
+  const unread = unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor })
+  const rootById = new Map(messages.map((m) => [m.id, m.root]))
+  return explainUnread(asPlace, unread, judge.me, (m) => ({ root: rootById.get(m.id) ?? m.id }))
+}
+
+/**
+ * The lines for the messages of a stream that `isUnread` says lit it, each with its reason (ACT-7): a file's own talk
+ * on the Desk, judged by the membership rule rather than a place's. Bodiless, as {@link placeNews}'s.
+ */
+export function streamNews(messages: readonly StreamMessage[], isUnread: (message: StreamMessage) => boolean, me: string, isMentioned: (id: string) => boolean): RowNewsItem[] {
+  const unread = new Set(messages.filter(isUnread).map((m) => m.id))
+  const all = asRuleMessages(messages, me, isMentioned)
+  const rootById = new Map(messages.map((m) => [m.id, m.root]))
+  return explainUnread(all, all.filter((m) => unread.has(m.id)), me, (m) => ({ root: rootById.get(m.id) ?? m.id }))
+}
+
+/** A stream's bodiless messages as the shared rule reads them: one that names the viewer carries the body it would have had. */
+function asRuleMessages(messages: readonly StreamMessage[], me: string, isMentioned: (id: string) => boolean) {
+  const named = `nostr:${encodeNpub(me)}`
+  return messages.map((m) => ({
     id: m.id,
     pubkey: m.by,
     kind: 9,
     created_at: m.at,
-    content: judge.isMentioned(m.id) ? named : '',
+    content: isMentioned(m.id) ? named : '',
     tags: m.root !== m.id ? [['e', m.root, '', 'root']] : [],
   }))
-  const unread = unreadOnPlace(asPlace, judge.merged, { stream: judge.context, me: judge.me, following: judge.following, muted: judge.muted, floor: judge.floor })
-  const rootOf = new Map(messages.map((m) => [m.id, m.root]))
-  return explainUnread(asPlace, unread, judge.me, (m) => ({ root: rootOf.get(m.id) ?? m.id }))
 }
 
 /**

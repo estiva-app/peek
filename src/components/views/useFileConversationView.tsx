@@ -315,7 +315,7 @@ export function useFileConversationView({
   }
   // A file's comment seen here reads that file, in its own stream, so Ship and its own page agree. The topic's own
   // stream is the caller's to mark, by `seenAt`, as a DM's and a file's are.
-  useMarkFilesRead(seenAtOf)
+  useMarkFilesRead(seenAtOf, seenRoots.ids)
   const openConversation = openThreadId ? conversationOf(openThreadId) : null
   const openReplies = openConversation && openThreadId ? openConversation.replies[openThreadId] : undefined
   useMarkThreadRead(openThreadId, openReplies ? newestMessageAt(openReplies.filter((r) => seenReplies.ids.has(r.id))) : undefined, 0)

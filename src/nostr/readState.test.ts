@@ -34,8 +34,13 @@ describe('slot identity', () => {
 
   it('reads a slot this Peek stored', () => {
     const stored = { slotId: '0123456789abcdef0123456789abcdef', clientId: 'peek-1a2b3c4d' }
+    // The version this Peek writes, as a fresh installation stores it beside its first slot.
+    const minted = memoryStorage()
+    loadSlotIdentity(minted)
+    const version = minted.getItem(SLOT_VERSION_STORAGE_KEY)
+    expect(version).toBeTruthy()
     const storage = memoryStorage(JSON.stringify(stored))
-    storage.setItem(SLOT_VERSION_STORAGE_KEY, 'reactions')
+    storage.setItem(SLOT_VERSION_STORAGE_KEY, version!)
     expect(loadSlotIdentity(storage)).toEqual(stored)
   })
 

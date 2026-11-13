@@ -170,7 +170,7 @@ describe('a reaction to your message in a topic (ACT-7)', () => {
     expect(dotOf()?.getAttribute('data-tone')).toBe('blue')
   })
 
-  it('on your comment on a file the topic lists, at Important, the row is orange and the line says on which file', async () => {
+  it('on your comment on a file the topic lists, at Important, the row is orange and the line names the file where every line does', async () => {
     const mine = commentOn(ISSUE, ME, 900, 'Fixed in 0.4')
     state.events = [mine, reaction(KATERINA, mine, 120, '🎉')]
     state.listed = new Map([[TOPIC, [{ file: ISSUE, events: [] }]]])
@@ -178,7 +178,9 @@ describe('a reaction to your message in a topic (ACT-7)', () => {
     mount()
     await waitFor(() => expect(dotOf()?.getAttribute('data-tone')).toBe('reaction'))
     await user.hover(screen.getByText('Launch'))
-    expect(await screen.findByText('reacted 🎉 to your message on Sign-in keeps failing')).toBeTruthy()
+    const card = (await screen.findByText(/^reacted 🎉 to your message/)).closest('[data-reaction]')
+    // The file in the place line, before the words: "Sign-in keeps failing · Fixed in 0.4".
+    expect(card?.textContent).toContain('Sign-in keeps failing · Fixed in 0.4')
   })
 
   it('lights nothing in a topic you do not follow, or one you muted', async () => {

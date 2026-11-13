@@ -108,16 +108,19 @@ export function useMarkFileRead(address: string | null | undefined, newestAt: nu
  * As the view's own mark: no dwell of its own (being seen already took one), never past the clock (a comment ahead
  * of it is read once the clock gets there, while the view is open), nothing while the tab is hidden, and one
  * `markFileRead` per file whose newest seen comment moved.
+ *
+ * `onScreen` is the ids of the comments seen on screen: a reaction to your message under one of them is seen once it
+ * has been there for `dwellMs`, as an open file's are (ACT-7).
  */
-export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefined) {
+export function useMarkFilesRead(seenAtOf: ReadonlyMap<string, number> | undefined, onScreen?: ReadonlySet<string>, dwellMs = READ_DWELL_MS) {
   const { markFileRead } = useReadActions()
   const marked = useRef(new Map<string, number>())
   // By value: the view builds the map on every render.
   const seen = seenAtOf ? [...seenAtOf].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) : []
   // A newline: no address holds one, where a `d` may hold a comma.
   const signature = seen.map(([address, at]) => `${address}@${at}`).join('\n')
-  // Each file's reactions to your messages drawn in the view are seen too (ACT-7): as the view's own mark, no dwell.
-  useReactionsSeenOn({ places: seen.map(([address]) => address), drawn: seen.length > 0, dwellMs: 0 })
+  // The reactions to your messages under the comments on screen are seen too (ACT-7), after the dwell an open file's take.
+  useReactionsSeenOn({ places: seen.map(([address]) => address), drawn: seen.length > 0 && !!onScreen, ...(onScreen ? { onScreen } : {}), dwellMs })
   useEffect(() => {
     if (!signature) return
     const wanted = signature.split('\n').map((one) => {

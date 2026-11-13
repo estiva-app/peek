@@ -7,7 +7,7 @@ import { fileContext, isCommentOn, isReply, streamHasUnread, THREAD_RULE_FROM } 
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
-import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews, type TopicJudges } from './placeDots'
+import { listedNews, placeNews, streamNews, topicFollowingOf, type ListedFill, type ListedNews, type TopicJudges } from './placeDots'
 import { newestFirst, type RowNewsItem } from './rowNews'
 import { reactionNews } from './reactionNews'
 import { useReactionsToMe } from './useReactionsToMe'
@@ -366,19 +366,18 @@ export function useConversationBadges(
         reacted && terms?.member
           ? reactionNews(reacted, file?.address, frontier.merged, { following: null, muted: terms.muted, ...(terms.since !== undefined ? { since: terms.since } : {}) })
           : []
-      if (reactions.length > 0) news[ref] = reactions
-      unread[ref] = reactions.length > 0
-      if (streamHasUnread(
-        // A reply from before the thread rule's cut-over never lit a row, and
-        // stays dark (CON-34's Done-when: lit rows the same before and after).
-        messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
-        context,
-        membership.termsOf(context),
-        { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 },
-        membership.isMentioned,
-      )) {
-        unread[ref] = true
-        blue.add(ref)
+      // A reply from before the thread rule's cut-over never lit a row, and
+      // stays dark (CON-34's Done-when: lit rows the same before and after).
+      const judged = messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM)
+      const streamTerms = membership.termsOf(context)
+      const at = { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 }
+      const lit = streamHasUnread(judged, context, streamTerms, at, membership.isMentioned)
+      if (lit) blue.add(ref)
+      unread[ref] = lit || reactions.length > 0
+      if (reactions.length > 0) {
+        // Blue wins, and its card lists both (Miky, 10 Nov): the messages that lit it beside the reactions.
+        const lines = lit && me ? streamNews(judged, (m) => streamHasUnread([m], context, streamTerms, at, membership.isMentioned), me, membership.isMentioned) : []
+        news[ref] = newestFirst(lines, reactions)
       }
     }
     /*

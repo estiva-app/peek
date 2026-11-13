@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { EmptyState, IconButton, PreviewCard, SectionHeader, SkeletonRow, UnreadDot, isPlainClick, type UnreadDotTone } from '@estiva-app/ui'
-import { seeReactions, usePageLines, type PageDot as PageDotState, type PageLine } from '@/api'
+import { usePageLines, useReactionsSeenOnClose, type PageDot as PageDotState, type PageLine } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { NewsLine } from '@/components/RowNewsCard'
 
@@ -35,18 +35,19 @@ export function PageListDot({ lit, tone = 'blue', list, onOpenChange }: {
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-is-seen-once-in-its-conversation.md
  */
 export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: PageLine) => void }) {
-  /** The new reaction lines the list drew since it opened: it is mounted only while open. */
-  const listed = useRef<PageLine[]>([])
-  const onOpenChange = useCallback((open: boolean) => {
-    if (open) return
-    const lines = listed.current
-    listed.current = []
-    if (lines.length) seeReactions(lines)
-  }, [])
-  const onListed = useCallback((lines: readonly PageLine[]) => {
-    listed.current = [...listed.current, ...lines.filter((line) => line.reaction && !line.seen)]
-  }, [])
-  return <PageListDot lit={dot.lit} tone={dot.tone} onOpenChange={onOpenChange} list={<PageListRead dot={dot} onListed={onListed} {...(onOpen ? { onOpen } : {})} />} />
+  /** What the list draws while it is open (it is mounted only then); its New lines are what closing it sees. */
+  const [listed, setListed] = useState<readonly PageLine[] | undefined>(undefined)
+  const fresh = useMemo(() => (listed ?? dot.held).filter((line) => !line.seen), [listed, dot.held])
+  // A page's list draws every line, not a card's five.
+  const { onPreviewOpenChange } = useReactionsSeenOnClose(fresh, Infinity)
+  const onOpenChange = useCallback(
+    (open: boolean) => {
+      onPreviewOpenChange(open)
+      if (!open) setListed(undefined)
+    },
+    [onPreviewOpenChange],
+  )
+  return <PageListDot lit={dot.lit} tone={dot.tone} onOpenChange={onOpenChange} list={<PageListRead dot={dot} onListed={setListed} {...(onOpen ? { onOpen } : {})} />} />
 }
 
 /** The list's content: mounted only while the card is open, so this is when its read is asked. */

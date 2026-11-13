@@ -121,7 +121,7 @@ export function useTopicPageDot(file: ForeignObject | undefined, placeHref: stri
 /** A team's chat (`TeamChat`): the dot its row has in Teams, for someone in the chat. */
 export function useTeamChatPageDot(team: Team, placeHref: string): PageDot {
   const teams = useMemo(() => [team], [team])
-  const { unread, news, tones } = useTeamChatNews(teams)
+  const { unread, news, tones } = useTeamChatNews(teams, { reactions: true })
   const me = heldToken()?.pubkey
   return useMemo(
     () => ({
@@ -178,7 +178,7 @@ export function useTeamPageDot(
   const listed = useDeskListedNews(files)
   const badges = useConversationBadges(files, { hold: true, listed, reactions: true })
   const teams = useMemo(() => [team], [team])
-  const chat = useTeamChatNews(teams)
+  const chat = useTeamChatNews(teams, { reactions: true })
   const me = heldToken()?.pubkey
   return useMemo(() => {
     const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'

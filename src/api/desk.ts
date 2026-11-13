@@ -37,7 +37,7 @@ export function useScreenerItems(): ScreenerItem[] {
 export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[] } {
   const openWork = useOpenWork()
   const { partners } = useDmChannels()
-  const { dmIsUrgent } = useUnread()
+  const { dmIsUrgent } = useUnread({ reactions: false })
   const { urgentFiles } = useScreener()
   const people = useWorkspacePeople(partners)
 

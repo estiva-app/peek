@@ -16,13 +16,27 @@ const VERB: Record<UnreadReason, string> = {
 }
 
 /**
- * What a reaction line says someone did (ACT-7): "reacted 👍 to your message", and "on <file>" when it is on a file the
- * row's place lists.
+ * What a reaction line says someone did (ACT-7): "reacted 👍 to your message". The file it is on is named where every
+ * line names it, in the place line.
+ *
+ * A reaction's content is whatever its sender typed: only a single emoji is drawn, so nobody can put their words in
+ * Peek's sentence ("reacted — your session expired, sign in at …"). `+` or nothing is a like, 👍; anything else says
+ * only that they reacted.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
  */
-function reactedWords(emoji: string, file: string | undefined): string {
-  return `reacted ${emoji} to your message${file ? ` on ${file}` : ''}`
+function reactedWords(content: string): string {
+  const emoji = content === '' || content === '+' ? '👍' : oneEmoji(content) ? content : undefined
+  return emoji ? `reacted ${emoji} to your message` : 'reacted to your message'
+}
+
+/** One emoji: a single grapheme, a pictograph with only its presentation, skin-tone and joiner marks, or a flag. */
+function oneEmoji(text: string): boolean {
+  if (typeof Intl === 'undefined' || !('Segmenter' in Intl)) return false
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
+  if (graphemes.length !== 1) return false
+  if (/^\p{Regional_Indicator}{2}$/u.test(text)) return true
+  return /\p{Extended_Pictographic}/u.test(text) && /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|‍|️|⃣|[\u{e0020}-\u{e007f}])+$/u.test(text)
 }
 
 /**
@@ -115,18 +129,16 @@ export function NewsLine({ item, details, href, onClick, where, seen = false }: 
   const name = person?.name ?? 'Someone'
   const title = item.file ? details.titleOf(item.file) : undefined
   const words = details.wordsOf(item)
-  // A reaction names the file in its own words ("… to your message on <file>"), so its place line does not repeat it.
-  const place = [where, item.reaction ? undefined : title].filter(Boolean).join(' › ')
+  const place = [where, title].filter(Boolean).join(' › ')
   return (
     <Card href={href} fill="none" quietUntilHover hover="fill" onClick={onClick} className="flex min-w-0 flex-col gap-0.5 p-2" data-seen={seen || undefined} data-reaction={item.reaction ? '' : undefined}>
       <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
+        {/* A reaction to you while it is new: the 6px disc in the dot's orange, its words in the line's own colour (ACT-7; the activity indicator story). */}
+        {item.reaction && !seen && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-default" />}
         <span className={`flex min-w-0 shrink-0 text-h5 leading-tight ${seen ? 'text-text-secondary' : 'text-text-primary'}`}>
           <Person size={16} name={name} picture={details.avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
         </span>
-        {/* A reaction to you, in the reaction's orange while it is new (ACT-7; the approved card). */}
-        <span className={`truncate ${item.reaction && !seen ? 'text-warning-default' : ''}`}>
-          {item.reaction ? reactedWords(item.reaction.emoji, title) : VERB[item.reason as UnreadReason]}
-        </span>
+        <span className="truncate">{item.reaction ? reactedWords(item.reaction.emoji) : VERB[item.reason as UnreadReason]}</span>
         <MetaText size="chip" className="ml-auto shrink-0">
           {formatActive(item.at * 1000)}
         </MetaText>

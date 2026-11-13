@@ -651,8 +651,8 @@ const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ ope
 /** A DM has no Desk address of its own: its link is the person's page. */
 const personHref = (dmId: string) => `/app/people/${dmId}`
 
-/** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
-function DeskRowItem({ row }: { row: DeskRow }) {
+/** One Desk row on the package's sidebar row, as the Folders tree's rows are. Exported for its tests. */
+export function DeskRowItem({ row }: { row: DeskRow }) {
   const avatarSrcFor = useAvatarSrc()
   const type = row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')
   const lines = row.isUnread && row.card?.items.length ? row.card.items : undefined

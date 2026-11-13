@@ -37,7 +37,10 @@ import { recordContainerRead, recordFileRead, recordThreadRead, useReadFrontier 
  *
  * A fold's worst case is a dot that fails to light, not content that is lost.
  */
-export function useUnread(): {
+export function useUnread({ reactions: withReactions = true }: {
+  /** A reaction to your message lights a DM too (ACT-7); off where no DM row is drawn, so a reaction draws nothing again. */
+  reactions?: boolean
+} = {}): {
   dmHasUnread: (dmId: string) => boolean
   dmIsUrgent: (dmId: string) => boolean
   dmNews: (dmId: string) => readonly RowNewsItem[]
@@ -50,7 +53,7 @@ export function useUnread(): {
     [partners, channelOf],
   )
   const dmFold = useTopicUnread(dmChannels)
-  const reactions = useReactionsToMe(hasRelay)
+  const reactions = useReactionsToMe(hasRelay && withReactions)
   const { merged, ready } = useReadFrontier()
 
   /*

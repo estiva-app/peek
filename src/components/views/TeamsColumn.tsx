@@ -50,7 +50,7 @@ export function TeamsColumn({
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { teams, failed } = useTeams()
-  const { unread: chatUnread, news: chatNews, tones: chatTones } = useTeamChatNews(teams)
+  const { unread: chatUnread, news: chatNews, tones: chatTones } = useTeamChatNews(teams, { reactions: true })
   const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()

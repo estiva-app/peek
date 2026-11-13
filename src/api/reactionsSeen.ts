@@ -31,13 +31,15 @@ const NO_PLACES: readonly string[] = []
  * been on screen for `dwellMs` while the page is shown, as a read is marked, each conversation's `reactions:` key
  * goes to the newest such reaction drawn. `places` are the conversations open (a file's address, a team chat's or a
  * DM's channel uuid), whose top-level messages are drawn; `thread` an open thread's root, whose replies are. `drawn` is
- * false until a message is on screen.
+ * false until a message is on screen. `onScreen`, when given, is the ids of the messages on screen: only the reactions
+ * under those are seen.
  */
-export function useReactionsSeenOn({ places = NO_PLACES, thread, drawn = true, dwellMs = READ_DWELL_MS }: {
+export function useReactionsSeenOn({ places = NO_PLACES, thread, drawn = true, dwellMs = READ_DWELL_MS, onScreen }: {
   places?: readonly (string | null | undefined)[]
   thread?: string | null
   drawn?: boolean
   dwellMs?: number
+  onScreen?: ReadonlySet<string>
 }): void {
   const open = places.filter((place): place is string => !!place)
   const enabled = hasRelay && drawn && (open.length > 0 || !!thread)
@@ -47,7 +49,7 @@ export function useReactionsSeenOn({ places = NO_PLACES, thread, drawn = true, d
     ? []
     : (thread ? source.list : reactionsIn(source, contexts)).flatMap((reaction) => {
         const target = source.targetOf.get(reaction.target)
-        if (!target) return []
+        if (!target || (onScreen && !onScreen.has(target.id))) return []
         const root = rootOf(target)
         // A thread draws its replies (and its root); a conversation its top-level messages, a reply's being in its thread.
         if (thread ? root !== thread : root !== target.id) return []
@@ -75,10 +77,10 @@ export function useReactionsSeenOn({ places = NO_PLACES, thread, drawn = true, d
   }, [key, dwellMs])
 }
 
-/** The reaction lines of what a card draws: its first {@link CARD_LINES}, newest first. */
-const shownReactions = (items: readonly RowNewsItem[] | undefined): RowNewsItem[] =>
+/** The reaction lines of what a card draws: its first `drawn` ({@link CARD_LINES} on a row's card), newest first. */
+const shownReactions = (items: readonly RowNewsItem[] | undefined, drawn: number): RowNewsItem[] =>
   newestFirst(items ?? [])
-    .slice(0, CARD_LINES)
+    .slice(0, drawn)
     .filter((item) => item.reaction)
 
 /** Whether this screen cannot rest a pointer on a row: a touch screen, where a tap opens the row. */
@@ -99,9 +101,12 @@ export function seeReactions(items: readonly RowNewsItem[]): void {
 /**
  * For a row whose card lists `items`: `onPreviewOpenChange` for its `NavItem` (or a `PreviewCard`'s `onOpenChange`),
  * which sees the reactions the card listed while it was open once it closes; and `onOpenRow` for the row's click, which
- * sees them on a touch screen only.
+ * sees them on a touch screen only. `drawn` is how many lines the card draws: a row's card five, a page's list all.
  */
-export function useReactionsSeenOnClose(items: readonly RowNewsItem[] | undefined): {
+export function useReactionsSeenOnClose(
+  items: readonly RowNewsItem[] | undefined,
+  drawn: number = CARD_LINES,
+): {
   onPreviewOpenChange: (open: boolean) => void
   onOpenRow: () => void
 } {
@@ -111,21 +116,24 @@ export function useReactionsSeenOnClose(items: readonly RowNewsItem[] | undefine
   useEffect(() => {
     latest.current = items
     // Lines that came in while the card stayed open were listed too.
-    if (listed.current) listed.current = newestFirst(listed.current, shownReactions(items))
-  }, [items])
-  const onPreviewOpenChange = useCallback((open: boolean) => {
-    if (open) {
-      listed.current = shownReactions(latest.current)
-      return
-    }
-    const lines = listed.current
-    listed.current = null
-    if (lines?.length) seeReactions(lines)
-  }, [])
+    if (listed.current) listed.current = newestFirst(listed.current, shownReactions(items, drawn))
+  }, [items, drawn])
+  const onPreviewOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        listed.current = shownReactions(latest.current, drawn)
+        return
+      }
+      const lines = listed.current
+      listed.current = null
+      if (lines?.length) seeReactions(lines)
+    },
+    [drawn],
+  )
   const onOpenRow = useCallback(() => {
     if (!cannotHover()) return
-    const lines = shownReactions(latest.current)
+    const lines = shownReactions(latest.current, drawn)
     if (lines.length) seeReactions(lines)
-  }, [])
+  }, [drawn])
   return { onPreviewOpenChange, onOpenRow }
 }

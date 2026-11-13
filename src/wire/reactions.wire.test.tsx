@@ -27,7 +27,11 @@ const socket = vi.hoisted(() => ({
   extensions: [] as string[],
   relay: { info: async () => ({}) } as { info: () => Promise<unknown> },
   asked: [] as Record<string, unknown>[][],
+  /** A held answer: a read by `ids` answers once this opens. */
+  gate: { ids: null as Promise<void> | null },
 }))
+/** The Folders this tab holds, and who is told when they change. */
+const folders = vi.hoisted(() => ({ ids: [] as string[], listeners: new Set<() => void>() }))
 vi.mock('@/nostr/liveTopics', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/nostr/liveTopics')>()),
   getLiveClient: () => ({
@@ -48,9 +52,12 @@ vi.mock('@/nostr/foreign', async (importOriginal) => {
     // The real read, through the bridge to the fake relay; each read's filters are kept.
     viewerQuery: (...args: Parameters<typeof actual.viewerQuery>) => {
       const query = actual.viewerQuery(...args)
-      return (filters: Parameters<ReturnType<typeof actual.viewerQuery>>[0]) => {
+      return async (filters: Parameters<ReturnType<typeof actual.viewerQuery>>[0]) => {
         socket.asked.push(filters as Record<string, unknown>[])
-        return query(filters)
+        const events = await query(filters)
+        const first = (filters as Record<string, unknown>[])[0] ?? {}
+        if (first.ids && socket.gate.ids) await socket.gate.ids
+        return events
       }
     },
   }
@@ -62,14 +69,18 @@ vi.mock('@/api/internal/dms', async (importOriginal) => ({
 }))
 vi.mock('@/api/useFolderContents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/useFolderContents')>()),
-  heldFolderIds: () => ['85db5b59-9e49-4ea1-8e93-3d2a2d78c048'],
+  heldFolderIds: () => folders.ids,
+  subscribeHeldFolderIds: (listener: () => void) => {
+    folders.listeners.add(listener)
+    return () => folders.listeners.delete(listener)
+  },
 }))
 
 import { ReadStateSync, flushReadState, resetReadStateQueueForTests, useReadFrontier } from '@/nostr/useReadStateSync'
 import { resetReactionsToMeForTests, useReactionsToMe } from '@/api/useReactionsToMe'
 import { reactionNews } from '@/api/reactionNews'
 import { useReactionsSeenOnClose } from '@/api/reactionsSeen'
-import { useMarkFileRead } from '@/lib/useMarkRead'
+import { useMarkFileRead, useMarkFilesRead } from '@/lib/useMarkRead'
 
 const KATERINA = 'b'.repeat(64)
 const MIKY = 'a'.repeat(64)
@@ -99,6 +110,9 @@ beforeEach(() => {
   socket.subs = []
   socket.asked = []
   socket.extensions = ['buzz-live-as-stored']
+  socket.gate = { ids: null }
+  folders.ids = [TEAM]
+  folders.listeners.clear()
   // A new relay object per test: what it supports is asked once per object.
   socket.relay = { info: async () => ({ supported_extensions: socket.extensions }) }
 })
@@ -122,6 +136,10 @@ function useIssueRow() {
 
 const slots = () => relay.sentOf(30078)
 const blobOf = (event: { content: string }) => JSON.parse(relay.decrypt(event.content)) as { contexts: Record<string, number> }
+/** Let every promise already settled run on: the source's steps after an answer are promise steps, with no timer. */
+const settle = async () => {
+  for (let i = 0; i < 50; i++) await Promise.resolve()
+}
 const live = (kind: number) => socket.subs.filter((sub) => !sub.closed && (sub.filters[0].kinds as number[]).includes(kind))
 
 describe('finding the reactions to you (ACT-7)', () => {
@@ -144,20 +162,81 @@ describe('finding the reactions to you (ACT-7)', () => {
     expect(reads).toHaveLength(2)
   })
 
-  it('keeps a #p request open from now on, naming no team on a relay that hears live as stored, and teams by #h on one that does not', async () => {
+  it('keeps a #p request open from when the stored read asked, naming no team on a relay that hears live as stored, and teams by #h on one that does not', async () => {
     relay.seed(mine, reaction(KATERINA, mine, 600))
+    // Time passes between the stored read's asking and the request kept open: what was said between is heard too.
+    const later = () => {
+      vi.setSystemTime((NOW + 5) * 1000)
+      return { supported_extensions: socket.extensions }
+    }
+    socket.relay = { info: async () => later() }
     const first = renderHook(() => useReactionsToMe(), { wrapper })
     await waitFor(() => expect(live(7)).toHaveLength(1))
     expect(live(7)[0].filters).toEqual([{ kinds: [7], '#p': [ME], since: NOW }])
     first.unmount()
 
     resetReactionsToMeForTests()
+    vi.setSystemTime(NOW * 1000)
     socket.subs = []
     socket.extensions = []
-    socket.relay = { info: async () => ({ supported_extensions: socket.extensions }) }
+    socket.relay = { info: async () => later() }
     renderHook(() => useReactionsToMe(), { wrapper })
     await waitFor(() => expect(live(7)).toHaveLength(1))
     expect(live(7)[0].filters).toEqual([{ kinds: [7], '#p': [ME], since: NOW, '#h': [TEAM] }])
+  })
+
+  it('on a relay that needs teams named, opens the #p request once the tab knows a team, and names a team it comes to know', async () => {
+    socket.extensions = []
+    folders.ids = []
+    const { result } = renderHook(() => useReactionsToMe(), { wrapper })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    await act(() => settle())
+    // No team known: nothing to name, so nothing is asked yet.
+    expect(live(7)).toHaveLength(0)
+
+    folders.ids = [TEAM]
+    await act(async () => folders.listeners.forEach((listener) => listener()))
+    await waitFor(() => expect(live(7)).toHaveLength(1))
+    expect(live(7)[0].filters[0]['#h']).toEqual([TEAM])
+
+    const OTHER = '0b5f3a1e-6c2d-4e8f-9a7b-1c2d3e4f5a6b'
+    folders.ids = [TEAM, OTHER]
+    await act(async () => folders.listeners.forEach((listener) => listener()))
+    await waitFor(() => expect(live(7)[0]?.filters[0]['#h']).toEqual([OTHER, TEAM].sort()))
+    expect(live(7)).toHaveLength(1)
+  })
+
+  it('a reaction heard while the messages of an earlier one are being read lights too, with no refresh', async () => {
+    const mine2 = commentOn(ME, 3000, 'Second fix')
+    relay.seed(mine, mine2)
+    const { result } = renderHook(() => useIssueRow(), { wrapper })
+    await waitFor(() => expect(live(7)).toHaveLength(1))
+
+    let open!: () => void
+    socket.gate.ids = new Promise<void>((resolve) => (open = resolve))
+    const first = reaction(KATERINA, mine, 120)
+    act(() => live(7)[0].onEvent(first))
+    // The first one's message is being read when the second arrives, 100 ms later.
+    await waitFor(() => expect(socket.asked.some((filters) => (filters[0].ids as string[] | undefined)?.includes(mine.id))).toBe(true))
+    vi.setSystemTime(NOW * 1000 + 100)
+    const second = signed({ ...reaction(MIKY, mine2, 0, '🎉'), created_at: NOW }, MIKY)
+    act(() => live(7)[0].onEvent(second))
+    await act(async () => open())
+
+    await waitFor(() => expect(result.current.lines.map((line) => line.id)).toEqual([second.id, first.id]))
+  })
+
+  it('a row gone before the stored read answers opens no request', async () => {
+    relay.seed(mine, reaction(KATERINA, mine, 600))
+    let answer!: () => void
+    socket.gate.ids = new Promise<void>((resolve) => (answer = resolve))
+    const row = renderHook(() => useReactionsToMe(), { wrapper })
+    // The stored read is out: its last part, the messages reacted to, has been asked and not answered.
+    await waitFor(() => expect(socket.asked.some((filters) => filters[0].ids)).toBe(true))
+    row.unmount()
+    await act(async () => answer())
+    await act(() => settle())
+    expect(socket.subs).toHaveLength(0)
   })
 
   it('a reaction taken back by the one who made it goes; a deletion signed by anyone else does not take it', async () => {
@@ -226,6 +305,37 @@ describe('seeing a reaction to you (ACT-7)', () => {
 
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     rerender({ open: true })
+    act(() => vi.advanceTimersByTime(1499))
+    expect(result.current.lines).toHaveLength(1)
+    act(() => vi.advanceTimersByTime(1))
+    expect(result.current.lines).toHaveLength(0)
+    vi.useRealTimers()
+
+    await act(() => flushReadState())
+    expect(blobOf(slots().at(-1)!).contexts[`reactions:file:${FILE_ID}`]).toBe(katerina.created_at)
+  })
+
+  it('a topic at All drawing a listed file sees only the reactions under its comments on screen, after the dwell', async () => {
+    const katerina = reaction(KATERINA, mine, 600)
+    const newer = commentOn(ME, 3000, 'Second fix')
+    relay.seed(mine, newer, katerina)
+    const { result, rerender } = renderHook(
+      ({ onScreen }: { onScreen: string[] }) => {
+        const row = useIssueRow()
+        useMarkFilesRead(onScreen.length ? new Map([[ISSUE, newer.created_at]]) : undefined, new Set(onScreen), 1500)
+        return row
+      },
+      { wrapper, initialProps: { onScreen: [] as string[] } },
+    )
+    await waitFor(() => expect(result.current.lines).toHaveLength(1))
+
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    // Another of your comments on screen, not the one reacted to: its reaction is not seen, however long.
+    rerender({ onScreen: [newer.id] })
+    act(() => vi.advanceTimersByTime(5000))
+    expect(result.current.lines).toHaveLength(1)
+    // The one reacted to comes on screen: seen once it has been there for the dwell.
+    rerender({ onScreen: [newer.id, mine.id] })
     act(() => vi.advanceTimersByTime(1499))
     expect(result.current.lines).toHaveLength(1)
     act(() => vi.advanceTimersByTime(1))
