@@ -315,21 +315,33 @@ export function conversationActions({
     const v = viewer()
     if (!v || !container || !key) return SIGNED_OUT
     const drafted = draft ? await drawDraft(v, draft) : undefined
-    let event: UnsignedEvent
-    let id: string
-    try {
-      event = await build(v)
-      id = await eventIdOf(event)
-    } catch (error) {
-      console.warn('[nostr] building a change failed:', error)
-      if (drafted) {
-        await withdrawOwnEvent(conversationsFor(v.relayUrl, v.token.pubkey), key, container, ids ? ids.split(',') : [], drafted, viewerQuery(v.relayUrl, v.token)).catch(
-          (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
-        )
+    const finish = async (): Promise<WriteResult> => {
+      if (!container || !key) return SIGNED_OUT
+      let event: UnsignedEvent
+      let id: string
+      try {
+        event = await build(v)
+        id = await eventIdOf(event)
+      } catch (error) {
+        console.warn('[nostr] building a change failed:', error)
+        if (drafted) {
+          await withdrawOwnEvent(conversationsFor(v.relayUrl, v.token.pubkey), key, container, ids ? ids.split(',') : [], drafted, viewerQuery(v.relayUrl, v.token)).catch(
+            (failure: unknown) => console.warn('[nostr] withdrawing your draft failed:', failure),
+          )
+        }
+        return { ok: false, reason: builtFailure(error) }
       }
-      return { ok: false, reason: builtFailure(error) }
+      return publishOwn(v, event, id, refusal, drafted)
     }
-    return publishOwn(v, event, id, refusal, drafted)
+    if (!drafted) return finish()
+    // A drawn draft can be acted on — a reaction taken back — before its signed one is sent: that waits for it.
+    const flight = finish()
+    if (!sending.has(drafted)) sending.set(drafted, flight)
+    const settled = () => {
+      if (sending.get(drafted) === flight) sending.delete(drafted)
+    }
+    flight.then(settled, settled)
+    return flight
   }
 
   /** A change drawn before its signed event is built: its id when it was drawn. */
@@ -418,18 +430,20 @@ export function conversationActions({
     remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
     /*
       The reaction names whose message it is on (ACT-6), from the message as it is held — never sent without that
-      name: a message that is not held, or a stand-in nobody wrote, is refused before anything is drawn.
+      name: a message that is not held, or a stand-in nobody wrote, is refused before anything is drawn. It is drawn
+      at once, naming the signer, and only then is the relay's key read where the message needs it; the two share an
+      `at`, so they are one event unless the relay signed the message for someone, whose reaction then takes the
+      drawn one's place.
     */
-    react: (targetEventId, emoji) =>
-      change(
-        targetEventId,
-        (v) => {
-          const target = heldIn(key, v, targetEventId)
-          if (!target?.author) throw new Error(REACTION_TARGET_NOT_HELD)
-          return composeReaction({ target, emoji }, v.relayUrl, v.token)
-        },
-        'The relay refused the reaction.',
-      ),
+    react: (targetEventId, emoji) => {
+      const at = Date.now()
+      const compose = (v: Viewer, readKey: boolean) => {
+        const target = heldIn(key, v, targetEventId)
+        if (!target?.author) throw new Error(REACTION_TARGET_NOT_HELD)
+        return composeReaction({ target, emoji }, v.relayUrl, v.token, { at, readKey })
+      }
+      return change(targetEventId, (v) => compose(v, true), 'The relay refused the reaction.', (v) => compose(v, false))
+    },
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>

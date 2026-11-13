@@ -979,25 +979,30 @@ export type ReactionTarget = Pick<ConversationEvent, 'id' | 'author' | 'authorsh
  * or a `p`, the only kind the relay can have signed for someone else; reacting to any other costs no read. With no
  * key (none readable, or the read failed) it names the signer.
  *
+ * `readKey: false` reads nothing and names the signer: the reaction drawn at once while the key is read. With the
+ * same `at`, it is the very event the read builds for every message the relay did not sign for someone.
+ *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
  */
 export async function composeReaction(
   args: { target: ReactionTarget; emoji: string },
   relayUrl: string,
   token: StoredToken,
+  options: { at?: number; readKey?: boolean } = {},
 ): Promise<UnsignedEvent> {
   const target = { id: args.target.id, pubkey: args.target.author, tags: args.target.authorship ?? [] }
   /*
     A key that could not be read does not stop the reaction: it names the signer then, which is right for every
     message a person signed. The failed read is not kept, so the next reaction asks again.
   */
-  const relayKey = needsRelayKey(target)
-    ? await relaySigningKeyOnce(relayUrl, token).catch((error: unknown) => {
-        console.warn('[nostr] reading the relay’s key failed; the reaction names the message’s signer:', error)
-        return null
-      })
-    : null
-  return buildReaction(token.pubkey, Date.now(), { target, emoji: args.emoji, relayKey })
+  const relayKey =
+    options.readKey !== false && needsRelayKey(target)
+      ? await relaySigningKeyOnce(relayUrl, token).catch((error: unknown) => {
+          console.warn('[nostr] reading the relay’s key failed; the reaction names the message’s signer:', error)
+          return null
+        })
+      : null
+  return buildReaction(token.pubkey, options.at ?? Date.now(), { target, emoji: args.emoji, relayKey })
 }
 
 /**
