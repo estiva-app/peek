@@ -93,6 +93,8 @@ export function usePlaceFollowControls({
         level={archived ? undefined : level}
         label={title}
         people={chat}
+        // A team's chat lists no files: its levels say only what lights; a topic's or space's say what of its files it shows (ACT-5).
+        files={!chat}
         onChoose={frozen ? undefined : choose}
         readOnlyReason={readOnlyReason}
         backTo={!frozen && state.againstDefault ? teamName : undefined}
