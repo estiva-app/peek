@@ -35,6 +35,7 @@ import {
   useDeskListedNews,
   ListedFillsProvider,
   useReactionsSeenOnClose,
+  urgentNews,
   type RowNewsItem,
 } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
@@ -500,7 +501,8 @@ export function DeskPage() {
               isSelected: isSelectedIn('urgent', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'urgent'),
               card: {
-                items: dmNews(item.dmId).filter((line) => line.urgent),
+                // The urgent messages that put it here, and a reaction to you there (ACT-7); the mark stays, never orange.
+                items: urgentNews(dmNews(item.dmId)),
                 place: 'dm' as const,
                 open: openDmLine(item.dmId, item.name, 'urgent'),
               },

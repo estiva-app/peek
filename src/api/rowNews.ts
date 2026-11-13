@@ -23,7 +23,7 @@ export interface RowNewsItem {
   words?: string
   /** The file it was said on, when that is not the row's own place: a file a topic lists, or one under it. */
   file?: string
-  /** It is urgent for the viewer: what put a DM on the Desk's Urgent, whose card lists only these (ACT-9). */
+  /** It is urgent for the viewer: what put a DM on the Desk's Urgent, whose card lists these and the reactions to you (`urgentNews`). */
   urgent?: boolean
   /**
    * A reaction to the viewer's message (ACT-7): its emoji, the message it reacts to (where the line opens) and the
@@ -59,6 +59,14 @@ export function explainUnread<E extends RuleMessage>(
     reason: reasons.get(message.id) ?? 'message',
     ...line(message),
   }))
+}
+
+/**
+ * What an urgent DM's row on the Desk's Urgent lists: the urgent messages that put it there (ACT-9) and the reactions
+ * to you in it (ACT-7), never its other unread messages.
+ */
+export function urgentNews(lines: readonly RowNewsItem[]): RowNewsItem[] {
+  return lines.filter((line) => line.urgent || line.reaction)
 }
 
 /** Newest first, one line per message however many ways it lit the row. */

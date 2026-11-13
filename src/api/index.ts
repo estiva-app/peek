@@ -97,7 +97,7 @@ export {
   type WriteResult,
 } from './useFileConversation'
 export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
-export { CARD_LINES, newestFirst, type RowNewsItem } from './rowNews'
+export { CARD_LINES, newestFirst, urgentNews, type RowNewsItem } from './rowNews'
 export { useReactionsToMe, REACTIONS_TO_ME_READ, type ReactionsToMe } from './useReactionsToMe'
 export { unreadToneOf } from './reactionNews'
 export { useReactionsSeenOn, useReactionsSeenOnClose, seeReactions } from './reactionsSeen'
