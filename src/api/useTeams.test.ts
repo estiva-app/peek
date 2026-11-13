@@ -210,6 +210,10 @@ describe('which of a team’s rows offer Leave', () => {
     const archived = teamOf({ ...folder, archived: { by: MIKY, at: 1_700_000_900 } }, read([MIKY, KATERINA]), KATERINA)
     expect(leaves(archived, KATERINA, SPACE)).toBe(false)
     expect(leaves(archived, KATERINA, TOPIC, [joined(KATERINA, TOPIC)])).toBe(false)
+    // A topic in the team that its list does not hold: no team facts reach the fold, so only the team's own archive says no.
+    const UNLISTED = `30840:${MIKY}:notes`
+    expect(leaves(archived, KATERINA, UNLISTED, [joined(KATERINA, UNLISTED)])).toBe(false)
+    expect(leaves(teamOf(folder, read([MIKY, KATERINA]), KATERINA), KATERINA, UNLISTED, [joined(KATERINA, UNLISTED)])).toBe(true)
   })
 
   // A muted topic reaches here as undefined too; that the hook says so is useTopicsColumn.test's "a muted topic is not yours".
