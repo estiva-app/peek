@@ -138,7 +138,10 @@ export function TreeRow({
   under?: ReactNode
   /** Make it one of its team's spaces, or not (TEA-5): the Teams column passes it to a member of the topic's team. */
   space?: { action: 'mark' | 'unmark'; onToggle: () => void }
-  /** The topic is yours, so its row offers Leave (TOPI-7): the Topics column, which lists only yours. */
+  /**
+   * The row offers Leave (TOPI-7): in the Topics column, which lists only yours, and in a team's lists wherever you
+   * hear from it, a team's default included (`useLeavesTopic`).
+   */
   leaves?: boolean
   /** What lit each row, by ref (ACT-3): a lit row with lines opens their card while it is pointed at. */
   news?: Record<string, readonly RowNewsItem[]>
@@ -201,8 +204,8 @@ export function TreeRow({
   const membership = useMembership()
   const followKey = file.address
   const isMember = followKey ? membership.isMember(followKey) : false
-  // A topic or a space is followed with the switch on its header (TEA-6); its row offers only Leave, and only in the
-  // Topics column, where every topic is yours (TOPI-7). Join is on Explore topics.
+  // A topic or a space is followed with the switch on its header (TEA-6); its row offers only Leave, where the list
+  // says you hear from it (`leaves`: Topics, TOPI-7; a team's lists). Join is on Explore topics.
   const memberAction = followKey && file.folder && !readOnly ? (isPlace ? (leaves && onControl ? 'leave' : undefined) : isMember ? 'leave' : 'join') : undefined
   const copies = listRow && !!followKey
   // Open work on the row (FOL-34), by the same address — the file page's control.

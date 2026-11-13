@@ -9,7 +9,7 @@ import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
 import { listedNews, placeNews, topicFollowingOf, type ListedFill, type ListedNews, type TopicJudges } from './placeDots'
 import { newestFirst, type RowNewsItem } from './rowNews'
-import { listingOf, useTeams } from './useTeams'
+import { listingOf, teamFactsOf, useTeams } from './useTeams'
 import { createListingCache } from '@/platform/listingCache'
 
 /** How long a held answer is trusted without asking — the five minutes `HELD_OBJECT_FRESH_MS` holds an object. */
@@ -295,7 +295,7 @@ export function useConversationBadges(
         me,
         changes: membership.changesOf(address),
         floor: membership.floor,
-        ...(team?.facts ? { team: { team: team.id, roster: team.facts.roster, listing: team.facts.listing, archived: team.archived, ...(team.facts.teams ? { teams: team.facts.teams } : {}) } } : {}),
+        ...(team?.facts ? { team: teamFactsOf(team) } : {}),
       })
     }
     for (const [ref, messages] of Object.entries(current)) {

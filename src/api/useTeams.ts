@@ -9,8 +9,9 @@ import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
 import { useFolderContents, useFolders } from './useFolderContents'
-import { useReadableTopics } from './useTopicsColumn'
+import { useReadableTopics, useTopicFollowing } from './useTopicsColumn'
 import { explainUnread, newestFirst, type RowNewsItem } from './rowNews'
+import type { TeamFacts } from './placeDots'
 
 export { entryNames, type ListedEntry }
 
@@ -216,6 +217,41 @@ export function useTeamTopics(): { topics: ReadonlyMap<string, ForeignObject>; l
   const { topics: live, loading, signedOut } = useReadableTopics()
   const topics = useMemo(() => new Map(live.flatMap((topic) => (topic.address ? [[topic.address, topic] as const] : []))), [live])
   return { topics, loading, signedOut }
+}
+
+/**
+ * Whether a topic's or a space's row in a team's list offers Leave: wherever the viewer hears from it, so its switch
+ * reads All or Important — a space followed only through the team included, as the dots count it — and never in an
+ * archived team (§3.2), where the switch cannot change. Leave is the switch's Not following (TOPI-7), which turns a
+ * team's default off as the switch does. Decided by Miky, 13 Nov, at the kickoff of "Leave a topic from its row in the
+ * Teams column and on a team's page".
+ *
+ * Load cost: no read of its own beyond the history read the Topics column already makes for topics the membership
+ * read has no word on — one request, shared per tab.
+ */
+export function useLeavesTopic(teams: readonly Team[] | null): (topic: ForeignObject) => boolean {
+  const followingOfTopic = useTopicFollowing()
+  return useCallback((topic: ForeignObject) => leavesTopicIn(teams, topic, followingOfTopic), [teams, followingOfTopic])
+}
+
+/** {@link useLeavesTopic}'s rule, handed how the viewer follows a topic (undefined: unknown, or muted). */
+export function leavesTopicIn(
+  teams: readonly Team[] | null,
+  topic: ForeignObject,
+  followingOfTopic: (topic: ForeignObject, team?: TeamFacts) => Following | undefined,
+): boolean {
+  const listing = listingOf(teams, topic.address ?? undefined)
+  const team = listing?.team ?? teams?.find((candidate) => candidate.id === topic.folder)
+  if (!team || team.archived) return false
+  // The team whose list holds it brings its default, as the dots read it (`useConversationBadges`).
+  const following = followingOfTopic(topic, listing ? teamFactsOf(listing.team) : undefined)
+  return !!following?.in && !!following.level
+}
+
+/** What the shared fold reads for a space's team default (TEA-6), from the teams read: the dots and the row's Leave alike. */
+export function teamFactsOf(team: Team): TeamFacts | undefined {
+  const facts = team.facts
+  return facts ? { team: team.id, roster: facts.roster, listing: facts.listing, archived: team.archived, ...(facts.teams ? { teams: facts.teams } : {}) } : undefined
 }
 
 /** A team's spaces and the topics it leads, in its list's order, from the topics this viewer can read; archived ones left out. */

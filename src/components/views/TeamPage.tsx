@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { IconDotsVertical, IconUserPlus, IconUsers } from '@tabler/icons-react'
 import { EmptyState, IconButton, MembersDialog, Menu, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList, type MembersDialogCandidate } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamPageDot, useTeamTopics, type Team } from '@/api'
+import { teamPlaces, useLeavesTopic, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamPageDot, useTeams, useTeamTopics, type Team } from '@/api'
 import { PageDot } from '@/components/PageListDot'
 import { Button } from '@/components/ui/Button'
 import { PersonItem } from '@/components/ui/PersonItem'
@@ -41,6 +41,8 @@ export function TeamPage({
   const { showToast } = useToast()
   const names = useMentionNames()
   const { topics } = useTeamTopics()
+  // Every team, not this one alone: a topic it leads may be another team's space, whose default is that team's.
+  const leaves = useLeavesTopic(useTeams().teams)
   const { files, failed: filesFailed } = useTeamFiles(team.id)
   const { menuFor, action, close } = useFolderActions()
   const [busy, setBusy] = useState(false)
@@ -90,6 +92,8 @@ export function TeamPage({
       file={topic}
       onControl={onControl}
       nested
+      // Leave wherever you hear from it, as in the Teams column (`useLeavesTopic`).
+      leaves={leaves(topic)}
       // Only a team's members mark its spaces (SPEC §3.3); the relay refuses anyone else.
       space={team.isMember && !team.archived && topic.address ? { action: space ? 'unmark' : 'mark', onToggle: () => void run(() => markSpace(team.id, topic.address!, !space)) } : undefined}
     />

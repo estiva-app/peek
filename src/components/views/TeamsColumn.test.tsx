@@ -159,6 +159,23 @@ describe('marking a space from the Teams column (TEA-5)', () => {
     expect(onMarkSpace).toHaveBeenLastCalledWith(ENGINEERING, GENERAL, false)
   })
 
+  it('a row the viewer hears from offers the Topics column’s Leave, and one they do not hear from offers none (Miky, 13 Nov)', async () => {
+    const onControl = vi.fn()
+    // General is the team's space, heard through being in Engineering; Launch is a topic it leads that they never joined.
+    mount({ onControl, leavesOf: (topic) => topic.address === GENERAL.address })
+    await openMenu(sectionOf('Engineering'), 'Launch')
+    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('menuitem', { name: 'Leave' })).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await openMenu(sectionOf('Engineering'), 'General')
+    // The menu is open once any item is; then Leave is there or not, with no wait of its own.
+    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
+    const leave = screen.queryByRole('menuitem', { name: 'Leave' })
+    expect(leave).not.toBeNull()
+    await userEvent.click(leave!)
+    expect(onControl).toHaveBeenCalledWith('leave', GENERAL)
+  })
+
   it('somebody who only follows the team is offered neither', async () => {
     mount({ onMarkSpace: vi.fn() })
     // The row still has its menu (Join, Copy link…): what it lacks is the mark.
