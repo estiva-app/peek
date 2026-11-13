@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { IconUsers } from '@tabler/icons-react'
 import { EmptyState, NavItem, NavTree, SectionHeader, SkeletonList } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { teamPlaces, useConversationBadges, usePeekActions, useTeamChatNews, useTeams, useTeamTopics, type RowNewsItem, type Team } from '@/api'
+import { teamPlaces, useConversationBadges, useLeavesTopic, usePeekActions, useTeamChatNews, useTeams, useTeamTopics, type RowNewsItem, type Team } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
 import { TreeRow } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
@@ -54,6 +54,7 @@ export function TeamsColumn({
   const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
+  const leaves = useLeavesTopic(teams)
 
   const drawn = useMemo(() => (teams ? [...topics.values()] : undefined), [teams, topics])
   const { unread, news } = useConversationBadges(drawn)
@@ -82,6 +83,7 @@ export function TeamsColumn({
       chatOpen={chatOpen}
       onControl={onControl}
       onMarkSpace={mark}
+      leavesOf={leaves}
     />
   )
 }
@@ -100,6 +102,7 @@ export function TeamsColumnView({
   chatOpen = false,
   onControl,
   onMarkSpace,
+  leavesOf,
 }: {
   teams: readonly Team[]
   /** The topics this viewer can read, by address. */
@@ -116,6 +119,8 @@ export function TeamsColumnView({
   chatOpen?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
   onMarkSpace?: (team: Team, topic: ForeignObject, space: boolean) => void
+  /** The row offers Leave (`useLeavesTopic`): wherever the viewer hears from it, a team's default included. */
+  leavesOf?: (topic: ForeignObject) => boolean
 }) {
   const byName = (a: Team, b: Team) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
   const mine = teams.filter((team) => team.isMember).sort(byName)
@@ -140,6 +145,7 @@ export function TeamsColumnView({
         selectedRef={selectedRef}
         onControl={onControl}
         nested
+        leaves={leavesOf?.(topic) ?? false}
         space={team.isMember && onMarkSpace ? { action: space ? 'unmark' : 'mark', onToggle: () => onMarkSpace(team, topic, !space) } : undefined}
       />
     )

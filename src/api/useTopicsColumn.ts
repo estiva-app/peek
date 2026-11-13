@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { byActivity, isArchived, relayNamesTeams, watchTopicActivity, type ActivityFile, type ActivityWatch, type ForeignObject, type TopicActivity } from '@estiva-app/interop'
 import { fileIdOf, type SignedEvent } from '@estiva-app/protocol'
-import { anchorIdsOf, anchorsOf } from '@estiva-app/conversation'
+import { anchorIdsOf, anchorsOf, type Following } from '@estiva-app/conversation'
 import { resolveObjectAsViewer, topicActivityAsViewer, topicAddressesAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { getLiveClient } from '@/nostr/liveTopics'
 import { peekRelay } from '@/nostr/relayInfo'
@@ -11,7 +11,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useMembership } from '@/api/internal/membership'
 import { fetchChangesNaming } from '@/nostr/fileMembers'
 import { useRelayViewer, useResolvedReferences } from './foreign'
-import { topicFollowingOf, type ListedNews } from './placeDots'
+import { topicFollowingOf, type ListedNews, type TeamFacts } from './placeDots'
 import { hasRelay } from './relayUrl'
 
 export type TopicsColumnState =
@@ -521,28 +521,7 @@ export function useTopicsColumn(): {
   signedOut: boolean
 } {
   const { viewer, pubkey, mineHeld, topicsResolved, live, archived } = useReadableTopicsHeld()
-  const membership = useMembership()
-  const { me, changesOf, floor, termsOf } = membership
-  const known = membership.state !== 'unknown'
-  const { past, pastFailed } = mineHeld
-  /*
-    The membership read has a word on you in a topic when a change naming you
-    on it is inside its horizon, or you made it: the newest change decides, so
-    nothing older can change the answer.
-  */
-  const heard = useCallback((address: string) => address.split(':')[1] === me || changesOf(address).length > 0, [me, changesOf])
-  // The topics the membership read has no word on: whether they are yours is read over all history.
-  const unheardKey = useMemo(
-    () => (known ? live.filter((topic) => !heard(topic.address!)).map((topic) => topic.address!) : []).join(','),
-    [known, live, heard],
-  )
-  useEffect(() => {
-    const v = viewer()
-    if (!hasRelay || !v || !unheardKey) return
-    const want = unheardKey.split(',').filter((topic) => !past.has(topic) && !pastFailed.has(topic))
-    if (want.length) void readPast(v, want)
-  }, [viewer, unheardKey, past, pastFailed])
-  const pastUnread = !!unheardKey && unheardKey.split(',').every((topic) => !past.has(topic) && !pastFailed.has(topic))
+  const { followingOf: followingOfTopic, pastUnread, known } = useTopicFollowingHeld(viewer, mineHeld, live)
   /*
     Yours is the shared rule Ship's Topics reads too (interop's `following.in`,
     TEA-6): made, joined, added or a level chosen since your last leave;
@@ -552,17 +531,7 @@ export function useTopicsColumn(): {
     from the day the switch ships.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/writing-in-a-place-never-follows-it.md
   */
-  const isYours = useCallback(
-    (topic: ForeignObject) => {
-      const address = topic.address!
-      if (!me || termsOf(address).muted) return false
-      const old = !heard(address)
-      const changes = old ? past.get(address) : changesOf(address)
-      if (!changes) return false
-      return topicFollowingOf({ address, folder: topic.folder ?? '', me, changes, floor: old ? 0 : floor }).in
-    },
-    [me, termsOf, heard, past, changesOf, floor],
-  )
+  const isYours = useCallback((topic: ForeignObject) => !!followingOfTopic(topic)?.in, [followingOfTopic])
   const mine = useMemo(() => live.filter((topic) => isYours(topic)), [live, isYours])
   const mineKey = mine.map((topic) => topic.address).join(',')
 
@@ -691,4 +660,54 @@ function useReadableTopicsHeld() {
   const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
   const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
   return { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived }
+}
+
+/**
+ * How the viewer follows a topic, by the shared rule (interop's `followingOf`, TEA-6), over all history: the
+ * membership read where it has a word on the topic, else one read of the changes naming the viewer on the topics it
+ * has none on, all of them in one request, held per tab and shared with the Topics column. `team` brings a space's
+ * team default; without it, only what the viewer did counts, as Topics judges "yours". Undefined while unknown, and
+ * for a topic the viewer muted (the switch shows a mute as Not following).
+ */
+function useTopicFollowingHeld(viewer: ReturnType<typeof useRelayViewer>, mineHeld: Held, live: readonly ForeignObject[]) {
+  const membership = useMembership()
+  const { me, changesOf, floor, termsOf } = membership
+  const known = membership.state !== 'unknown'
+  const { past, pastFailed } = mineHeld
+  /*
+    The membership read has a word on you in a topic when a change naming you
+    on it is inside its horizon, or you made it: the newest change decides, so
+    nothing older can change the answer.
+  */
+  const heard = useCallback((address: string) => address.split(':')[1] === me || changesOf(address).length > 0, [me, changesOf])
+  // The topics the membership read has no word on: how you follow them is read over all history.
+  const unheardKey = useMemo(
+    () => (known ? live.filter((topic) => !heard(topic.address!)).map((topic) => topic.address!) : []).join(','),
+    [known, live, heard],
+  )
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v || !unheardKey) return
+    const want = unheardKey.split(',').filter((topic) => !past.has(topic) && !pastFailed.has(topic))
+    if (want.length) void readPast(v, want)
+  }, [viewer, unheardKey, past, pastFailed])
+  const pastUnread = !!unheardKey && unheardKey.split(',').every((topic) => !past.has(topic) && !pastFailed.has(topic))
+  const followingOf = useCallback(
+    (topic: ForeignObject, team?: TeamFacts): Following | undefined => {
+      const address = topic.address
+      if (!address || !me || termsOf(address).muted) return undefined
+      const old = !heard(address)
+      const changes = old ? past.get(address) : changesOf(address)
+      if (!changes) return undefined
+      return topicFollowingOf({ address, folder: topic.folder ?? '', me, changes, floor: old ? 0 : floor, ...(team ? { team } : {}) })
+    },
+    [me, termsOf, heard, past, changesOf, floor],
+  )
+  return { followingOf, pastUnread, known }
+}
+
+/** {@link useTopicFollowingHeld} for a list that is not the Topics column: the Teams column and a team's page. */
+export function useTopicFollowing(): (topic: ForeignObject, team?: TeamFacts) => Following | undefined {
+  const { viewer, mineHeld, live } = useReadableTopicsHeld()
+  return useTopicFollowingHeld(viewer, mineHeld, live).followingOf
 }

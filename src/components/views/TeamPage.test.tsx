@@ -13,6 +13,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { Team } from '@/api'
 import { TeamPage } from './TeamPage'
+import type { FileControl } from './useFileControls'
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const ME = 'a'.repeat(64)
@@ -33,6 +34,7 @@ const api = vi.hoisted(() => ({
   followTeam: vi.fn(),
   markSpace: vi.fn(),
   files: [] as ForeignObject[] | null,
+  hears: new Set<string>(),
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -53,6 +55,9 @@ vi.mock('@/api', async () => ({
   useTeamTopics: () => ({ topics: new Map([[LAUNCH.address!, LAUNCH], [BRIEF.address!, BRIEF]]), loading: false, signedOut: false }),
   useTeamFiles: () => ({ files: api.files, failed: false }),
   useMayMove: () => true,
+  useTeams: () => ({ teams: [], failed: false }),
+  // Which rows the viewer hears from is the rule's own (useTeams.test.ts); here, the page asks it of every row.
+  useLeavesTopic: () => (topic: ForeignObject) => api.hears.has(topic.address!),
 }))
 vi.mock('@/components/views/useFolderActions', () => ({ useFolderActions: () => ({ menuFor: () => undefined, action: null, close: () => {} }) }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
@@ -81,10 +86,10 @@ const team = (over: Partial<Team> = {}): Team => ({
 })
 const FOLDER = { id: 'eng', name: 'Engineering' } as FolderSummary
 
-function mount(t: Team) {
+function mount(t: Team, onControl?: (control: FileControl, file: ForeignObject) => void) {
   return render(
     <MemoryRouter>
-      <TeamPage team={t} folder={FOLDER} folders={[FOLDER]} reloadFolders={async () => {}} />
+      <TeamPage team={t} folder={FOLDER} folders={[FOLDER]} reloadFolders={async () => {}} onControl={onControl} />
     </MemoryRouter>,
   )
 }
@@ -94,6 +99,33 @@ beforeEach(() => {
   vi.clearAllMocks()
   for (const write of [api.joinTeam, api.leaveTeam, api.addToTeam, api.followTeam, api.markSpace]) write.mockResolvedValue(ok)
   api.files = []
+  api.hears = new Set()
+})
+
+describe('leaving a topic from its row on a team’s page (Miky, 13 Nov)', () => {
+  /** The row's own menu: the nearest block around its title that holds one. */
+  const openMenu = async (title: string) => {
+    let row: HTMLElement = screen.getByText(title)
+    while (!within(row).queryByRole('button', { name: 'More options' })) row = row.parentElement!
+    await userEvent.click(within(row).getByRole('button', { name: 'More options' }))
+  }
+
+  it('a row the viewer hears from offers the Topics column’s Leave, which leaves that topic', async () => {
+    api.hears = new Set([LAUNCH.address!])
+    const onControl = vi.fn()
+    mount(team(), onControl)
+    await openMenu('Launch')
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Leave' }))
+    expect(onControl).toHaveBeenCalledWith('leave', LAUNCH)
+  })
+
+  it('a row the viewer does not hear from offers no Leave', async () => {
+    api.hears = new Set([LAUNCH.address!])
+    mount(team(), vi.fn())
+    await openMenu('Brief')
+    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('menuitem', { name: 'Leave' })).toBeNull()
+  })
 })
 
 describe('a team’s page offers what the viewer may do (TEA-5)', () => {

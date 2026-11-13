@@ -4,11 +4,12 @@
  * and what in the chat is new to them, by the shared rule (§11.8).
  */
 import { describe, expect, it } from 'vitest'
-import type { FolderSummary } from '@estiva-app/interop'
-import { serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
-import { encodeNpub } from '@estiva-app/protocol'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import { buildMembershipChange, serializeTeamsBlob, parseTeamsBlob } from '@estiva-app/conversation'
+import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import { signed } from '@/test/wireRelay'
-import { chatHasUnread, chatNews, mayChangeTopicIn, mayMove, teamOf } from './useTeams'
+import { topicFollowingOf } from './placeDots'
+import { chatHasUnread, chatNews, leavesTopicIn, mayChangeTopicIn, mayMove, teamOf, type Team } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
 
 const RELAY = 'b'.repeat(64)
@@ -162,5 +163,56 @@ describe('a team chat’s dot', () => {
     const elsewhere = withChanges([MIKY, KATERINA], change(KATERINA, 1_700_000_900, TOPIC, `follow:${KATERINA}`, 'all'))
     expect(elsewhere.chat.level).toBe('important')
     expect(chatHasUnread(elsewhere, [root, reply], read_, KATERINA)).toBe(false)
+  })
+})
+
+/*
+  Leave on a row in a team's lists (Miky, 13 Nov): wherever the viewer hears from the place — its switch reads All
+  or Important, a space reached only by the team's default included — and nowhere else. Judged by the shared fold
+  over real rosters and changes, as the dots are.
+*/
+describe('which of a team’s rows offer Leave', () => {
+  const place = (address: string) => ({ ref: address, address, kind: 30840, folder: TEAM, slots: {} }) as unknown as ForeignObject
+  const joined = (who: string, address: string) =>
+    signed({ ...buildMembershipChange(who, 1_700_000_800_000, { file: address, folder: TEAM, person: who, member: true }), created_at: 1_700_000_800 }, who)
+  const leaves = (team: Team, who: string, address: string, changes: SignedEvent[] = []) =>
+    leavesTopicIn([team], place(address), (topic, facts) =>
+      topicFollowingOf({ address: topic.address!, folder: TEAM, me: who, changes, floor: 0, ...(facts ? { team: facts } : {}) }),
+    )
+  const withList = (people: string[], list: { teams: Record<string, number>; off: string[] }) =>
+    teamOf(folder, { ...read(people), teamsList: { state: 'present', list: parseTeamsBlob(serializeTeamsBlob(list, 1))! } }, KATERINA)
+
+  it('a space the viewer hears only through being in its team offers Leave', () => {
+    expect(leaves(teamOf(folder, read([MIKY, KATERINA]), KATERINA), KATERINA, SPACE)).toBe(true)
+  })
+
+  it('a public space the viewer hears through following its team offers Leave', () => {
+    expect(leaves(teamOf(folder, read([MIKY], { [TEAM]: 1_700_000_300_000 }), KATERINA), KATERINA, SPACE)).toBe(true)
+  })
+
+  it('a space whose team default the viewer turned off offers none', () => {
+    expect(leaves(withList([MIKY, KATERINA], { teams: {}, off: ['roadmap'] }), KATERINA, SPACE)).toBe(false)
+  })
+
+  it('a topic the team leads offers Leave only once the viewer joined it', () => {
+    const team = teamOf(folder, read([MIKY, KATERINA]), KATERINA)
+    expect(leaves(team, KATERINA, TOPIC)).toBe(false)
+    expect(leaves(team, KATERINA, TOPIC, [joined(KATERINA, TOPIC)])).toBe(true)
+  })
+
+  it('nothing offers Leave to someone neither in the team nor following it', () => {
+    const team = teamOf(folder, read([MIKY]), KATERINA)
+    expect(leaves(team, KATERINA, SPACE)).toBe(false)
+    expect(leaves(team, KATERINA, TOPIC)).toBe(false)
+  })
+
+  it('nothing in an archived team offers Leave, a joined topic included', () => {
+    const archived = teamOf({ ...folder, archived: { by: MIKY, at: 1_700_000_900 } }, read([MIKY, KATERINA]), KATERINA)
+    expect(leaves(archived, KATERINA, SPACE)).toBe(false)
+    expect(leaves(archived, KATERINA, TOPIC, [joined(KATERINA, TOPIC)])).toBe(false)
+  })
+
+  it('a topic whose following is not known yet, or that the viewer muted, offers none', () => {
+    expect(leavesTopicIn([teamOf(folder, read([MIKY, KATERINA]), KATERINA)], place(SPACE), () => undefined)).toBe(false)
   })
 })

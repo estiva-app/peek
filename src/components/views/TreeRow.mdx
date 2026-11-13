@@ -30,6 +30,6 @@ import { TreeRow } from '@/components/views/FileTreeView'
 
 ## What it owns
 
-- **The menu:** only the controls the file's manifest declares, Join or Leave, Open work, and Archive or Unarchive; read-only when the file is archived.
+- **The menu:** only the controls the file's manifest declares, Join or Leave, Open work, and Archive or Unarchive; read-only when the file is archived. A topic's or space's row offers Leave only where its list passes `leaves`: every row in Topics, and in a team's lists (the Teams column, a team's page) a row you hear from, a team's default included.
 - **Opening:** its children (a listing's, a project's fetched issues, or `under`), opened for the selected file below it.
 - **Which column it is in:** a click records it (`TreeColumn`), so the file's page shows that column.
