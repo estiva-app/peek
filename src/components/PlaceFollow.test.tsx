@@ -109,7 +109,7 @@ describe('the switch’s words', () => {
   it('on a team’s chat say only what lights', async () => {
     render(<Harness place={`39000:${MIKY}:33333333-3333-4333-8333-333333333333`} />)
     await userEvent.click(screen.getByRole('button', { name: /change how you follow Brief/ }))
-    expect((await screen.findByRole('menuitem', { name: /^Not following/ })).textContent).toContain('Nothing lights.')
+    expect((await screen.findByRole('menuitem', { name: /^Not following/ })).textContent).toContain('Lights only when someone names you.')
     expect(screen.getByRole('menuitem', { name: /^All/ }).textContent).toContain('Lights for every message.')
     expect(screen.getByRole('menuitem', { name: /^All/ }).textContent).not.toContain('files')
   })
