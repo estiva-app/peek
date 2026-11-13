@@ -60,7 +60,9 @@
  * Every run is a fresh browser, and a fresh browser used to mint a new
  * read-state slot: QA-1 reached 141, and every tab then decrypted all of them
  * (Peek 23130326). Each identity now reuses one slot per app, derived from its
- * pubkey and planted in `localStorage` before the app loads. `--slot fresh`
+ * pubkey and planted in `localStorage` before the app loads, with Peek's slot
+ * version beside it (ACT-7: without it the bundle moves the slot to a new id,
+ * and every run minted one again). `--slot fresh`
  * leaves it out, for a check that needs a brand-new installation — and leaves
  * one more slot on the relay. Two runs as the same identity at the same time
  * share the slot and can overwrite each other's markers: give one of them
@@ -575,6 +577,19 @@ async function sessionFor(as) {
   return body
 }
 
+/**
+ * Peek's slot version key and value, read from `src/nostr/readState.ts`: a slot planted without the version the bundle
+ * writes is moved to a new random id on load (`loadSlotIdentity`, ACT-7), so every run would mint a slot again. Read
+ * from the source, not copied, so a new version moves the probe with it; a rename fails the run here, not silently.
+ */
+function peekSlotVersion() {
+  const source = readFileSync(new URL('../src/nostr/readState.ts', import.meta.url), 'utf8')
+  const key = /export const SLOT_VERSION_STORAGE_KEY = '([^']+)'/.exec(source)?.[1]
+  const value = /export const SLOT_VERSION = '([^']+)'/.exec(source)?.[1]
+  if (!key || !value) fail('probe: SLOT_VERSION_STORAGE_KEY / SLOT_VERSION not found in src/nostr/readState.ts; pin the read-state slot version by hand')
+  return { [key]: value }
+}
+
 /** One read-state slot per identity and app, the same every run (see "Read-state slot"). */
 function pinnedSlots(pubkey, base) {
   const hex = (label) => createHash('sha256').update(`probe-read-state:${label}:${pubkey}`).digest('hex')
@@ -584,14 +599,18 @@ function pinnedSlots(pubkey, base) {
       'estiva-peek:read-state-slot': { slotId: hex('peek').slice(0, 32), clientId: `peek-${hex('peek-client').slice(0, 8)}` },
       'ship.readstate.slot': { slotId: hex('ship').slice(0, 32), clientId: `ship-${hex('ship-client').slice(0, 8)}` },
     },
+    // Planted with Peek's slot, so the bundle keeps it rather than moving it to a fresh id.
+    beside: { 'estiva-peek:read-state-slot': peekSlotVersion() },
   }
 }
 
-/** Runs in the page, before the app: plant the slots unless the app already holds one. */
-function pinReadStateSlot({ origin, slots }) {
+/** Runs in the page, before the app: plant the slots unless the app already holds one, each with what it needs beside it. */
+function pinReadStateSlot({ origin, slots, beside }) {
   if (location.origin !== origin) return
   for (const [key, identity] of Object.entries(slots)) {
-    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(identity))
+    if (localStorage.getItem(key)) continue
+    localStorage.setItem(key, JSON.stringify(identity))
+    for (const [extra, value] of Object.entries(beside[key] ?? {})) localStorage.setItem(extra, value)
   }
 }
 
