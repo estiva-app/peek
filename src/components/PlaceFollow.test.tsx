@@ -95,6 +95,26 @@ describe('Who follows', () => {
   })
 })
 
+describe('the switch’s words', () => {
+  // ACT-5: each level says what the place shows and what lights; a team's chat lists no files, so only what lights.
+  it('on a topic say what of its files it shows', async () => {
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: /change how you follow Brief/ }))
+    expect((await screen.findByRole('menuitem', { name: /^Important/ })).textContent).toContain(
+      'Shows its own conversation. Lights for new conversations, replies in yours, and what names you on its files.',
+    )
+    expect(screen.getByRole('menuitem', { name: /^All/ }).textContent).toContain('Shows its files’ threads too. Lights for all of it.')
+  })
+
+  it('on a team’s chat say only what lights', async () => {
+    render(<Harness place={`39000:${MIKY}:33333333-3333-4333-8333-333333333333`} />)
+    await userEvent.click(screen.getByRole('button', { name: /change how you follow Brief/ }))
+    expect((await screen.findByRole('menuitem', { name: /^Not following/ })).textContent).toContain('Nothing lights.')
+    expect(screen.getByRole('menuitem', { name: /^All/ }).textContent).toContain('Lights for every message.')
+    expect(screen.getByRole('menuitem', { name: /^All/ }).textContent).not.toContain('files')
+  })
+})
+
 describe('the switch on an archived place', () => {
   // The package's disabled button keeps focus for its reason, so it says so with aria-disabled.
   const isDisabled = (el: HTMLElement) => (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true'
