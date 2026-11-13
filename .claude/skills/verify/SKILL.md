@@ -39,7 +39,7 @@ description: Use to prove a Peek change works, either end to end in the running 
 - Put the driver script **inside the repo** (e.g. `.verify-drive.mjs`,
   delete after) — Node resolves `playwright-core` from the script's dir,
   not cwd.
-- URL routing: `/app/desk`, `/app/folders`, `/app/people`, `/app/people/:id`; every file at `/<word>/<slug>-<d>` (FOL-39). `/topics` and `/topics/:id` only redirect (FOL-26).
+- URL routing: `/app/desk`, `/app/teams` (old `/app/folders` and `/folders` redirect), `/app/people`, `/app/people/:id`; every file at `/<word>/<slug>-<d>` (FOL-39). `/topics` and `/topics/:id` only redirect (FOL-26).
 - Clicking a message card opens the thread panel (the card body is the
   click target).
 
