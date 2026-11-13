@@ -186,7 +186,7 @@ async function seedTopic(address: string, title: string, other: string, people: 
     }
     if (i % 7 === 0)
       await write(`${address.slice(-6)} #${i} react`, () =>
-        reactAsViewer({ targetEventId: id, emoji: i % 14 === 0 ? '👍' : '🎉' }, RELAY_URL, people[(i + 1) % 2]),
+        reactAsViewer({ target: comment, emoji:i % 14 === 0 ? '👍' : '🎉' }, RELAY_URL, people[(i + 1) % 2]),
       )
     if (i === 60)
       await write(`${address.slice(-6)} #${i} edit`, () => editCommentAsViewer({ container, targetEventId: id, body: `${body} (edited)`, files: [] }, RELAY_URL, author))

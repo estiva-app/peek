@@ -48,6 +48,7 @@ import {
   buildMessage,
   buildReaction,
   buildResolution,
+  needsRelayKey,
   embedTag,
   embedsOf,
   imetaOf,
@@ -92,7 +93,16 @@ import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, retryAfterMs } from './relayRead'
-import { buildCommentAsViewer, fileCommentOf, threadEventsWith, linkTagsAsViewer, viewerQuery, type FileComment, type FileThreads } from './foreign'
+import {
+  buildCommentAsViewer,
+  fileCommentOf,
+  threadEventsWith,
+  linkTagsAsViewer,
+  relaySigningKeyOnce,
+  viewerQuery,
+  type FileComment,
+  type FileThreads,
+} from './foreign'
 
 /** Where a conversation lives; see the module header. */
 export type ConversationContainer =
@@ -145,6 +155,11 @@ export interface ConversationEvent extends FileComment {
   embeds?: Embed[]
   /** The values naming the file it is on, its `A` and `O`: a line that is only a link to it draws nothing (ONE-11). */
   ownFile?: string[]
+  /**
+   * Its `actor` and `p` tags: with its signer, whose message it is when the relay signed it for someone
+   * (`effectiveAuthor`, SPEC §6.5) — what a reaction to it names (ACT-6). Absent: none, so it is its signer's.
+   */
+  authorship?: string[][]
   /**
    * A root that was deleted while replies to it stay (PER-24, SPEC §6.5): its
    * author's `kind:5` came back. A stand-in with the deleted event's id, no
@@ -208,6 +223,12 @@ export interface OutgoingAttachment {
   imeta?: Imeta
 }
 
+/** {@link ConversationEvent.authorship}: an event's `actor` and `p` tags, absent when it has none. */
+export const authorshipOf = (event: { tags: string[][] }): string[][] | undefined => {
+  const tags = event.tags.filter((t) => t[0] === 'actor' || t[0] === 'p')
+  return tags.length ? tags : undefined
+}
+
 const withTags = (comment: FileComment, event: SignedEvent | undefined, address: string): ConversationEvent => ({
   ...comment,
   files: event ? attachmentsOf(event) : [],
@@ -216,6 +237,7 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   parts: event ? partsAndAnchorOf(event) : [],
   embeds: event ? embedsOf(event) : [],
   ownFile: event ? ownFileOf(event) : undefined,
+  authorship: event ? authorshipOf(event) : undefined,
 })
 
 /**
@@ -587,6 +609,7 @@ async function channelConversationWith(h: string, query: QueryFn, general = fals
     urgent: urgentOf(event),
     parts: partsAndAnchorOf(event),
     embeds: embedsOf(event),
+    authorship: authorshipOf(event),
   })
   // A reply whose thread's root this channel does not hold is dropped rather
   // than stranded under a stand-in: a DM's messages are never deleted from under replies.
@@ -947,9 +970,35 @@ export async function composeEdit(
 export const composeDeletion = (targetEventId: string, pubkey: string): UnsignedEvent =>
   buildDeletion(pubkey, Date.now(), { targetEventId })
 
-/** The `kind:7` {@link reactAsViewer} sends. */
-export const composeReaction = (args: { targetEventId: string; emoji: string }, pubkey: string): UnsignedEvent =>
-  buildReaction(pubkey, Date.now(), args)
+/** What a reaction needs of the message it is on: its id, its signer and the tags that can make it someone else's. */
+export type ReactionTarget = Pick<ConversationEvent, 'id' | 'author' | 'authorship'>
+
+/**
+ * The `kind:7` {@link reactAsViewer} sends: its `p` names whose message it is on, so anyone can find the reactions
+ * to their own messages (ACT-6). The relay's key is read — once a session — only for a message carrying an `actor`
+ * or a `p`, the only kind the relay can have signed for someone else; reacting to any other costs no read. With no
+ * key (none readable, or the read failed) it names the signer.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-names-whose-message-it-reacts-to.md
+ */
+export async function composeReaction(
+  args: { target: ReactionTarget; emoji: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<UnsignedEvent> {
+  const target = { id: args.target.id, pubkey: args.target.author, tags: args.target.authorship ?? [] }
+  /*
+    A key that could not be read does not stop the reaction: it names the signer then, which is right for every
+    message a person signed. The failed read is not kept, so the next reaction asks again.
+  */
+  const relayKey = needsRelayKey(target)
+    ? await relaySigningKeyOnce(relayUrl, token).catch((error: unknown) => {
+        console.warn('[nostr] reading the relay’s key failed; the reaction names the message’s signer:', error)
+        return null
+      })
+    : null
+  return buildReaction(token.pubkey, Date.now(), { target, emoji: args.emoji, relayKey })
+}
 
 /**
  * Ask the relay to delete an event — a comment, a reply, or a reaction.
@@ -965,11 +1014,11 @@ export async function deleteEventAsViewer(targetEventId: string, relayUrl: strin
 
 /** React to a comment — `kind:7`. Taking it back is {@link deleteEventAsViewer} on the reaction. */
 export async function reactAsViewer(
-  args: { targetEventId: string; emoji: string },
+  args: { target: ReactionTarget; emoji: string },
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
-  return publish(composeReaction(args, token.pubkey), relayUrl, token, 'The relay refused the reaction.')
+  return publish(await composeReaction(args, relayUrl, token), relayUrl, token, 'The relay refused the reaction.')
 }
 
 /** Resolve or reopen a comment — `kind:9101` at the message (PEEK-128, DMS-11). */

@@ -688,12 +688,56 @@ describe('the decorations are written as the suite agrees them', () => {
     })
   })
 
-  it('a reaction is a kind:7 with the emoji as content', async () => {
-    await reactAsViewer({ targetEventId: root.id, emoji: '🎉' }, 'https://relay.test', token)
-    const published = signed()
-    expect(published.kind).toBe(7)
-    expect(published.content).toBe('🎉')
-    expect(published.tags).toContainEqual(['e', root.id])
+  describe('a reaction names whose message it is on (ACT-6)', () => {
+    /** The one read that answers the relay's key: any team record. */
+    const keyReads = () => queryRelay.mock.calls.filter(([, filters]) => (filters as { kinds?: number[] }[]).some((f) => f.kinds?.includes(39000)))
+    const RELAY = 'f'.repeat(64)
+    const team = event({ kind: 39000, pubkey: RELAY, tags: [['d', FOLDER]] })
+    /** The message as the conversation holds it, from the same read the view draws. */
+    const held = async (message: TestEvent) => {
+      queryRelay.mockImplementation(relayOver([team, message]))
+      const found = await channelConversationAsViewer(FOLDER, 'https://relay.test', token)
+      queryRelay.mockClear()
+      return found.roots.find((r) => r.id === message.id)!
+    }
+
+    it('is a kind:7 with the emoji as content, its e the message and its p the message’s author, read with nothing else', async () => {
+      const said = event({ kind: 9, pubkey: CATH, content: 'Shipped', tags: [['h', FOLDER]] })
+      await expect(reactAsViewer({ target: await held(said), emoji: '🎉' }, 'https://relay.test', token)).resolves.toMatchObject({ ok: true })
+      const published = signed()
+      expect(published.kind).toBe(7)
+      expect(published.content).toBe('🎉')
+      expect(published.tags).toEqual([['e', said.id], ['p', CATH]])
+      expect(keyReads()).toEqual([])
+    })
+
+    it('a message that mentions someone still names its author, not the person it mentions', async () => {
+      const mentioning = event({ kind: 9, pubkey: CATH, content: 'Over to you', tags: [['h', FOLDER], ['p', MIKY]] })
+      await expect(reactAsViewer({ target: await held(mentioning), emoji: '👍' }, 'https://relay.test', token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', mentioning.id], ['p', CATH]])
+    })
+
+    it('a message the relay signed for someone (a workflow’s) names that someone, its actor, once the relay’s key is read', async () => {
+      const onBehalf = event({ kind: 9, pubkey: RELAY, content: 'Deployed', tags: [['h', FOLDER], ['actor', CATH], ['p', MIKY]] })
+      await expect(reactAsViewer({ target: await held(onBehalf), emoji: '👍' }, 'https://relay.test', token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', CATH]])
+    })
+
+    it('a relay key that cannot be read does not stop the reaction: it names the signer, and the next reaction reads the key again', async () => {
+      // Another relay, so no key read for the cases above is held for it.
+      const elsewhere = 'https://elsewhere.test'
+      const onBehalf = event({ kind: 9, pubkey: RELAY, content: 'Deployed', tags: [['h', FOLDER], ['actor', CATH]] })
+      const target = await held(onBehalf)
+      queryRelay.mockImplementation(async () => {
+        throw new Error('socket closed')
+      })
+      await expect(reactAsViewer({ target, emoji: '👍' }, elsewhere, token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', RELAY]])
+      signViaEstivaId.mockClear()
+      queryRelay.mockImplementation(relayOver([team]))
+      await expect(reactAsViewer({ target, emoji: '🎉' }, elsewhere, token)).resolves.toMatchObject({ ok: true })
+      expect(signed().tags).toEqual([['e', onBehalf.id], ['p', CATH]])
+    })
   })
 
   it('a resolution is a kind:9101 t=resolution with its action, rationale and the reply that carried it', async () => {

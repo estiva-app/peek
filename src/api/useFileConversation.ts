@@ -100,6 +100,16 @@ function parentIn(key: string, v: Viewer, id: string): string | undefined {
   return Object.keys(replies).find((root) => replies[root].some((reply) => reply.id === id))
 }
 
+/** A message the conversation holds, by id — a comment or a reply at any depth: whose a reaction to it names (ACT-6). */
+function heldIn(key: string, v: Viewer, id: string): ConversationEvent | undefined {
+  const held = conversationsFor(v.relayUrl, v.token.pubkey).value(key)
+  if (!held) return undefined
+  return held.roots.find((root) => root.id === id) ?? Object.values(held.replies).flat().find((reply) => reply.id === id)
+}
+
+/** Why a reaction to a message that is not drawn was not sent: it could not name whose message it is. */
+const REACTION_TARGET_NOT_HELD = 'This message is not loaded here, so the reaction was not sent.'
+
 /** The Folder of the thread `id` opens, as the shared fold read it: where its resolve is written (§6.4, C51). */
 function folderIn(key: string, relayUrl: string, pubkey: string, id: string): string | undefined {
   return conversationsFor(relayUrl, pubkey).value(key)?.threads[id]?.folder
@@ -406,8 +416,20 @@ export function conversationActions({
       return change(targetEventId, (v) => compose(v), 'The relay refused the edit.', (v) => compose(v, 0))
     },
     remove: (targetEventId) => change(targetEventId, (v) => composeDeletion(targetEventId, v.token.pubkey), 'The relay refused the deletion.'),
+    /*
+      The reaction names whose message it is on (ACT-6), from the message as it is held — never sent without that
+      name: a message that is not held, or a stand-in nobody wrote, is refused before anything is drawn.
+    */
     react: (targetEventId, emoji) =>
-      change(targetEventId, (v) => composeReaction({ targetEventId, emoji }, v.token.pubkey), 'The relay refused the reaction.'),
+      change(
+        targetEventId,
+        (v) => {
+          const target = heldIn(key, v, targetEventId)
+          if (!target?.author) throw new Error(REACTION_TARGET_NOT_HELD)
+          return composeReaction({ target, emoji }, v.relayUrl, v.token)
+        },
+        'The relay refused the reaction.',
+      ),
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>
