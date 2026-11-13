@@ -601,7 +601,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
   it('sends any other channel address — a team — to its Folder', () => {
     const PEEK_TEAM = 'fd03975a-eb00-49d6-a4b7-33ead1854672'
     mount(`/topic/39000:${CATH}:${PEEK_TEAM}`)
-    expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${PEEK_TEAM}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${PEEK_TEAM}`)
   })
 })
 
@@ -1694,7 +1694,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       folder: FOLDER,
       hasState: true,
     })
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${FOLDER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`))
     expect(toasts.shown).toHaveLength(0)
   })
 
@@ -1707,7 +1707,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
     expect(writes.deleteFile.mock.calls[0][0]).toMatchObject({ hasState: false })
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${FOLDER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`))
   })
 
   it('a non-author’s delete says the relay refused it, in the relay’s words, and stays', async () => {

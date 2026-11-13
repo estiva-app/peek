@@ -37,7 +37,7 @@ export function StartedTopicRefusals() {
     () =>
       onTopicRefused((refused) => {
         const typed = !!browserDrafts().read(draftKeys.object(refused.address))?.trim()
-        if (decodeURIComponent(at.current).includes(refused.fileId)) navigate(`/app/folders/${refused.folder}`)
+        if (decodeURIComponent(at.current).includes(refused.fileId)) navigate(`/app/teams/${refused.folder}`)
         showToast({ label: `Topic not created — ${refused.textBack || typed ? 'title and text' : 'title'} restored`, type: 'error' })
         setAgain(refused)
       }),

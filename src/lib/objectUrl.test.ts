@@ -241,7 +241,7 @@ describe('fileRouteFromPath', () => {
   })
 
   it('is null for a page of Peek’s own, at the root or under /app/', () => {
-    for (const path of ['/app/desk', '/app/folders/x', '/app/people/alice', '/topics/1', '/topic-old/x', '/o/naddr1', '/message/abc', '/']) {
+    for (const path of ['/app/desk', '/app/teams/x', '/app/people/alice', '/topics/1', '/topic-old/x', '/o/naddr1', '/message/abc', '/']) {
       expect(fileRouteFromPath(path)).toBeNull()
     }
   })

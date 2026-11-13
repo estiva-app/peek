@@ -14,7 +14,7 @@
     <!--
       The saved picture of Desk or Topics (src/lib/pagePicture.ts): shown the moment the page arrives, before the app
       has loaded, and replaced in place by the live page once it has drawn (Miky, 13 Oct). Only for the person whose
-      copy this device holds, on a plain /app/desk or /app/folders, and only when the stylesheet is the one the picture
+      copy this device holds, on a plain /app/desk or /app/teams, and only when the stylesheet is the one the picture
       was drawn with. Inline, so it costs no request; keep it in step with pagePicture.ts.
     -->
     <script>
@@ -22,7 +22,7 @@
         try {
           var path = location.pathname
           if (location.search) return
-          var page = path === '/' || path === '/app' || path === '/app/desk' ? 'desk' : path === '/app/folders' ? 'topics' : null
+          var page = path === '/' || path === '/app' || path === '/app/desk' ? 'desk' : path === '/app/teams' ? 'topics' : null
           if (!page) return
           var session = JSON.parse(localStorage.getItem('peek.estivaId.token') || 'null')
           var picture = JSON.parse(localStorage.getItem('peek-' + page + '-picture') || 'null')

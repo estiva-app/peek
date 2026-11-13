@@ -189,7 +189,7 @@ for (const leg of legs) {
   if (kind === 'elsewhere') {
     const report = await probe(
       'qa1',
-      `/app/folders/${QA_FOLDER}`,
+      `/app/teams/${QA_FOLDER}`,
       [
         ...OPEN_A(id),
         '--eval', INSTRUMENT('edit', id, text),
@@ -208,7 +208,7 @@ for (const leg of legs) {
   }
   const report = await probe(
     'qa1',
-    `/app/folders/${QA_FOLDER}`,
+    `/app/teams/${QA_FOLDER}`,
     [...OPEN_A(id), '--eval', INSTRUMENT(kind, id, text), ...ACT[kind](id, text), '--wait', '7000', '--eval', REPORT(id)],
     refused ? ['--refuse-e', id] : [],
   )
@@ -248,7 +248,7 @@ const want = {
 const checked = legs.filter((leg) => seeded[leg])
 const COUNT = `(() => Object.fromEntries([${checked.map((leg) => `[${JSON.stringify(leg)}, ${changed(want[leg][0], seeded[leg], marker(leg))}]`).join(', ')}]))()`
 const anyRoot = checked.find((leg) => !leg.startsWith('delete')) ?? checked[0]
-const qa2 = await probe('qa2', `/app/folders/${QA_FOLDER}`, [...openLink(A), '--until', `!!${card(seeded[anyRoot])}`, '--wait', '4000', '--eval', COUNT])
+const qa2 = await probe('qa2', `/app/teams/${QA_FOLDER}`, [...openLink(A), '--until', `!!${card(seeded[anyRoot])}`, '--wait', '4000', '--eval', COUNT])
 const seen = evals(qa2).at(-1)
 results.qa2 = seen ?? qa2.failure
 for (const leg of checked) if (!seen || seen[leg] !== want[leg][1]) fail(`QA-2: ${leg} ${want[leg][1] ? 'not' : 'wrongly'} seen (${JSON.stringify(seen?.[leg])})`)

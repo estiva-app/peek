@@ -164,8 +164,8 @@ const openThread = (parentText) => [
 
 /** Where each leg is, as steps from its start URL to a ready composer. */
 const place = {
-  topic: () => ({ url: `/app/folders/${QA_FOLDER}`, steps: [...OPEN_A, ...EDITOR_READY], which: 'first' }),
-  thread: () => ({ url: `/app/folders/${QA_FOLDER}`, steps: [...OPEN_A, ...EDITOR_READY, ...openThread(parentOfThread())], which: 'last' }),
+  topic: () => ({ url: `/app/teams/${QA_FOLDER}`, steps: [...OPEN_A, ...EDITOR_READY], which: 'first' }),
+  thread: () => ({ url: `/app/teams/${QA_FOLDER}`, steps: [...OPEN_A, ...EDITOR_READY, ...openThread(parentOfThread())], which: 'last' }),
   dm: () => ({ url: `/app/people/${QA2}`, steps: EDITOR_READY, which: 'first' }),
   desk: () => ({
     url: '/app/desk',

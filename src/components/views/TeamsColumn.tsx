@@ -11,7 +11,7 @@ import type { TreeShow } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
 
 /** A team's chat: its own path beside the team's page (TEA-5). */
-export const teamChatPath = (team: string) => `/app/folders/${team}/chat`
+export const teamChatPath = (team: string) => `/app/teams/${team}/chat`
 
 /**
  * A team's chat row is called by the team, as the prototype draws it ("engineering" for Engineering).
@@ -149,7 +149,7 @@ export function TeamsColumnView({
           title={team.name}
           look="quiet"
           // A link, not a button: the team's page is a place, and Cmd-click opens it in a new tab.
-          render={<Link to={`/app/folders/${team.id}`} aria-label={`Open ${team.name}`} />}
+          render={<Link to={`/app/teams/${team.id}`} aria-label={`Open ${team.name}`} />}
         />
         {chat && (
           <NavItem
@@ -190,7 +190,7 @@ export function TeamsColumnView({
           'Other teams',
           <div className="flex flex-col gap-0.5">
             {otherRows.map((team) => (
-              <NavItem key={team.id} href={`/app/folders/${team.id}`} label={team.name} active={openTeam === team.id && !chatOpen} />
+              <NavItem key={team.id} href={`/app/teams/${team.id}`} label={team.name} active={openTeam === team.id && !chatOpen} />
             ))}
           </div>,
         )}

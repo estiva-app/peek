@@ -356,7 +356,7 @@ let report
 try {
   const { stdout } = await runNode(
     process.execPath,
-    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/folders/${QA_FOLDER}`, '--timeout', widgets ? '600000' : '300000',
+    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/teams/${QA_FOLDER}`, '--timeout', widgets ? '600000' : '300000',
       '--net', netFile, '--until', `document.querySelector('a[href^="${A}"]')`, '--eval', source],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: hook, PROBE_WS_MATCH: wsMatch } },
   )

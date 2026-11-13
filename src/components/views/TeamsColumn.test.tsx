@@ -76,20 +76,20 @@ describe('the Teams column (TEA-5)', () => {
     // Yours sorted by name, ignoring case; a followed one is not among yours; another team is its name alone.
     const sections = screen.getAllByRole('link', { name: /^Open / }).map((link) => link.getAttribute('aria-label'))
     expect(sections).toEqual(['Open design', 'Open Engineering', 'Open Sales'])
-    expect(screen.getByRole('link', { name: 'Legal' }).getAttribute('href')).toBe('/app/folders/legal')
+    expect(screen.getByRole('link', { name: 'Legal' }).getAttribute('href')).toBe('/app/teams/legal')
     expect(screen.queryByRole('link', { name: 'Open Legal' })).toBeNull()
   })
 
   it('a team’s heading leads to its page', () => {
     mount()
-    expect(screen.getByRole('link', { name: 'Open Engineering' }).getAttribute('href')).toBe('/app/folders/eng')
+    expect(screen.getByRole('link', { name: 'Open Engineering' }).getAttribute('href')).toBe('/app/teams/eng')
   })
 
   it('a team you are in shows its chat first, then its spaces, then the topics it leads — no issue, no archived topic', () => {
     mount()
     expect(rowsOf(sectionOf('Engineering'))).toEqual(['Engineering', 'engineering', 'General', 'Launch'])
     const chat = within(sectionOf('Engineering')).getByRole('link', { name: 'engineering' })
-    expect(chat.getAttribute('href')).toBe('/app/folders/eng/chat')
+    expect(chat.getAttribute('href')).toBe('/app/teams/eng/chat')
   })
 
   it('a team you follow lists its spaces and topics, and never its chat', () => {

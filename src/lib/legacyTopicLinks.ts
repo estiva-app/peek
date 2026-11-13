@@ -68,7 +68,7 @@ const byChannel = new Map(LEGACY_TOPICS.map((t) => [t.channel, t]))
 const byId = new Map(LEGACY_TOPICS.map((t) => [t.id, t]))
 
 const destinationOf = (topic: LegacyTopic): string =>
-  'file' in topic ? filePath(topic.file, topic.title) : `/app/folders/${topic.team}`
+  'file' in topic ? filePath(topic.file, topic.title) : `/app/teams/${topic.team}`
 
 /** The topic a channel uuid belonged to, or undefined for any other channel. */
 export function legacyTopicByChannel(channel: string): LegacyTopic | undefined {
@@ -81,7 +81,7 @@ export function legacyTopicByChannel(channel: string): LegacyTopic | undefined {
  */
 export function channelDestination(channel: string): string {
   const topic = legacyTopicByChannel(channel)
-  return topic ? destinationOf(topic) : `/app/folders/${channel.toLowerCase()}`
+  return topic ? destinationOf(topic) : `/app/teams/${channel.toLowerCase()}`
 }
 
 /**
@@ -96,7 +96,7 @@ export function legacyTopicDestination(ref: string): string | null {
   const topic = legacyTopicOf(ref)
   if (topic) return destinationOf(topic)
   const channel = identifierFromRef(ref)
-  return channel ? `/app/folders/${channel.toLowerCase()}` : null
+  return channel ? `/app/teams/${channel.toLowerCase()}` : null
 }
 
 /**

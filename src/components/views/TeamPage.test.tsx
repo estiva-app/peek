@@ -209,13 +209,13 @@ describe('what a team’s page shows (TEA-5)', () => {
   it('its places: the chat for a member, then its spaces and topics', () => {
     mount(team())
     const places = section(/^Places$/)
-    expect(within(places).getByRole('link', { name: 'engineering' }).getAttribute('href')).toBe('/app/folders/eng/chat')
+    expect(within(places).getByRole('link', { name: 'engineering' }).getAttribute('href')).toBe('/app/teams/eng/chat')
   })
 
   it('the Company team’s chat reads "general", whatever the team is called (TEA-7)', () => {
     mount(team({ company: true, name: 'Estiva HQ' }))
     const places = section(/^Places$/)
-    expect(within(places).getByRole('link', { name: 'general' }).getAttribute('href')).toBe('/app/folders/eng/chat')
+    expect(within(places).getByRole('link', { name: 'general' }).getAttribute('href')).toBe('/app/teams/eng/chat')
     expect(within(places).queryByRole('link', { name: 'estiva hq' })).toBeNull()
     expect(within(places).getByText('Launch')).toBeTruthy()
   })

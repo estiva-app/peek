@@ -5,9 +5,9 @@
  * to act as (PER-22), the agent can run them itself from WSL, where Claude in
  * Chrome does not work.
  *
- *   node scripts/probe.mjs --as qa1 --url /app/folders --until "!!document.querySelector('main a')" \
+ *   node scripts/probe.mjs --as qa1 --url /app/teams --until "!!document.querySelector('main a')" \
  *     --eval "document.querySelector('main')?.innerText"
- *   node scripts/probe.mjs --as qa2 --url /app/folders/<team> --click "Join"
+ *   node scripts/probe.mjs --as qa2 --url /app/teams/<team> --click "Join"
  *
 
  * Steps run in argument order, so `--click`, `--fill`, `--press`, `--type`, `--hover`,
