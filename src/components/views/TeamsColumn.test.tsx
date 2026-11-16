@@ -1,8 +1,8 @@
 /**
- * Peek's Teams column (TEA-5), as the approved prototype draws it: the teams
- * you are in, the ones you follow, and the rest by name; a team's section is
- * its chat (members only, with its dot), its spaces, then the topics it leads;
- * and a member marks a topic one of its spaces from the row's menu.
+ * Peek's Teams column as the navigation prototype draws it (Katerina, 16 November; the decisions' step 3): the teams
+ * you are in and the ones you follow together, the Company team first, with no label over them; each a row that opens
+ * its page and folds its chat, its topics (#, today's spaces) and its Files; initiatives (today's topics) no longer
+ * under a team; the other teams in one fold with its count.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
@@ -44,88 +44,109 @@ const ENGINEERING = team('eng', 'Engineering', {
     { address: LAUNCH.address!, space: false },
     { address: GENERAL.address!, space: true },
     { address: ISSUE, space: false },
-    { address: OLD.address!, space: false },
+    { address: OLD.address!, space: true },
   ],
 })
-// Listed among its follows too: being in it says more, so it is drawn once, among yours.
-const DESIGN = team('design', 'design', { isMember: true, isFollowing: true })
+// Listed among its follows too: being in it says more, so it is drawn once.
+const DESIGN = team('design', 'Design', { isMember: true, isFollowing: true })
 const SALES = team('sales', 'Sales', { isFollowing: true, listed: [{ address: HIRING.address!, space: true }] })
 const LEGAL = team('legal', 'Legal')
+const COMPANY = team('co', 'Acme', { isMember: true, company: true })
 
 const TOPICS = new Map([GENERAL, LAUNCH, HIRING, OLD].map((t) => [t.address!, t]))
 
 function mount(props: Partial<Parameters<typeof TeamsColumnView>[0]> = {}) {
   return render(
     <MemoryRouter>
-      <TeamsColumnView teams={[SALES, LEGAL, ENGINEERING, DESIGN]} topics={TOPICS} chatUnread={{}} unread={{}} {...props} />
+      <TeamsColumnView teams={[SALES, LEGAL, ENGINEERING, DESIGN, COMPANY]} topics={TOPICS} chatUnread={{}} unread={{}} {...props} />
     </MemoryRouter>,
   )
 }
 
-/** A team's section in the column: its heading's link, then everything drawn under it. */
-const sectionOf = (name: string) => screen.getByRole('link', { name: `Open ${name}` }).closest('.pb-2')! as HTMLElement
-const rowsOf = (section: HTMLElement) => [...section.querySelectorAll('a')].map((a) => a.textContent?.trim()).filter(Boolean)
+/** Every row's name, in the order the column draws them. */
+const rows = () => screen.getAllByRole('link').map((link) => link.textContent?.trim())
+/** A row's link by its name: exact, or a pattern where a chip it holds is part of it. */
+const row = (name: string | RegExp) => screen.getByRole('link', { name })
+/** The block a row's own controls sit in: the nearest one around its link that holds a ⋮. */
+const rowBlock = (name: string | RegExp, button: string | RegExp) => {
+  let block: HTMLElement = row(name)
+  while (!within(block).queryByRole('button', { name: button })) block = block.parentElement!
+  return block
+}
 
-describe('the Teams column (TEA-5)', () => {
-  it('groups the teams you are in, then the ones you follow, then the rest, each by name', () => {
+describe('the Teams column (step 3)', () => {
+  it('lists your teams and the ones you follow together, the Company team first, with no label over them', () => {
     mount()
-    const headings = ['My teams', 'Following', 'Other teams'].map((title) => screen.getByText(title))
-    // In that order on the page.
-    expect(headings[0].compareDocumentPosition(headings[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(headings[1].compareDocumentPosition(headings[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Yours sorted by name, ignoring case; a followed one is not among yours; another team is its name alone.
-    const sections = screen.getAllByRole('link', { name: /^Open / }).map((link) => link.getAttribute('aria-label'))
-    expect(sections).toEqual(['Open design', 'Open Engineering', 'Open Sales'])
-    expect(screen.getByRole('link', { name: 'Legal' }).getAttribute('href')).toBe('/app/teams/legal')
-    expect(screen.queryByRole('link', { name: 'Open Legal' })).toBeNull()
+    const order = rows()
+    expect(order.indexOf('Acme')).toBe(0)
+    // A–Z after the Company team, the followed Sales among them; Legal is in the fold.
+    expect(order.indexOf('Design')).toBeLessThan(order.indexOf('Engineering'))
+    expect(order.indexOf('Engineering')).toBeLessThan(order.indexOf('Sales'))
+    expect(screen.queryByText('My teams')).toBeNull()
+    expect(screen.queryByText('Following')).toBeNull()
   })
 
-  it('a team’s heading leads to its page', () => {
+  it('a team’s row opens its page', () => {
     mount()
-    expect(screen.getByRole('link', { name: 'Open Engineering' }).getAttribute('href')).toBe('/app/teams/eng')
+    expect(row('Engineering').getAttribute('href')).toBe('/app/teams/eng')
   })
 
-  it('a team you are in shows its chat first, then its spaces, then the topics it leads — no issue, no archived topic', () => {
+  it('under a team you are in: its chat, then its topics; no initiative, no issue, no archived topic', () => {
     mount()
-    expect(rowsOf(sectionOf('Engineering'))).toEqual(['Engineering', 'engineering', 'General', 'Launch'])
-    const chat = within(sectionOf('Engineering')).getByRole('link', { name: 'engineering' })
-    expect(chat.getAttribute('href')).toBe('/app/teams/eng/chat')
+    const order = rows()
+    const at = order.indexOf('Engineering')
+    expect(order.slice(at, at + 3)).toEqual(['Engineering', 'engineering', 'General'])
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Old plans' })).toBeNull()
+    expect(row('engineering').getAttribute('href')).toBe('/app/teams/eng/chat')
   })
 
-  it('a team you follow lists its spaces and topics, and never its chat', () => {
+  it('the Company team’s chat is #general (Q-17)', () => {
     mount()
-    const sales = sectionOf('Sales')
-    expect(rowsOf(sales)).toEqual(['Sales', 'Hiring'])
-    expect(within(sales).queryByRole('link', { name: 'sales' })).toBeNull()
-    expect(screen.queryByRole('link', { name: 'legal' })).toBeNull()
+    expect(row('general').getAttribute('href')).toBe('/app/teams/co/chat')
   })
 
-  it('a team with nothing in it says so, and still offers its members its chat', () => {
+  it('a team you follow lists its topics, and never its chat', () => {
     mount()
-    const design = sectionOf('design')
-    expect(within(design).getByRole('link', { name: 'design' })).toBeTruthy()
-    expect(within(design).getByText('No spaces or topics yet')).toBeTruthy()
+    expect(row('Hiring')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'sales' })).toBeNull()
+  })
+
+  it('a team with only its chat draws nothing more', () => {
+    mount()
+    const order = rows()
+    const at = order.indexOf('Design')
+    expect(order.slice(at, at + 3)).toEqual(['Design', 'design', 'Engineering'])
+    expect(screen.queryByText('No spaces or topics yet')).toBeNull()
+  })
+
+  it('the other teams are one fold, a row with its count', () => {
+    mount()
+    const fold = screen.getByRole('button', { name: /^Other teams/ })
+    expect(fold.textContent).toContain('1')
+    expect(screen.getByRole('link', { name: 'Legal', hidden: true }).getAttribute('href')).toBe('/app/teams/legal')
   })
 
   it('the chat row carries the dot when its chat is unread, and only then', () => {
     mount({ chatUnread: { eng: true, design: false } })
-    const lit = within(sectionOf('Engineering')).getByRole('link', { name: 'engineering' })
-    const dark = within(sectionOf('design')).getByRole('link', { name: 'design' })
-    expect(lit.closest('li, div')!.querySelector('[data-unread], [data-unread-dot]')).not.toBeNull()
-    expect(dark.closest('li, div')!.querySelector('[data-unread], [data-unread-dot]')).toBeNull()
+    expect(row('engineering').closest('li, div')!.querySelector('[data-unread], [data-unread-dot]')).not.toBeNull()
+    expect(row('design').parentElement!.querySelector('[data-unread], [data-unread-dot]')).toBeNull()
   })
 
-  it('the open chat is the current row', () => {
+  it('the open chat is the current row, and its team is not', () => {
     mount({ openTeam: 'eng', chatOpen: true })
-    const chat = within(sectionOf('Engineering')).getByRole('link', { name: 'engineering' })
-    expect(chat.getAttribute('aria-current')).toBe('page')
+    expect(row('engineering').getAttribute('aria-current')).toBe('page')
+    expect(row('Engineering').getAttribute('aria-current')).toBeNull()
+  })
+
+  it('a team’s row is current only while its own page is open', () => {
+    mount({ openTeam: 'eng' })
+    expect(row('Engineering').getAttribute('aria-current')).toBe('page')
   })
 
   it('Unread keeps only what lights — a lit chat, a lit topic — and the team that holds it', () => {
     mount({ show: 'unread', chatUnread: { design: true }, unread: { [HIRING.ref]: true } })
-    expect(rowsOf(sectionOf('design'))).toEqual(['design', 'design'])
-    expect(rowsOf(sectionOf('Sales'))).toEqual(['Sales', 'Hiring'])
-    expect(screen.queryByRole('link', { name: 'Open Engineering' })).toBeNull()
+    expect(rows()).toEqual(['Design', 'design', 'Sales', 'Hiring'])
     expect(screen.queryByText('Other teams')).toBeNull()
   })
 
@@ -140,48 +161,76 @@ describe('the Teams column (TEA-5)', () => {
   })
 })
 
-describe('marking a space from the Teams column (TEA-5)', () => {
-  /** The row's own menu: the nearest block around its link that holds one. */
-  const openMenu = async (section: HTMLElement, title: string) => {
-    let row: HTMLElement = within(section).getByText(title)
-    while (!within(row).queryByRole('button', { name: 'More options' })) row = row.parentElement!
-    await userEvent.click(within(row).getByRole('button', { name: 'More options' }))
-  }
-
-  it('a member makes one of its topics a space, and a space no longer one', async () => {
-    const onMarkSpace = vi.fn()
-    mount({ onMarkSpace })
-    await openMenu(sectionOf('Engineering'), 'Launch')
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Make it a space' }))
-    expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, LAUNCH, true)
-    await openMenu(sectionOf('Engineering'), 'General')
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Stop being a space' }))
-    expect(onMarkSpace).toHaveBeenLastCalledWith(ENGINEERING, GENERAL, false)
+describe('a team’s Files fold (T-16)', () => {
+  it('is shut at first, and reads nothing until it is opened', async () => {
+    const renderFiles = vi.fn(() => <span>the files</span>)
+    mount({ renderFiles })
+    const fold = screen.getByRole('button', { name: 'Files' })
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    expect(renderFiles).not.toHaveBeenCalled()
+    await userEvent.click(fold)
+    expect(renderFiles).toHaveBeenCalledWith(ENGINEERING)
   })
 
-  it('a row the viewer hears from offers the Topics column’s Leave, and one they do not hear from offers none (Miky, 13 Nov)', async () => {
+  it('opens itself for a file of its team that is open', () => {
+    const renderFiles = vi.fn(() => <span>the files</span>)
+    mount({ renderFiles, openTeam: 'eng', selectedRef: ISSUE })
+    expect(screen.getByRole('button', { name: 'Files' }).getAttribute('aria-expanded')).toBe('true')
+    expect(renderFiles).toHaveBeenCalledWith(ENGINEERING)
+  })
+
+  it('shows only under a team that holds a file', () => {
+    mount()
+    expect(screen.getAllByRole('button', { name: 'Files' })).toHaveLength(1)
+  })
+})
+
+describe('what a team’s rows offer (step 3)', () => {
+  it('a member’s team row offers + to start a topic in it; a followed team’s does not', async () => {
+    const onStartTopic = vi.fn()
+    mount({ onStartTopic })
+    // The kit names the button by its tooltip and its row: "New topic in Engineering: Engineering".
+    await userEvent.click(within(rowBlock('Engineering', /^New topic in Engineering/)).getByRole('button', { name: /^New topic in Engineering/ }))
+    expect(onStartTopic).toHaveBeenCalledWith(ENGINEERING)
+    expect(screen.queryByRole('button', { name: /^New topic in Sales/ })).toBeNull()
+  })
+
+  it('a team chat’s ⋮ holds Copy link alone (Q-25)', async () => {
+    const onCopyChatLink = vi.fn()
+    mount({ onCopyChatLink })
+    await userEvent.click(within(rowBlock('engineering', 'More options for engineering')).getByRole('button', { name: 'More options for engineering' }))
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Copy link'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
+    expect(onCopyChatLink).toHaveBeenCalledWith(ENGINEERING)
+  })
+
+  it('a member makes one of its topics an initiative (T-31)', async () => {
+    const onMarkSpace = vi.fn()
+    mount({ onMarkSpace })
+    await userEvent.click(within(rowBlock('General', 'More options')).getByRole('button', { name: 'More options' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it an initiative' }))
+    expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, GENERAL, false)
+  })
+
+  it('a topic the viewer hears from offers Leave', async () => {
     const onControl = vi.fn()
-    // General is the team's space, heard through being in Engineering; Launch is a topic it leads that they never joined.
-    mount({ onControl, leavesOf: (topic) => topic.address === GENERAL.address })
-    await openMenu(sectionOf('Engineering'), 'Launch')
-    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('menuitem', { name: 'Leave' })).toBeNull()
-    await userEvent.keyboard('{Escape}')
-    await openMenu(sectionOf('Engineering'), 'General')
-    // The menu is open once any item is; then Leave is there or not, with no wait of its own.
-    expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
-    const leave = screen.queryByRole('menuitem', { name: 'Leave' })
-    expect(leave).not.toBeNull()
-    await userEvent.click(leave!)
+    mount({ onControl, leavesOf: (t) => t.address === GENERAL.address })
+    await userEvent.click(within(rowBlock('General', 'More options')).getByRole('button', { name: 'More options' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Leave' }))
     expect(onControl).toHaveBeenCalledWith('leave', GENERAL)
   })
 
-  it('somebody who only follows the team is offered neither', async () => {
-    mount({ onMarkSpace: vi.fn() })
-    // The row still has its menu (Join, Copy link…): what it lacks is the mark.
-    await openMenu(sectionOf('Sales'), 'Hiring')
+  it('somebody who only follows the team is not offered the mark', async () => {
+    mount({ onMarkSpace: vi.fn(), onControl: vi.fn() })
+    await userEvent.click(within(rowBlock('Hiring', 'More options')).getByRole('button', { name: 'More options' }))
     expect((await screen.findAllByRole('menuitem')).length).toBeGreaterThan(0)
-    expect(screen.queryByRole('menuitem', { name: 'Stop being a space' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Make it a space' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Make it an initiative' })).toBeNull()
+  })
+
+  it('a topic at Not following says so on its row (Q-22); the others say nothing of their level', () => {
+    mount({ notFollowingOf: (_team, t) => t.address === HIRING.address })
+    // The chip is in the row's link, so the row reads "Hiring Not following" to a screen reader too.
+    expect(within(rowBlock(/^Hiring/, 'More options')).getByText('Not following')).toBeTruthy()
+    expect(screen.getAllByText('Not following')).toHaveLength(1)
   })
 })

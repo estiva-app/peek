@@ -331,19 +331,22 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
   })
 
-  it('switching to it closes the open file: the page says No file selected', async () => {
+  // Switching view keeps the open page open (Katerina, 16 November, Q-13): only archiving what is open closes it.
+  it('switching to it keeps the open file open', async () => {
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     await userEvent.click(title('Teams'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
+    expect(title('Archive')).toBeTruthy()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
-  it('an archived file open in Archive closes when the column turns to Teams', async () => {
+  it('an archived file open in Archive stays open when the column turns to Teams', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
     await userEvent.click(title('Archive'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Teams' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
+    expect(title('Teams')).toBeTruthy()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   /*

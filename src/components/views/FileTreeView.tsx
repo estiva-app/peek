@@ -1,5 +1,6 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { Chip, EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { IconBellOff, IconHash, IconTarget } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState, RowNewsItem } from '@/api'
@@ -116,6 +117,8 @@ export function TreeRow({
   leaves = false,
   news,
   tones,
+  place,
+  notFollowing = false,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -148,6 +151,13 @@ export function TreeRow({
   news?: Record<string, readonly RowNewsItem[]>
   /** A lit row's dot colour, by ref (ACT-7): orange when reactions to you are all that is new there. */
   tones?: Record<string, UnreadDotTone>
+  /**
+   * What kind of place the row is, by its icon and never by how you follow it (Katerina, 16 November, the navigation
+   * prototype): a team's topic `#` (today's space), an initiative ◎ (today's topic). Absent: the file's own glyph.
+   */
+  place?: 'topic' | 'initiative'
+  /** You picked Not following here: the row says so while it is pointed at, the one level a row shows (Q-22). */
+  notFollowing?: boolean
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -213,7 +223,8 @@ export function TreeRow({
   const copies = listRow && !!followKey
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
-  const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
+  // A place's row only: a file's Open work is the button on its page's header (Katerina, 16 November, T-20).
+  const openWorkAction = followKey && !readOnly && isPlace ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   // The open file's row is brought into view by the package's `NavTree` around the Folders (ui 0.94): a long Folder can hold it below the fold (5 October).
   const selected = file.ref === selectedRef
@@ -260,12 +271,21 @@ export function TreeRow({
       }
       label={title}
       icon={
-        <TopicState
-          type={type}
-          status={type === 'topic' ? 'unresolved' : 'default'}
-          iconClassName={selected || isUnread ? 'text-text-primary' : undefined}
-        />
+        place === 'topic' ? (
+          <IconHash size={16} stroke={1.5} aria-hidden />
+        ) : place === 'initiative' ? (
+          <IconTarget size={16} stroke={1.5} aria-hidden />
+        ) : (
+          <TopicState
+            type={type}
+            status={type === 'topic' ? 'unresolved' : 'default'}
+            iconClassName={selected || isUnread ? 'text-text-primary' : undefined}
+          />
+        )
       }
+      // Not following, beside the name while the row is pointed at, with what it means where no card shows (Q-22).
+      {...(notFollowing ? { hint: <Chip label="Not following" leadingIcon={<IconBellOff size={14} stroke={1.5} aria-hidden />} /> } : {})}
+      {...(notFollowing && !lines?.length ? { tooltip: 'Not following: you are only notified when someone names you' } : {})}
       /* `=== true`: an unjudged file draws no dot, not a dark one. */
       unread={isUnread}
       active={selected}

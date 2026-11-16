@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit } from '@tabler/icons-react'
 import { ToolbarButton } from '@estiva-app/ui'
-import { topLevelFolders, useFolders, useForeignObjects } from '@/api'
+import { topLevelFolders, useFolders, useForeignObjects, usePeekActions } from '@/api'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import type { ListColumnName } from '@/lib/openedFrom'
 import { filePath } from '@/lib/objectUrl'
@@ -26,10 +26,11 @@ export function NewTopicButton({ onClick }: { onClick: () => void }) {
  */
 export function HeaderStartTopic({ column, defaultFolder, onClose }: {
   column: ListColumnName
-  /** The Folder chosen first — the open one, in Folders. */
+  /** The Folder chosen first — the open one, in Folders; the team whose + was pressed. */
   defaultFolder?: string
   onClose: () => void
 }) {
+  const { markSpace } = usePeekActions()
   const navigate = useNavigate()
   const { showToast } = useToast()
   const { createTopic } = useForeignObjects()
@@ -51,6 +52,15 @@ export function HeaderStartTopic({ column, defaultFolder, onClose }: {
         if (!result.ok) {
           showToast({ label: result.reason, type: 'error' })
           return false
+        }
+        /*
+          Started from Teams, it is one of the team's topics (#): today's space mark, set at once, so it sits under its
+          team rather than in Initiatives (Katerina, 16 November: a team's topics are its lasting rooms). The mark is
+          the team's write; a refusal is said and the topic stays an initiative.
+        */
+        if (column === 'folders') {
+          const marked = await markSpace(folder, result.address, true)
+          if (!marked.ok) showToast({ label: marked.reason, type: 'error' })
         }
         // Into the topic: under a filter the tree may not be showing it.
         navigate(filePath(result.address, title), { state: { column } })

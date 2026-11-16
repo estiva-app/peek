@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
+import { IconFilter, IconUsersPlus } from '@tabler/icons-react'
 import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
@@ -204,22 +204,16 @@ export function FolderTree({
   )
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
   const [making, setMaking] = useState<'folder' | 'topic' | null>(null)
+  /** The team a + asked to start a topic in (Q-16): Start a topic opens with it chosen. */
+  const [startIn, setStartIn] = useState<string | null>(null)
 
   return (
     <>
       <FolderColumn
         view={view}
         onViewChange={(next) => {
+          // Switching view keeps the open page open (Katerina, 16 November, Q-13): only archiving what is open closes it.
           setView(next)
-          /*
-            A view that does not draw the open file closes it, and the page
-            says "No file selected" (Katerina, 5 October): a selection the
-            column cannot show is a page about nothing beside it. Archive
-            draws only what is archived; Teams only what is not.
-          */
-          if (selectedRef && next !== view && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
-            navigate('/app/teams')
-          }
         }}
         show={show}
         onShowChange={setShow}
@@ -232,9 +226,14 @@ export function FolderTree({
           <TeamsColumn
             show={show}
             selectedRef={selectedRef}
+            selectedParent={selectedParent}
             openTeam={section}
             chatOpen={chatOpen}
             onControl={onControl}
+            onStartTopic={(team) => {
+              setStartIn(team.id)
+              setMaking('topic')
+            }}
           />
         ) : (
           <ArchiveTreeView
@@ -260,7 +259,16 @@ export function FolderTree({
         <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reload} onClose={close} />
       )}
       {making === 'folder' && <NewFolderDialog reload={reload} onClose={() => setMaking(null)} />}
-      {making === 'topic' && <HeaderStartTopic column="folders" defaultFolder={section ?? undefined} onClose={() => setMaking(null)} />}
+      {making === 'topic' && (
+        <HeaderStartTopic
+          column="folders"
+          defaultFolder={startIn ?? section ?? undefined}
+          onClose={() => {
+            setMaking(null)
+            setStartIn(null)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -282,10 +290,10 @@ function NewFolderDialog({ reload, onClose }: { reload: () => Promise<unknown>; 
         /*
           Re-read before navigating: the relay emits the `kind:39000` this
           list reads as a side effect of accepting the create, but the list in
-          hand does not have it yet. The new Folder's link opens it, in Folders.
+          hand does not have it yet. The new team's chat opens, its row marked (Katerina, 16 November, Q-28).
         */
         await reload()
-        navigate(`/app/teams/${result.id}`)
+        navigate(`/app/teams/${result.id}/chat`)
         return true
       }}
     />
@@ -436,7 +444,8 @@ export function FolderColumn({
           <Toolbar aria-label="Topic list actions" surface={false}>
             {view === 'all' && (
               <ToolbarButton tooltip="New team" aria-label="New team" onClick={onNewFolder}>
-                <IconFolderPlus size={16} stroke={1.5} />
+                {/* People with a plus, as the prototype draws New team (Katerina, 16 November). */}
+                <IconUsersPlus size={16} stroke={1.5} />
               </ToolbarButton>
             )}
             <NewTopicButton onClick={onNewTopic} />

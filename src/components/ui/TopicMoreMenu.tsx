@@ -130,7 +130,8 @@ export function TopicMenuItems({
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onMove && <MenuItem label="Move…" onClick={onMove} />}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
-      {spaces && <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />}
+      {/* Today's space mark in the new words (Katerina, 16 November): a team's topic is today's space, an initiative today's topic. */}
+      {spaces && <MenuItem label={spaceAction === 'mark' ? 'Make it a topic' : 'Make it an initiative'} onClick={onToggleSpace} />}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
       {archives && <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />}
       {first && last && <MenuSeparator />}

@@ -348,7 +348,8 @@ export function useFileControls({
           membershipCallback.current?.(file)
           // The topic's page, open beside the column, reads its switch again: Not following, as the relay holds it.
           placeLevelChanged(target.place.address)
-          showToast({ label: `Left “${title}”`, type: 'success' })
+          // Today's words, with what Not following means in Katerina's (16 November): the topic stays in its team's list.
+          showToast({ label: `Left “${title}”: you’re only notified when someone names you.`, type: 'success' })
         })
         return
       }
