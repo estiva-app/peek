@@ -14,8 +14,10 @@ export interface StoryMessage {
   /** How long ago it was written, in ms. */
   ago: number
   text: string
-  /** What it is marked as, and by whom: the line's hover names them. */
+  /** What it is marked as, and by whom: its label beside the time names them on hover. */
   mark?: StoryMark
+  /** Its thread's replies, oldest first: the marked ones bubble up under it in the topic's feed. */
+  replies?: StoryMessage[]
 }
 export type StoryMark = Mark & { by: Person }
 

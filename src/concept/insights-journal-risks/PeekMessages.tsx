@@ -4,8 +4,9 @@
  * line, handed in through `ConceptMessage` — the one concept-only hook in `ConversationCard.tsx`. Draws only what a
  * person sees; nothing here reads or writes the relay. Never merged.
  */
-import { useState, type ReactNode } from 'react'
-import { Card, ConversationLayout, EmptyState, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person } from '@estiva-app/ui'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { Card, ConversationLayout, EmptyState, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, WithTooltip } from '@estiva-app/ui'
 import { ConversationCard, ConceptMessage } from '@/components/ConversationCard'
 import { TopicState } from '@/components/ui/TopicState'
 import { ConversationBox } from '@/components/ui/ConversationBox'
@@ -13,7 +14,7 @@ import { TopicsColumnView } from '@/components/views/TopicsColumn'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { formatActive, formatDateLabel, formatTimestamp } from '@/api'
-import { MarkAsRows, MarkedLine, MarkedNotice, type MarkWord } from './MarkAs'
+import { MarkAsRows, MarkedNotice, TYPE_META, drawsLine, type MarkWord } from './MarkAs'
 import { MIKY, TEAM, type Person as Who } from './fixtures'
 import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from './messages'
 
@@ -36,8 +37,14 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
     ),
     wrap: (id: string, card: ReactNode) => {
       const m = marks[id]
-      // The shared line's hover is "<word> · <title>"; Peek's names who marked it too, since anyone may mark anyone's.
-      return <MarkedLine mark={m && { ...m, title: `${m.title} · marked by ${m.by.key === me.key ? 'you' : m.by.name}` }}>{card}</MarkedLine>
+      const replies = messages.find((x) => x.id === id)?.replies
+      // The label sits beside the time, as Resolved does (Miky, 16 Nov), in place of a line down the left.
+      return (
+        <InHeader label={drawsLine(m) && m ? <MarkLabel mark={m} me={me} /> : null}>
+          {card}
+          {replies?.some((r) => drawsLine(r.mark)) && <ThreadTimeline replies={replies} me={me} />}
+        </InHeader>
+      )
     },
   }
   return (
@@ -47,6 +54,88 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
     </ConceptMessage.Provider>
   )
 }
+
+/**
+ * A mark's label beside a message's time: its type's icon and word in its colour, the way the kit card draws
+ * Resolved there (Miky, 16 Nov; and Peek's HighlightPill, removed 2 Nov, sat after the time). Hover names it.
+ */
+function MarkLabel({ mark, me }: { mark: StoryMark; me: Who }) {
+  const meta = TYPE_META[mark.type]
+  return (
+    <WithTooltip label={`${mark.word} · ${mark.title} · marked by ${mark.by.key === me.key ? 'you' : mark.by.name}`} wrapperClassName="flex shrink-0">
+      <span className={`flex items-center gap-1 text-caption ${meta.text}`}>
+        {meta.icon(14)}
+        {mark.word}
+      </span>
+    </WithTooltip>
+  )
+}
+
+/** Puts `label` into the card's header, right after its time — the kit card has no slot there, so the concept places it. */
+function InHeader({ label, children }: { label: ReactNode; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    const time = ref.current?.querySelector('time')
+    if (!time || !label) return
+    const el = document.createElement('span')
+    el.style.display = 'inline-flex'
+    el.style.marginLeft = '4px'
+    ;(time.closest('a') ?? time).insertAdjacentElement('afterend', el)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- concept only: the host exists only once the card has drawn.
+    setHost(el)
+    return () => el.remove()
+  }, [label])
+  // @estiva-escape(no-rebuilt-behaviour): concept only, not a layer: it puts the label inline after the time, where the kit card has no slot yet; the build adds one
+  const placed = host && label ? createPortal(label, host) : null
+  return (
+    <div ref={ref}>
+      {children}
+      {placed}
+    </div>
+  )
+}
+
+/**
+ * Bubble up (estiva-ui concept/cross-app-navigation, 28 Oct): a thread's marked replies show under its message in the
+ * topic's feed, as a timeline — a line down from the message, a square in the type's colour at each marked reply, the
+ * plain replies between said quietly on a dotted stretch. Opening it opens the thread beside, as today.
+ */
+function ThreadTimeline({ replies, me }: { replies: StoryMessage[]; me: Who }) {
+  const steps: { reply: StoryMessage; before: number }[] = []
+  let plain = 0
+  for (const r of replies) {
+    if (drawsLine(r.mark)) {
+      steps.push({ reply: r, before: plain })
+      plain = 0
+    } else plain++
+  }
+  const quiet = (n: number) => (n ? <span className="text-caption text-text-muted">{n === 1 ? '1 reply' : `${n} replies`}</span> : null)
+  return (
+    <ol className="ml-[27px] flex flex-col border-l-2 border-border-strong pb-1 pl-5" aria-label="Marked in this thread">
+      {steps.map(({ reply, before }) => (
+        <li key={reply.id} className="relative flex flex-col gap-1 pb-3">
+          {quiet(before)}
+          {/* The square on the line, level with the reply's name line, under any quiet "n replies" above it. */}
+          <span aria-hidden className={`absolute -left-[25px] size-2 rounded-sm ${before ? 'top-[26px]' : 'top-[6px]'} ${FILL[reply.mark!.type]}`} />
+          <div className="flex h-5 items-center gap-2">
+            <Person size={16} name={reply.author.name} />
+            <MarkLabel mark={reply.mark!} me={me} />
+            <MetaText size="chip">{formatTimestamp(NOW - reply.ago, NOW)}</MetaText>
+          </div>
+          <span className="text-body-2 text-text-primary">{reply.text}</span>
+        </li>
+      ))}
+      <li>
+        <Card href="#" fill="none" hover="fill" className="flex items-center gap-2 px-2 py-1">
+          <span className="text-caption text-text-interactive">{replies.length} replies</span>
+          {plain ? <span className="text-caption text-text-muted">· {plain} since the last mark</span> : null}
+        </Card>
+      </li>
+    </ol>
+  )
+}
+const FILL: Record<StoryMark['type'], string> = { insight: 'bg-warning-default', journal: 'bg-info-default', risk: 'bg-error-default' }
 
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
 export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice }: {

@@ -60,7 +60,37 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Miky looks at: Katerina's message marked by him as an Insight has the amber line; every other message's ⋯ offers Mark as ▸. */
+/**
+ * Bubble up: Miky's question about the names grew a thread. Katerina's decision and Miky's concern in it were marked,
+ * so they show under his message in the topic's feed as a timeline; the plain replies between are said quietly.
+ */
+export const ThreadBubblesUp: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation
+        title="Universal Navigation"
+        about={PROJECT}
+        messages={[
+          sidebar,
+          {
+            ...names,
+            replies: [
+              { id: 'r1', author: KATERINA, ago: 2.9 * DAY, text: 'Topics is fine. Initiatives feels big for a two-week project.' },
+              { id: 'r2', author: MIKY, ago: 2.8 * DAY, text: 'An initiative holds several projects; a project stays a project.' },
+              { id: 'r3', author: KATERINA, ago: 2 * HOUR, text: teamsAndTopics.text, mark: SIDEBAR_DECISION },
+              { id: 'r4', author: MIKY, ago: 1.8 * HOUR, text: 'Agreed.' },
+              { id: 'r5', author: MIKY, ago: 1.3 * HOUR, text: whatIsNew.text, mark: marked('Concern', 'Ship and Leaf “what is new” needs more thinking', MIKY, 'accepted') },
+              { id: 'r6', author: KATERINA, ago: 1 * HOUR, text: 'I’ll draw the sidebar first.' },
+            ],
+          },
+          { ...belongs, mark: BELONGS_INSIGHT },
+        ]}
+      />
+    </TopicFrame>
+  ),
+}
+
+/** Miky looks at: Katerina's message marked by him as an Insight wears "Insight" beside its time; every other message's ⋯ offers Mark as ▸. */
 export const TopicWithAnInsight: Story = {
   render: () => (
     <TopicFrame>
