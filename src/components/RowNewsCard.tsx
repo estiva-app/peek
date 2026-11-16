@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ActivityLine, Button, isPlainClick } from '@estiva-app/ui'
+import { ActivityLine, Button, SectionHeader, isPlainClick } from '@estiva-app/ui'
 import { IconArrowBackUp, IconAt, IconMessage, IconMoodSmile } from '@tabler/icons-react'
 import type { UnreadReason } from '@estiva-app/conversation'
 import { useMemo, type MouseEvent, type ReactNode } from 'react'
@@ -93,8 +93,14 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
       : place === 'topic' || item.root !== (item.reaction?.target ?? item.id)
         ? `${placeHref}${thread(item)}`
         : placeHref
+  /*
+    As the navigation prototype draws a lit row's card (Katerina, 17 November): "New" over the lines, as the title
+    dot's list heads them, and the lines' box 4px in from the card's own 4px, so a line's background sits 8px from the
+    card's left and right edges.
+  */
   return (
-    <>
+    <div className="flex flex-col gap-0.5 px-1">
+      <SectionHeader title="New" />
       {shown.map((item) => (
         <NewsLine
           key={item.id}
@@ -120,7 +126,7 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
           {`${more} more`}
         </Button>
       )}
-    </>
+    </div>
   )
 }
 
