@@ -6,8 +6,8 @@ import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { useToast } from '@/lib/toast'
 import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
-import { IconCheck, IconHash, IconSortDescending, IconX } from '@tabler/icons-react'
-import { isArchived } from '@estiva-app/interop'
+import { IconCheck, IconHash, IconSortDescending, IconTarget, IconX } from '@tabler/icons-react'
+import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
 import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
@@ -37,6 +37,7 @@ import {
   ListedFillsProvider,
   useReactionsSeenOnClose,
   urgentNews,
+  spaceTeamOf,
   useTeamChatNews,
   useTeams,
   type RowNewsItem,
@@ -180,6 +181,16 @@ export function DeskPage() {
   const { teams } = useTeams()
   const chatTeamOf = (address: string): Team | undefined => teams?.find((team) => team.chatAddress === address && team.chat.in)
   const chatNews = useTeamChatNews(teams, { reactions: true })
+  /*
+    A topic's or an initiative's row wears its kind's icon, as everywhere (Katerina, 17 November: "yes"; T-27): # a team's
+    topic, ◎ an initiative. Told apart by the teams read; until it answers, the row keeps its glyph.
+  */
+  const placeIcon = (address: string) =>
+    teams && Number(address.split(':')[0]) === KIND_BARE_FILE
+      ? spaceTeamOf(teams, address)
+        ? <IconHash size={16} stroke={1.5} aria-hidden />
+        : <IconTarget size={16} stroke={1.5} aria-hidden />
+      : undefined
   const openWorkItems = sortOpenWork(
     (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id) && (i.kind !== 'chat' || !!chatTeamOf(i.address))),
     openWorkSort,
@@ -511,6 +522,7 @@ export function DeskPage() {
               name: item.title,
               summary: item.summary,
               glyph: fileGlyph(item.fileKind),
+              icon: placeIcon(item.address),
               isUnread: true,
               isUrgent: true,
               href: deskFileHref(item.address),
@@ -563,6 +575,7 @@ export function DeskPage() {
               name: item.title,
               summary: item.object.slots?.subtitle?.value,
               glyph: fileGlyph(item.object.kind),
+              icon: placeIcon(item.address),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
               tone: fileTones[item.object.ref],
               // Archived where it lives, and still here: Open work is the person's own list (Katerina, 14 October).

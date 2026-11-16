@@ -460,6 +460,21 @@ describe('Desk rows on NavItem', () => {
     })
   })
 
+  // One icon per kind on the Desk too (Katerina, 17 November): # a team's topic, ◎ an initiative, never the dashed circle.
+  it('a topic in Open work wears ◎ as an initiative, and # once its team marks it as one of its topics', () => {
+    const TOPIC = `30840:${'c'.repeat(64)}:launch`
+    desk.openWork = [{ ...openWorkFile(TOPIC, 'Launch'), object: { ref: TOPIC, kind: 30840 } }]
+    desk.teams = []
+    const first = mount()
+    const rowOf = () => left().getByRole('link', { name: 'Launch' }).closest('li, div')!.parentElement!
+    expect(rowOf().querySelector('.tabler-icon-target')).not.toBeNull()
+    first.unmount()
+    desk.teams = [{ id: 'eng', name: 'Engineering', chatAddress: '39000::eng', chat: { in: true }, listed: [{ address: TOPIC, space: true }] }]
+    mount()
+    expect(rowOf().querySelector('.tabler-icon-hash')).not.toBeNull()
+    desk.teams = []
+  })
+
   it('only Open work has the ✕: a starred row has none', () => {
     mount()
     expect(left().queryByRole('button', { name: 'Remove from list: Ana' })).toBeNull()
