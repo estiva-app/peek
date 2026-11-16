@@ -8,7 +8,7 @@ vi.mock('@estiva-app/identity', async (importOriginal) => ({
 vi.mock('./deviceCopy', () => ({ keepRelayAnswer: vi.fn() }))
 const signatures = vi.hoisted(() => ({ count: 0 }))
 
-import { publishSigned, queryRelay, setSocketReader, type SocketReader } from './bridge'
+import { publishSigned, queryRelay, queryRelayTimes, setSocketReader, type SocketReader } from './bridge'
 import { describeRelayFailure, RelayReadError } from './relayRead'
 
 const ME = 'a'.repeat(64)
@@ -204,5 +204,28 @@ describe('a busy relay (APP-9)', () => {
     await expect(result).resolves.toEqual({ ok: false, reason: 'the relay is busy, try again in a moment', httpStatus: 503 })
     expect(asks.map((ask) => ask.path)).toEqual(['/events', '/events', '/events', '/events'])
     expect(new Set(asks.map((ask) => ask.auth)).size).toBe(4)
+  })
+})
+
+/*
+  ALO-22: the times read (`"fields": "times"`) fails as every other read does: a refusal, or an answer that is not
+  times, is a RelayReadError saying what the relay said, so the topics show the usual couldn't-read state.
+*/
+describe('the times read, refused or answered wrongly', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a relay read error carrying the relay’s reason when the relay refuses it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'restricted: not a member' }), { status: 403 })))
+    const read = queryRelayTimes('https://relay', [{ fields: 'times', kinds: [30851], '#d': ['d'] }], 'token', ME)
+    const error = await read.catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RelayReadError)
+    expect((error as RelayReadError).reason).toContain('restricted: not a member')
+    expect((error as RelayReadError).reason).not.toMatch(/^query failed/)
+  })
+
+  it('is a relay read error when the relay answers events instead of times', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+    const error = await queryRelayTimes('https://relay', [{ fields: 'times', kinds: [30851], '#d': ['d'] }], 'token', ME).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(RelayReadError)
   })
 })

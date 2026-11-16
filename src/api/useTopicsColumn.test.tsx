@@ -26,9 +26,12 @@ const relay = vi.hoisted(() => ({
   changes: [] as Event[],
   /** Messages, changes and comments on topics and their files: what the order of topics is read from (TOPI-10). */
   activity: [] as Event[],
+  /** What the times read answers (SPEC §6.13): each file's current changes by field name, never the changes. */
+  times: [] as Array<{ a: string; created_at: number; h: string | null; under?: string; changes: Array<{ id: string; created_at: number; fields: string[] }> }>,
   queryRelay: vi.fn(),
+  queryRelayTimes: vi.fn(),
 }))
-vi.mock('@/nostr/bridge', () => ({ publishSigned: vi.fn(), signViaEstivaId: vi.fn(), queryRelay: relay.queryRelay }))
+vi.mock('@/nostr/bridge', () => ({ publishSigned: vi.fn(), signViaEstivaId: vi.fn(), queryRelay: relay.queryRelay, queryRelayTimes: relay.queryRelayTimes }))
 /** The tab's socket: each live subscription the hook opens, to deliver an event to as the relay would. */
 const socket = vi.hoisted(() => ({
   subs: [] as Array<{ filters: Record<string, unknown>[]; onEvent: (event: unknown) => void; closed: boolean }>,
@@ -241,6 +244,18 @@ beforeEach(() => {
     )
     return { ok: true, events }
   })
+  relay.times = []
+  // As the relay answers the times read: by kind and `#d`, or by the file above (`#a`).
+  relay.queryRelayTimes.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) =>
+    filters.flatMap((f) =>
+      relay.times.filter((entry) => {
+        const [kind, , dd] = entry.a.split(':')
+        if (!(f.kinds as number[]).includes(Number(kind))) return false
+        if (f['#d']) return (f['#d'] as string[]).includes(dd!)
+        return !!entry.under && (f['#a'] as string[]).includes(entry.under)
+      }),
+    ),
+  )
 })
 
 describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
@@ -360,6 +375,34 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
     await waitFor(() => expect(socket.subs).toHaveLength(1))
     for (const f of socket.subs[0]!.filters) expect(new Set(f['#h'] as string[])).toEqual(new Set([FOLDER, OTHER_FOLDER]))
+  })
+
+  /** Every filter of the order's read that asks for a file's changes whole: `kind:1851` by the file's `#a`. */
+  const changeReadsOf = (file: string) =>
+    relay.queryRelay.mock.calls
+      .flatMap(([, filters]) => filters as Array<Record<string, unknown>>)
+      .filter((f) => (f.kinds as number[]).includes(1851) && ((f['#a'] as string[] | undefined) ?? []).includes(file))
+  const timesFilters = () => relay.queryRelayTimes.mock.calls.flatMap(([, filters]) => filters as Array<Record<string, unknown>>)
+
+  it('on a relay that answers when files changed, a listed file’s change is read as its time, never whole, and still moves its topic up (ALO-22)', async () => {
+    nip11 = { supported_extensions: ['nip-er'], file_list: { newest: true, text: true, times: true } }
+    list(WIDGETS, TESTING, true, 200)
+    relay.activity = [message(ALPHA, 400)]
+    relay.times = [{ a: TESTING, created_at: 100, h: OTHER_FOLDER, changes: [{ id: 'status-600', created_at: 600, fields: ['status'] }] }]
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(timesFilters()).toContainEqual({ fields: 'times', kinds: [30851], '#d': [d(TESTING)] })
+    expect(changeReadsOf(TESTING)).toEqual([])
+    await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
+  })
+
+  it('on a relay that does not say so, a listed file’s changes are read whole, and the times read is never asked (ALO-22)', async () => {
+    nip11 = { supported_extensions: ['nip-er'], file_list: { newest: true, text: true } }
+    list(WIDGETS, TESTING, true, 200)
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    expect(changeReadsOf(TESTING)).not.toEqual([])
+    expect(relay.queryRelayTimes).not.toHaveBeenCalled()
   })
 
   it('back on Topics within a minute, a message heard there still moves its topic to the top (TOPI-10)', async () => {

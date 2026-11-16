@@ -31,9 +31,11 @@ interface Switch {
   list: boolean
   /** It also returns a named file's current text with it (`file_list.text`): the open read. */
   text: boolean
+  /** It answers when files changed without the changes (`file_list.times`): the times read. */
+  times: boolean
 }
 
-const OFF: Switch = { fields: undefined, inOrder: [], list: false, text: false }
+const OFF: Switch = { fields: undefined, inOrder: [], list: false, text: false, times: false }
 
 let held: Promise<Switch> | undefined
 
@@ -48,7 +50,7 @@ function relaySwitch(): Promise<Switch> {
           return OFF
         }
         const reads: RelayFileReads = relayFileReadsOf(info)
-        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list, text: reads.text }
+        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list, text: reads.text, times: reads.times }
       },
       () => {
         held = undefined
@@ -140,6 +142,11 @@ export async function listReadOption(): Promise<{ listRead?: true }> {
  */
 export async function listReadOffered(): Promise<boolean> {
   return (await relaySwitch()).list
+}
+
+/** Whether the relay answers the times read (SPEC §6.13, NIP-11 `file_list.times`), switched or not. */
+export async function timesOffered(): Promise<boolean> {
+  return (await relaySwitch()).times
 }
 
 /** Forget the relay's answer, so a test can switch it. */

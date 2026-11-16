@@ -49,6 +49,8 @@ import {
   RELAY_BUSY_MESSAGE,
   retryAfterMsOf,
   retryWhileBusy,
+  timesOf,
+  type FileTimes,
   type RelayAnswer,
 } from '@estiva-app/protocol'
 import type { ReadLane } from '@estiva-app/platform'
@@ -63,6 +65,7 @@ export type QueryLane = ReadLane | 'first'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
 import { relayBudget } from './relayBudget'
+import { RelayReadError } from './relayRead'
 import { keepRelayAnswer } from './deviceCopy'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 
@@ -249,6 +252,26 @@ export async function queryRelayWithMatches(
   const result = parseQueryResponse(status, text)
   if (!result.ok) throw new Error(`query failed: ${result.reason}`)
   return { events: result.events, matches: result.matches ?? [] }
+}
+
+/**
+ * The relay's times read (SPEC §6.13, `"fields": "times"`): when each picked file's fields last changed, without the
+ * changes. Over HTTP, for the order of topics, only where NIP-11 says `file_list.times`. A busy, refused or
+ * not-a-times answer throws {@link RelayReadError}, as {@link queryRelay}'s callers throw for a failed read.
+ */
+export async function queryRelayTimes(
+  relayUrl: string,
+  filters: Record<string, unknown>[],
+  token: string,
+  pubkey?: string,
+): Promise<FileTimes[]> {
+  const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+  if (isRelayBusyResponse(status, text)) throw new RelayReadError(RELAY_BUSY_MESSAGE)
+  try {
+    return timesOf({ status, text })
+  } catch (error) {
+    throw new RelayReadError(error instanceof Error ? error.message.replace(/^query failed: /, '') : String(error))
+  }
 }
 
 /**
