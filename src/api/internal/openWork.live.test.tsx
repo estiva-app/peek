@@ -83,7 +83,7 @@ function objectFor(reference: string, archivedWith = false): ForeignObject {
 /** A `kind:1851` title change to the topic, as it arrives on the Folder's watch. */
 const renamed = () => ({ id: 'c'.repeat(64), kind: 1851, tags: [['a', TOPIC], ['h', FOLDER]] }) as unknown as SignedEvent
 
-const titles = (items: ReturnType<typeof useOpenWork>['items']) => items.map((item) => (item.kind === 'file' ? item.title : item.name))
+const titles = (items: ReturnType<typeof useOpenWork>['items']) => items.map((item) => (item.kind === 'file' ? item.title : item.kind === 'chat' ? item.address : item.name))
 
 async function settle(ms = 0) {
   await act(async () => {

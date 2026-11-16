@@ -24,6 +24,13 @@ export type OpenWorkItem =
       /** The resolved file, for the unread badge (`useConversationBadges`). */
       object: ForeignObject
     }
+  | {
+      id: string
+      /** A team's chat (Katerina, 16 November, Q-37: Open work learns to hold one). The Desk names it from its team. */
+      kind: 'chat'
+      /** The chat's address, `39000:<pubkey>:<team>`, as Open work holds it. */
+      address: string
+    }
 
 export type UrgentItem =
   | {

@@ -200,7 +200,8 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     [effectiveSet],
   )
   const fileObjects = useResolvedReferences(
-    useMemo(() => [...fileAddresses].sort(), [fileAddresses]),
+    // A team's chat is no file to resolve (Q-37): the Desk names it from its team.
+    useMemo(() => [...fileAddresses].filter((address) => !address.startsWith('39000:')).sort(), [fileAddresses]),
     FOLLOW,
   )
 
@@ -209,7 +210,10 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     if (!effectiveSet) return []
     const out: OpenWorkItem[] = []
     for (const entry of effectiveSet) {
-      if (entry.kind === 'file') {
+      if (entry.kind === 'file' && entry.address.startsWith('39000:')) {
+        // A team's chat, kept by its address as a file is (Q-37, B-14): the Desk names it, and drops it while its team is unread.
+        out.push({ id: `ow_chat_${entry.address}`, kind: 'chat', address: entry.address })
+      } else if (entry.kind === 'file') {
         // Unresolved (still asking, deleted, or unreadable): no row, and the
         // address stays in the list — the rule every other kind follows.
         const object = fileObjects[entry.address]

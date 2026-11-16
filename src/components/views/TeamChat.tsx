@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { IconDotsVertical, IconHash } from '@tabler/icons-react'
-import { ConversationLayout, EmptyState, Menu, MenuItem, PageHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ConversationLayout, EmptyState, Menu, MenuItem, PageHeader, Toolbar, ToolbarButton, useShortcut } from '@estiva-app/ui'
 import { useMembership, usePlaceFollow, useTeamChatPageDot, useWorkspaceDirectory, type Team } from '@/api'
 import { PageDot } from '@/components/PageListDot'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
@@ -10,6 +10,9 @@ import { useFileConversationView } from '@/components/views/useFileConversationV
 import { draftKeys } from '@/lib/drafts'
 import { useMarkChannelRead } from '@/lib/useMarkRead'
 import { copyPageLink } from '@/lib/objectUrl'
+import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
+import { OpenWorkButton } from '@/components/OpenWorkButton'
+import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -56,6 +59,10 @@ export function TeamChat({ team }: { team: Team }) {
   const follow = usePlaceFollowControls({ follow: usePlaceFollow(target), target, title: name, me, directory: people })
   const { showToast } = useToast()
   const copyLink = () => void copyPageLink(teamChatPath(team.id)).then((copied) => copied && showToast({ label: 'Link copied', type: 'success' }))
+  // Add to Open work, the header's button, and Ctrl/Cmd+O, for someone in the chat (Q-37); none on an archived team's.
+  const openWork = useToggleOpenWork()
+  const toggleOpenWork = team.chat.in && !team.archived ? () => openWork.toggle(team.chatAddress) : undefined
+  useShortcut(OPEN_WORK_KEY, () => toggleOpenWork?.(), !!toggleOpenWork)
   // The dot beside the title (ACT-4): what is new in the chat, then what was about you earlier.
   const pageDot = useTeamChatPageDot(team, teamChatPath(team.id))
   return (
@@ -71,6 +78,7 @@ export function TeamChat({ team }: { team: Team }) {
             leading={<IconHash size={16} stroke={1.5} aria-hidden />}
             after={<PageDot dot={pageDot} />}
             members={follow.pill}
+            button={toggleOpenWork ? <OpenWorkButton inIt={openWork.has(team.chatAddress)} onToggle={toggleOpenWork} /> : undefined}
             actions={
               <Toolbar aria-label={`${name} actions`} surface={false}>
                 {follow.bell}

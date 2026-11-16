@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom'
-import { IconCheck, IconDotsVertical, IconExternalLink, IconHash, IconLayoutDashboard, IconTarget } from '@tabler/icons-react'
+import { IconDotsVertical, IconExternalLink, IconHash, IconTarget } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { Breadcrumb, Button, Chip, ConversationLayout, KindIcon, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, isPlainClick, shortcutLabel, thingKindOf, useShortcut } from '@estiva-app/ui'
+import { Breadcrumb, Button, Chip, ConversationLayout, KindIcon, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, isPlainClick, thingKindOf, useShortcut } from '@estiva-app/ui'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
 import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
+import { OpenWorkButton } from '@/components/OpenWorkButton'
 import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
 import { listingOf, mayMove, spaceTeamOf, useFileMembers, useFileTopics, useForeignObjects, useMembership, useOpenWorkFiles, useResolvedReferences, useTeams, useTeamTopics, useTopicPageDot, useWorkspaceDirectory } from '@/api'
@@ -215,19 +216,7 @@ export function useFilePane(
   // On every file's page (Katerina, 16 November, F-08): Open work is the header's button for another app's file too.
   useShortcut(OPEN_WORK_KEY, () => toggleOpenWork?.(), !!toggleOpenWork)
   const openWorkButton =
-    toggleOpenWork ? (
-      <WithTooltip label={inOpenWork ? 'Take out of Open work' : 'Add to Open work'} shortcut={shortcutLabel(OPEN_WORK_KEY)}>
-        <Button
-          size="small"
-          variant="outlined"
-          leadingIcon={inOpenWork ? <IconCheck size={14} stroke={1.5} /> : <IconLayoutDashboard size={14} stroke={1.5} />}
-          aria-pressed={inOpenWork}
-          onClick={toggleOpenWork}
-        >
-          {inOpenWork ? 'In Open work' : 'Add to Open work'}
-        </Button>
-      </WithTooltip>
-    ) : undefined
+    toggleOpenWork ? <OpenWorkButton inIt={inOpenWork} onToggle={toggleOpenWork} /> : undefined
 
   /*
     Archived (FOL-46): the file is out of every list, and a link still opens

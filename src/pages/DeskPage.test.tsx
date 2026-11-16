@@ -88,6 +88,9 @@ const desk = vi.hoisted(() => ({
   news: {} as Record<string, unknown[]>,
   dmUnread: {} as Record<string, boolean>,
   dmNews: {} as Record<string, unknown[]>,
+  /** The tab's teams read, for a team's chat in Open work (Q-37): none unless a test says. */
+  teams: [] as unknown[],
+  chatUnread: {} as Record<string, boolean>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -109,12 +112,16 @@ vi.mock('@/api', async () => ({
   }),
   useDeskLoading: () => false,
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
+  useTeams: () => ({ teams: desk.teams, failed: false, reload: async () => {} }),
+  useTeamChatNews: () => ({ unread: desk.chatUnread, news: {}, tones: {} }),
   useScreenerItems: () => desk.screener,
   useOpenWorkActivity: () => () => undefined,
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread, news: desk.news, fills: {}, tones: {} }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
 }))
+// A team's chat beside the Desk is its own page's (TeamChat's tests draw it): here, which team it is.
+vi.mock('@/components/views/TeamChat', () => ({ TeamChat: ({ team }: { team: { name: string } }) => <div data-testid="team-chat">{team.name}</div> }))
 /** Whether the frame's rail is folded: the frame provides it around the list column, as `PeekFrame` does. */
 const frame = vi.hoisted(() => ({ railClosed: false }))
 vi.mock('@/layouts/PeekFrame', async () => {
@@ -406,6 +413,51 @@ describe('Desk rows on NavItem', () => {
     mount()
     fireEvent.click(left().getByRole('button', { name: 'Remove from list: Bo' }))
     expect(openWork.removeDm).toHaveBeenCalledWith('dm-2')
+  })
+
+  /*
+    A team's chat in Open work (Katerina, 16 November, Q-37): a row wearing `#` and its team's chat name, which opens
+    the chat beside the Desk as any Open work row opens (Q-52), and whose ✕ takes it off by its address.
+  */
+  describe('a team’s chat in Open work (Q-37, B-14)', () => {
+    const CHAT = '39000::eng'
+    const ENG = { id: 'eng', name: 'Engineering', chatAddress: CHAT, chat: { in: true }, company: false, archived: false, members: [], listed: [] }
+    beforeEach(() => {
+      desk.openWork = [{ id: `ow_chat_${CHAT}`, kind: 'chat', address: CHAT }]
+      desk.teams = [ENG]
+      desk.chatUnread = {}
+    })
+
+    it('is a # row named as the team’s chat; a click opens it beside the Desk', () => {
+      mount()
+      const row = left().getByRole('link', { name: 'engineering' })
+      expect(row.closest('li, div')!.parentElement!.querySelector('.tabler-icon-hash')).not.toBeNull()
+      fireEvent.click(row)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+      expect(screen.getByTestId('url').textContent).toContain(`open=${encodeURIComponent(CHAT)}`)
+    })
+
+    it('carries the chat’s dot while it is lit', () => {
+      desk.chatUnread = { eng: true }
+      mount()
+      expect(left().getByRole('link', { name: 'engineering' }).closest('li, div')!.parentElement!.querySelector('[data-unread], [data-unread-dot]')).not.toBeNull()
+    })
+
+    it('its ✕ takes it off by its address', () => {
+      mount()
+      fireEvent.click(left().getByRole('button', { name: 'Remove from list: engineering' }))
+      expect(openWork.remove).toHaveBeenCalledWith(CHAT)
+    })
+
+    it('draws no row while its team is not held, or once the viewer is not in its chat', () => {
+      desk.teams = []
+      const first = mount()
+      expect(left().queryByRole('link', { name: 'engineering' })).toBeNull()
+      first.unmount()
+      desk.teams = [{ ...ENG, chat: { in: false } }]
+      mount()
+      expect(left().queryByRole('link', { name: 'engineering' })).toBeNull()
+    })
   })
 
   it('only Open work has the ✕: a starred row has none', () => {

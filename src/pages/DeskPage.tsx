@@ -5,7 +5,7 @@ import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
 import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
-import { IconCheck, IconSortDescending, IconX } from '@tabler/icons-react'
+import { IconCheck, IconHash, IconSortDescending, IconX } from '@tabler/icons-react'
 import { isArchived } from '@estiva-app/interop'
 import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
@@ -36,8 +36,13 @@ import {
   ListedFillsProvider,
   useReactionsSeenOnClose,
   urgentNews,
+  useTeamChatNews,
+  useTeams,
   type RowNewsItem,
+  type Team,
 } from '@/api'
+import { TeamChat } from '@/components/views/TeamChat'
+import { chatLabel, teamChatPath } from '@/components/views/TeamsColumn'
 import { RowNewsCard } from '@/components/RowNewsCard'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { useDebug } from '@/lib/debug'
@@ -167,10 +172,21 @@ export function DeskPage() {
   // what is unread. Filter out items dismissed via the row's X.
   const [openWorkSort, setOpenWorkSort] = useState<OpenWorkSort>(readOpenWorkSort)
   const activityOf = useOpenWorkActivity()
+  /*
+    A team's chat in Open work (Katerina, 16 November, Q-37): named, lit and opened by its team, which the tab's teams read
+    holds; dropped while its team is unread, or once the viewer is no longer in it, as an unresolved file is.
+  */
+  const { teams } = useTeams()
+  const chatTeamOf = (address: string): Team | undefined => teams?.find((team) => team.chatAddress === address && team.chat.in)
+  const chatNews = useTeamChatNews(teams, { reactions: true })
   const openWorkItems = sortOpenWork(
-    (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id)),
+    (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id) && (i.kind !== 'chat' || !!chatTeamOf(i.address))),
     openWorkSort,
     activityOf,
+    (address) => {
+      const team = chatTeamOf(address)
+      return team ? chatLabel(team) : ''
+    },
   )
   const chooseOpenWorkSort = (sort: OpenWorkSort) => {
     setOpenWorkSort(sort)
@@ -193,7 +209,7 @@ export function DeskPage() {
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
     // Every kind removes by the key the blob holds, never by a row id: since
     // SHR-9 the list comes from the relay and the rows carry synthetic ids.
-    if (item?.kind === 'file') openWorkFiles.remove(item.address)
+    if (item?.kind === 'file' || item?.kind === 'chat') openWorkFiles.remove(item.address)
     else if (item?.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
   }
 
@@ -399,8 +415,10 @@ export function DeskPage() {
     third column, the read marker, and the page's header — its members, Join,
     and the file's menu. Only the left column is the Desk's: its lists.
   */
+  // A team's chat open beside the Desk (Q-37, Q-52): its own page's conversation, as a file's is.
+  const openChat = openAddress?.startsWith('39000:') ? chatTeamOf(openAddress) : undefined
   const fileView = useFileView({
-    address: selected ? null : openAddress,
+    address: selected || openAddress?.startsWith('39000:') ? null : openAddress,
     openThreadId,
     onOpenThread: setOpenThread,
     titleHint: openedFrom?.title,
@@ -410,7 +428,7 @@ export function DeskPage() {
     Miky, 2026-10-30): the person, the file, or "Desk" with nothing open. A
     file still resolving, or one that can't be read, is just "Peek".
   */
-  const openName = selected ? selected.dmName || undefined : fileTabTitle(fileView.file)
+  const openName = selected ? selected.dmName || undefined : openChat ? chatLabel(openChat) : fileTabTitle(fileView.file)
   useTabTitle(selected || openAddress ? openName : 'Desk')
   const filePaneParts = useFilePane(fileView, {
     // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file’s pane closes.
@@ -454,9 +472,9 @@ export function DeskPage() {
   // Once Desk has drawn, what is opened next from it loads in the background (PEE-5).
   useLoadAhead(!(deskLoading || starredLoading))
 
-  const filePane = openAddress ? filePaneParts.pane : null
+  const filePane = openAddress && !openAddress.startsWith('39000:') ? filePaneParts.pane : null
 
-  const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
+  const rightPanel = selected ? dmView.rightPanel : openChat ? <TeamChat key={openChat.id} team={openChat} /> : (filePane ?? dmView.rightPanel)
   // Another app's file only: a DM, and Peek's own file, draw their open thread in their own layout's column (B1).
   const threadPanel = !selected && filePane ? fileView.threadPanel : undefined
 
@@ -508,8 +526,26 @@ export function DeskPage() {
               },
             },
       )}
-      openWork={openWorkItems.map((item) =>
-        item.kind === 'file'
+      openWork={openWorkItems.map((item) => {
+        if (item.kind === 'chat') {
+          // Its team is held: the list above dropped the chats whose team is not.
+          const team = chatTeamOf(item.address)!
+          return {
+            id: item.id,
+            kind: 'chat' as const,
+            name: chatLabel(team),
+            // `#`, as its row in Teams wears it: one icon per kind.
+            icon: <IconHash size={16} stroke={1.5} aria-hidden />,
+            isUnread: chatNews.unread[team.id] === true,
+            tone: chatNews.tones[team.id],
+            href: teamChatPath(team.id),
+            isSelected: isOpen(item.address, 'openWork'),
+            onClick: () => openFile(item.address, chatLabel(team), 'openWork'),
+            onRemove: () => dismissOpenWork(item.id),
+            card: { items: chatNews.news[team.id] ?? [], place: 'chat' as const, open: openFileLine(item.address, chatLabel(team), 'openWork') },
+          }
+        }
+        return item.kind === 'file'
           ? {
               id: item.id,
               kind: 'file' as const,
@@ -543,8 +579,8 @@ export function DeskPage() {
               onClick: () => selectDm(item.dmId, item.name, 'openWork'),
               onRemove: () => dismissOpenWork(item.id),
               card: { items: dmNews(item.dmId), place: 'dm' as const, open: openDmLine(item.dmId, item.name, 'openWork') },
-            },
-      )}
+            }
+      })}
       starred={starredEntries.map((entry) => ({
         id: entry.id,
         kind: 'dm' as const,
@@ -577,8 +613,10 @@ export interface DeskRow {
     opens in the Desk's right column like a DM (SID-3), drawing the same
     conversation as the file's own page.
   */
-  kind: 'dm' | 'file'
+  kind: 'dm' | 'file' | 'chat'
   name: string
+  /** Its own icon, in place of the kind's glyph: a team's chat wears `#` (Q-37). */
+  icon?: ReactNode
   /** Files only: its summary (SPEC §6.12), shown when the row's name is hovered. */
   summary?: string
   avatarSrc?: string
@@ -603,7 +641,7 @@ export interface DeskRow {
   card?: {
     items: readonly RowNewsItem[]
     fileRef?: string
-    place: 'topic' | 'dm'
+    place: 'topic' | 'chat' | 'dm'
     open: (item: RowNewsItem | undefined) => void
   }
   /** Open work only: the ✕ that takes it off the list. */
@@ -635,9 +673,14 @@ function readOpenWorkSort(): OpenWorkSort {
   }
 }
 type OpenWorkRow = ReturnType<typeof useDeskItems>['openWork'][number]
-function sortOpenWork(items: OpenWorkRow[], sort: OpenWorkSort, activityOf: (item: OpenWorkRow) => number | undefined): OpenWorkRow[] {
+function sortOpenWork(
+  items: OpenWorkRow[],
+  sort: OpenWorkSort,
+  activityOf: (item: OpenWorkRow) => number | undefined,
+  chatName: (address: string) => string,
+): OpenWorkRow[] {
   if (sort === 'added') return items
-  const nameOf = (item: OpenWorkRow) => (item.kind === 'file' ? item.title : item.name)
+  const nameOf = (item: OpenWorkRow) => (item.kind === 'file' ? item.title : item.kind === 'chat' ? chatName(item.address) : item.name)
   if (sort === 'name') return [...items].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
   // Newest first; what has said nothing yet keeps its added order, after the rest.
   return [...items].sort((a, b) => {
@@ -668,12 +711,14 @@ export function DeskRowItem({ row }: { row: DeskRow }) {
       label={row.name}
       tooltip={row.summary}
       icon={
+        row.icon ?? (
         <TopicState
           type={type}
           status={type === 'topic' ? 'unresolved' : 'default'}
           avatarSrc={row.avatarSrc ?? (row.kind === 'dm' ? avatarSrcFor(row.name) : undefined)}
           iconClassName={row.isSelected || row.isUnread ? 'text-text-primary' : undefined}
         />
+        )
       }
       active={row.isSelected}
       preview={
