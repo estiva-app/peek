@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { FolderSummary } from '@estiva-app/interop'
 import { ArchiveDialog } from '@estiva-app/ui'
-import { useForeignObjects } from '@/api'
+import { useForeignObjects, usePeekActions } from '@/api'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import type { FolderAction } from '@/components/views/useFolderActions'
@@ -28,6 +28,7 @@ export function FolderActionDialog({
 }) {
   const navigate = useNavigate()
   const { createTopic, renameFolder, archiveFolder, archiveImpact } = useForeignObjects()
+  const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const { folder } = action
   const name = folder.name ?? 'Untitled team'
@@ -101,8 +102,14 @@ export function FolderActionDialog({
             showToast({ label: result.reason, type: 'error' })
             return false
           }
-          // Into the topic: under a filter the tree may not be showing it.
-          navigate(filePath(result.address, title))
+          /*
+            Started from its team, it is one of the team's topics (#): today's space mark, set at once, as the + on its row
+            and the column's New topic do (Katerina, 16 November, T-12, Q-16). A refusal is said; the topic stays an initiative.
+          */
+          const marked = await markSpace(folder.id, result.address, true)
+          if (!marked.ok) showToast({ label: marked.reason, type: 'error' })
+          // Into the topic, with Teams beside it: under a filter the tree may not be showing it.
+          navigate(filePath(result.address, title), { state: { column: 'folders' } })
           return true
         }}
       />

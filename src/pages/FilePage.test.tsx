@@ -2218,7 +2218,7 @@ describe('Moving one of a teamâ€™s spaces asks to keep it a space (TEA-5, SPEC Â
   it('into a team the person is in, the box is there and ticked, and the move keeps it a space', async () => {
     holdTeams()
     await openMove('Steer')
-    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][2]).toEqual({ id: STEER, hasState: true })
@@ -2228,7 +2228,7 @@ describe('Moving one of a teamâ€™s spaces asks to keep it a space (TEA-5, SPEC Â
   it('unticked, it arrives as a topic the team leads', async () => {
     holdTeams()
     await openMove('Steer')
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][3]).toBe(false)
@@ -2283,7 +2283,7 @@ describe('Moving one of a teamâ€™s spaces asks to keep it a space (TEA-5, SPEC Â
     act(() => teamsHeld.arrive(teamsOf()))
     await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
-    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][3]).toBe(true)

@@ -68,6 +68,8 @@ const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] })
   Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
   it. Refused here, so the page stays put and the test reads only the call.
 */
+/** The team's topic mark a topic started from its ⋮ is given at once (T-12, Q-16). */
+const peek = vi.hoisted(() => ({ markSpace: vi.fn(async (..._: unknown[]) => ({ ok: true as const })) }))
 const created = vi.hoisted(() => ({
   folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })),
   /*
@@ -188,8 +190,8 @@ vi.mock('@/api', async () => ({
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
   useResolvedReferences: () => ({}),
   useTeams: () => ({ teams: teamsRead.teams, failed: teamsRead.failed }),
-  // The team page's writes are `TeamPage.test.tsx`'s; here they are never pressed.
-  usePeekActions: () => ({}),
+  // The team page's writes are `TeamPage.test.tsx`'s; here only the team's topic mark is (T-12).
+  usePeekActions: () => ({ markSpace: peek.markSpace }),
   useMentionNames: () => [],
   useTopicsColumn: () => ({ state: { mine: [], others: places.topics }, signedOut: false }),
   useTeamTopics: () => ({ topics: new Map((places.topics as { address: string }[]).map((topic) => [topic.address, topic])), loading: false, signedOut: false }),
@@ -354,6 +356,18 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
+  })
+
+  it('a topic started from the ⋮ is one of the team’s topics (#): marked as the team’s at once (T-12, Q-16)', async () => {
+    const ADDRESS = `30840:${'c'.repeat(64)}:from-the-menu`
+    created.topic.mockResolvedValueOnce({ ok: true, address: ADDRESS, naddr: 'naddr1menu' } as never)
+    peek.markSpace.mockClear()
+    mount(`/app/teams/${FOLDER}`)
+    await teamMenu()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Start a topic' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Weekly review')
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(peek.markSpace).toHaveBeenCalledWith(FOLDER, ADDRESS, true))
   })
 
   it('never Delete on a team, and never asks the relay about one (FOL-9)', async () => {

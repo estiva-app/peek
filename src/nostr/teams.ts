@@ -176,7 +176,7 @@ export function addToTeamAsViewer(team: string, person: string, relayUrl: string
 
 /** Mark a topic one of a team's spaces, or take the mark off: one `kind:1852 add` (§3.3). Only the team's members may. */
 export function markSpaceAsViewer(team: string, address: string, space: boolean, relayUrl: string, token: StoredToken): Promise<TeamWrite> {
-  return publish(planMarkSpace(token.pubkey, Date.now(), { team, address, space }), relayUrl, token, space ? 'It is not a space yet.' : 'It is still a space.')
+  return publish(planMarkSpace(token.pubkey, Date.now(), { team, address, space }), relayUrl, token, space ? 'It is still an initiative.' : 'It is still one of the team’s topics.')
 }
 
 /**

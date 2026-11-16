@@ -545,7 +545,8 @@ export function useFileControls({
     return {
       label: (folder: string) => {
         const team = teams?.find((candidate) => candidate.id === folder)
-        return team?.isMember ? `Keep it a space in ${team.name}` : undefined
+        // Today's space is a team's topic now (Katerina, 16 November, Q-01 A).
+        return team?.isMember ? `Keep it a topic in ${team.name}` : undefined
       },
       checked: true,
     }

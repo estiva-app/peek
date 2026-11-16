@@ -442,7 +442,7 @@ export function FolderColumn({
       actions={
         // One strip: one Tab stop, arrows along it (UIG-14). Archive makes nothing and filters nothing.
         !signedOut && view !== 'archive' && (
-          <Toolbar aria-label="Topic list actions" surface={false}>
+          <Toolbar aria-label="Team list actions" surface={false}>
             {view === 'all' && (
               <ToolbarButton tooltip="New team" aria-label="New team" onClick={onNewFolder}>
                 {/* People with a plus, as the prototype draws New team (Katerina, 16 November). */}
