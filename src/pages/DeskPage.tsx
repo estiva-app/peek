@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
+import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { useToast } from '@/lib/toast'
 import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
@@ -352,8 +353,18 @@ export function DeskPage() {
     armOpenReply(dmId)
     setSelected({ dmId, dmName, section })
   }
+  /*
+    A thread the address names on arrival — a line in a dot's list or a row's card, a Screener item, a link — is shown
+    where it was said: scrolled into view once drawn (Katerina, 15 November, U-07). A thread opened on the page itself
+    is already where the person is looking, so it is left where it is.
+  */
+  const openedHere = useRef<string | null>(null)
+  useEffect(() => {
+    if (openThreadId && openThreadId !== openedHere.current) void showConversationItemWhenDrawn(openThreadId)
+  }, [openThreadId])
   const setOpenThread = useCallback(
     (id: string | null) => {
+      openedHere.current = id
       const next = new URLSearchParams(searchParams)
       if (id) next.set('thread', id)
       else next.delete('thread')

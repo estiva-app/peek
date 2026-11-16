@@ -46,3 +46,34 @@ export function scrollToEventWhenReady(eventId: string, waitMs = WAIT_MS): Promi
     attempt()
   })
 }
+
+/** How long a page arriving at a thread waits for its conversation: a large workspace takes seconds to read. */
+const ARRIVAL_WAIT_MS = 10_000
+
+/**
+ * Bring a message into view where it was said, once its conversation has drawn it: the middle column's item (the
+ * kit's `data-conversation-item`, or an app's comment's `data-comment`), scrolled to the middle (Katerina, 15 November, U-07: a line in a dot's list, a row's
+ * card or the Screener opens where it was said and scrolls it into view, "generalize it so that it works in every
+ * similar case"). The kit's `showInConversation` reaches the thread panel's copy first, which is already on screen
+ * when the thread opens beside. Resolves whether it appeared in time.
+ */
+export function showConversationItemWhenDrawn(id: string, waitMs = ARRIVAL_WAIT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + waitMs
+    const attempt = () => {
+      // A conversation's item (the kit's), or a comment on another app's file (Peek's CommentRow).
+      const item = document.querySelector(`[data-conversation-item="${CSS.escape(id)}"], [data-comment="${CSS.escape(id)}"]`)
+      if (item) {
+        item.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+        resolve(true)
+        return
+      }
+      if (Date.now() >= deadline) {
+        resolve(false)
+        return
+      }
+      window.setTimeout(attempt, POLL_MS)
+    }
+    attempt()
+  })
+}

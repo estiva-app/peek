@@ -979,6 +979,38 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
   })
 })
 
+/*
+  A thread the address names on arrival — a line in a dot's list or a row's card, a Screener item, a link — is shown
+  where it was said: its message scrolled into view once drawn (Katerina, 15 November, U-07). One opened on the page
+  itself is already in view.
+*/
+describe('a thread named on arrival is scrolled into view where it was said (U-07)', () => {
+  const scrolled = vi.fn()
+  beforeEach(() => {
+    scrolled.mockClear()
+    Element.prototype.scrollIntoView = scrolled
+  })
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
+  /** The messages scrolled into view, by their conversation item's id. */
+  const scrolledItems = () =>
+    scrolled.mock.contexts.map((el) => (el as HTMLElement).getAttribute('data-conversation-item') ?? (el as HTMLElement).getAttribute('data-comment')).filter(Boolean)
+
+  it('arriving at a thread scrolls its message into view', async () => {
+    const rootId = issue.comments[0].id
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    await waitFor(() => expect(scrolledItems()).toContain(rootId))
+  })
+
+  it('a thread opened on the page itself is not scrolled to', async () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(threadControls(screen.getByTestId('middle'))[0])
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(scrolledItems()).toEqual([])
+  })
+})
+
 describe('FilePage opens a thread beside the conversation', () => {
   const rootId = issue.comments[0].id
 

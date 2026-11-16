@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
@@ -10,6 +10,7 @@ import { useFileView } from '@/components/views/useFileView'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { useFileAddress, rememberFileAddress, spaceTeamOf, useFolderContents, useReferenceFolder, useRememberFile, useTeams } from '@/api'
 import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
+import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
 import { KIND_TOPIC } from '@/nostr/foreign'
@@ -102,8 +103,18 @@ export function FilePage() {
     only exists in this tab.
   */
   const openThreadId = searchParams.get('thread') ?? undefined
+  /*
+    A thread the address names on arrival — a line in a dot's list or a row's card, a Screener item, a link — is shown
+    where it was said: scrolled into view once drawn (Katerina, 15 November, U-07). A thread opened on the page itself
+    is already where the person is looking, so it is left where it is.
+  */
+  const openedHere = useRef<string | null>(null)
+  useEffect(() => {
+    if (openThreadId && openThreadId !== openedHere.current) void showConversationItemWhenDrawn(openThreadId)
+  }, [openThreadId])
   const setOpenThread = useCallback(
     (id: string | null) => {
+      openedHere.current = id
       const next = new URLSearchParams(searchParams)
       if (id) next.set('thread', id)
       else next.delete('thread')

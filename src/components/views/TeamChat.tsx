@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { IconDotsVertical, IconHash } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, Menu, MenuItem, PageHeader, Toolbar, ToolbarButton, useShortcut } from '@estiva-app/ui'
@@ -10,6 +10,7 @@ import { useFileConversationView } from '@/components/views/useFileConversationV
 import { draftKeys } from '@/lib/drafts'
 import { useMarkChannelRead } from '@/lib/useMarkRead'
 import { copyPageLink } from '@/lib/objectUrl'
+import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { OpenWorkButton } from '@/components/OpenWorkButton'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
@@ -31,6 +32,10 @@ export function TeamChat({ team }: { team: Team }) {
     setSeenLink(linked)
     if (linked) setThread(linked)
   }
+  // The linked thread is shown where it was said, scrolled into view once drawn (U-07); one opened here is in view.
+  useEffect(() => {
+    if (linked) void showConversationItemWhenDrawn(linked)
+  }, [linked])
   const name = chatLabel(team)
   const chat = useFileConversationView({
     container: { kind: 'channel', h: team.id, general: true },
