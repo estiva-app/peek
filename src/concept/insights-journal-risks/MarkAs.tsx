@@ -8,7 +8,7 @@
  * has a thin line in its type's colour; "changed since your last visit" a neutral grey one.
  */
 import type { ReactNode } from 'react'
-import { IconAlertTriangle, IconBulb, IconExternalLink, IconNotebook, IconX } from '@tabler/icons-react'
+import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconNotebook, IconX } from '@tabler/icons-react'
 import { MenuItem, MenuSub, Toast, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 export type ItemType = 'insight' | 'journal' | 'risk'
@@ -23,6 +23,10 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
   journal: { label: 'Journal entry', plural: 'Journal entries', tab: 'Journal', line: 'border-info-default', text: 'text-info-default', icon: (s = 16) => <IconNotebook size={s} stroke={1.5} /> },
   risk: { label: 'Risk', plural: 'Risks', tab: 'Risks', line: 'border-error-default', text: 'text-error-default', icon: (s = 16) => <IconAlertTriangle size={s} stroke={1.5} /> },
 }
+
+/** A word's own icon where its type's would blur them (Miky, 16 Nov: Concern, Question and Blocker each need their own). */
+export const wordIcon = (word: MarkWord, size = 16): ReactNode =>
+  word === 'Question' ? <IconHelpCircle size={size} stroke={1.5} /> : word === 'Blocker' ? <IconBarrierBlock size={size} stroke={1.5} /> : TYPE_META[TYPE_OF[word]].icon(size)
 
 /** Each type's own statuses on the shared stages (record every-app-relies-on-an-items-stage…): Rejected from Proposed for all three. */
 export type Status = 'proposed' | 'accepted' | 'open' | 'outdated' | 'superseded' | 'resolved' | 'rejected'
@@ -75,7 +79,7 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   return (
     <MenuSub label="Mark as" leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
       {WORDS.map((word) => (
-        <MenuItem key={word} label={word} leading={<span className={TYPE_META[TYPE_OF[word]].text}>{TYPE_META[TYPE_OF[word]].icon()}</span>} onClick={() => onMark?.(word)} />
+        <MenuItem key={word} label={word} leading={<span className={TYPE_META[TYPE_OF[word]].text}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
     </MenuSub>
   )
