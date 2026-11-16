@@ -144,6 +144,8 @@ const marks = vi.hoisted(() => ({
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  // A team chat's followers, for its row on the team's page: read from the relay, which these tests do not have.
+  usePlaceFollow: () => ({ state: undefined, listed: undefined, failed: false, choose: async () => ({ ok: true }), add: async () => ({ ok: true }) }),
   useReadActions: () => ({
     markFileRead: marks.file,
     markContainerRead: marks.container,

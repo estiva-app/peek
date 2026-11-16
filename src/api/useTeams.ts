@@ -332,6 +332,17 @@ const asPlaceMessage = (message: StreamMessage) => ({
 /** A team chat's messages from a Folder's channel stream: those about no file (§11.1's general stream). */
 export const chatMessagesOf = (messages: readonly StreamMessage[]) => messages.filter((message) => message.about.length === 0)
 
+/**
+ * When a team's chat was last written in, Unix seconds, from the stream its dot already reads: `undefined` until it is
+ * read, for someone not in it, or when nothing was said there (TP-12: a dash, never a made-up date).
+ */
+export function useTeamChatActive(team: Team | null | undefined): number | undefined {
+  const ids = useMemo(() => (team?.chat.in ? [team.id] : []), [team])
+  const { streams } = useChannelStreams(ids)
+  const stream = team?.chat.in ? streams[team.id] : undefined
+  return useMemo(() => (stream ? chatMessagesOf(stream).reduce<number | undefined>((latest, m) => (latest === undefined || m.at > latest ? m.at : latest), undefined) : undefined), [stream])
+}
+
 /** Whether a team's chat has something new for `viewer` in its channel's stream (§11.8): only for someone in it. */
 export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merged: Readonly<Record<string, number>>, viewer: string): boolean {
   return chatNews(team, stream, merged, viewer).length > 0

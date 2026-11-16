@@ -54,7 +54,7 @@ export { useMembership, type MembershipSeam } from '@/api/internal/membership'
 export { useTopicsColumn, useTopicFollowing, useListedNews, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
 export { useDeskListedNews } from './deskListedNews'
 export { initiativesOf } from './initiatives'
-export { useExploreTopics, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
+export { useExploreTopics, useTopicFacts, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
 export { useFileMembers } from '@/api/internal/fileMembers'
 export type { StreamTerms } from '@estiva-app/conversation'
 export { PeekDataProvider } from './store'
@@ -114,7 +114,7 @@ export {
   useUrgentReplyThreads,
   type ReplyStream,
 } from './useNewReplyThreads'
-export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFactsOf, teamFolders, teamOf, teamPlaces, useLeavesTopic, useMayMove, useTeamChatNews, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
+export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFactsOf, teamFolders, teamOf, teamPlaces, useLeavesTopic, useMayMove, useTeamChatActive, useTeamChatNews, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'
 export { placeLevelChanged, topicFollowTarget, usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'
 export { useListedConversations, type ListedSource, type ListedState } from './useListedConversations'

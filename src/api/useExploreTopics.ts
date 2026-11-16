@@ -218,6 +218,41 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
   return { state, retry: readTopicsAgain }
 }
 
+/**
+ * Who is in some topics and when each was last active, read as Explore reads them and kept with Explore's, read again
+ * each time the page asking opens or its list changes (B-05, B-08): a team's page lists its topics and initiatives with
+ * Explore's facts (Katerina, 16 November, TP-09). Who is counted is Explore's and a place's own pill's: people at All or
+ * Important (Q-31). A topic of yours takes the column's time, with no read of its own.
+ */
+export function useTopicFacts(topics: readonly ForeignObject[]): { members: ReadonlyMap<string, number | undefined>; active: ReadonlyMap<string, number> } {
+  const times = useTopicTimes()
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const held = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const known = held.pubkey === pubkey ? held : NO_FACTS
+  const key = topics.map((topic) => topic.address).join(',')
+  // What the read takes, as it is when the list changes: the column's times change with every message, the list does not.
+  const now = useRef({ topics, yours: times.yours, createdAt: times.createdAt })
+  // Before the read below: effects run in order, so it reads them as they are now.
+  useEffect(() => {
+    now.current = { topics, yours: times.yours, createdAt: times.createdAt }
+  })
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v || !key) return
+    if (facts.pubkey !== v.token.pubkey) put({ ...NO_FACTS, pubkey: v.token.pubkey })
+    const { topics: list, yours, createdAt } = now.current
+    for (const topic of list) asked.add(`m:${topic.address}`)
+    void readMembers(v, list)
+    const needActive = list.filter((topic) => !yours?.has(topic.address!))
+    for (const topic of needActive) asked.add(`a:${topic.address}`)
+    if (needActive.length) void readActive(v, needActive, createdAt)
+  }, [viewer, key])
+  const yours = times.yours
+  const active = useMemo(() => new Map([...known.active, ...(yours ?? [])]), [known.active, yours])
+  return { members: known.members, active }
+}
+
 /** For tests: forget what Explore has read. */
 export function resetExploreTopics(): void {
   asked.clear()
