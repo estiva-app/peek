@@ -13,7 +13,7 @@ import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
 import { ArchiveTreeView, FolderColumn } from '@/components/views/FolderTree'
 import { TeamsColumnView } from '@/components/views/TeamsColumn'
-import type { FolderSummary } from '@estiva-app/interop'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import type { Team } from '@/api'
 import { ObjectPageView } from './ObjectPage'
@@ -260,6 +260,17 @@ export const DeskLoading: Story = {
   ),
 }
 
+/**
+ * The first team's places, made up: two topics (#, a team's lasting rooms) and two initiatives it leads (◎), drawn under
+ * it in that order (T-14, as Katerina changed it on 16 November).
+ */
+const PLACE_AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const place = (d: string, title: string) =>
+  ({ ref: `30840:${PLACE_AUTHOR}:${d}`, address: `30840:${PLACE_AUTHOR}:${d}`, kind: 30840, folder: FOLDERS[0]!.id, slots: { title: { value: title } } }) as unknown as ForeignObject
+const TEAM_TOPICS = [place('design-reviews', 'Design reviews'), place('releases', 'Releases')]
+const TEAM_INITIATIVES = [place('onboarding-refresh', 'Onboarding refresh'), place('faster-search', 'Faster search')]
+const PLACES = new Map([...TEAM_TOPICS, ...TEAM_INITIATIVES].map((topic) => [topic.address!, topic]))
+
 /** The fixture's teams: you are in Peek, follow Ship, and the rest are other teams. Their places are relay reads. */
 const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   id: folder.id,
@@ -271,7 +282,10 @@ const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   members: [],
   isMember: i === 0,
   isFollowing: i === 1,
-  listed: [],
+  listed:
+    i === 0
+      ? [...TEAM_TOPICS.map((topic) => ({ address: topic.address!, space: true })), ...TEAM_INITIATIVES.map((topic) => ({ address: topic.address!, space: false }))]
+      : [],
   chatAddress: `39000::${folder.id}`,
   chat: { kind: 'chat', in: i === 0, ways: i === 0 ? ['team'] : [], ...(i === 0 ? { level: 'important' as const } : {}) },
 }))
@@ -299,7 +313,7 @@ function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDE
       ) : (
         <TeamsColumnView
           teams={TEAMS.filter((team) => folders?.some((folder) => folder.id === team.id))}
-          topics={new Map()}
+          topics={PLACES}
           chatUnread={chatUnread}
           unread={{}}
           show={show}

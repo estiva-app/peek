@@ -1,8 +1,8 @@
 /**
  * Peek's Teams column as the navigation prototype draws it (Katerina, 16 November; the decisions' step 3): the teams
  * you are in and the ones you follow together, the Company team first, with no label over them; each a row that opens
- * its page and folds its chat, its topics (#, today's spaces) and its Files; initiatives (today's topics) no longer
- * under a team; the other teams in one fold with its count.
+ * its page and folds its chat, its topics (#, today's spaces), the initiatives it leads (◎, today's topics; T-14 as
+ * Katerina changed it on 16 November) and its Files; the other teams in one fold with its count.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
@@ -91,14 +91,20 @@ describe('the Teams column (step 3)', () => {
     expect(row('Engineering').getAttribute('href')).toBe('/app/teams/eng')
   })
 
-  it('under a team you are in: its chat, then its topics; no initiative, no issue, no archived topic', () => {
+  it('under a team you are in: its chat, its topics, then the initiatives it leads (T-14, changed 16 November); no issue, no archived topic', () => {
     mount()
     const order = rows()
     const at = order.indexOf('Engineering')
-    expect(order.slice(at, at + 3)).toEqual(['Engineering', 'engineering', 'General'])
-    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull()
+    expect(order.slice(at, at + 4)).toEqual(['Engineering', 'engineering', 'General', 'Launch'])
     expect(screen.queryByRole('link', { name: 'Old plans' })).toBeNull()
     expect(row('engineering').getAttribute('href')).toBe('/app/teams/eng/chat')
+  })
+
+  it('a topic wears #, an initiative ◎: each kind its own icon', () => {
+    mount()
+    expect(row('General').querySelector('svg.tabler-icon-hash')).not.toBeNull()
+    expect(row('Launch').querySelector('svg.tabler-icon-target')).not.toBeNull()
+    expect(row('Launch').querySelector('svg.tabler-icon-hash')).toBeNull()
   })
 
   it('the Company team’s chat is #general (Q-17)', () => {
@@ -150,6 +156,11 @@ describe('the Teams column (step 3)', () => {
     expect(screen.queryByText('Other teams')).toBeNull()
   })
 
+  it('Unread keeps a lit initiative under its team', () => {
+    mount({ show: 'unread', unread: { [LAUNCH.ref]: true } })
+    expect(rows()).toEqual(['Engineering', 'Launch'])
+  })
+
   it('Unread with nothing lit says so', () => {
     mount({ show: 'unread' })
     expect(screen.getByText('Nothing unread.')).toBeTruthy()
@@ -177,6 +188,13 @@ describe('a team’s Files fold (T-16)', () => {
     mount({ renderFiles, openTeam: 'eng', selectedRef: ISSUE })
     expect(screen.getByRole('button', { name: 'Files' }).getAttribute('aria-expanded')).toBe('true')
     expect(renderFiles).toHaveBeenCalledWith(ENGINEERING)
+  })
+
+  it('stays shut while one of its team’s initiatives is open: that row is lit instead', () => {
+    const renderFiles = vi.fn(() => <span>the files</span>)
+    mount({ renderFiles, openTeam: 'eng', selectedRef: LAUNCH.ref })
+    expect(screen.getByRole('button', { name: 'Files' }).getAttribute('aria-expanded')).toBe('false')
+    expect(renderFiles).not.toHaveBeenCalled()
   })
 
   it('shows only under a team that holds a file', () => {
@@ -210,6 +228,14 @@ describe('what a team’s rows offer (step 3)', () => {
     await userEvent.click(within(rowBlock('General', 'More options')).getByRole('button', { name: 'More options' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it an initiative' }))
     expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, GENERAL, false)
+  })
+
+  it('a member makes one of its initiatives a topic (T-31)', async () => {
+    const onMarkSpace = vi.fn()
+    mount({ onMarkSpace })
+    await userEvent.click(within(rowBlock('Launch', 'More options')).getByRole('button', { name: 'More options' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it a topic' }))
+    expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, LAUNCH, true)
   })
 
   it('a topic the viewer hears from offers Leave', async () => {

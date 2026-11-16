@@ -44,9 +44,10 @@ const ICON = { size: 16, stroke: 1.5 } as const
  * - The teams you are in and the ones you follow, together, the Company team first, then A–Z, with no label over them
  *   (Q-14, T-08). Each wears the team icon, opens its page, starts unfolded, and offers + (New topic in it) to its
  *   members.
- * - Under a team: its chat (members only), then its topics (`#`, today's spaces), then a Files fold of its projects and
- *   documents, whichever initiative lists them, shut until opened or until a file inside it is opened. Initiatives
- *   (today's topics) no longer sit under a team: they are in Initiatives.
+ * - Under a team: its chat (members only), then its topics (`#`, today's spaces), then the initiatives it leads (◎,
+ *   today's topics: today's order, each kind with its own icon; Katerina, 16 November, T-14 changed), then a Files fold
+ *   of its projects and documents, whichever initiative lists them, shut until opened or until a file inside it is
+ *   opened. An initiative is in Initiatives too; opened from here, its page keeps this column.
  * - The other teams, in one fold drawn as a row among rows, with its count, shut unless the open team is inside it.
  *
  * Rows show their kind, never how you follow them; only Not following shows, while the row is pointed at (Q-22).
@@ -332,15 +333,39 @@ export function TeamsColumnView({
   const section = (team: Team) => {
     // Under Unread only what lights, and the open one (today's).
     const shown = (topic: ForeignObject) => !unreadOnly || unread[topic.ref] === true || topic.ref === selectedRef
-    const spaces = teamPlaces(team, topics).spaces
+    const { spaces, led } = teamPlaces(team, topics)
     const topicsShown = spaces.filter(shown)
+    const initiativesShown = led.filter(shown)
     const chatOpenHere = chatOpen && openTeam === team.id
     const chat = team.isMember && (!unreadOnly || chatUnread[team.id] === true || chatOpenHere)
-    // The open file is in this team and is not one of its topics: its Files fold opens for it.
-    const fileOpenHere = openTeam === team.id && !!selectedRef && !chatOpen && !spaces.some((topic) => topic.ref === selectedRef)
+    // The open file is in this team and is none of its places, a topic or an initiative: its Files fold opens for it.
+    const fileOpenHere = openTeam === team.id && !!selectedRef && !chatOpen && ![...spaces, ...led].some((topic) => topic.ref === selectedRef)
     const files = holdsFiles(team) || fileOpenHere
     const filesShown = files && (!unreadOnly || fileOpenHere)
-    if (unreadOnly && !chat && topicsShown.length === 0 && !filesShown && openTeam !== team.id) return null
+    if (unreadOnly && !chat && topicsShown.length + initiativesShown.length === 0 && !filesShown && openTeam !== team.id) return null
+    const placeRow = (topic: ForeignObject, place: 'topic' | 'initiative') => (
+      <TreeRow
+        key={topic.ref}
+        file={topic}
+        unread={unread}
+        news={news}
+        tones={tones}
+        selectedRef={selectedRef}
+        onControl={onControl}
+        nested
+        place={place}
+        notFollowing={notFollowingOf?.(team, topic) ?? false}
+        leaves={leavesOf?.(topic) ?? false}
+        // A member turns one into the other (T-31): Make it an initiative on a topic, Make it a topic on an initiative.
+        space={
+          team.isMember && onMarkSpace
+            ? place === 'topic'
+              ? { action: 'unmark', onToggle: () => onMarkSpace(team, topic, false) }
+              : { action: 'mark', onToggle: () => onMarkSpace(team, topic, true) }
+            : undefined
+        }
+      />
+    )
     const inside = chatOpenHere ? `chat:${team.id}` : openTeam === team.id ? selectedRef : undefined
     return (
       <NavItem
@@ -364,22 +389,9 @@ export function TeamsColumnView({
             {...(onCopyChatLink ? { onCopyLink: () => onCopyChatLink(team) } : {})}
           />
         )}
-        {topicsShown.map((topic) => (
-          <TreeRow
-            key={topic.ref}
-            file={topic}
-            unread={unread}
-            news={news}
-            tones={tones}
-            selectedRef={selectedRef}
-            onControl={onControl}
-            nested
-            place="topic"
-            notFollowing={notFollowingOf?.(team, topic) ?? false}
-            leaves={leavesOf?.(topic) ?? false}
-            space={team.isMember && onMarkSpace ? { action: 'unmark', onToggle: () => onMarkSpace(team, topic, false) } : undefined}
-          />
-        ))}
+        {topicsShown.map((topic) => placeRow(topic, 'topic'))}
+        {/* The initiatives it leads, after its topics, as today's Peek lists them, each with its own icon (Katerina, 16 November: T-14 changed). */}
+        {initiativesShown.map((topic) => placeRow(topic, 'initiative'))}
         {filesShown && (
           <TeamFilesFold
             team={team}
