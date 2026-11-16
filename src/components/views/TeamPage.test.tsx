@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { Team } from '@/api'
+import { openedFrom } from '@/lib/openedFrom'
 import { TeamPage } from './TeamPage'
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -220,6 +221,14 @@ describe('what a team’s page shows (TP-08, TP-09, TP-14)', () => {
     expect(rowsOf('Engineering’s topics')).toEqual(['engineering', 'Launch'])
     expect(rowsOf('Engineering’s initiatives')).toEqual(['Brief'])
     expect(screen.getByRole('link', { name: /^engineering/ }).getAttribute('href')).toBe('/app/teams/eng/chat')
+  })
+
+  it('a topic or an initiative opened from the team’s page keeps Teams beside it (Katerina, 17 November, TP-08)', async () => {
+    mount(team())
+    await userEvent.click(screen.getByRole('link', { name: /^Brief/ }))
+    expect(openedFrom(BRIEF.address!)).toBe('folders')
+    await userEvent.click(screen.getByRole('link', { name: /^Launch/ }))
+    expect(openedFrom(LAUNCH.address!)).toBe('folders')
   })
 
   it('a team’s topic wears #, an initiative ◎', () => {

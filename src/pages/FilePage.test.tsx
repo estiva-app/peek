@@ -298,6 +298,14 @@ const openWork = vi.hoisted(() => {
     },
   }
 })
+// A team's Files fold reads the team's listing inside `@/api/useTeams`, past the mock above: the same listing there.
+vi.mock('@/api/useFolderContents', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useFolderContents: (id: string | undefined) => ({
+    state: id ? { id, name: 'Folders', hasState: true, source: 'state', files: relay.files } : 'loading',
+    reload: async () => {},
+  }),
+}))
 // The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same topics there.
 vi.mock('@/api/useTopicsColumn', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -811,6 +819,27 @@ describe('FilePage draws every app’s file in the same panes', () => {
   kind's icon and its name — the team and the project opening in place; after it, one chip per live initiative that
   lists it or its project, each opening that initiative; then Open, into its own app.
 */
+/*
+  A Screener item that is a file opens on its own page where it lives (Katerina, 16 November, Q-54): Teams, its team
+  open, its row selected in the team's Files fold, which opens. The Screener opens it by its address, as a link does.
+*/
+describe('a file opened by its address lands where it lives (DK-03, Q-54)', () => {
+  it('a project shows under Teams, its row current in its team’s Files fold, which is open', async () => {
+    relay.files = [project, topic]
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    const left = screen.getByTestId('left')
+    const fold = within(left).getByRole('button', { name: 'Files' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    const row = await waitFor(() => {
+      const found = left.querySelector(`[data-file="${CSS.escape(PROJECT_ADDRESS)}"]`)
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    expect(row.getAttribute('aria-current')).toBe('page')
+  })
+})
+
 describe('another app’s file: its trail, its initiatives, then Open (F-04 to F-06)', () => {
   it('its title is a trail — its team, its project, then its name — the team opening in place', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)

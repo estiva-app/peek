@@ -189,8 +189,9 @@ export function TeamPage({
     ...(topic.address && facts.active.get(topic.address) ? { active: facts.active.get(topic.address) } : {}),
     lit: unread[topic.ref] === true,
     ...(tones?.[topic.ref] ? { tone: tones[topic.ref] } : {}),
-    // A team's topic opens with Teams beside it; an initiative with Initiatives.
-    onClick: () => topic.address && rememberOpenedFrom(topic.address, initiative ? 'topics' : 'folders'),
+    // Opened from its team's page, a topic or an initiative keeps Teams beside it, as from the team's rows in the column
+    // (Katerina, 17 November: TP-08, "Initiatives under the team, opened in the team page").
+    onClick: () => topic.address && rememberOpenedFrom(topic.address, 'folders'),
   })
   const chatListed = chatFollow.listed
   const chatLine: PlaceLine | undefined = team.isMember
