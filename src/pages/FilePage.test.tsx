@@ -823,6 +823,24 @@ describe('FilePage draws every app’s file in the same panes', () => {
   A Screener item that is a file opens on its own page where it lives (Katerina, 16 November, Q-54): Teams, its team
   open, its row selected in the team's Files fold, which opens. The Screener opens it by its address, as a link does.
 */
+/* The team an initiative belongs to, as a chip right after its name, opening the team's page (Katerina, 17 November). */
+describe('an initiative’s page names its team', () => {
+  it('a chip right after its name, with the team’s icon, opening the team’s page', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const chip = within(screen.getByTestId('middle')).getByRole('link', { name: 'Folders' })
+    expect(chip.getAttribute('href')).toBe(`/app/teams/${FOLDER}`)
+    expect(chip.querySelector('.tabler-icon-users')).not.toBeNull()
+    fireEvent.click(chip)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`)
+  })
+
+  it('a team’s topic (#) has none: it sits under its team', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(screen.getByTestId('middle')).queryByRole('link', { name: 'Folders' })).toBeNull()
+  })
+})
+
 describe('a file opened by its address lands where it lives (DK-03, Q-54)', () => {
   it('a project shows under Teams, its row current in its team’s Files fold, which is open', async () => {
     relay.files = [project, topic]

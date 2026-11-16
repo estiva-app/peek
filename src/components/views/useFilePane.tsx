@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { IconDotsVertical, IconExternalLink, IconHash, IconTarget } from '@tabler/icons-react'
+import { IconDotsVertical, IconExternalLink, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { Breadcrumb, Button, Chip, ConversationLayout, KindIcon, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, isPlainClick, thingKindOf, useShortcut } from '@estiva-app/ui'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
@@ -317,6 +317,20 @@ export function useFilePane(
     )
   })
 
+  /*
+    The team an initiative belongs to, a chip right after its name, opening the team's page (Katerina, 17 November, as the
+    6 November prototype drew it; its icon at a chip's 12px, R-15). A team's topic needs none: it sits under its team.
+  */
+  const initiativeTeam =
+    isTopic && listing && !listing.space ? (
+      <Chip
+        label={listing.team.name}
+        leadingIcon={<IconUsers size={12} stroke={1.5} aria-hidden />}
+        href={`/app/teams/${listing.team.id}`}
+        onClick={go(`/app/teams/${listing.team.id}`)}
+      />
+    ) : undefined
+
   const header = (
         /*
           The kit's PageHeader. One row: the file's name, and whose file it is
@@ -345,7 +359,10 @@ export function useFilePane(
               earlier, when you rest on it or tap it. A file of another app has its Open here instead.
             */
             pageDot ? (
-              <PageDot dot={pageDot} />
+              <>
+                {initiativeTeam}
+                <PageDot dot={pageDot} />
+              </>
             ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
               <>
               {/* Its initiatives first, each a chip, then Open (Katerina, 16 November, F-05, F-06). */}
