@@ -143,6 +143,16 @@ describe('with the switch on', () => {
     expect(named).toEqual(expect.arrayContaining([A.split(':')[2], B.split(':')[2]]))
   })
 
+  it('opens the Screener’s files without their text, which its rows never draw (APP-11)', async () => {
+    relayInfo(true)
+    const { ARCHIVED_WITH } = await import('@/api/internal/screener')
+    await resolveObjectsAsViewer([A, B], 'https://relay.test', token, 'relay', ARCHIVED_WITH).catch(() => undefined)
+
+    const opens = listReads().filter((f) => (f['#d'] as string[] | undefined)?.includes(A.split(':')[2]))
+    expect(opens.length).toBeGreaterThan(0)
+    expect(opens.filter((f) => f.text)).toEqual([])
+  })
+
   it('`[` finds a project by a word in its current fields', async () => {
     relayInfo(true)
     await searchFileReferencesAsViewer('roadmap', 'https://relay.test', token).catch(() => undefined)

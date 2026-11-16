@@ -125,7 +125,7 @@ const FILE_REFRESH_MS = 60_000
  * what it says, so its files open without their text (APP-11: 3.5 MB on Miky's
  * Desk).
  */
-const ARCHIVED_WITH = { archivedWith: true, withoutText: true }
+export const ARCHIVED_WITH = { archivedWith: true, withoutText: true }
 
 function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
   const { resolveObjects } = useForeignObjects()
