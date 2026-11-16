@@ -40,6 +40,7 @@ export function FileTreeView({
   selectedRef,
   expand,
   onControl,
+  placeOf,
 }: {
   state: FolderContentsState
   /** Archive's listing: what is archived in the Folder. Its rows' folds are not remembered. */
@@ -58,6 +59,8 @@ export function FileTreeView({
    * without this has no menus, exactly as before.
    */
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** What kind of place a row is, for its icon (# a team's topic, ◎ an initiative): Archive's, which knows the teams. */
+  placeOf?: (file: ForeignObject) => 'topic' | 'initiative' | undefined
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
@@ -91,6 +94,7 @@ export function FileTreeView({
           expand={expand}
           onControl={onControl}
           remember={!archive}
+          {...(placeOf?.(file) ? { place: placeOf(file) } : {})}
         />
       ))}
     </>

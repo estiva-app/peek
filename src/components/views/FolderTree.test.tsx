@@ -176,7 +176,8 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
 
 /** A group's open state: its heading's `aria-expanded`, as the package's section draws it. */
 const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
-const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
+/** A team's fold in Archive (A-01: the kit's row-look fold), by its id. */
+const section = (id: string) => document.querySelector(`[data-archive-team="${id}"]`) as HTMLElement
 /** The column's title: the view, and the button that opens their menu. */
 const title = (name: string) => screen.getByRole('button', { name })
 
@@ -387,6 +388,14 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(items).toContain('Unarchive')
     expect(items).toContain('Delete')
     for (const gone of ['Rename', 'New topic inside', 'Move…', 'Add to Open work', 'Join']) expect(items).not.toContain(gone)
+  })
+
+  // One icon per kind, in Archive too (Katerina, 16 November): ◎ an initiative, # a team's topic; never the dashed circle.
+  it('an archived topic’s row wears its kind’s icon: ◎ for an initiative no team marks as its space', async () => {
+    reads.extra = [archivedTopic({ by: CATH, at: 1 })]
+    await menuOf('Old topic')
+    const row = document.querySelector(`[data-file="30840:${CATH}:old-topic"]`)!
+    expect(row.querySelector('.tabler-icon-target')).not.toBeNull()
   })
 
   it('a topic archived with a page above it offers neither Unarchive nor anything that changes it', async () => {

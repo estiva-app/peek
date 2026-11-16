@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconFilter, IconUsersPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { nestingOf } from '@estiva-app/interop'
+import { IconFilter, IconUsers, IconUsersPlus } from '@tabler/icons-react'
+import { Chip, CollapsibleSection, EmptyState, ListColumn, Menu, MenuItem, NavTree, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { DeletedProjectsState } from '@/api'
 import {
   reloadFoldersOnScreen,
+  spaceTeamOf,
   teamFolders,
   topLevelFolders,
   useDeletedProjects,
   useFolderContents,
   useFolders,
   useForeignObjects,
+  useTeams,
 } from '@/api'
 import { DeletedProjects } from '@/components/views/DeletedProjects'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
-import { TopicState } from '@/components/ui/TopicState'
 import { TeamsColumn } from '@/components/views/TeamsColumn'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
@@ -645,7 +646,8 @@ function ArchiveSection({
     open (Katerina, 5 October): the package's `NavTree` (`selectedGroup`, ui
     0.99) and `openFor`, once per arrival — the person can close it again.
   */
-  const openFor = current && selectedRef ? `archive:${selectedRef}` : undefined
+  // The team's own link too, with no file open: it lands open, as its heading did (the kit's fold has no group to select).
+  const openFor = current ? (selectedRef ? `archive:${selectedRef}` : `archive:team:${folder.id}`) : undefined
   // The read is the fold: `null` while closed is the hook's "nothing to read".
   const own = useFolderContents(open ? folder.id : null, { archived: true, folderArchived: !!folder.archived })
   // The last listing drawn stays drawn while the next read of the same Folder is in flight (SID-2).
@@ -675,22 +677,39 @@ function ArchiveSection({
     : undefined
   const expand = expandSelected && selectedRow ? [...(chain ?? []), selectedRow.ref] : chain
 
+  // Its places wear their kind's icon, as everywhere (Katerina, 16 November): # a team's topic, ◎ an initiative.
+  const { teams } = useTeams()
+  const placeOf = useCallback(
+    (file: ForeignObject) =>
+      Number(file.address?.split(':')[0]) === KIND_BARE_FILE ? (spaceTeamOf(teams, file.address ?? undefined) ? ('topic' as const) : ('initiative' as const)) : undefined,
+    [teams],
+  )
+  const name = folder.name ?? folder.id
+
   return (
-    <NavTreeSection
-      id={folder.id}
+    /*
+      A team in Archive is the kit's fold drawn as a row among rows, with the team's icon (Katerina, 16 November, A-01):
+      the whole row folds and opens no page, as Teams' Files and Other teams do.
+    */
+    // Which team the fold is, as a row says which file it is (`data-file`).
+    <div data-archive-team={folder.id} className="flex flex-col">
+    <CollapsibleSection
+      look="row"
       // The id when there is no name: a channel created by an app rather than a person may carry none.
-      title={folder.name ?? folder.id}
+      title={name}
       open={open}
       pending={pending}
       onOpenChange={setOpen}
       openFor={openFor}
-      icon={<TopicState type="folder" />}
-      // An archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
+      icon={<IconUsers size={16} stroke={1.5} aria-hidden />}
+      // An archived team says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
-      menu={menu}
+      {...(menu ? { menu, menuLabel: `More options for ${name}` } : {})}
+      contentClassName="gap-0.5"
     >
-      {open && <FileTreeView state={state} archive selectedRef={selectedRef} expand={expand} onControl={onControl} />}
-    </NavTreeSection>
+      {open && <FileTreeView state={state} archive selectedRef={selectedRef} expand={expand} onControl={onControl} placeOf={placeOf} />}
+    </CollapsibleSection>
+    </div>
   )
 }
 
