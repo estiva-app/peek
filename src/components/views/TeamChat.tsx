@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { IconUsers } from '@tabler/icons-react'
-import { ConversationLayout, EmptyState, PageHeader } from '@estiva-app/ui'
+import { IconDotsVertical, IconHash } from '@tabler/icons-react'
+import { ConversationLayout, EmptyState, Menu, MenuItem, PageHeader, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useMembership, usePlaceFollow, useTeamChatPageDot, useWorkspaceDirectory, type Team } from '@/api'
 import { PageDot } from '@/components/PageListDot'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
@@ -9,6 +9,8 @@ import { chatLabel, teamChatPath } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { draftKeys } from '@/lib/drafts'
 import { useMarkChannelRead } from '@/lib/useMarkRead'
+import { copyPageLink } from '@/lib/objectUrl'
+import { useToast } from '@/lib/toast'
 
 /**
  * A team's chat (TEA-5): the messages with the team's `h` and no file named,
@@ -40,10 +42,10 @@ export function TeamChat({ team }: { team: Team }) {
   })
   useMarkChannelRead(team.id, chat.seenAt, 0)
   /*
-    The chat is followed like a space (TEA-6): its switch before the title, in
-    people icons since the place is the team's own, and Who follows listing
-    people only: you come into a team's chat by joining the team, so there is
-    no Add and no ⋮ in its header (Miky, 6 Nov).
+    The chat is followed like a team's topic (TEA-6), and its header is a topic's (Katerina, 16 November, the navigation
+    prototype, step 5): `#` before its name, the dot, Who follows, the bell while you are in it, and a ⋮ with Copy link
+    alone (Q-37). Who follows lists people only, with no Add and no Join: you come into a team's chat by joining the team
+    (Miky, 6 Nov).
   */
   const people = useWorkspaceDirectory()
   const { me } = useMembership()
@@ -51,7 +53,9 @@ export function TeamChat({ team }: { team: Team }) {
     () => ({ place: { address: team.chatAddress, team: team.id }, folder: team.id, archived: team.archived }),
     [team.chatAddress, team.id, team.archived],
   )
-  const follow = usePlaceFollowControls({ follow: usePlaceFollow(target), target, title: name, teamName: team.name, me, directory: people })
+  const follow = usePlaceFollowControls({ follow: usePlaceFollow(target), target, title: name, me, directory: people })
+  const { showToast } = useToast()
+  const copyLink = () => void copyPageLink(teamChatPath(team.id)).then((copied) => copied && showToast({ label: 'Link copied', type: 'success' }))
   // The dot beside the title (ACT-4): what is new in the chat, then what was about you earlier.
   const pageDot = useTeamChatPageDot(team, teamChatPath(team.id))
   return (
@@ -63,9 +67,25 @@ export function TeamChat({ team }: { team: Team }) {
         header={
           <PageHeader
             title={name}
-            leading={follow.switcher ?? <IconUsers size={16} stroke={1.5} aria-hidden />}
+            // `#`, as its row in Teams wears it: one icon per kind.
+            leading={<IconHash size={16} stroke={1.5} aria-hidden />}
             after={<PageDot dot={pageDot} />}
             members={follow.pill}
+            actions={
+              <Toolbar aria-label={`${name} actions`} surface={false}>
+                {follow.bell}
+                <Menu
+                  align="right"
+                  trigger={
+                    <ToolbarButton tooltip="More actions" aria-label="More actions">
+                      <IconDotsVertical size={16} stroke={1.5} />
+                    </ToolbarButton>
+                  }
+                >
+                  <MenuItem label="Copy link" onClick={copyLink} />
+                </Menu>
+              </Toolbar>
+            }
           />
         }
       />

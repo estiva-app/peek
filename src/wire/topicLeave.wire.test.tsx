@@ -9,6 +9,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { Toolbar } from '@estiva-app/ui'
 import { buildMembershipChange, parseTeamsBlob, serializeTeamsBlob, switchStateOf, TEAMS_D_TAG } from '@estiva-app/conversation'
 import type { ForeignObject } from '@estiva-app/interop'
 import { installWireRelay, ME, signed, tagOf, type WireRelay } from '@/test/wireRelay'
@@ -119,7 +120,7 @@ beforeEach(() => {
 })
 afterAll(() => vi.unstubAllGlobals())
 
-/** The Topics column, listing the topic while the person is in it, beside the topic's own page with its follow switch. */
+/** The Topics column, listing the topic while the person is in it, beside the topic's own page with its bell or Join. */
 function Topics() {
   const controls = useFileControls()
   const { isMember } = useMembership()
@@ -128,13 +129,19 @@ function Topics() {
   return (
     <>
       <TopicsColumnView state={{ mine: isMember(TOPIC) ? [topic] : [], others: [], archived: [] }} onControl={controls.open} />
-      <div data-testid="page">{follow.switcher}</div>
+      <div data-testid="page">
+        <Toolbar aria-label="Actions">{follow.bell}</Toolbar>
+        {follow.join}
+      </div>
       {controls.dialogs}
     </>
   )
 }
-/** What the open page's switch says: its accessible name names the level. */
-const switchLabel = () => within(screen.getByTestId('page')).getByRole('button', { name: /change how you follow Launch/ }).getAttribute('aria-label')
+/** What the open page says of how they follow it: the bell's level while they are in it, Join once they are not (step 5). */
+const pageSays = () => {
+  const page = within(screen.getByTestId('page'))
+  return page.queryByRole('button', { name: /^Notifications for Launch/ })?.getAttribute('aria-label') ?? (page.queryByRole('button', { name: 'Join' }) ? 'Join' : '')
+}
 const rowOf = () => document.querySelector(`[data-file="${CSS.escape(TOPIC)}"]`)
 
 /** Draw the column and the page, and open the topic's row menu; the items it offers. */
@@ -165,7 +172,7 @@ describe('Leave on a topic’s row in the Topics column, at the wire (TOPI-7)', 
     relay.seed(root, roster, addedBy(MIKY))
     await openRowMenu()
     // The topic's page, open beside the column, shows them following it.
-    await waitFor(() => expect(switchLabel()).toMatch(/at Important/))
+    await waitFor(() => expect(pageSays()).toBe('Notifications for Launch: Important'))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
     expect(await screen.findByText('Left “Launch”')).toBeInTheDocument()
     const sent = relay.sentOf(1851)
@@ -175,9 +182,9 @@ describe('Leave on a topic’s row in the Topics column, at the wire (TOPI-7)', 
     expect(tagOf(sent[0], 'h')).toBe(TEAM)
     // Nothing private: they were in it by being added, not by their team's default.
     expect(relay.sentOf(30078)).toHaveLength(0)
-    // The column re-reads what they are in, so the row goes; and the page's switch re-reads, so it says Not following.
+    // The column re-reads what they are in, so the row goes; and the page re-reads, so the bell gives way to Join.
     expect(rowOf()).toBeNull()
-    await waitFor(() => expect(switchLabel()).not.toMatch(/at (Important|All)/))
+    await waitFor(() => expect(pageSays()).toBe('Join'))
   })
 
   it('a space they are in by their team’s default: writes it into their private off list, and nothing public', async () => {
@@ -195,14 +202,14 @@ describe('Leave on a topic’s row in the Topics column, at the wire (TOPI-7)', 
     relay.seed(root, roster, addedBy(MIKY))
     relay.refuse({ when: (event) => event.kind === 1851 })
     await openRowMenu()
-    await waitFor(() => expect(switchLabel()).toMatch(/at Important/))
+    await waitFor(() => expect(pageSays()).toBe('Notifications for Launch: Important'))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
     // Said once the relay answered, so everything the leave does has run by now.
     expect((await screen.findAllByText(/^“Launch” could not be left\. Nothing changed\./)).length).toBeGreaterThan(0)
     expect(screen.queryByText('Left “Launch”')).toBeNull()
     // The topic is still theirs: its row stays in the column, and the page still says they follow it.
     expect(rowOf()).not.toBeNull()
-    expect(switchLabel()).toMatch(/at Important/)
+    expect(pageSays()).toBe('Notifications for Launch: Important')
   })
 
   it('a Leave picked after its team was archived says it cannot be left, and sends nothing', async () => {

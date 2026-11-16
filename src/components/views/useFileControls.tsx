@@ -374,8 +374,11 @@ export function useFileControls({
           showToast(
             outcome === true
               ? {
+                  // A topic or an initiative: Join lands you at Important, and says so (Katerina, 16 November, Q-39). A file keeps today's.
                   label: joining
-                    ? `Joined “${title}”: every new message shows as unread.`
+                    ? isTopic(file)
+                      ? `You joined ${title}. Notifications: Important.`
+                      : `Joined “${title}”: every new message shows as unread.`
                     : `Left “${title}”: only messages that mention you show as unread.`,
                   type: 'success',
                 }

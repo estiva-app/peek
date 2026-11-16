@@ -177,25 +177,25 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
     expect(relay.listReads).toHaveLength(1)
   })
 
-  it('says "Nothing here yet." when nothing there was ever about you', async () => {
+  it('says “Nothing for you here yet.” when nothing there was ever about you', async () => {
     relay.events = [PLAIN]
     relay.mentioned = new Set()
     relay.merged = { [fileContext(TOPIC)!]: NOW }
     await mount()
     await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
     await openList()
-    expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
+    expect(await screen.findByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
     expect(screen.queryByText(/Totals moved/)).toBeNull()
   })
 
-  it('says Earlier could not be read when the relay refuses the list, never "Nothing here yet."', async () => {
+  it('says Earlier could not be read when the relay refuses the list, never “Nothing for you here yet.”', async () => {
     relay.refuse = true
     relay.merged = { [fileContext(TOPIC)!]: NOW }
     await mount()
     await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
     await openList()
     expect(await screen.findByText('Earlier could not be read.')).toBeInTheDocument()
-    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+    expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeNull()
   })
 
   it('opened again a minute later, lists a mention said and read since it was first opened', async () => {
@@ -275,8 +275,8 @@ describe('the dot beside a team’s title (ACT-4)', () => {
     )
   }
 
-  /** The list once its read is back: "Nothing here yet." or its lines. */
-  const listRead = () => waitFor(() => expect(screen.queryByText('Nothing here yet.') ?? document.querySelector('[data-page-list-part="new"]')).not.toBeNull())
+  /** The list once its read is back: “Nothing for you here yet.” or its lines. */
+  const listRead = () => waitFor(() => expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.') ?? document.querySelector('[data-page-list-part="new"]')).not.toBeNull())
 
   beforeEach(() => {
     relay.events = [SAID]
@@ -298,7 +298,7 @@ describe('the dot beside a team’s title (ACT-4)', () => {
     await openList()
     await listRead()
     expect(screen.queryByText(/Sketches are up/)).toBeNull()
-    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
   })
 })
 
@@ -319,7 +319,7 @@ describe('a page’s list (ACT-4)', () => {
     expect(within(earlier).getAllByText(/^Words /).map((el) => el.textContent)).toEqual(['Words seen-1', 'Words old-seen'])
   })
 
-  it('shows New at once and a loading Earlier while its read is out, and "Nothing here yet." only once it returned empty', async () => {
+  it('shows New at once and a loading Earlier while its read is out, and “Nothing for you here yet.” only once it returned empty', async () => {
     const { PageList } = await import('./PageListDot')
     const { rerender } = render(
       <MemoryRouter>
@@ -328,12 +328,12 @@ describe('a page’s list (ACT-4)', () => {
     )
     expect(within(document.querySelector<HTMLElement>('[data-page-list-part="new"]')!).getByText('Words new-1')).toBeInTheDocument()
     expect(document.querySelector('[data-page-list-part="earlier"]')).not.toBeNull()
-    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+    expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeNull()
     rerender(
       <MemoryRouter>
         <PageList lines={[]} />
       </MemoryRouter>,
     )
-    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
   })
 })

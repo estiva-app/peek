@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { IconCheck, IconDotsVertical, IconExternalLink, IconLayoutDashboard, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { IconCheck, IconDotsVertical, IconExternalLink, IconHash, IconLayoutDashboard, IconTarget, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, shortcutLabel, useShortcut } from '@estiva-app/ui'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
@@ -170,23 +170,31 @@ export function useFilePane(
   const showToggle = !isTopic && toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
 
   /*
-    A topic or a space (TEA-6): one switch before its title — Not following,
-    Important or All — and Who follows in the members pill's place, with Add
-    there and in ⋮. They take the place of the Members pill and Join/Leave;
-    every other file keeps those. The place is read by the view
-    (`topicFollowTarget`), whose middle column follows the same level (TOPI-3).
+    A topic or an initiative (TEA-6; the navigation prototype, Katerina 16 November, step 5): Join while you are not in
+    it, the bell while you are, and Who follows in the members pill's place with your own Leave in it. They take the
+    place of the Members pill and Join/Leave; every other file keeps those. The place is read by the view
+    (`topicFollowTarget`).
   */
   const follow = usePlaceFollowControls({
     follow: view.follow,
     target: view.followTarget,
-    // A topic in a team gets a switch once its teams are read (`topicFollowTarget`).
-    coming: isTopic && !!file?.folder,
     title,
-    teamName: listing?.team.name,
     me,
     directory: people,
     people: file?.people,
   })
+  /*
+    Its kind, before its title, in the icon its rows wear (PL-02; Katerina, 16 November: one icon per kind): # a team's
+    topic (today's space), ◎ an initiative (today's topic). Its room is held while the teams are read, so the title does
+    not jump when it lands.
+  */
+  const kindIcon = isTopic
+    ? teams
+      ? listing?.space
+        ? <IconHash size={16} stroke={1.5} aria-hidden />
+        : <IconTarget size={16} stroke={1.5} aria-hidden />
+      : <span aria-hidden="true" className="size-4" data-kind-pending />
+    : undefined
 
   /*
     Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
@@ -271,7 +279,7 @@ export function useFilePane(
         */
         <PageHeader
           title={title}
-          leading={follow.switcher}
+          leading={kindIcon}
           after={
             /*
             Another app's file: one way into the app that owns it, "Open" —
@@ -310,13 +318,19 @@ export function useFilePane(
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
           members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
-          // Open work's button in the header's own place, 8px before the strip, as the approved story draws it (TOPI-7; kit 16 November).
-          button={file?.folder || view.sidePanel ? openWorkButton : undefined}
+          /*
+            The header's one button with words (PL-09): Add to Open work while you are in a topic, Join once its read says
+            you are not, nothing on an archived one you are not in. Open work until then, as today: the read can take
+            seconds on a large workspace, and most pages opened are ones you are in.
+          */
+          button={file?.folder || view.sidePanel ? (isTopic && follow.inIt === false ? follow.join : openWorkButton) : undefined}
           actions={
             file?.folder || view.sidePanel ? (
               // One strip: one Tab stop, arrows along it (UIG-14).
               <Toolbar aria-label="File actions" surface={false}>
                 {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
+                {/* The bell, before the side panel, while you are in the topic (PL-02, PL-13). */}
+                {isTopic && follow.bell}
                 {showToggle && (
                   <ToolbarButton
                     tooltip={member ? 'Leave' : 'Join'}
@@ -355,6 +369,8 @@ export function useFilePane(
                     onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
                     onMove={moves && file && !readOnly ? () => fileControls.open('move', file) : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                    // A topic's ⋮ as the prototype has it (Q-27): Details, Rename, Move…, Copy link, then Archive… and Delete apart.
+                    archiveApart={isTopic}
                   />
                 )}
               </Toolbar>

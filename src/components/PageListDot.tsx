@@ -93,7 +93,16 @@ export function PageList({ lines, held, onOpen, failed = false }: {
       }}
     />
   )
-  if (lines && all.length === 0) return <EmptyState scope="section" message="Nothing here yet." />
+  /*
+    Nothing to list: the kit's line for rows, in the rows' own box, level with where the lines would be, saying what
+    would show here (Katerina, 15–16 November, PL-05: "Improve empty state activity panel").
+  */
+  if (lines && all.length === 0) return <EmptyState scope="rows" message="Nothing for you here yet. Replies to you, mentions and reactions to your messages show here." />
+  /*
+    A max height, then it scrolls (Katerina, 6 November, PL-06: "let's have a max height and then it starts scrolling"):
+    the card's own, the kit's PreviewCard, whose body is a ScrollArea capped at 300px. No scroll box of its own here: one
+    inside the card's drew a second scrollbar beside the card's (Katerina, 16 November).
+  */
   return (
     <div className="flex flex-col gap-2" data-page-list>
       {fresh.length > 0 && (
