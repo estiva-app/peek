@@ -6,7 +6,7 @@
  * Members dialog only. The writes themselves are pinned at the wire in src/wire/teams.wire.test.tsx.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
@@ -65,7 +65,9 @@ vi.mock('@/api', async () => ({
   usePlaceFollow: () => ({ state: undefined, listed: [{ pubkey: KATERINA, level: 'important', ways: ['team'] }], failed: false, choose: vi.fn(), add: vi.fn() }),
 }))
 vi.mock('@/components/views/useFolderActions', () => ({ useFolderActions: () => ({ menuFor: () => undefined, action: null, close: () => {} }) }))
-vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+/** What the toasts said, in order: each with its Undo when it has one. */
+const toasts = vi.hoisted(() => ({ shown: [] as { label: string; actionLabel?: string; onAction?: () => void }[] }))
+vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: (toast: { label: string; actionLabel?: string; onAction?: () => void }) => void toasts.shown.push(toast) }) }))
 
 const team = (over: Partial<Team> = {}): Team => ({
   id: 'eng',
@@ -180,6 +182,19 @@ describe('a team’s page header (TP-02, TP-04)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Follow' }))
     expect(api.followTeam).toHaveBeenCalledWith('eng', true)
     expect(within(await openMembers()).queryByText('Add members')).toBeNull()
+  })
+
+  it('Join says so, with Undo that leaves again; Follow the same (Q-10)', async () => {
+    toasts.shown.length = 0
+    mount(team({ isMember: false }))
+    await userEvent.click(screen.getByRole('button', { name: 'Join' }))
+    await waitFor(() => expect(toasts.shown.at(-1)?.label).toBe('You joined Engineering'))
+    toasts.shown.at(-1)!.onAction!()
+    expect(api.leaveTeam).toHaveBeenCalledWith('eng')
+    await userEvent.click(screen.getByRole('button', { name: 'Follow' }))
+    await waitFor(() => expect(toasts.shown.at(-1)?.label).toBe('You follow Engineering'))
+    toasts.shown.at(-1)!.onAction!()
+    expect(api.followTeam).toHaveBeenLastCalledWith('eng', false)
   })
 
   it('a private team offers no Join: only being added puts someone in it', () => {

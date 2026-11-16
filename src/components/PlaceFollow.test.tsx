@@ -4,7 +4,7 @@
  * with Add offering the workspace's people but never the viewer, and your own row holding Leave or Join.
  */
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Toolbar } from '@estiva-app/ui'
 import type { PlaceFollow } from '@/api'
@@ -26,7 +26,9 @@ const follow: PlaceFollow = {
   add: vi.fn(async () => ({ ok: true as const })),
 }
 
-vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+/** What the toasts said, in order: each with its Undo when it has one. */
+const toasts = vi.hoisted(() => ({ shown: [] as { label: string; actionLabel?: string; onAction?: () => void }[] }))
+vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: (toast: { label: string; actionLabel?: string; onAction?: () => void }) => void toasts.shown.push(toast) }) }))
 
 const directory = {
   [ME]: { displayName: 'QA One' },
@@ -137,6 +139,19 @@ describe('the bell (PL-12, PL-14)', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Notifications for Brief/ }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /^Everything/ }))
     expect(choose).toHaveBeenCalledWith('all')
+  })
+
+  it('a choice says what it means here, with Undo back to the level it was (Q-10)', async () => {
+    const choose = follow.choose as ReturnType<typeof vi.fn>
+    choose.mockClear()
+    toasts.shown.length = 0
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: /^Notifications for Brief/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /^Everything/ }))
+    await waitFor(() => expect(toasts.shown.at(-1)?.label).toBe('You’ll hear about every message in Brief'))
+    expect(toasts.shown.at(-1)?.actionLabel).toBe('Undo')
+    toasts.shown.at(-1)!.onAction!()
+    expect(choose).toHaveBeenLastCalledWith('important')
   })
 
   it('rings at Everything', () => {

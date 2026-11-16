@@ -61,7 +61,8 @@ export function FolderActionDialog({
     showToast(
       archived
         ? { label: `Archived “${name}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(false) }
-        : { label: `Unarchived “${name}”`, type: 'success' },
+        // Unarchive has Undo too, as Archive has (Katerina, 16 November, Q-10).
+        : { label: `Unarchived “${name}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(true) },
     )
     return true
   }

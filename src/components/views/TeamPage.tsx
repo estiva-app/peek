@@ -153,24 +153,45 @@ export function TeamPage({
   */
   const canLeave = team.isMember && !team.company
 
-  const run = async (write: () => Promise<{ ok: true } | { ok: false; reason: string }>) => {
+  /*
+    One write, and what it changed said with Undo (Katerina, 16 November, Q-10; the prototype's words): the reverse
+    write, when there is one.
+  */
+  const run = async (
+    write: () => Promise<{ ok: true } | { ok: false; reason: string }>,
+    said?: { label: string; undo?: () => Promise<{ ok: true } | { ok: false; reason: string }> },
+  ) => {
     setBusy(true)
     const result = await write()
     setBusy(false)
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    else if (said) {
+      const undo = said.undo
+      showToast({
+        label: said.label,
+        type: 'success',
+        ...(undo
+          ? { actionLabel: 'Undo', onAction: () => void undo().then((back) => !back.ok && showToast({ label: back.reason, type: 'error' })) }
+          : {}),
+      })
+    }
     return result.ok
   }
+  const join = () => run(() => joinTeam(team.id), { label: `You joined ${team.name}`, undo: () => leaveTeam(team.id) })
+  const leave = () => run(() => leaveTeam(team.id), { label: `You left ${team.name}`, undo: () => joinTeam(team.id) })
+  const follow = (on: boolean) =>
+    run(() => followTeam(team.id, on), { label: on ? `You follow ${team.name}` : `You stopped following ${team.name}`, undo: () => followTeam(team.id, !on) })
 
   // Follow and Join, side by side, only while you are not in it (TP-04); a member's Leave is on their own row in Members.
   const buttons =
     team.archived || team.isMember ? undefined : (
       <>
-        <Button variant="muted" size="small" disabled={busy} onClick={() => void run(() => followTeam(team.id, !team.isFollowing))}>
+        <Button variant="muted" size="small" disabled={busy} onClick={() => void follow(!team.isFollowing)}>
           {team.isFollowing ? 'Unfollow' : 'Follow'}
         </Button>
         {/* A private team is joined only by being added: the relay refuses a Join there. */}
         {!team.private && (
-          <Button size="small" disabled={busy} onClick={() => void run(() => joinTeam(team.id))}>
+          <Button size="small" disabled={busy} onClick={() => void join()}>
             Join
           </Button>
         )}
@@ -280,9 +301,9 @@ export function TeamPage({
           {...(team.archived || !me
             ? {}
             : canLeave
-              ? { self: { action: 'leave' as const, id: me, onToggle: () => run(() => leaveTeam(team.id)) } }
+              ? { self: { action: 'leave' as const, id: me, onToggle: leave } }
               : !team.isMember && !team.private
-                ? { self: { action: 'join' as const, id: me, onToggle: () => run(() => joinTeam(team.id)) } }
+                ? { self: { action: 'join' as const, id: me, onToggle: join } }
                 : {})}
           // Add only while someone in the company is not in it yet (TEA-11, today's).
           {...(team.isMember && !team.archived && candidates.length > 0
@@ -296,6 +317,8 @@ export function TeamPage({
                       return false
                     }
                   }
+                  // Said, with no Undo: they may already have seen it (Q-10).
+                  showToast({ label: `Added to ${team.name}`, type: 'success' })
                   return true
                 },
               }

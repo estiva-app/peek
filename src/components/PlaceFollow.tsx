@@ -94,6 +94,20 @@ export function usePlaceFollowControls({
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
     return result.ok
   }
+  /*
+    A level picked on the bell says what it means here, with Undo back to the one it was (Katerina, 16 November, Q-10;
+    the prototype's words).
+  */
+  const pick = async (level: BellLevel, was: BellLevel) => {
+    if (!(await choose(level))) return
+    const said =
+      level === 'all'
+        ? `You’ll hear about every message in ${title}`
+        : level === 'important'
+          ? `You’ll hear about new conversations, replies to you and mentions in ${title}`
+          : `You’re not following ${title}. You are only notified when someone names you.`
+    showToast({ label: said, type: 'success', actionLabel: 'Undo', onAction: () => void choose(was) })
+  }
   // Join lands you at Important (Katerina, 16 November, Q-39): the toast names it, with Undo.
   const join = async () => {
     if (await choose('important'))
@@ -101,11 +115,14 @@ export function usePlaceFollowControls({
   }
   // Leave from your own row in Who follows: today's Not following, in today's words (Q-26).
   const leave = async () => {
-    if (await choose('not-following')) showToast({ label: `Left “${title}”`, type: 'success' })
+    const was = shown && shown !== 'not-following' ? shown : 'important'
+    if (await choose('not-following')) showToast({ label: `Left “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void choose(was) })
   }
   const add = async (chosen: MembersDialogCandidate[]) => {
     const result = await follow.add(chosen.map((c) => c.id))
     if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    // Said, with no Undo: they may already have seen it (Q-10).
+    else showToast({ label: `Added to ${title}. They can choose their own notifications, or leave.`, type: 'success' })
     return result.ok
   }
 
@@ -129,7 +146,7 @@ export function usePlaceFollowControls({
               leading={one.icon}
               selected={one.level === shown}
               onClick={() => {
-                if (one.level !== shown) void choose(one.level)
+                if (one.level !== shown && shown) void pick(one.level, shown)
               }}
             />
           ))}
