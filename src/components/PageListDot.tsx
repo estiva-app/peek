@@ -94,28 +94,36 @@ export function PageList({ lines, held, onOpen, failed = false }: {
     />
   )
   /*
-    Nothing to list: the kit's line for rows, in the rows' own box, level with where the lines would be, saying what
-    would show here (Katerina, 15–16 November, PL-05: "Improve empty state activity panel").
-  */
-  if (lines && all.length === 0) return <EmptyState scope="rows" message="Nothing for you here yet. Replies to you, mentions and reactions to your messages show here." />
-  /*
     A max height, then it scrolls (Katerina, 6 November, PL-06: "let's have a max height and then it starts scrolling"):
     the card's own, the kit's PreviewCard, whose body is a ScrollArea capped at 300px. No scroll box of its own here: one
     inside the card's drew a second scrollbar beside the card's (Katerina, 16 November).
+    The rows' box is 4px in from the card's own 4px, so a row's background sits 8px from the card's left and right
+    edges, as the navigation prototype draws it (Katerina, 17 November: "should follow the prototype's left and right
+    paddings").
   */
   return (
-    <div className="flex flex-col gap-2" data-page-list>
-      {fresh.length > 0 && (
-        <div className="flex flex-col gap-0.5" data-page-list-part="new">
-          <SectionHeader title="New" />
-          {fresh.map(line)}
-        </div>
-      )}
-      {(earlier.length > 0 || !lines) && (
-        <div className="flex flex-col gap-0.5" data-page-list-part="earlier">
-          <SectionHeader title="Earlier" />
-          {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
-        </div>
+    <div className="flex flex-col gap-2 px-1" data-page-list>
+      {lines && all.length === 0 ? (
+        /*
+          Nothing to list: the kit's line for rows, in the rows' own box, level with where the lines would be, saying
+          what would show here (Katerina, 15–16 November, PL-05: "Improve empty state activity panel").
+        */
+        <EmptyState scope="rows" message="Nothing for you here yet. Replies to you, mentions and reactions to your messages show here." />
+      ) : (
+        <>
+          {fresh.length > 0 && (
+            <div className="flex flex-col gap-0.5" data-page-list-part="new">
+              <SectionHeader title="New" />
+              {fresh.map(line)}
+            </div>
+          )}
+          {(earlier.length > 0 || !lines) && (
+            <div className="flex flex-col gap-0.5" data-page-list-part="earlier">
+              <SectionHeader title="Earlier" />
+              {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
