@@ -127,8 +127,15 @@ export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed
   // `gutter`: in the page's right margin, where a page has one (Leaf); `inside`: the block's own right 96px (Ship's description, whose column meets the side panel).
   const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:96px}'
   const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:0'
+  // What is marked (Miky, 16 Nov: "not clear what is marked"): a faint edge down the block's right side, under the
+  // label, fading as it goes down, and a wash that fades in from that edge — the block's whole height, never its left
+  // side, where the handle is.
+  const edge = place === 'gutter' ? 'right:-4px' : 'right:-8px'
   const label = (id: string, words: string, c: string, wash: boolean) =>
-    `[data-block-id="${id}"]{${where}[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:2px;${at};font-size:12px;line-height:18px;font-weight:500;padding:0 6px;border-radius:4px;white-space:nowrap;color:${c};${wash ? `background:color-mix(in srgb, ${c} 14%, transparent);cursor:pointer;` : ''}}`
+    `[data-block-id="${id}"]{${where}` +
+    `[data-block-id="${id}"]{background:linear-gradient(to left, color-mix(in srgb, ${c} ${wash ? 7 : 4}%, transparent), transparent 45%)}` +
+    `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}` +
+    `[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:2px;${at};font-size:12px;line-height:18px;font-weight:500;padding:0 6px;border-radius:4px;white-space:nowrap;color:${c};${wash ? `background:color-mix(in srgb, ${c} 14%, transparent);cursor:pointer;` : ''}}`
   return [
     ...Object.entries(marks).map(([id, m]) => {
       const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
