@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { EmptyState, IconButton, MenuSection, PreviewCard, SkeletonRow, UnreadDot, isPlainClick, type UnreadDotTone } from '@estiva-app/ui'
-import { usePageLines, useReactionsSeenOnClose, type PageDot as PageDotState, type PageLine } from '@/api'
+import { usePageLines, usePageLinesAhead, useReactionsSeenOnClose, type PageDot as PageDotState, type PageLine } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { NewsLine } from '@/components/RowNewsCard'
 
@@ -9,18 +9,25 @@ export type { PageLine }
 /**
  * The dot beside a page's title (ACT-4; the activity indicator prototype Miky approved on 10 November, as the 29 October
  * navigation prototype drew it): blue with something new for you here, a quiet ring with nothing new. Resting on it, or
- * a tap on a touch screen, opens the page's list. `list` is drawn only while it is open, so its read waits for that.
+ * a tap on a touch screen, opens the page's list. `list` is drawn only while it is open, so its read waits for that,
+ * unless `onAhead` starts it as the pointer reaches the dot or it gets focus.
  */
-export function PageListDot({ lit, tone = 'blue', list, onOpenChange }: {
+export function PageListDot({ lit, tone = 'blue', list, onOpenChange, onAhead }: {
   lit: boolean
   /** Its colour when lit, as the page's row's (ACT-7). */
   tone?: UnreadDotTone
   list: ReactNode
   onOpenChange?: (open: boolean) => void
+  /** The pointer reached the dot, or it got focus: the card opens in a moment, so its read can start now. */
+  onAhead?: () => void
 }) {
   return (
     <PreviewCard side="bottom" openOnTap contentClassName="p-1" content={list} {...(onOpenChange ? { onOpenChange } : {})}>
-      <IconButton aria-label={lit ? 'Something new here; show what' : 'Show what happened here'} data-page-dot={lit ? 'lit' : 'quiet'}>
+      <IconButton
+        aria-label={lit ? 'Something new here; show what' : 'Show what happened here'}
+        data-page-dot={lit ? 'lit' : 'quiet'}
+        {...(onAhead ? { onPointerEnter: onAhead, onFocus: onAhead } : {})}
+      >
         {/* In an icon's 16px, not the dot's own 24px slot: the button is the 24px every icon button beside it is (Katerina, 15 November: it measured 32px). */}
         <UnreadDot quiet={!lit} className="h-4 w-4" {...(lit ? { tone } : {})} />
       </IconButton>
@@ -48,7 +55,17 @@ export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: Pa
     },
     [onPreviewOpenChange],
   )
-  return <PageListDot lit={dot.lit} tone={dot.tone} onOpenChange={onOpenChange} list={<PageListRead dot={dot} onListed={setListed} {...(onOpen ? { onOpen } : {})} />} />
+  // Its read starts as the pointer reaches the dot, so the card opens on the answer (Katerina, 17 November).
+  const ahead = usePageLinesAhead(dot.sources)
+  return (
+    <PageListDot
+      lit={dot.lit}
+      tone={dot.tone}
+      onOpenChange={onOpenChange}
+      onAhead={ahead}
+      list={<PageListRead dot={dot} onListed={setListed} {...(onOpen ? { onOpen } : {})} />}
+    />
+  )
 }
 
 /** The list's content: mounted only while the card is open, so this is when its read is asked. */
@@ -64,8 +81,8 @@ function PageListRead({ dot, onOpen, onListed }: { dot: PageDotState; onOpen?: (
 /**
  * A page's list: New on top, everything that lights the place for you now, the same lines as its row's card; then
  * Earlier, what was about you and is seen now. Newest first in each. `lines` undefined is still reading: New's lines
- * already held draw at once, and Earlier waits with a skeleton line; "Nothing here yet." only once the read returned
- * empty.
+ * already held draw at once, then one line's skeleton with no heading; Earlier, or "Nothing for you here yet.", only
+ * once the read returned.
  */
 export function PageList({ lines, held, onOpen, failed = false }: {
   lines: readonly PageLine[] | undefined
@@ -118,11 +135,19 @@ export function PageList({ lines, held, onOpen, failed = false }: {
               <MenuSection label="New">{fresh.map(line)}</MenuSection>
             </div>
           )}
-          {(earlier.length > 0 || !lines) && (
+          {/*
+            Still reading (a slow relay, or a tap that opened it at once): one line's skeleton and no heading, as
+            nothing yet says Earlier holds anything; Earlier, or the empty line, takes its place (Katerina, 17 November:
+            "Earlier" over a skeleton, then the empty line, was a flash).
+          */}
+          {!lines && !failed && (
+            <div data-page-list-part="reading">
+              <SkeletonRow />
+            </div>
+          )}
+          {(earlier.length > 0 || failed) && (
             <div data-page-list-part="earlier">
-              <MenuSection label="Earlier">
-                {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
-              </MenuSection>
+              <MenuSection label="Earlier">{failed ? <EmptyState scope="section" message="Earlier could not be read." /> : earlier.map(line)}</MenuSection>
             </div>
           )}
         </>

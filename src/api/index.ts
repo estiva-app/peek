@@ -104,7 +104,7 @@ export { useReactionsToMe, REACTIONS_TO_ME_READ, type ReactionsToMe } from './us
 export { unreadToneOf } from './reactionNews'
 export { useReactionsSeenOn, useReactionsSeenOnClose, seeReactions } from './reactionsSeen'
 export { useRowNewsDetails } from './rowNewsDetails'
-export { PAGE_LINES, useDmPageDot, usePageLines, useTeamChatPageDot, useTeamPageDot, useTopicPageDot, type PageDot, type PageLine, type PageSource } from './pageLines'
+export { PAGE_LINES, useDmPageDot, usePageLines, usePageLinesAhead, useTeamChatPageDot, useTeamPageDot, useTopicPageDot, type PageDot, type PageLine, type PageSource } from './pageLines'
 export { ListedFillsProvider, useListedFill, useListedFillOf } from './listedFill'
 export type { ListedFill } from './placeDots'
 export {
