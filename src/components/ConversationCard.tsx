@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import type { Embed } from '@estiva-app/protocol'
 import { AttachmentCard, ConversationCard as KitConversationCard } from '@estiva-app/ui'
 import { CURRENT_USER_NAME, type ReactionData, type HighlightType, type FileAttachment } from '@/api'
@@ -14,6 +14,13 @@ import { blobObjectUrl } from '@/nostr/media'
 import { formatReplyTimestamp } from '@/api/format'
 
 /** What the delete question says Peek does, under the kit's question: Peek's words, as its own dialog said them. */
+/**
+ * CONCEPT ONLY (concept/insights-journal-risks): the prototype's Mark as… rows in a message's ⋯ menu (the kit card's
+ * `menu` slot, after Resolve) and its marked line around the card, handed in by the concept's story. Absent
+ * everywhere in the app, so nothing changes there. Never merged.
+ */
+export const ConceptMessage = createContext<{ menu(id: string, text: string): ReactNode; wrap(id: string, card: ReactNode): ReactNode } | null>(null)
+
 export const DELETE_NOTE = 'Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.'
 
 /** Under a message's delete question: what Peek does, then how many replies stay, in Peek's words (ConfirmDelete's). */
@@ -296,9 +303,12 @@ export function ConversationCard({
   // A comment on a selection is about its words: they go in the card's `about`, under the name, as Leaf and Ship draw
   // them (ONE-12); its body draws the rest of its parts.
   const quoted = parts?.find((part) => part.anchor && quotesWords(part.anchorTags))
+  // CONCEPT ONLY (concept/insights-journal-risks): Mark as… and the marked line, when a story hands them in. Never merged.
+  const concept = useContext(ConceptMessage)
 
-  return (
+  const card = (
     <KitConversationCard
+      menu={concept?.menu(messageId ?? '', bodyState)}
       author={{ name: authorName, picture: authorAvatarSrc, bot: authorBot }}
       about={quoted?.anchorTags ? <QuotedPart address={quoted.address} block={quoted.block} anchorTags={quoted.anchorTags} quotedBy={authorName} /> : undefined}
       time={timestamp}
@@ -371,4 +381,5 @@ export function ConversationCard({
       />
     </KitConversationCard>
   )
+  return concept ? concept.wrap(messageId ?? '', card) : card
 }
