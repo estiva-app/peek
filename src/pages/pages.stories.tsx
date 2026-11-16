@@ -329,6 +329,8 @@ function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDE
  * you follow, then every other team. A team's own link lands here, with it open.
  */
 export const Teams: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
@@ -338,6 +340,8 @@ export const Teams: Story = {
  * header actions: nothing is made or filtered here (Katerina, 5 October).
  */
 export const Archive: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FoldersPageView
       nav={<Column view="archive" folders={[...FOLDERS, { id: '0a9b8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d', name: 'Old launch plan', hasState: true, archived: { by: 'a'.repeat(64), at: 1 } }]} />}
@@ -352,6 +356,8 @@ export const Archive: Story = {
  * signed-out viewer "No folders yet" about a workspace holding eighty-one.
  */
 export const FoldersSignedOut: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column view="all" signedOut folders={null} />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
@@ -360,6 +366,8 @@ export const FoldersSignedOut: Story = {
  * chosen, because the tree is hiding rows and nothing else on screen says so.
  */
 export const FoldersFiltered: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FoldersPageView
       nav={<Column show="unread" chatUnread={{ '925897ad-796e-4bc6-999c-ca19df26c4aa': true }} />}
@@ -374,6 +382,8 @@ export const FoldersFiltered: Story = {
  * show, so the page hands them over as nodes; here they stand in as empties.
  */
 export const File: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
@@ -390,6 +400,8 @@ export const File: Story = {
  * messages here are stand-ins.
  */
 export const FileArchived: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
@@ -445,5 +457,7 @@ export const ObjectUnopenable: Story = {
 /** **A workspace with no Folders in it at all** — which is a different sentence
  *  from "not signed in", and from a read still in flight. */
 export const FoldersEmpty: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column view="all" folders={[]} />} rightPanel={<EmptyState message="No file selected" />} />,
 }
