@@ -60,6 +60,22 @@ describe('Explore topics (TOPI-6)', () => {
     expect(shownTitles()).toEqual(['Pricing', 'Q4-plan review', 'Widgets'])
   })
 
+  it('is Explore initiatives on screen: its title, tabs and search in the new word, ◎ on every row (I-10, I-11)', () => {
+    hook.state = LISTS
+    render(
+      <MemoryRouter>
+        <ExploreTopics onControl={() => {}} />
+      </MemoryRouter>,
+    )
+    // The panel's title, and the tabs and list it names.
+    expect(screen.getByText('Explore initiatives', { selector: ':not([role=tablist]):not(table)' })).toBeTruthy()
+    expect(screen.getByRole('tablist', { name: 'Explore initiatives' })).toBeTruthy()
+    for (const label of ['All', 'Your initiatives', 'Other initiatives', 'Archived']) expect(screen.getByRole('tab', { name: new RegExp(label) })).toBeTruthy()
+    expect(screen.getByLabelText('Find an initiative')).toBeTruthy()
+    expect(rowOf('Widgets').querySelector('.tabler-icon-target')).not.toBeNull()
+    expect(screen.queryByText('Explore topics')).toBeNull()
+  })
+
   it('counts each tab', () => {
     mount(LISTS)
     for (const [label, count] of [['All', 3], ['Your topics', 1], ['Other topics', 2], ['Archived', 1]] as const) {

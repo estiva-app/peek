@@ -42,6 +42,22 @@ const TOPIC_WORDS: ExploreWords = {
   signedOut: 'Sign in to see topics.',
 }
 
+/** The page in the new word (Katerina, 16 November, I-10: "renaming the title should work too"), as the navigation prototype words it. */
+const INITIATIVE_WORDS: ExploreWords = {
+  title: 'Explore initiatives',
+  tabs: { all: 'All', yours: 'Your initiatives', others: 'Other initiatives', archived: 'Archived' },
+  empty: {
+    all: 'No initiatives yet.',
+    yours: 'You’re in no initiatives yet.',
+    others: 'No other initiatives.',
+    archived: 'No archived initiatives.',
+  },
+  find: 'Find an initiative',
+  noMatch: (asked) => `No initiative matches “${asked}”.`,
+  failed: 'Initiatives didn’t load.',
+  signedOut: 'Sign in to see initiatives.',
+}
+
 /**
  * **Explore topics** (TOPI-6): the page Peek's Topics column ends in, in place
  * of its Other topics and Archived sections (Miky, 3 Nov: "one button like
@@ -60,7 +76,19 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
   // Active counts back from when the page opened, as Ship's and Leaf's do.
   const [now] = useState(() => Date.now())
   // Join is Peek's own (its toast says what happened); the row turns yours at once, and back if the relay refuses.
-  return <ExploreTopicsView state={state} tab={tab} onTab={setTab} onRetry={retry} onJoin={(topic) => onControl('join', topic)} now={now} />
+  // Explore initiatives (Katerina, 16 November): its words, and ◎ on every row, the icon of the column beside it (I-11).
+  return (
+    <ExploreTopicsView
+      state={state}
+      tab={tab}
+      onTab={setTab}
+      onRetry={retry}
+      onJoin={(topic) => onControl('join', topic)}
+      now={now}
+      words={INITIATIVE_WORDS}
+      icon={<IconTarget size={16} stroke={1.5} aria-hidden />}
+    />
+  )
 }
 
 /** `ExploreTopics` handed what it draws — the half a story can show. */

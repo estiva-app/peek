@@ -7,6 +7,8 @@ import { launcherMatch } from '@/lib/launcherSearch'
 import { useRelayViewer } from './foreign'
 import { useFolders } from './useFolderContents'
 import { readTopicsAgain, useTopicsColumn, useTopicTimes } from './useTopicsColumn'
+import { initiativesOf } from './initiatives'
+import { useTeams } from './useTeams'
 import { hasRelay } from './relayUrl'
 
 /** Explore topics' tabs, as Ship's and Leaf's. */
@@ -124,7 +126,10 @@ const titleOf = (topic: ForeignObject) => topic.slots.title?.value ?? 'Untitled'
  * requests, then their activity); your topics' Active is the column's.
  */
 export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry: () => void } {
-  const { state: column, signedOut } = useTopicsColumn()
+  // Initiatives only: a space is a team's topic now, under its team in Teams (Katerina, 16 November, Q-01 A).
+  const { state: topics, signedOut } = useTopicsColumn()
+  const { teams, failed: teamsFailed } = useTeams()
+  const column = useMemo(() => initiativesOf(topics, teams, teamsFailed), [topics, teams, teamsFailed])
   const times = useTopicTimes()
   const { folders } = useFolders()
   const viewer = useRelayViewer()

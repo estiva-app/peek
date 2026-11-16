@@ -2,12 +2,11 @@ import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { EmptyState } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { TopicsColumn } from '@/components/views/TopicsColumn'
+import { EXPLORE_TOPICS_PATH, TopicsColumn } from '@/components/views/TopicsColumn'
 import { ExploreTopics } from '@/components/views/ExploreTopics'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useTabTitle } from '@/lib/useTabTitle'
-import { filePath } from '@/lib/objectUrl'
 import { useMembership } from '@/api'
 
 /**
@@ -36,7 +35,18 @@ export function TopicsPage({ explore = false }: { explore?: boolean }) {
     <>
       <PeekFrame
         leftPanel={<TopicsColumn exploring={explore} onControl={fileControls.open} />}
-        rightPanel={explore ? <ExploreTopics onControl={fileControls.open} /> : <EmptyState message="No file selected" />}
+        rightPanel={
+          explore ? (
+            <ExploreTopics onControl={fileControls.open} />
+          ) : (
+            // Nothing opens by itself (Q-47). The prototype's line, and a button that does what it says (Katerina, 16 November, Q-48).
+            <EmptyState
+              scope="page"
+              message="Initiatives you are in show here. Explore initiatives to find one."
+              action={{ label: 'Explore initiatives', onClick: () => navigate(EXPLORE_TOPICS_PATH) }}
+            />
+          )
+        }
       />
       {fileControls.dialogs}
     </>

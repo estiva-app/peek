@@ -47,9 +47,12 @@ export function StartTopicDialog({
   parent,
   initialTitle = '',
   initialSummary = '',
+  noun = 'topic',
   onCreate,
   onClose,
 }: {
+  /** What it starts, by its word: a team's topic, or an initiative (today's topic in the new word, Katerina, 16 November). The data is the same. */
+  noun?: 'topic' | 'initiative'
   /** The Folder it goes in, when the caller already knows — ignored if `folders` is passed. */
   folderName?: string
   /**
@@ -92,7 +95,7 @@ export function StartTopicDialog({
   return (
     // The kit's FormDialog (C10): Enter in the title and the footer's Start send it the same way, and it closes once that went through.
     <FormDialog
-      title={parent ? `Start a topic under ${parentTitle}` : 'Start a topic'}
+      title={parent ? `Start a topic under ${parentTitle}` : noun === 'initiative' ? 'Start an initiative' : 'Start a topic'}
       submitLabel="Start"
       busyLabel="Starting…"
       ready={ready}

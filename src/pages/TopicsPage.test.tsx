@@ -85,7 +85,9 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
   it('starts it in the Folder chosen, and opens it with Topics lit', async () => {
     const user = userEvent.setup()
     mount()
-    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.click(screen.getByRole('button', { name: 'New initiative' }))
+    // Today's Start a topic, in the new word (Katerina, 16 November).
+    expect(await screen.findByText('Start an initiative')).toBeTruthy()
     await user.click(screen.getByRole('combobox', { name: 'Team' }))
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
@@ -105,16 +107,24 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
         </PeekSetup>
       </MemoryRouter>,
     )
-    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.click(screen.getByRole('button', { name: 'New initiative' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
     expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: TESTING }))
   })
 
-  it('offers no New topic to somebody signed out', () => {
+  it('with nothing chosen, the page says where initiatives are, and its button opens Explore initiatives (Q-48)', async () => {
+    const user = userEvent.setup()
+    mount()
+    expect(screen.getByText('Initiatives you are in show here. Explore initiatives to find one.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Explore initiatives' }))
+    expect(screen.getByTestId('url').textContent).toBe('/app/initiatives/explore -')
+  })
+
+  it('offers no New initiative to somebody signed out', () => {
     session.signedOut = true
     mount()
-    expect(screen.getByText('Sign in to see topics.')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
+    expect(screen.getByText('Sign in to see initiatives.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New initiative' })).toBeNull()
   })
 })

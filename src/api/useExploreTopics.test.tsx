@@ -33,6 +33,12 @@ vi.mock('./useTopicsColumn', () => ({
   readTopicsAgain: column.readAgain,
 }))
 vi.mock('./useFolderContents', () => ({ useFolders: () => ({ folders: [{ id: TEAM, name: 'Product' }] }) }))
+/* The teams read, which says which topics are a team's spaces: none unless a test marks one (Katerina, 16 November, Q-01 A). */
+const teamsRead = vi.hoisted(() => ({ teams: [] as unknown[] | null }))
+vi.mock('./useTeams', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('./useTeams')),
+  useTeams: () => ({ teams: teamsRead.teams, failed: false, reload: async () => {} }),
+}))
 const viewer = { relayUrl: 'https://relay.test', token: { accessToken: 't', pubkey: PK } }
 vi.mock('./foreign', () => ({ useRelayViewer: () => () => viewer }))
 vi.mock('./relayUrl', () => ({ hasRelay: true }))
@@ -51,6 +57,7 @@ beforeEach(() => {
   column.signedOut = false
   column.yours = new Map([[WIDGETS.address!, 300], [ALPHA.address!, 200]])
   column.readAgain.mockReset()
+  teamsRead.teams = []
   reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 4])))
   reads.lists.mockReset().mockResolvedValue(new Map())
   reads.activity.mockReset().mockImplementation(async (topics: { address: string }[]) => ({ at: new Map(topics.map((t) => [t.address, 100])) }))
@@ -107,6 +114,20 @@ describe('useExploreTopics', () => {
     expect(titles(lists().yours!)).toContain('Pricing')
     expect(titles(lists().others!)).toEqual(['Beta plan'])
     await waitFor(() => expect(lists().all!.find((row) => row.title === 'Pricing')!.members).toBe(5))
+  })
+
+  it('lists initiatives only: a topic its team marks as a space is under the team in Teams, on no tab (Q-01 A)', () => {
+    teamsRead.teams = [{ id: TEAM, name: 'Product', listed: [{ address: PRICING.address!, space: true }, { address: ALPHA.address!, space: false }] }]
+    const { result } = renderHook(() => useExploreTopics('all'))
+    const lists = result.current.state as Record<string, { title: string }[]>
+    expect(titles(lists.all!)).toEqual(['alpha', 'Beta plan', 'Widgets'])
+    expect(titles(lists.others!)).toEqual(['Beta plan'])
+  })
+
+  it('waits for the teams before listing, so a space is never drawn and taken away', () => {
+    teamsRead.teams = null
+    const { result } = renderHook(() => useExploreTopics('all'))
+    expect(result.current.state).toBe('loading')
   })
 
   it('says signed out, not loading, when nobody is signed in: the column never reads then', () => {

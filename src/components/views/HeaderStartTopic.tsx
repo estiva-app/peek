@@ -40,6 +40,8 @@ export function HeaderStartTopic({ column, defaultFolder, onClose }: {
   if (!topLevel) return null
   return (
     <StartTopicDialog
+      // From Initiatives it starts an initiative: today's topic in the new word (Katerina, 16 November, Q-01 A).
+      noun={column === 'topics' ? 'initiative' : 'topic'}
       folders={topLevel}
       defaultFolder={defaultFolder}
       onClose={onClose}

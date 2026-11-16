@@ -22,10 +22,13 @@ const hook = vi.hoisted(() => ({
   setLook: vi.fn(async (..._: unknown[]) => ({ ok: true as const }) as { ok: true } | { ok: false; reason: string }),
   putBack: vi.fn(async (..._: unknown[]) => ({ ok: true as const }) as { ok: true } | { ok: false; reason: string }),
   choices: [] as Array<{ id: string; title: string; kind: number }>,
+  /** The teams read, which says whether the topic is a team's space (#) or an initiative: unread unless a test sets it. */
+  teams: null as unknown[] | null,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   fileChoices: () => hook.choices,
+  useTeams: () => ({ teams: hook.teams, failed: false, reload: async () => {} }),
 }))
 vi.mock('@/components/ui/MessageLinks', () => ({
   MessageCard: ({ uri, compact }: { uri: string; compact?: boolean }) => <div data-testid={compact ? 'row' : 'card'} data-uri={uri} />,
@@ -248,5 +251,16 @@ describe('TopicFiles', () => {
     rerender(<TopicFiles />)
     expect(screen.queryByText(/^None yet\./)).toBeNull()
     expect(screen.getByText(/Couldn’t load the files/)).toBeTruthy()
+  })
+
+  it('on an initiative the empty line says initiative; on a team’s topic, topic (I-18)', () => {
+    hook.state = { files: [] }
+    hook.teams = []
+    const { rerender } = render(<TopicFiles />)
+    expect(screen.getByText('None yet. An initiative can be only a conversation.')).toBeTruthy()
+    hook.teams = [{ id: 'team', name: 'Team', listed: [{ address: TOPIC, space: true }] }]
+    rerender(<TopicFiles />)
+    expect(screen.getByText('None yet. A topic can be only a conversation.')).toBeTruthy()
+    hook.teams = null
   })
 })
