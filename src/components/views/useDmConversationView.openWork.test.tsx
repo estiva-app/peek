@@ -51,7 +51,7 @@ function Dm() {
   return <>{useDmConversationView({ dmId: 'dm-1', dmName: 'Cleo' }).rightPanel}</>
 }
 
-function mount(url = '/app/people/dm-1') {
+function mount(url = '/app/dms/dm-1') {
   render(
     <DebugProvider>
       <LastSelectionProvider>
@@ -67,7 +67,7 @@ const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'More 
 
 describe('a link to a DM reply opens its thread (ACT-3: a row card’s line)', () => {
   it('?thread=<root> opens that thread; the DM alone opens none', () => {
-    mount('/app/people/dm-1?thread=r1')
+    mount('/app/dms/dm-1?thread=r1')
     expect(asked.thread).toBe('r1')
     cleanup()
     mount()

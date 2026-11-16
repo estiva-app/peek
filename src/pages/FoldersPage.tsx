@@ -91,7 +91,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
     dmForChannel(id)
       .then((dm) => {
         if (cancelled) return
-        if (dm && dm !== 'not-a-person') navigate(`/app/people/${dm}`, { replace: true })
+        if (dm && dm !== 'not-a-person') navigate(`/app/dms/${dm}`, { replace: true })
         else setDmCheck({ id, isFolder: dm === null })
       })
       .catch(() => {

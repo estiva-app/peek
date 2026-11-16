@@ -651,7 +651,7 @@ function sortOpenWork(items: OpenWorkRow[], sort: OpenWorkSort, activityOf: (ite
 /** A file open on the Desk: the address `openFile` puts in the URL. */
 const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ open: address })}`
 /** A DM has no Desk address of its own: its link is the person's page. */
-const personHref = (dmId: string) => `/app/people/${dmId}`
+const personHref = (dmId: string) => `/app/dms/${dmId}`
 
 /** One Desk row on the package's sidebar row, as the Folders tree's rows are. Exported for its tests. */
 export function DeskRowItem({ row }: { row: DeskRow }) {

@@ -39,7 +39,7 @@ export function PersonItem({
   news?: readonly RowNewsItem[]
 }) {
   const avatarSrcFor = useAvatarSrc()
-  const href = `/app/people/${id}`
+  const href = `/app/dms/${id}`
   const lines = (unread || urgent) && news?.length ? news : undefined
   // Leaving its card, or opening it on a touch screen, sees the reactions to you it listed (ACT-7).
   const reactionsSeen = useReactionsSeenOnClose(lines)

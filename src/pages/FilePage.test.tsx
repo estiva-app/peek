@@ -707,20 +707,36 @@ describe('FilePage serves every declared shape', () => {
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 
-  it('opened by link and listed in no topic of yours, it is shown under Folders, which comes back to it with its open thread', () => {
+  it('opened by link and listed in no initiative of yours, it is shown under Teams, which comes back to it with its open thread', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
     expect(screen.getByTestId('topics-path').textContent).toBe('')
   })
 
-  it('opened by link and listed in a topic of yours, it is shown under Topics, which comes back to it (TOP-4)', () => {
+  // The rail lights the section you are in (Katerina, 16 November, the navigation prototype): a file lives in its team,
+  // so an initiative of yours listing it no longer sends it under Initiatives.
+  it('opened by link and listed in an initiative of yours, a Ship issue is still shown under Teams, where it lives', () => {
     topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(screen.getByTestId('topics-path').textContent).toBe('')
+  })
+
+  it('opened by link, an initiative (a topic no team marks as its space) is shown under Initiatives, which comes back to it', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
     expect(screen.getByTestId('file-column').textContent).toBe('topics')
-    expect(within(screen.getByTestId('left')).getByText('Topics')).toBeInTheDocument()
-    expect(screen.getByTestId('topics-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(within(screen.getByTestId('left')).getByText('Initiatives')).toBeInTheDocument()
+    expect(screen.getByTestId('topics-path').textContent).toBe(TOPIC_SHORT)
     expect(screen.getByTestId('folders-path').textContent).toBe('')
+  })
+
+  it('opened by link, a team’s space (a topic in the team) is shown under Teams', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(TOPIC_SHORT)
   })
 
   it('clicked in Folders, it is shown under Folders though a topic of yours lists it (TOP-4)', () => {
@@ -749,6 +765,8 @@ describe('FilePage draws every app’s file in the same panes', () => {
   })
 
   it('…and the Peek file, from the same address grammar', () => {
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(shape()).toEqual({
       myTeams: true,
@@ -804,6 +822,8 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
   it('a click keeps the team drawn and selects the clicked row before its file has resolved', () => {
     objects.pending.add(OTHER_ADDRESS)
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
 
@@ -835,6 +855,8 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     listing.files = [commentableOther]
     objects.byAddress[OTHER_ADDRESS] = commentableOther
     objects.pending.add(OTHER_ADDRESS)
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     peekView.args.length = 0
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
@@ -857,6 +879,8 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
   it('an archived listed topic shows the placeholder alone until its file resolves', () => {
     listing.files = [{ ...commentableOther, archived: { by: CATH, at: 1_790_000_000 } } as unknown as ForeignObject]
     objects.pending.add(OTHER_ADDRESS)
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
 
@@ -867,6 +891,8 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
   it('a click that resolves to nothing lets the last file go, as a dead link always has', () => {
     delete objects.byAddress[OTHER_ADDRESS]
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(within(screen.getByTestId('middle')).getByText('First on the topic')).toBeInTheDocument()
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
@@ -1573,6 +1599,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     } as unknown as ForeignObject
     objects.byAddress[TOPIC_ADDRESS] = archivable
     topicsColumn.others = [archivable]
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
@@ -2033,6 +2061,8 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
 
   it('offers New topic inside nowhere: not on a topic’s ⋮ or its row, not on a Ship project’s ⋮ (TOPI-7)', () => {
     const offered = () => screen.queryAllByRole('menuitem').map((item) => item.textContent)
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     const topicPage = mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     // The ⋮ opened, with Move in it: what is missing is New topic inside, not the menu.
@@ -2204,6 +2234,8 @@ describe('A topic is marked a space of its team from its row, not its page’s �
 
   it('a member of the team that leads it makes it a space from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+    rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(headerMenu()).not.toContain('Make it a space')
     rowMenu()
@@ -2292,12 +2324,16 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
 
     // The open topic's row names it: "the team's row of a topic offers Open work…" above.
     it('another topic’s row does not name Ctrl/Cmd+O, since the key acts on the open topic’s page alone', () => {
+      // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+      rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
       mount(`/topic/${TOPIC_ADDRESS}`)
       const otherItem = rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!
       expect(otherItem.textContent).toBe('Add to Open work')
     })
 
     it('Add to Open work says so in a toast with Undo, as the page’s button does', () => {
+      // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+      rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
       mount(`/topic/${TOPIC_ADDRESS}`)
       fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!)
       expect([...openWork.files]).toEqual([OTHER_ADDRESS])
@@ -2309,6 +2345,8 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
     it('Copy link puts the topic’s link on the clipboard and says “Link copied”', async () => {
       const writeText = vi.fn(async () => {})
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      // Clicked on its row in Teams, where a team-led topic still sits (opened by link it is an initiative, 16 November).
+      rememberOpenedFrom(TOPIC_ADDRESS, 'folders')
       mount(`/topic/${TOPIC_ADDRESS}`)
       fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent === 'Copy link')!)
       await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))

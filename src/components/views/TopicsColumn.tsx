@@ -12,7 +12,7 @@ import type { FileControl } from '@/components/views/useFileControls'
 import { useRailClosed } from '@/layouts/railClosed'
 
 /** Where Explore topics is (TOPI-6). */
-export const EXPLORE_TOPICS_PATH = '/app/topics/explore'
+export const EXPLORE_TOPICS_PATH = '/app/initiatives/explore'
 
 /**
  * **Peek's Topics column** (TOP-4, TOPI-10): the topics you are a member of,
@@ -129,7 +129,7 @@ export function TopicsColumnView({
 }) {
   return (
     <ListColumn
-      title="Topics"
+      title="Initiatives"
       collapsed={railClosed}
       actions={
         !signedOut &&

@@ -63,7 +63,7 @@ describe('the Topics column (TOP-4, TOPI-10)', () => {
     mount({ mine: [WIDGETS, DESIGN], others: [STRANGER], archived: [OLD] })
     const links = [...document.querySelectorAll('a')]
     expect(links.map((link) => link.textContent)).toEqual(['Widgets', 'Design', 'Explore topics'])
-    expect(links.at(-1)!.getAttribute('href')).toBe('/app/topics/explore')
+    expect(links.at(-1)!.getAttribute('href')).toBe('/app/initiatives/explore')
     expect(screen.queryByText('Other topics')).toBeNull()
     expect(screen.queryByText('Archived')).toBeNull()
     expect(screen.queryByText('Somebody else’s')).toBeNull()

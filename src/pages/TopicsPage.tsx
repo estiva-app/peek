@@ -11,9 +11,9 @@ import { filePath } from '@/lib/objectUrl'
 import { useMembership } from '@/api'
 
 /**
- * `/app/topics` — Peek's Topics screen with no file open (TOP-4): your topics,
+ * `/app/initiatives` — Peek's Topics screen with no file open (TOP-4): your topics,
  * then Explore topics. A row opens its file on the file page, with this column
- * beside it. `/app/topics/explore` (`explore`) opens Explore topics beside the
+ * beside it. `/app/initiatives/explore` (`explore`) opens Explore topics beside the
  * column (TOPI-6): every topic you can read, archived ones too, to find, join
  * or open.
  */
@@ -25,7 +25,7 @@ export function TopicsPage({ explore = false }: { explore?: boolean }) {
   useEffect(() => {
     setLastTopicsPath(`${location.pathname}${location.search}`)
   }, [location.pathname, location.search, setLastTopicsPath])
-  useTabTitle(explore ? 'Explore topics' : 'Topics')
+  useTabTitle(explore ? 'Explore initiatives' : 'Initiatives')
   // A row's menu, the file page's own (FOL-45): Join, Leave, Rename… from either page; Explore's Join too.
   const membership = useMembership()
   const fileControls = useFileControls({

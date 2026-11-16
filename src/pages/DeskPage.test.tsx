@@ -150,8 +150,8 @@ function mount(url = '/app/desk') {
       <LastSelectionProvider>
         <MemoryRouter initialEntries={[url]}>
           <Routes>
-            <Route path="/app/desk" element={<><DeskPage /><Go to="/app/people" label="Leave Desk" /><Probe /></>} />
-            <Route path="/app/people" element={<><Go to="/app/desk" label="Back to Desk" /><Probe /></>} />
+            <Route path="/app/desk" element={<><DeskPage /><Go to="/app/dms" label="Leave Desk" /><Probe /></>} />
+            <Route path="/app/dms" element={<><Go to="/app/desk" label="Back to Desk" /><Probe /></>} />
             <Route path="*" element={<Probe />} />
           </Routes>
         </MemoryRouter>
@@ -296,7 +296,7 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
     expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
     // Leave Desk, and come back to it.
     fireEvent.click(screen.getByRole('button', { name: 'Leave Desk' }))
-    expect(url()).toBe('/app/people')
+    expect(url()).toBe('/app/dms')
     fireEvent.click(screen.getByRole('button', { name: 'Back to Desk' }))
     expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
   })
@@ -344,7 +344,7 @@ describe('Desk rows on NavItem', () => {
   it('each row is a link: a file to its Desk address, a DM to the person', () => {
     mount()
     expect(linkFor('Issue one').getAttribute('href')).toBe(deskWith(ISSUE))
-    expect(linkFor('Ana').getAttribute('href')).toBe('/app/people/dm-1')
+    expect(linkFor('Ana').getAttribute('href')).toBe('/app/dms/dm-1')
   })
 
   it('a plain click on a starred DM opens it here, and the Desk stays the page', () => {
@@ -499,7 +499,7 @@ describe('a click on a Screener row reads the item on its own page (Katerina, 30
     desk.screener = [screenerDm('dm-7', 'Cleo')]
     mount()
     fireEvent.click(leftColumn().getByText('A message from Cleo'))
-    expect(url()).toBe('/app/people/dm-7')
+    expect(url()).toBe('/app/dms/dm-7')
   })
 })
 

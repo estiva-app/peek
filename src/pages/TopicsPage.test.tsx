@@ -62,10 +62,10 @@ function Probe() {
 function mount() {
   return render(
     <LastSelectionProvider>
-      <MemoryRouter initialEntries={['/app/topics']}>
+      <MemoryRouter initialEntries={['/app/initiatives']}>
         <PeekSetup>
           <Routes>
-            <Route path="/app/topics" element={<TopicsPage />} />
+            <Route path="/app/initiatives" element={<TopicsPage />} />
             <Route path="*" element={<Probe />} />
           </Routes>
         </PeekSetup>

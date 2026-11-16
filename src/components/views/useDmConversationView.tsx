@@ -120,7 +120,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   // is open (PEE-44); an open thread reads its replies, inside the view.
   useMarkDmRead(dmId, dm.seenAt, 0)
   // The dot beside the name (ACT-4): the one the DM's row has in People, with its list.
-  const pageDot = useDmPageDot(dmId ?? '', channelUuid, `/app/people/${dmId ?? ''}`)
+  const pageDot = useDmPageDot(dmId ?? '', channelUuid, `/app/dms/${dmId ?? ''}`)
 
   /*
     A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the

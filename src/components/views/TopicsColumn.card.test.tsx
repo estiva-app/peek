@@ -117,7 +117,7 @@ function Where() {
 }
 const mount = () =>
   render(
-    <MemoryRouter initialEntries={['/app/topics']}>
+    <MemoryRouter initialEntries={['/app/initiatives']}>
       {/* The kit's links go through Peek's router, as in the app. */}
       <PeekSetup>
         <TopicsColumn />

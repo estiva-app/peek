@@ -15,7 +15,19 @@ import { useRouteWords } from '@/api'
  */
 function MovedUnderApp() {
   const { pathname, search } = useLocation()
-  return <Navigate to={`/app${pathname}${search}`} replace />
+  return <Navigate to={`/app${pathname.replace(/^\/people/, '/dms')}${search}`} replace />
+}
+
+/**
+ * Topics and People before their sections were named Initiatives and DMs
+ * (Katerina, 16 November, the navigation prototype): `/app/topics/…` and
+ * `/app/people/…` sit in messages, other apps and browser histories, so they
+ * are kept and land on the same page in one hop, as TeamMoved does.
+ */
+function SectionRenamed() {
+  const { pathname, search, hash } = useLocation()
+  const to = pathname.replace(/^\/app\/topics/, '/app/initiatives').replace(/^\/app\/people/, '/app/dms')
+  return <Navigate to={`${to}${search}${hash}`} replace />
 }
 
 /**
@@ -54,8 +66,11 @@ function App() {
       <Route path="/app" element={<Navigate to="/app/desk" replace />} />
       <Route path="/app/desk" element={<DeskPage />} />
       {/* Your topics with their files (TOP-4); what was Topics until then is Folders, below. */}
-      <Route path="/app/topics" element={<TopicsPage />} />
-      <Route path="/app/topics/explore" element={<TopicsPage explore />} />
+      <Route path="/app/initiatives" element={<TopicsPage />} />
+      <Route path="/app/initiatives/explore" element={<TopicsPage explore />} />
+      {/* Named Initiatives by the navigation prototype (Katerina, 16 November): the old links land there. */}
+      <Route path="/app/topics" element={<SectionRenamed />} />
+      <Route path="/app/topics/explore" element={<SectionRenamed />} />
       {/* Navigation by Folder (RFC 0.4 §4) — added beside the topic routes,
           not over them. §11.1's topic→file migration is a separate change. */}
       <Route path="/app/teams" element={<FoldersPage />} />
@@ -66,8 +81,11 @@ function App() {
       <Route path="/app/folders" element={<TeamMoved />} />
       <Route path="/app/folders/:id" element={<TeamMoved />} />
       <Route path="/app/folders/:id/chat" element={<TeamMoved />} />
-      <Route path="/app/people" element={<PeoplePage />} />
-      <Route path="/app/people/:id" element={<PeoplePage />} />
+      {/* Your DMs: People until the navigation prototype named them (Katerina, 16 November). */}
+      <Route path="/app/dms" element={<PeoplePage />} />
+      <Route path="/app/dms/:id" element={<PeoplePage />} />
+      <Route path="/app/people" element={<SectionRenamed />} />
+      <Route path="/app/people/:id" element={<SectionRenamed />} />
       {/* Where those pages were until FOL-39. */}
       <Route path="/desk" element={<MovedUnderApp />} />
       <Route path="/folders" element={<TeamMoved />} />
@@ -81,7 +99,7 @@ function App() {
           before it. These links are in the wild and in every browser history
           that ever opened a topic, so they redirect rather than 404. The list
           is Topics again since TOP-4. */}
-      <Route path="/topics" element={<Navigate to="/app/topics" replace />} />
+      <Route path="/topics" element={<Navigate to="/app/initiatives" replace />} />
       <Route path="/topic-old/:ref" element={<LegacyTopicRedirect />} />
       <Route path="/topics/:id" element={<LegacyTopicRedirect />} />
       {/* What the NIP-89 manifest advertises: any consumer holding one of

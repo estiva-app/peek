@@ -49,7 +49,7 @@ const row = (
   kind,
   name,
   // The addresses the live Desk gives its rows: a file opens on the Desk, a DM on the person's page.
-  href: kind === 'file' ? `/app/desk?open=${id}` : `/app/people/${name.split(' ')[0].toLowerCase()}`,
+  href: kind === 'file' ? `/app/desk?open=${id}` : `/app/dms/${name.split(' ')[0].toLowerCase()}`,
   isUnread: false,
   isSelected: false,
   onClick: noop,
@@ -127,7 +127,7 @@ const meta = {
   decorators: [
     // The rail lights the page at this address: a story on another page names its own in `parameters.route`.
     (Story, { parameters }) => (
-      <MemoryRouter initialEntries={[(parameters.route as string | undefined) ?? '/app/people/alice']}>
+      <MemoryRouter initialEntries={[(parameters.route as string | undefined) ?? '/app/dms/alice']}>
         <DebugProvider>
           <PeekDataProvider>
             <LastSelectionProvider>

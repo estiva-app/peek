@@ -418,7 +418,7 @@ describe('a stateless channel’s link offers Delete only where it loses nothing
 describe('FoldersPage never treats a DM channel as a Folder', () => {
   it('opens the viewer’s DM as the DM', async () => {
     mount(`/app/teams/${DM_CHANNEL}`)
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/people/${PARTNER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/dms/${PARTNER}`))
   })
 
   it('says a DM with no single partner is not a folder, and offers nothing on it', async () => {

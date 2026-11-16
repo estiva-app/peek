@@ -197,7 +197,7 @@ describe('Reference, as a link (RIC-16)', () => {
 
   it('a person chip is a link to their DM, by pubkey (REM-3)', () => {
     const c = render(<Reference uri={PERSON_URI} />).container
-    expect(c.querySelector('a')?.getAttribute('href')).toBe(`/app/people/${KNOWN}`)
+    expect(c.querySelector('a')?.getAttribute('href')).toBe(`/app/dms/${KNOWN}`)
   })
 
   it('a key nobody could name leads nowhere: it is not a link', () => {
@@ -224,7 +224,7 @@ describe('Reference, as a link (RIC-16)', () => {
     expect(fireEvent.click(a, { ctrlKey: true })).toBe(true) // default not prevented: open in new tab
     expect(r.getByTestId('where').textContent).toBe('/topics')
     expect(fireEvent.click(a)).toBe(false)
-    expect(r.getByTestId('where').textContent).toBe(`/app/people/${KNOWN}`)
+    expect(r.getByTestId('where').textContent).toBe(`/app/dms/${KNOWN}`)
   })
 
   it('draws no glyph on a person', () => {
