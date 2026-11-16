@@ -30,7 +30,7 @@ import { BLOCK_ANCHOR_TAG, KIND, parseProfile, QUOTE_TAG, type SignedEvent } fro
 export const KIND_TOPIC = 39000
 /** NIP-29 channel message — what a Peek message is on the wire. */
 const KIND_MESSAGE = 9
-import { publishSigned, queryRelay, queryRelayWithMatches, signViaEstivaId, type QueryLane } from './bridge'
+import { publishSigned, queryRelay, queryRelayTimes, queryRelayWithMatches, signViaEstivaId, type QueryLane } from './bridge'
 import { readFrom, type ReadSource } from './readFrom'
 import { MAX_FILTERS_PER_REQ } from './socketRead'
 import { RelayReadError } from './relayRead'
@@ -130,6 +130,7 @@ import {
   listReadOption,
   projectFields,
   PROJECT_KIND,
+  timesOffered,
   withOpenRead,
 } from './projectFields'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
@@ -1080,8 +1081,11 @@ export async function topicListsAsViewer(topics: readonly string[], relayUrl: st
  *
  * **Throws {@link RelayReadError} when the read failed.**
  */
-export function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
-  return readTopicActivity(viewerQuery(relayUrl, token), topics)
+export async function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
+  // Where the relay offers it, listed files' changes and the files under them are learnt as times, not read whole.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
+  const times = (await timesOffered()) ? { times: (filters: Record<string, unknown>[]) => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey) } : {}
+  return readTopicActivity(viewerQuery(relayUrl, token), topics, times)
 }
 
 /**
