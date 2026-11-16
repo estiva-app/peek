@@ -859,13 +859,16 @@ describe('a file opened by its address lands where it lives (DK-03, Q-54)', () =
 })
 
 describe('another app’s file: its trail, its initiatives, then Open (F-04 to F-06)', () => {
-  it('its title is a trail — its team, its project, then its name — the team opening in place', () => {
+  // No team in the trail: the team is the chip after the name (Katerina, 17 November: "make sure the breadcrumbs now dont show the team").
+  it('its title is a trail — its project, then its name — and its team is a chip after it, opening in place', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
-    expect(trail.getByRole('link', { name: 'Folders' }).getAttribute('href')).toBe(`/app/teams/${FOLDER}`)
+    expect(trail.queryByRole('link', { name: 'Folders' })).toBeNull()
     expect(trail.getByRole('link', { name: 'Folders: navigation for the whole suite' })).toBeInTheDocument()
     expect(trail.getByText('The file route')).toBeInTheDocument()
-    fireEvent.click(trail.getByRole('link', { name: 'Folders' }))
+    const team = within(screen.getByTestId('middle')).getByRole('link', { name: 'Folders' })
+    expect(team.querySelector('.tabler-icon-users')).not.toBeNull()
+    fireEvent.click(team)
     expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`)
   })
 

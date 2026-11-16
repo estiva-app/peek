@@ -296,7 +296,7 @@ export function useFilePane(
     elsewhere && file ? (
       <Breadcrumb
         items={[
-          ...(home ? [{ label: home.name, href: `/app/teams/${home.id}`, onClick: go(`/app/teams/${home.id}`) }] : []),
+          // No team in the trail: the team is the chip after the name (Katerina, 17 November).
           ...(parentAddress && parent && typeof parent === 'object'
             ? [{ label: parent.slots.title?.value ?? 'Untitled', href: filePath(parentAddress, parent.slots.title?.value), onClick: go(filePath(parentAddress, parent.slots.title?.value), 'folders', parentAddress) }]
             : []),
@@ -318,18 +318,19 @@ export function useFilePane(
   })
 
   /*
-    The team an initiative belongs to, a chip right after its name, opening the team's page (Katerina, 17 November, as the
-    6 November prototype drew it; its icon at a chip's 12px, R-15). A team's topic needs none: it sits under its team.
+    The team it belongs to, a chip right after its name, opening the team's page (Katerina, 17 November, as the 6 November
+    prototype drew it; its icon at a chip's 12px, R-15): an initiative's, and another app's file's, whose trail then holds
+    no team ("make sure the breadcrumbs now dont show the team"). A team's topic needs none: it sits under its team.
   */
-  const initiativeTeam =
-    isTopic && listing && !listing.space ? (
-      <Chip
-        label={listing.team.name}
-        leadingIcon={<IconUsers size={12} stroke={1.5} aria-hidden />}
-        href={`/app/teams/${listing.team.id}`}
-        onClick={go(`/app/teams/${listing.team.id}`)}
-      />
-    ) : undefined
+  const chipTeam = isTopic ? (listing && !listing.space ? listing.team : undefined) : elsewhere ? home : undefined
+  const teamChip = chipTeam ? (
+    <Chip
+      label={chipTeam.name}
+      leadingIcon={<IconUsers size={12} stroke={1.5} aria-hidden />}
+      href={`/app/teams/${chipTeam.id}`}
+      onClick={go(`/app/teams/${chipTeam.id}`)}
+    />
+  ) : undefined
 
   const header = (
         /*
@@ -360,12 +361,13 @@ export function useFilePane(
             */
             pageDot ? (
               <>
-                {initiativeTeam}
+                {teamChip}
                 <PageDot dot={pageDot} />
               </>
             ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
               <>
-              {/* Its initiatives first, each a chip, then Open (Katerina, 16 November, F-05, F-06). */}
+              {/* Its team, then its initiatives, each a chip, then Open (Katerina, 16–17 November, F-05, F-06). */}
+              {teamChip}
               {chips}
               <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
                 <Button
@@ -380,8 +382,11 @@ export function useFilePane(
                 </Button>
               </WithTooltip>
               </>
-            ) : chips.length > 0 ? (
-              <>{chips}</>
+            ) : teamChip || chips.length > 0 ? (
+              <>
+                {teamChip}
+                {chips}
+              </>
             ) : undefined
           }
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
