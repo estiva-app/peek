@@ -204,15 +204,16 @@ describe('a team’s page offers what the viewer may do (TEA-5)', () => {
     expect(screen.getByRole('button', { name: 'Follow' })).toBeTruthy()
   })
 
-  it('a member marks a topic a space, and takes the mark off a space, from its row', async () => {
+  // Today's space mark in the new words (Katerina, 16 November, T-31): a space is a team's topic, a topic an initiative.
+  it('a member makes a team’s topic an initiative, and an initiative a team’s topic, from its row', async () => {
     mount(team())
     const places = within(screen.getByText(/^Places$/).parentElement as HTMLElement)
     const menuOf = (title: string) => places.getByText(title).closest('[data-tree-row], li, a, div')!.parentElement as HTMLElement
     await userEvent.click(within(menuOf('Launch')).getByRole('button', { name: 'More options' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Stop being a space' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it an initiative' }))
     expect(api.markSpace).toHaveBeenCalledWith('eng', LAUNCH.address, false)
     await userEvent.click(within(menuOf('Brief')).getByRole('button', { name: 'More options' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it a space' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it a topic' }))
     expect(api.markSpace).toHaveBeenCalledWith('eng', BRIEF.address, true)
   })
 
