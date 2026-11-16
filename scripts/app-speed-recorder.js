@@ -62,7 +62,6 @@
     const entry = { at: now(), method, host: url.host, path: url.pathname }
     // What was asked, so the biggest reads name their filter (TEA-5's 44 MB read).
     if (typeof init?.body === 'string') entry.filter = init.body.slice(0, 2000)
-
     sp.http.push(entry)
     try {
       const response = await nativeFetch(input, init)
