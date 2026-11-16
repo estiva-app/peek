@@ -12,11 +12,11 @@ import { IconAlertTriangle, IconBulb, IconExternalLink, IconNotebook, IconX } fr
 import { MenuItem, MenuSub, Toast, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 export type ItemType = 'insight' | 'journal' | 'risk'
-/** The five words a person picks; each makes one of the three types. */
-export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question'
+/** The six words a person picks; each makes one of the three types (Blocker added for Risks, Miky, 16 Nov). */
+export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker'
 
-export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk' }
-export const WORDS: MarkWord[] = ['Insight', 'Decision', 'Update', 'Concern', 'Question']
+export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk' }
+export const WORDS: MarkWord[] = ['Insight', 'Decision', 'Update', 'Concern', 'Question', 'Blocker']
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
   insight: { label: 'Insight', plural: 'Insights', tab: 'Insights', line: 'border-warning-default', text: 'text-warning-default', icon: (s = 16) => <IconBulb size={s} stroke={1.5} /> },
