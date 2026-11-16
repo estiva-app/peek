@@ -126,6 +126,8 @@ export function foldFileScreenerRows(
         fileKind: file.kind,
         title: file.title,
         preview: screening.body,
+        // Its thread: a top-level comment is its own root (Katerina, 17 November, U-07: opened, it lands in view).
+        thread: screening.id,
         at: screening.createdAt * 1000,
         authorPubkey: screening.author,
         ...(file.archived ? { archived: true } : {}),

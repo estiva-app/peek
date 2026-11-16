@@ -341,7 +341,12 @@ export function DeskPage() {
   const readScreener = (id: string) => {
     const item = screenerItems.find((i) => i.id === id)
     if (!item) return
-    navigate(item.kind === 'file' ? filePath(item.address, item.title) : personHref(item.dmId))
+    // A file opens at the thread of the comment that brought it in, which lands in view (Katerina, 17 November, U-07).
+    navigate(
+      item.kind === 'file'
+        ? `${filePath(item.address, item.title)}${item.thread ? `?${new URLSearchParams({ thread: item.thread })}` : ''}`
+        : personHref(item.dmId),
+    )
   }
 
   /*

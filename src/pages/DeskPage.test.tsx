@@ -562,6 +562,14 @@ describe('a click on a Screener row reads the item on its own page (Katerina, 30
     expect(openWork.addScreener).not.toHaveBeenCalled()
   })
 
+  // At the comment that brought it in: its thread opens, and the conversation lands on it (Katerina, 17 November, U-07).
+  it('a file goes to its page at the thread of the comment that brought it in', () => {
+    desk.screener = [{ ...screenerFile(SECOND, 'Issue two'), thread: 'comment-7' }]
+    mount()
+    fireEvent.click(leftColumn().getByText('A comment on Issue two'))
+    expect(url()).toBe(`${filePath(SECOND, 'Issue two')}?thread=comment-7`)
+  })
+
   it('a DM goes to the person’s page', () => {
     desk.screener = [screenerDm('dm-7', 'Cleo')]
     mount()

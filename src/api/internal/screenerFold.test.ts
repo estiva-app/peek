@@ -71,7 +71,7 @@ describe('a member file screens while somebody else’s comment on it is unread 
       over.nowMs ?? T + 60_000,
     )
 
-  it('a comment newer than the file’s marker is a row, carrying that comment', () => {
+  it('a comment newer than the file’s marker is a row, carrying that comment and its thread', () => {
     const rows = fold([file([comment()])], { marker: S - 10 })
     expect(rows.map((r) => r.item)).toEqual([
       {
@@ -81,6 +81,8 @@ describe('a member file screens while somebody else’s comment on it is unread 
         fileKind: 30840,
         title: 'The file',
         preview: 'a comment on the file',
+        // Its own thread: the Screener opens the file there (U-07).
+        thread: 'c1',
         at: S * 1000,
         authorPubkey: 'someone',
       },

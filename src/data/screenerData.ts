@@ -33,6 +33,8 @@ export type ScreenerItem =
       authorBot?: boolean
       /** Archived by someone while still unread here: it stays, marked (PEE-68, Miky 19 Oct). */
       archived?: boolean
+      /** The comment that brought it in, a thread's root: the Screener opens the file at its thread, which lands in view (U-07). */
+      thread?: string
     }
 
 // No file rows: a file resolves from the relay, which mock mode has none of.
