@@ -69,7 +69,7 @@ const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] })
   it. Refused here, so the page stays put and the test reads only the call.
 */
 /** The team's topic mark a topic started from its ⋮ is given at once (T-12, Q-16). */
-const peek = vi.hoisted(() => ({ markSpace: vi.fn(async (..._: unknown[]) => ({ ok: true as const })) }))
+const peek = vi.hoisted(() => ({ markSpace: vi.fn(async () => ({ ok: true as const })) }))
 const created = vi.hoisted(() => ({
   folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })),
   /*
