@@ -120,8 +120,12 @@ const FILE_REFRESH_MS = 60_000
  * A row marks a file archived with an archived file above it too — an issue in
  * an archived project — as every app does (PEE-68).
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-archived-with-the-closest-archived-file-above-it.md
+ *
+ * A row draws a file's title, summary, archived state and conversation, never
+ * what it says, so its files open without their text (APP-11: 3.5 MB on Miky's
+ * Desk).
  */
-const ARCHIVED_WITH = { archivedWith: true }
+const ARCHIVED_WITH = { archivedWith: true, withoutText: true }
 
 function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
   const { resolveObjects } = useForeignObjects()

@@ -62,6 +62,7 @@
     const entry = { at: now(), method, host: url.host, path: url.pathname }
     // What was asked, so the biggest reads name their filter (TEA-5's 44 MB read).
     if (typeof init?.body === 'string') entry.filter = init.body.slice(0, 2000)
+
     sp.http.push(entry)
     try {
       const response = await nativeFetch(input, init)
@@ -144,7 +145,8 @@
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
       biggest: [...reads].sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0)).slice(0, 3).map((h) => ({ path: h.path, bytes: h.bytes, ms: h.ms, at: h.at, filter: h.filter })),
-      ...(everyRead ? { everyRead: reads.map((h) => ({ path: h.path, at: h.at, ms: h.ms, bytes: h.bytes, filter: h.filter?.slice(0, 300) })) } : {}),
+      // Each read's filter as asked (up to the 2000 characters kept above): its heads say which part of the app asked (APP-11).
+      ...(everyRead ? { everyRead: reads.map((h) => ({ path: h.path, at: h.at, ms: h.ms, bytes: h.bytes, filter: h.filter })) } : {}),
     })
   }
 })()
