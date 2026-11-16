@@ -220,7 +220,9 @@ describe('TopicFiles', () => {
     }
     render(<TopicFiles />)
 
-    const line = screen.getByRole('button', { name: /Archived · 2/ })
+    // Its count beside the title, not typed into it (16 November).
+    const line = screen.getByRole('button', { name: /^Archived/ })
+    expect(line.textContent).toContain('2')
     expect(line.getAttribute('aria-expanded')).toBe('false')
     expect(drawn()).toHaveLength(1)
     fireEvent.click(line)

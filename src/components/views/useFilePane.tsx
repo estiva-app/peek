@@ -310,12 +310,11 @@ export function useFilePane(
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
           members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
+          // Open work's button in the header's own place, 8px before the strip, as the approved story draws it (TOPI-7; kit 16 November).
+          button={file?.folder || view.sidePanel ? openWorkButton : undefined}
           actions={
             file?.folder || view.sidePanel ? (
-              // Open work's button 8px before the strip, as the approved story draws it (TOPI-7).
-              <div className="flex items-center gap-2">
-              {openWorkButton}
-              {/* One strip: one Tab stop, arrows along it (UIG-14). */}
+              // One strip: one Tab stop, arrows along it (UIG-14).
               <Toolbar aria-label="File actions" surface={false}>
                 {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
                 {showToggle && (
@@ -359,7 +358,6 @@ export function useFilePane(
                   />
                 )}
               </Toolbar>
-              </div>
             ) : undefined
           }
         />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { IconDotsVertical, IconUserPlus, IconUsers } from '@tabler/icons-react'
-import { EmptyState, IconButton, MembersDialog, Menu, NavItem, PageHeader, ScrollArea, SectionLabel, SkeletonList, type MembersDialogCandidate } from '@estiva-app/ui'
+import { EmptyState, IconButton, MembersDialog, Menu, NavItem, PageHeader, ScrollArea, SectionHeader, SectionLabel, SkeletonList, type MembersDialogCandidate } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { teamPlaces, useLeavesTopic, useMentionNames, usePeekActions, usePeople, useTeamFiles, useTeamPageDot, useTeams, useTeamTopics, type Team } from '@/api'
 import { PageDot } from '@/components/PageListDot'
@@ -132,22 +132,21 @@ export function TeamPage({
       <PageHeader
         title={team.name}
         after={<PageDot dot={pageDot} />}
+        // The buttons with words in the header's own place, 8px before the ⋮ (kit, 16 November: they sat in a box of Peek's own).
+        button={actions}
         actions={
-          <>
-            {actions}
-            {menu && (
-              <Menu
-                align="right"
-                trigger={
-                  <IconButton aria-label="More" tooltip="More">
-                    <IconDotsVertical size={16} stroke={1.5} />
-                  </IconButton>
-                }
-              >
-                {menu}
-              </Menu>
-            )}
-          </>
+          menu ? (
+            <Menu
+              align="right"
+              trigger={
+                <IconButton aria-label="More" tooltip="More">
+                  <IconDotsVertical size={16} stroke={1.5} />
+                </IconButton>
+              }
+            >
+              {menu}
+            </Menu>
+          ) : undefined
         }
       />
       <ScrollArea className="min-h-0 flex-1">
@@ -173,14 +172,15 @@ export function TeamPage({
             </section>
           )}
           <section className="flex flex-col gap-0.5">
-            <SectionLabel tone="muted">{`Members · ${people.length}`}</SectionLabel>
+            {/* The count beside the heading, in a count's type, not typed into it (Katerina, 16 November). */}
+            <SectionHeader title="Members" count={people.length} hover="none" />
             {people.map((member) => (
               <PersonItem key={member.pubkey} id={member.pubkey} name={nameOf.get(member.pubkey)?.name ?? '—'} active={false} />
             ))}
           </section>
           {agents.length > 0 && (
             <section className="flex flex-col gap-0.5">
-              <SectionLabel tone="muted">{`Agents · ${agents.length}`}</SectionLabel>
+              <SectionHeader title="Agents" count={agents.length} hover="none" />
               {agents.map((member) => (
                 <PersonItem key={member.pubkey} id={member.pubkey} name={nameOf.get(member.pubkey)?.name ?? '—'} active={false} />
               ))}

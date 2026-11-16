@@ -178,7 +178,9 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
               // The kit's folding row, closed: out of the way, one press from here (Miky, 6 Nov). Read-only inside, as an archived file is everywhere.
               <CollapsibleSection
                 look="row"
-                title={`Archived · ${archived.length}`}
+                title="Archived"
+                // The count beside the title, in a count's type, not typed into it (Katerina, 16 November).
+                count={archived.length}
                 icon={<IconArchive size={16} stroke={1.5} />}
                 defaultOpen={false}
                 contentClassName="flex flex-col gap-3 pt-2"

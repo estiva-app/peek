@@ -21,7 +21,8 @@ export function PageListDot({ lit, tone = 'blue', list, onOpenChange }: {
   return (
     <PreviewCard side="bottom" openOnTap contentClassName="p-1" content={list} {...(onOpenChange ? { onOpenChange } : {})}>
       <IconButton aria-label={lit ? 'Something new here; show what' : 'Show what happened here'} data-page-dot={lit ? 'lit' : 'quiet'}>
-        <UnreadDot quiet={!lit} {...(lit ? { tone } : {})} />
+        {/* In an icon's 16px, not the dot's own 24px slot: the button is the 24px every icon button beside it is (Katerina, 15 November: it measured 32px). */}
+        <UnreadDot quiet={!lit} className="h-4 w-4" {...(lit ? { tone } : {})} />
       </IconButton>
     </PreviewCard>
   )

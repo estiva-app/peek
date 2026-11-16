@@ -263,10 +263,13 @@ describe('what a team’s page shows (TEA-5)', () => {
 
   it('its people, with its agents apart', () => {
     mount(team())
-    expect(screen.getByText('Members · 2')).toBeTruthy()
-    expect(within(section(/^Members/)).getByText('Miky')).toBeTruthy()
-    expect(within(section(/^Members/)).queryByText('Claude')).toBeNull()
-    expect(within(section(/^Agents · 1$/)).getByText('Claude')).toBeTruthy()
+    // Each a heading with its count beside it, not typed into it (16 November).
+    const group = (title: string) => screen.getByText(title, { exact: true }).closest('section') as HTMLElement
+    expect(within(group('Members')).getByText('2')).toBeTruthy()
+    expect(within(group('Members')).getByText('Miky')).toBeTruthy()
+    expect(within(group('Members')).queryByText('Claude')).toBeNull()
+    expect(within(group('Agents')).getByText('1')).toBeTruthy()
+    expect(within(group('Agents')).getByText('Claude')).toBeTruthy()
   })
 
   it('its files outside any topic, between its places and its people', () => {

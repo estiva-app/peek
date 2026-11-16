@@ -95,11 +95,12 @@ describe('Explore topics (TOPI-6)', () => {
     expect(onJoin).toHaveBeenCalledWith(PRICING.topic)
   })
 
-  it('an archived topic has no Join, is marked archived, and opens with the Topics column beside it', async () => {
+  it('an archived topic has no Join, is said archived by its tab alone, and opens with the Topics column beside it', async () => {
     mount(LISTS, 'archived')
     const archived = rowOf('Level 2')
     expect(within(archived).queryByRole('button', { name: 'Join' })).toBeNull()
-    expect(within(archived).getByLabelText('Archived')).toBeInTheDocument()
+    // The Archived tab says it; an icon inside the Active date said it again and read as part of the date (Katerina, 16 November).
+    expect(within(archived).queryByLabelText('Archived')).toBeNull()
     const link = within(archived).getByRole('link')
     expect(link.getAttribute('href')).toBe('/topic/old')
     await userEvent.click(link)

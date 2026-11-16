@@ -288,7 +288,7 @@ describe('FoldersPage opens a file at its own address', () => {
     places.topics = [topic]
     mount(`/app/teams/${FOLDER}`)
     expect(title('Teams')).toBeTruthy()
-    expect(await screen.findByText(/^Members · /)).toBeTruthy()
+    expect(await screen.findByText(/^Members$/)).toBeTruthy()
     expect(screen.queryByText('No file selected')).toBeNull()
     await userEvent.click(screen.getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
@@ -463,7 +463,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { isMember: true })]
     mount(`/app/teams/${FOLDER}/chat`)
     expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
-    expect(screen.queryByText(/^Members · /)).toBeNull()
+    expect(screen.queryByText(/^Members$/)).toBeNull()
   })
 
   it('the chat’s link opens the chat for someone not in the team too: a person named there can read it', async () => {
@@ -478,7 +478,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     mount(`/app/teams/${FOLDER}`)
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
     await waitFor(() => expect(document.querySelector('.animate-skeleton-in')).not.toBeNull())
-    expect(screen.queryByText(/^Members · /)).toBeNull()
+    expect(screen.queryByText(/^Members$/)).toBeNull()
     expect(screen.queryByText('No file selected')).toBeNull()
   })
 

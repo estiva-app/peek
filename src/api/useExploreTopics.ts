@@ -25,6 +25,8 @@ export interface ExploreRow {
   team?: string
   /** How many people it lists; absent until read, or when that read failed. */
   members?: number
+  /** Who they are, as faces beside the number, when the caller knows them; Peek reads only the number today. */
+  people?: { name: string; picture?: string; bot?: boolean }[]
   /** When anything last happened in it, Unix seconds (the shared order rule); absent until read. */
   active?: number
   archived: boolean

@@ -134,7 +134,8 @@ export function TopicMenuItems({
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
       {archives && <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />}
       {first && last && <MenuSeparator />}
-      {member && <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} onClick={onToggleMember} />}
+      {/* Leave in the error colour, as Delete and the Members dialog's Leave are (Katerina, 16 November). */}
+      {member && <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} destructive={memberAction === 'leave'} onClick={onToggleMember} />}
       {onDeleteTopic && <MenuItem label="Delete" destructive onClick={onDeleteTopic} />}
     </>
   )
