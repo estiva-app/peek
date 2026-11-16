@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ActivityLine, Button, SectionHeader, isPlainClick } from '@estiva-app/ui'
+import { ActivityLine, Button, MenuSection, isPlainClick } from '@estiva-app/ui'
 import { IconArrowBackUp, IconAt, IconMessage, IconMoodSmile } from '@tabler/icons-react'
 import type { UnreadReason } from '@estiva-app/conversation'
 import { useMemo, type MouseEvent, type ReactNode } from 'react'
@@ -94,13 +94,13 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
         ? `${placeHref}${thread(item)}`
         : placeHref
   /*
-    As the navigation prototype draws a lit row's card (Katerina, 17 November): "New" over the lines, as the title
-    dot's list heads them, and the lines' box 4px in from the card's own 4px, so a line's background sits 8px from the
-    card's left and right edges.
+    As the navigation prototype draws a lit row's card (Katerina, 17 November): "New" over the lines, the kit's
+    MenuSection as the title dot's list heads them (its heading in the kit's secondary text, the quieter one), and the
+    lines' box 4px in from the card's own 4px on every side, so a line's background sits 8px from the card's edges.
   */
   return (
-    <div className="flex flex-col gap-0.5 px-1">
-      <SectionHeader title="New" />
+    <div className="p-1">
+      <MenuSection label="New">
       {shown.map((item) => (
         <NewsLine
           key={item.id}
@@ -126,6 +126,7 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
           {`${more} more`}
         </Button>
       )}
+      </MenuSection>
     </div>
   )
 }

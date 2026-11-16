@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { EmptyState, IconButton, PreviewCard, SectionHeader, SkeletonRow, UnreadDot, isPlainClick, type UnreadDotTone } from '@estiva-app/ui'
+import { EmptyState, IconButton, MenuSection, PreviewCard, SkeletonRow, UnreadDot, isPlainClick, type UnreadDotTone } from '@estiva-app/ui'
 import { usePageLines, useReactionsSeenOnClose, type PageDot as PageDotState, type PageLine } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { NewsLine } from '@/components/RowNewsCard'
@@ -97,12 +97,14 @@ export function PageList({ lines, held, onOpen, failed = false }: {
     A max height, then it scrolls (Katerina, 6 November, PL-06: "let's have a max height and then it starts scrolling"):
     the card's own, the kit's PreviewCard, whose body is a ScrollArea capped at 300px. No scroll box of its own here: one
     inside the card's drew a second scrollbar beside the card's (Katerina, 16 November).
-    The rows' box is 4px in from the card's own 4px, so a row's background sits 8px from the card's left and right
-    edges, as the navigation prototype draws it (Katerina, 17 November: "should follow the prototype's left and right
-    paddings").
+    As the navigation prototype draws it (Katerina, 17 November: "should follow the prototype's left and right
+    paddings", then yes to its room above and below): the rows' box is 4px in from the card's own 4px on every side, so
+    a row's background sits 8px from the card's edges, and its two parts are 4px apart.
+    New and Earlier are each the kit's MenuSection, as ActivityLine's page says: its heading in the kit's secondary
+    text, the quieter one (Katerina, 17 November: "the quieter grey as long as it is a token of the kit").
   */
   return (
-    <div className="flex flex-col gap-2 px-1" data-page-list>
+    <div className="flex flex-col gap-1 p-1" data-page-list>
       {lines && all.length === 0 ? (
         /*
           Nothing to list: the kit's line for rows, in the rows' own box, level with where the lines would be, saying
@@ -112,15 +114,15 @@ export function PageList({ lines, held, onOpen, failed = false }: {
       ) : (
         <>
           {fresh.length > 0 && (
-            <div className="flex flex-col gap-0.5" data-page-list-part="new">
-              <SectionHeader title="New" />
-              {fresh.map(line)}
+            <div data-page-list-part="new">
+              <MenuSection label="New">{fresh.map(line)}</MenuSection>
             </div>
           )}
           {(earlier.length > 0 || !lines) && (
-            <div className="flex flex-col gap-0.5" data-page-list-part="earlier">
-              <SectionHeader title="Earlier" />
-              {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
+            <div data-page-list-part="earlier">
+              <MenuSection label="Earlier">
+                {lines ? earlier.map(line) : failed ? <EmptyState scope="section" message="Earlier could not be read." /> : <SkeletonRow />}
+              </MenuSection>
             </div>
           )}
         </>
