@@ -695,6 +695,23 @@ describe('the Teams column’s topics (TEA-5)', () => {
     await waitFor(() => expect(result.current.topics.has(NEW)).toBe(true))
   })
 
+  it('drawn once, Initiatives keeps drawing while a later read’s topic waits for the history read that places it (17 November)', async () => {
+    // Only the viewer's own topics at first: the membership read has a word on every one.
+    relay.topics = [WIDGETS, ALPHA].map((address) => ({ ...event(30840, [['d', d(address)], ['h', FOLDER]]), pubkey: VIEWER }))
+    const { result } = renderHook(() => useTopicsColumn())
+    await waitFor(() => expect(typeof result.current.state).toBe('object'))
+    // Somebody else starts a topic; the read that places it for the viewer (their history) is slow.
+    const answerNow = relay.queryRelay.getMockImplementation()!
+    relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
+      filters.some(namesAPerson) ? new Promise(() => {}) : answerNow(url, filters),
+    )
+    relay.topics.push({ ...event(30840, [['d', d(STRANGER)], ['h', FOLDER]]), pubkey: SOMEBODY })
+    act(() => readTopicsAgain())
+    await waitFor(() => expect(seen.resolved).toContain(STRANGER))
+    // Never back to the skeleton: the rows stay, and the new topic is drawn once it is placed.
+    expect(typeof result.current.state).toBe('object')
+  })
+
   it('the first time, nothing is drawn until every topic is resolved', async () => {
     seen.pending.add(ALPHA)
     const { result } = renderHook(() => useTeamTopics())
