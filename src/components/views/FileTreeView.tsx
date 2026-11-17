@@ -227,8 +227,8 @@ export function TreeRow({
   const copies = listRow && !!followKey
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
-  // A place's row only: a file's Open work is the button on its page's header (Katerina, 16 November, T-20).
-  const openWorkAction = followKey && !readOnly && isPlace ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
+  // Every row, a file's as a place's (Katerina, 17 November: "it should also be in files", T-20 changed back); on a page it is the header's button (F-08).
+  const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   // The open file's row is brought into view by the package's `NavTree` around the Folders (ui 0.94): a long Folder can hold it below the fold (5 October).
   const selected = file.ref === selectedRef
@@ -302,8 +302,8 @@ export function TreeRow({
             // Through the page's controls, which say so in a toast; on its own (a story, a test), straight to the clipboard.
             onCopyLink={copies ? () => (onControl ? onControl('copy-link', file) : void copyFileLink(followKey!, file.slots.title?.value)) : undefined}
             openWorkAction={openWorkAction}
-            // The key acts on the open topic's page only, so only that topic's row names it.
-            openWorkShortcut={listRow && selected ? shortcutLabel(OPEN_WORK_KEY) : undefined}
+            // The key acts on the open page only (a topic's or a file's), so only that page's row names it.
+            openWorkShortcut={selected && openWorkAction ? shortcutLabel(OPEN_WORK_KEY) : undefined}
             onToggleOpenWork={
               followKey && openWorkAction
                 ? () =>

@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { Team } from '@/api'
 import { TeamsColumnView } from './TeamsColumn'
+import { TreeRow } from './FileTreeView'
 
 const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const topic = (d: string, title: string, extra: Partial<ForeignObject> = {}) =>
@@ -197,6 +198,14 @@ describe('a team’s Files fold (T-16)', () => {
     expect(renderFiles).not.toHaveBeenCalled()
   })
 
+  it('a file’s row offers Add to Open work first in its ⋮, as a topic’s does (Katerina, 17 November: T-20 changed back)', async () => {
+    const issue = { ref: ISSUE, address: ISSUE, kind: 30851, folder: 'eng', slots: { title: { value: 'Fix login' } } } as unknown as ForeignObject
+    mount({ renderFiles: () => <TreeRow file={issue} /> })
+    await userEvent.click(screen.getByRole('button', { name: 'Files' }))
+    await userEvent.click(within(rowBlock('Fix login', 'More options')).getByRole('button', { name: 'More options' }))
+    expect((await screen.findAllByRole('menuitem'))[0]?.textContent).toBe('Add to Open work')
+  })
+
   it('shows only under a team that holds a file', () => {
     mount()
     expect(screen.getAllByRole('button', { name: 'Files' })).toHaveLength(1)
@@ -213,13 +222,30 @@ describe('what a team’s rows offer (step 3)', () => {
     expect(screen.queryByRole('button', { name: /^New topic in Sales/ })).toBeNull()
   })
 
-  it('a team chat’s ⋮ holds Copy link alone (Q-25)', async () => {
+  it('a team chat’s ⋮ holds Copy link (Q-25)', async () => {
     const onCopyChatLink = vi.fn()
     mount({ onCopyChatLink })
     await userEvent.click(within(rowBlock('engineering', 'More options for engineering')).getByRole('button', { name: 'More options for engineering' }))
     expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Copy link'])
     await userEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
     expect(onCopyChatLink).toHaveBeenCalledWith(ENGINEERING)
+  })
+
+  it('a team chat you are in: Add to Open work first, then Copy link (Katerina, 17 November)', async () => {
+    const onToggleChatOpenWork = vi.fn()
+    const inChat = { ...ENGINEERING, chat: { kind: 'chat', in: true, ways: ['team'], level: 'important' } as unknown as Team['chat'] }
+    mount({ teams: [inChat], onCopyChatLink: vi.fn(), onToggleChatOpenWork, chatInOpenWork: () => false })
+    await userEvent.click(within(rowBlock('engineering', 'More options for engineering')).getByRole('button', { name: 'More options for engineering' }))
+    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Add to Open work', 'Copy link'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Add to Open work' }))
+    expect(onToggleChatOpenWork).toHaveBeenCalledWith(inChat)
+  })
+
+  it('a team chat in Open work offers Remove from Open work', async () => {
+    const inChat = { ...ENGINEERING, chat: { kind: 'chat', in: true, ways: ['team'], level: 'important' } as unknown as Team['chat'] }
+    mount({ teams: [inChat], onToggleChatOpenWork: vi.fn(), chatInOpenWork: () => true })
+    await userEvent.click(within(rowBlock('engineering', 'More options for engineering')).getByRole('button', { name: 'More options for engineering' }))
+    expect(await screen.findByRole('menuitem', { name: 'Remove from Open work' })).toBeTruthy()
   })
 
   it('a member makes one of its topics an initiative (T-31)', async () => {

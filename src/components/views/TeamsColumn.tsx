@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { IconFolder, IconHash, IconPlus, IconUsers } from '@tabler/icons-react'
-import { CollapsibleSection, EmptyState, MenuItem, NavItem, NavTree, SkeletonList, SkeletonRow, type UnreadDotTone } from '@estiva-app/ui'
+import { CollapsibleSection, EmptyState, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, type UnreadDotTone } from '@estiva-app/ui'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import {
   teamFactsOf,
@@ -20,6 +20,9 @@ import {
 } from '@/api'
 import { RowNewsCard } from '@/components/RowNewsCard'
 import { TreeRow } from '@/components/views/FileTreeView'
+import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
+import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
+import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import type { FileControl } from '@/components/views/useFileControls'
 import type { TreeShow } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
@@ -84,6 +87,8 @@ export function TeamsColumn({
   const leaves = useLeavesTopic(teams)
   const followingOf = useTopicFollowing()
   const membership = useMembership()
+  // A team's chat in Open work, by its address, as its page's button does it (B-14), with the same toast and Undo.
+  const openWork = useToggleOpenWork()
 
   const drawn = useMemo(() => (teams ? [...topics.values()] : undefined), [teams, topics])
   // A reaction to your message turns a topic orange too (ACT-7).
@@ -151,6 +156,8 @@ export function TeamsColumn({
       notFollowingOf={notFollowing}
       onStartTopic={onStartTopic}
       onCopyChatLink={copyChatLink}
+      chatInOpenWork={(team) => openWork.has(team.chatAddress)}
+      onToggleChatOpenWork={(team) => openWork.toggle(team.chatAddress)}
     />
   )
 }
@@ -163,6 +170,7 @@ function TeamChatRow({
   tone,
   active,
   onCopyLink,
+  openWork,
 }: {
   team: Team
   unread: boolean
@@ -170,6 +178,8 @@ function TeamChatRow({
   tone?: UnreadDotTone
   active: boolean
   onCopyLink?: () => void
+  /** Its Open work item: Add, or Remove once it is in Open work. */
+  openWork?: { action: 'add' | 'remove'; onToggle: () => void }
 }) {
   const lines = unread ? news : undefined
   // Leaving its card, or opening it on a touch screen, sees the reactions to you it listed.
@@ -186,8 +196,23 @@ function TeamChatRow({
       onPreviewOpenChange={reactionsSeen.onPreviewOpenChange}
       onClick={reactionsSeen.onOpenRow}
       active={active}
-      // Its ⋮ holds Copy link alone (Katerina, 16 November, Q-25).
-      {...(onCopyLink ? { menu: <MenuItem label="Copy link" onClick={onCopyLink} />, menuLabel: `More options for ${chatLabel(team)}` } : {})}
+      /*
+        Its ⋮: Add to Open work first, as a topic's row has it, then Copy link (Katerina, 16 November, Q-25: Copy link;
+        17 November: Open work too, now that Open work holds a team's chat, B-14). Its key only on the open chat's row.
+      */
+      {...(onCopyLink || openWork
+        ? {
+            menu: (
+              <TopicMenuItems
+                openWorkAction={openWork?.action}
+                onToggleOpenWork={openWork?.onToggle}
+                openWorkShortcut={active && openWork ? shortcutLabel(OPEN_WORK_KEY) : undefined}
+                onCopyLink={onCopyLink}
+              />
+            ),
+            menuLabel: `More options for ${chatLabel(team)}`,
+          }
+        : {})}
     />
   )
 }
@@ -290,6 +315,8 @@ export function TeamsColumnView({
   notFollowingOf,
   onStartTopic,
   onCopyChatLink,
+  chatInOpenWork,
+  onToggleChatOpenWork,
   renderFiles,
 }: {
   teams: readonly Team[]
@@ -319,6 +346,10 @@ export function TeamsColumnView({
   onStartTopic?: (team: Team) => void
   /** A team chat's Copy link (Q-25). */
   onCopyChatLink?: (team: Team) => void
+  /** Whether a team's chat is in Open work. */
+  chatInOpenWork?: (team: Team) => boolean
+  /** A team chat's Add to Open work, or Remove (Katerina, 17 November): offered while you are in the chat, as its page's button is. */
+  onToggleChatOpenWork?: (team: Team) => void
   /** The rows of a team's Files fold, for a story or a test: by default the fold reads them once it opens. */
   renderFiles?: (team: Team) => ReactNode
 }) {
@@ -387,6 +418,9 @@ export function TeamsColumnView({
             tone={chatTones?.[team.id]}
             active={chatOpenHere}
             {...(onCopyChatLink ? { onCopyLink: () => onCopyChatLink(team) } : {})}
+            {...(onToggleChatOpenWork && team.chat?.in === true
+              ? { openWork: { action: chatInOpenWork?.(team) ? ('remove' as const) : ('add' as const), onToggle: () => onToggleChatOpenWork(team) } }
+              : {})}
           />
         )}
         {topicsShown.map((topic) => placeRow(topic, 'topic'))}
