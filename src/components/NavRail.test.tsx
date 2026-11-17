@@ -6,13 +6,14 @@
  */
 import { useEffect } from 'react'
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 import { NavRail } from './NavRail'
 
-function Opened({ topics, folders, desk, column }: { topics?: string; folders?: string; desk?: string; column?: 'topics' | 'folders' }) {
-  const { setLastTopicsPath, setLastFoldersPath, setLastDesk, setFileColumn } = useLastSelection()
+function Opened({ topics, folders, desk, dm, column }: { topics?: string; folders?: string; desk?: string; dm?: string; column?: 'topics' | 'folders' }) {
+  const { setLastTopicsPath, setLastFoldersPath, setLastDesk, setLastDmId, setFileColumn } = useLastSelection()
+  useEffect(() => setLastDmId(dm ?? null), [dm, setLastDmId])
   useEffect(() => setLastTopicsPath(topics ?? null), [topics, setLastTopicsPath])
   useEffect(() => setLastFoldersPath(folders ?? null), [folders, setLastFoldersPath])
   useEffect(() => setLastDesk(desk === undefined ? null : { search: desk }), [desk, setLastDesk])
@@ -99,5 +100,45 @@ describe('the rail’s Desk', () => {
   it('leads to Desk when nothing was open there', () => {
     mount({})
     expect(hrefOf('Desk')).toBe('/app/desk')
+  })
+})
+
+// "when i switch pages from the navrail, i need the selection to persist. no matter what" (Katerina, 17 November).
+describe('the rail after a reload', () => {
+  /** The same tab drawn again from nothing, as a reload draws it: no page has written anything yet. */
+  function reload(at = '/app/dms') {
+    cleanup()
+    render(
+      <MemoryRouter initialEntries={[at]}>
+        <LastSelectionProvider>
+          <NavRail />
+          <Here />
+        </LastSelectionProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('leads every item back to where it was', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/app/teams/team-1', desk: '?open=30851%3Aabc%3Arelease', dm: 'f00d' }, '/app/desk')
+    reload('/app/desk')
+    expect(hrefOf('Initiatives')).toBe('/topic/release-notes-abc')
+    expect(hrefOf('Teams')).toBe('/app/teams/team-1')
+    expect(hrefOf('Desk')).toBe('/app/desk?open=30851%3Aabc%3Arelease')
+    expect(hrefOf('DMs')).toBe('/app/dms/f00d')
+  })
+
+  it('keeps the column a file was shown in: Teams still opens its file under Teams', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/topic/release-notes-abc' })
+    reload()
+    fireEvent.click(screen.getByRole('link', { name: 'Teams' }))
+    expect(screen.getByTestId('here').textContent).toBe('/topic/release-notes-abc folders')
+  })
+
+  it('a new tab starts from each item’s own page', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/app/teams/team-1' })
+    window.sessionStorage.clear()
+    reload()
+    expect(hrefOf('Initiatives')).toBe('/app/initiatives')
+    expect(hrefOf('Teams')).toBe('/app/teams')
   })
 })

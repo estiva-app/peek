@@ -89,11 +89,11 @@ export function DeskPage() {
   /*
     The file open beside the lists (SID-3), in the URL rather than in state, so
     a reload or a pasted Desk link keeps it open — and its thread with it, as
-    on the file's own page. A DM stays in state, as it always has.
+    on the file's own page. A DM is the rail's memory's (`railMemory`), which a reload keeps too.
   */
   const openAddress = searchParams.get('open')
   const openThreadId = searchParams.get('thread') ?? undefined
-  /** Which section the open file was clicked in, and the title its row showed. Lost on a reload. */
+  /** Which section the open file was clicked in, and the title its row showed; a reload keeps it with the rail's memory (`railMemory`). */
   const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(() =>
     remembered?.openedFrom && remembered.search === location.search ? (remembered.openedFrom as { section: SectionKey; title: string }) : null,
   )

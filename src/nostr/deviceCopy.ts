@@ -33,6 +33,7 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
+import { clearRailMemory } from '@/lib/railMemory'
 import { cardShapes } from '@/lib/cardShapes'
 import { clearUnavailableCards } from '@/lib/unavailableCards'
 import { clearRecents } from '@/lib/recents'
@@ -103,6 +104,8 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   const previous = ownerOnDevice()
   if (previous && previous !== scope) {
     clearPagePictures()
+    // Where the rail's items came back to was the last person's (Katerina, 17 November).
+    clearRailMemory()
     clearUnavailableCards()
     cardShapes.clear()
     clearRecents()
@@ -200,6 +203,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   current = undefined
   toKeep.length = 0
   clearPagePictures()
+  clearRailMemory()
   clearUnavailableCards()
   cardShapes.clear()
   // The launcher's Recent holds titles, summaries and projects of files opened (SUM-7).
