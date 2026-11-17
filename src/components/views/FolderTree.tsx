@@ -434,6 +434,8 @@ export function FolderColumn({
 }) {
   return (
     <ListColumn
+      // Drawn again on another page (a team's, a topic's, a file's), it opens where it was left (Katerina, 17 November).
+      rememberAs={view === 'archive' ? 'archive' : 'teams'}
       title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Teams'}
       titleMenu={TREE_VIEWS.map((option) => (
         <MenuItem key={option.value} label={option.label} selected={view === option.value} onClick={() => onViewChange(option.value)} />

@@ -212,7 +212,7 @@ export function PeoplePageView({
     <PeekFrame
       leftPanel={
         /* No Sort by and no New conversation until they do something: only what can succeed is offered (Katerina, 2 November). */
-        <RailListColumn title="DMs">
+        <RailListColumn title="DMs" rememberAs="dms">
           {loading ? (
             <SkeletonList rows={8} />
           ) : (

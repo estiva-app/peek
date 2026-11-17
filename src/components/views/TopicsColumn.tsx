@@ -137,6 +137,8 @@ export function TopicsColumnView({
 }) {
   return (
     <ListColumn
+      // Drawn again on another page (a team's, a topic's, a file's), it opens where it was left (Katerina, 17 November).
+      rememberAs="initiatives"
       title="Initiatives"
       collapsed={railClosed}
       actions={

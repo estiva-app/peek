@@ -826,7 +826,7 @@ export function DeskPageView({
   return (
     <PeekFrame
       leftPanel={
-        <RailListColumn title="Desk">
+        <RailListColumn title="Desk" rememberAs="desk">
           {loading ? (
             <SkeletonList rows={8} />
           ) : (
