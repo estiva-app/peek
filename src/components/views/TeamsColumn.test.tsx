@@ -239,6 +239,14 @@ describe('a team’s Files fold (T-16)', () => {
     mount()
     expect(screen.getAllByRole('button', { name: 'Files' })).toHaveLength(1)
   })
+
+  it('a topic just started, open before its team’s list names it, brings no Files with it (17 November)', () => {
+    const renderFiles = vi.fn(() => <span>the files</span>)
+    // Design holds no file; its new topic is open and not in its list yet.
+    mount({ renderFiles, openTeam: 'design', selectedRef: `30840:${PK}:just-started` })
+    expect(screen.getAllByRole('button', { name: 'Files' })).toHaveLength(1)
+    expect(renderFiles).not.toHaveBeenCalled()
+  })
 })
 
 describe('what a team’s rows offer (step 3)', () => {

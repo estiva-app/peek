@@ -399,8 +399,13 @@ export function TeamsColumnView({
     const initiativesShown = led.filter(shown)
     const chatOpenHere = chatOpen && openTeam === team.id
     const chat = team.isMember && (!unreadOnly || chatUnread[team.id] === true || chatOpenHere)
-    // The open file is in this team and is none of its places, a topic or an initiative: its Files fold opens for it.
-    const fileOpenHere = openTeam === team.id && !!selectedRef && !chatOpen && ![...spaces, ...led].some((topic) => topic.ref === selectedRef)
+    /*
+      The open file is in this team and is none of its places, a topic or an initiative: its Files fold opens for it. A
+      place never does, by its kind, not only by the team's list: a topic just started is open before the list names
+      it, and Files flashed open and empty for it until the list was read again (Katerina, 17 November).
+    */
+    const openIsPlace = !!selectedRef && Number(selectedRef.split(':')[0]) === KIND_BARE_FILE
+    const fileOpenHere = openTeam === team.id && !!selectedRef && !chatOpen && !openIsPlace && ![...spaces, ...led].some((topic) => topic.ref === selectedRef)
     const files = holdsFiles(team) || fileOpenHere
     const filesShown = files && (!unreadOnly || fileOpenHere)
     if (unreadOnly && !chat && topicsShown.length + initiativesShown.length === 0 && !filesShown && openTeam !== team.id) return null

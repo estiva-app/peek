@@ -450,8 +450,17 @@ export function readTopicsAgain(): void {
   if (lastViewer) void readTopics(lastViewer)
 }
 
+/**
+ * The viewers whose topics have all resolved once in this tab. From then on a read naming a topic not resolved yet —
+ * one just started, before its object is read — keeps the columns drawn and adds it once it resolves, rather than
+ * taking them back to a skeleton (Katerina, 17 November: after starting a topic "the left column is like it's
+ * reloaded"). Before it, nothing is drawn until everything is: no column of half its rows on a first visit.
+ */
+const resolvedOnce = new Set<string>()
+
 /** For tests: forget what this tab has read. */
 export function resetTopicsColumn(): void {
+  resolvedOnce.clear()
   topicsReading = false
   listsReading.clear()
   pastReading.clear()
@@ -658,7 +667,10 @@ function useReadableTopicsHeld() {
   )
   const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
   const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
-  const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
+  const allResolved = mineHeld.topics !== null && mineHeld.topics.every((address) => address in topicObjects)
+  if (allResolved && pubkey) resolvedOnce.add(pubkey)
+  // Ready once everything resolved the first time; a later read's new topic is added when it resolves (`resolvedOnce`).
+  const topicsResolved = allResolved || (!!pubkey && resolvedOnce.has(pubkey))
   return { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived }
 }
 

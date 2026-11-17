@@ -63,6 +63,8 @@ const seen = vi.hoisted(() => ({
   muted: new Set<string>(),
   /** Every reference a hook asked to resolve. */
   resolved: [] as string[],
+  /** References still being read: answered with no entry at all, as the real resolve answers one not back yet. */
+  pending: new Set<string>(),
   /** The comments the membership read holds that the viewer wrote or that tag them (ACT-2). */
   named: [] as Event[],
 }))
@@ -75,7 +77,7 @@ vi.mock('./foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('./foreign')),
   useResolvedReferences: (refs: readonly string[], options?: { archivedWith?: boolean }) => {
     seen.resolved.push(...refs)
-    return Object.fromEntries(refs.map((ref) => [ref, resolveSeen(ref, options?.archivedWith)]))
+    return Object.fromEntries(refs.filter((ref) => !seen.pending.has(ref)).map((ref) => [ref, resolveSeen(ref, options?.archivedWith)]))
   },
 }))
 vi.mock('@/nostr/foreign', async () => ({
@@ -94,7 +96,7 @@ vi.mock('@/api/internal/membership', () => ({
   }),
 }))
 
-import { fileArchiveChanged, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
+import { fileArchiveChanged, readTopicsAgain, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
 import { forgetProjectFields } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
@@ -232,6 +234,7 @@ beforeEach(() => {
   seen.horizon = []
   seen.muted = new Set()
   seen.resolved = []
+  seen.pending = new Set()
   seen.named = []
   relay.changes = []
   relay.activity = []
@@ -669,5 +672,33 @@ describe('the Teams column’s topics (TEA-5)', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect([...result.current.topics.values()].map((topic) => topic.slots.title?.value)).toEqual(['alpha', 'Somebody else’s', 'Widgets'])
     expect(listReads()).toEqual([])
+  })
+
+  /*
+    A topic just started (Katerina, 17 November: after starting one "the left column is like it's reloaded"): the read
+    after its writes names it before its object is read. The columns keep their rows and add it once it resolves.
+  */
+  it('a read naming a topic not resolved yet keeps the topics drawn, never loading again; it is added once it resolves', async () => {
+    const { result, rerender } = renderHook(() => useTeamTopics())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const NEW = topicAt('1e2f3a4b-0000-4000-8000-0000000000aa')
+    relay.topics.push({ ...event(30840, [['d', d(NEW)], ['h', FOLDER]]), pubkey: VIEWER })
+    seen.pending.add(NEW)
+    act(() => readTopicsAgain())
+    await waitFor(() => expect(seen.resolved).toContain(NEW))
+    expect(result.current.loading).toBe(false)
+    expect(result.current.topics.has(WIDGETS)).toBe(true)
+    expect(result.current.topics.has(NEW)).toBe(false)
+    seen.pending.delete(NEW)
+    seen.objects[NEW] = object(NEW, 'Just started')
+    rerender()
+    await waitFor(() => expect(result.current.topics.has(NEW)).toBe(true))
+  })
+
+  it('the first time, nothing is drawn until every topic is resolved', async () => {
+    seen.pending.add(ALPHA)
+    const { result } = renderHook(() => useTeamTopics())
+    await waitFor(() => expect(seen.resolved).toContain(ALPHA))
+    expect(result.current.loading).toBe(true)
   })
 })
