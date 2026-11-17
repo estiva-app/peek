@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
 import { Panel } from '@estiva-app/ui'
+import { ListedFileHeading } from '@/components/views/ListedFileHeading'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { conversationPlaceholder, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
+import { conversationPlaceholder, useFileConversationView, type ConversationParts, type ListedView } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { OverviewPanel } from '@/components/OverviewPanel'
 import { TopicFiles } from '@/components/TopicFiles'
@@ -15,6 +16,7 @@ import {
   topicFollowTarget,
   useFileThreads,
   useForeignConversation,
+  useListedConversations,
   useNewReplyThreads,
   usePlaceFollow,
   useReplyOnlyThread,
@@ -24,6 +26,7 @@ import {
   type ConversationContainer,
   type ReplyStream,
   type ForeignConversationState,
+  type TopicFile,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { referenceLink } from '@/lib/referenceLink'
@@ -107,19 +110,42 @@ export function useFileView({
   const title = (file ?? listed)?.slots.title?.value ?? titleHint ?? 'File'
 
   /*
-    A topic's place, read once here: the header's Join, bell and Who follows draw the same read (`useFilePane`). The page
-    is its own conversation whatever the bell says (Katerina, 15 November, PL-01: "we dont need the tabs"): its files'
-    conversations are on their own pages, and the files are in the side panel. Until then, at All the middle column drew
-    every thread on each listed file too (TOPI-3).
+    A topic's level is its view's too (TOPI-3): one control, the follow switch. Followed at All, its middle column
+    draws its own conversation and every thread on each file it lists (not files under them) in one time order, each
+    file's under its heading; at Important, Not following or muted, its own only. The place is read here, once, and the
+    header's switch draws the same read (`useFilePane`). A mute shows as Not following, so it draws the topic's own.
   */
   const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
   const { teams, failed: teamsFailed } = useTeams({ read: isTopic })
   const followTarget = topicFollowTarget(file, teams, teamsFailed)
   const follow = usePlaceFollow(followTarget)
+  const atAll = !!followTarget && follow.state?.shown === 'all'
   const sidePanel = useSidePanel(file?.address)
-  /* A topic's files (TOP-3), for the Overview's Files, read while it is open. Filed in the topic's own Folder, the one its root names. */
+  /*
+    A topic's files (TOP-3): read once for both the Overview's Files and, at All, their conversations. Filed in the
+    topic's own Folder, the one its root names.
+  */
   const topic = isTopic && file?.address && file.folder ? file.address : null
-  const topicFiles = useTopicFiles(topic && sidePanel.open ? topic : null, file?.folder)
+  const topicFiles = useTopicFiles(topic && (atAll || sidePanel.open) ? topic : null, file?.folder)
+  const listedFiles = topic && atAll && typeof topicFiles.state === 'object' && 'files' in topicFiles.state ? topicFiles.state.files : null
+  const listedConversations = useListedConversations(listedFiles)
+  // One node per file, kept across renders, so a card whose message did not change is not drawn again.
+  const headings = useMemo(() => new Map((listedFiles ?? []).map((f) => [f.address, <ListedFileHeading key={f.address} file={f} />])), [listedFiles])
+  const listedView: ListedView | undefined =
+    topic && atAll
+      ? {
+          // The list itself is still being read: the files' conversations are as good as loading. A list that could not
+          // be read draws the topic's own, as a failed read of the files does; the Overview says it could not load them.
+          state: listedFiles ? listedConversations.state : topicFiles.state === 'loading' ? 'loading' : { failed: 'unreachable' },
+          actionsFor: listedConversations.actionsFor,
+          headingOf: (address) => headings.get(address),
+          nameOf: (address) => nameOf(listedFiles?.find((f) => f.address === address)),
+          closedOf: (address) => {
+            const f = listedFiles?.find((one) => one.address === address)
+            return f?.archived ? archivedLineOf(f.object?.archived ?? {}) : undefined
+          },
+        }
+      : undefined
 
   const peek = useFileConversationView({
     container,
@@ -132,6 +158,7 @@ export function useFileView({
     // An archived file is read-only until it is unarchived (Katerina, 7 October).
     readOnly: !!file?.archived,
     closed: archivedLineOf(file?.archived),
+    listed: listedView,
   })
   const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
 
@@ -277,3 +304,5 @@ export function useFileView({
   }
 }
 
+/** A listed file's name, as its heading draws it (`ListedFileHeading`), for a note that says where a change was not saved. */
+const nameOf = (f: TopicFile | undefined): string => f?.object?.slots.title?.value || 'File'
