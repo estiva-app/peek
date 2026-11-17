@@ -120,7 +120,7 @@ beforeEach(() => {
 })
 afterAll(() => vi.unstubAllGlobals())
 
-/** The Topics column, listing the topic while the person is in it, beside the topic's own page with its bell or Join. */
+/** The Topics column, listing the topic while the person is in it, beside the topic's own page with its bell. */
 function Topics() {
   const controls = useFileControls()
   const { isMember } = useMembership()
@@ -131,17 +131,13 @@ function Topics() {
       <TopicsColumnView state={{ mine: isMember(TOPIC) ? [topic] : [], others: [], archived: [] }} onControl={controls.open} />
       <div data-testid="page">
         <Toolbar aria-label="Actions">{follow.bell}</Toolbar>
-        {follow.join}
       </div>
       {controls.dialogs}
     </>
   )
 }
-/** What the open page says of how they follow it: the bell's level while they are in it, Join once they are not (step 5). */
-const pageSays = () => {
-  const page = within(screen.getByTestId('page'))
-  return page.queryByRole('button', { name: /^Notifications for Launch/ })?.getAttribute('aria-label') ?? (page.queryByRole('button', { name: 'Join' }) ? 'Join' : '')
-}
+/** What the open page says of how they follow it: the bell's level, in it or not (Katerina, 17 November: no Join button). */
+const pageSays = () => within(screen.getByTestId('page')).queryByRole('button', { name: /^Notifications for Launch/ })?.getAttribute('aria-label') ?? ''
 const rowOf = () => document.querySelector(`[data-file="${CSS.escape(TOPIC)}"]`)
 
 /** Draw the column and the page, and open the topic's row menu; the items it offers. */
@@ -182,9 +178,9 @@ describe('Leave on a topic’s row in the Topics column, at the wire (TOPI-7)', 
     expect(tagOf(sent[0], 'h')).toBe(TEAM)
     // Nothing private: they were in it by being added, not by their team's default.
     expect(relay.sentOf(30078)).toHaveLength(0)
-    // The column re-reads what they are in, so the row goes; and the page re-reads, so the bell gives way to Join.
+    // The column re-reads what they are in, so the row goes; and the page re-reads, so the bell says Not following.
     expect(rowOf()).toBeNull()
-    await waitFor(() => expect(pageSays()).toBe('Join'))
+    await waitFor(() => expect(pageSays()).toBe('Notifications for Launch: Not following'))
   })
 
   it('a space they are in by their team’s default: writes it into their private off list, and nothing public', async () => {

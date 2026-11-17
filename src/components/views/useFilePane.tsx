@@ -174,8 +174,9 @@ export function useFilePane(
     ) : undefined
 
   /*
-    A topic or an initiative (TEA-6; the navigation prototype, Katerina 16 November, step 5): Join while you are not in
-    it, the bell while you are, and Who follows in the members pill's place with your own Leave in it. They take the
+    A topic or an initiative (TEA-6; the navigation prototype, Katerina 16 November, step 5): the bell, in it or not
+    (Important or Everything joins: Katerina, 17 November), and Who follows in the members pill's place with your own
+    Leave or Join in it. They take the
     place of the Members pill and Join/Leave; every other file keeps those. The place is read by the view
     (`topicFollowTarget`).
   */
@@ -367,17 +368,17 @@ export function useFilePane(
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
           members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
           /*
-            The header's one button with words (PL-09): Add to Open work while you are in a topic, Join once its read says
-            you are not, nothing on an archived one you are not in. Open work until then, as today: the read can take
-            seconds on a large workspace, and most pages opened are ones you are in.
+            The header's one button with words (PL-09): Add to Open work, whether you are in the topic or not (Katerina,
+            17 November: "add to open work even if I haven't joined … I dont think the join needs to be in the header").
+            You join with the bell beside it, or on your own row in Who follows.
           */
-          button={file?.folder || view.sidePanel ? (isTopic && follow.inIt === false ? follow.join : openWorkButton) : undefined}
+          button={file?.folder || view.sidePanel ? openWorkButton : undefined}
           actions={
             file?.folder || view.sidePanel ? (
               // One strip: one Tab stop, arrows along it (UIG-14).
               <Toolbar aria-label="File actions" surface={false}>
                 {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
-                {/* The bell, before the side panel, while you are in the topic (PL-02, PL-13). */}
+                {/* The bell, before the side panel, in the topic or not: Important or Everything on it joins (PL-02, PL-13; Katerina, 17 November). */}
                 {isTopic && follow.bell}
                 {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
                 {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}

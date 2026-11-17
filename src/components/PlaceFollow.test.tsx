@@ -37,7 +37,7 @@ const directory = {
   [QA2]: { displayName: 'QA Two' },
 }
 
-/** The header's Join, bell, pill and dialog. */
+/** The header's bell, pill and dialog. */
 function Harness({ archived = false, fileArchived = false, place }: { archived?: boolean; fileArchived?: boolean; place?: string }) {
   const team = '33333333-3333-4333-8333-333333333333'
   const controls = usePlaceFollowControls({
@@ -49,7 +49,6 @@ function Harness({ archived = false, fileArchived = false, place }: { archived?:
   })
   return (
     <>
-      {controls.join}
       {/* In the header's strip, as the page draws it. */}
       <Toolbar aria-label="Actions">{controls.bell}</Toolbar>
       {controls.pill}
@@ -169,29 +168,63 @@ describe('the bell (PL-12, PL-14)', () => {
   })
 })
 
-describe('not in it: Join, and no bell (PL-09, PL-13)', () => {
-  it('a topic you are not in offers Join, which lands you at Important; no bell', async () => {
-    const choose = follow.choose as ReturnType<typeof vi.fn>
-    choose.mockClear()
+describe('not in it: the bell, and no Join button (Katerina, 17 November)', () => {
+  const notIn = () => {
     const was = follow.state
     follow.state = { shown: 'not-following', againstDefault: false, defaultReaches: false }
     onTestFinished(() => {
       follow.state = was
     })
+  }
+
+  it('a topic you are not in shows the bell at Not following, crossed out, and no Join button', () => {
+    notIn()
     render(<Harness />)
-    expect(screen.queryByRole('button', { name: /^Notifications/ })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: 'Join' }))
-    expect(choose).toHaveBeenCalledWith('important')
+    expect(screen.getByRole('button', { name: 'Notifications for Brief: Not following' }).querySelector('.tabler-icon-bell-off')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
   })
 
-  it('a team’s chat offers no Join: its team is what you join', () => {
-    const was = follow.state
-    follow.state = { shown: 'not-following', againstDefault: false, defaultReaches: false }
-    onTestFinished(() => {
-      follow.state = was
-    })
+  it('Important on it joins you there, said as Join said it, with Undo back out (Q-39, Q-10)', async () => {
+    notIn()
+    const choose = follow.choose as ReturnType<typeof vi.fn>
+    choose.mockClear()
+    toasts.shown.length = 0
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: /^Notifications for Brief/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /^Important/ }))
+    expect(choose).toHaveBeenCalledWith('important')
+    await waitFor(() => expect(toasts.shown.at(-1)?.label).toBe('You joined Brief. Notifications: Important.'))
+    toasts.shown.at(-1)!.onAction!()
+    expect(choose).toHaveBeenLastCalledWith('not-following')
+  })
+
+  it('Everything on it joins you at Everything', async () => {
+    notIn()
+    const choose = follow.choose as ReturnType<typeof vi.fn>
+    choose.mockClear()
+    toasts.shown.length = 0
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: /^Notifications for Brief/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /^Everything/ }))
+    expect(choose).toHaveBeenCalledWith('all')
+    await waitFor(() => expect(toasts.shown.at(-1)?.label).toBe('You joined Brief. Notifications: Everything.'))
+  })
+
+  it('a team’s chat you are not in shows no bell and no Join: its team is what you join', () => {
+    notIn()
     render(<Harness place={`39000:${MIKY}:33333333-3333-4333-8333-333333333333`} />)
+    expect(screen.queryByRole('button', { name: /^Notifications/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
+  })
+
+  it('your own row in Who follows still holds Join (PL-10)', async () => {
+    notIn()
+    const choose = follow.choose as ReturnType<typeof vi.fn>
+    choose.mockClear()
+    render(<Harness />)
+    await act(async () => screen.getByRole('button', { name: /2/ }).click())
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Join/ }))
+    expect(choose).toHaveBeenCalledWith('important')
   })
 
   it('your own row in Who follows holds Leave, which is Not following (PL-10, Q-40)', async () => {

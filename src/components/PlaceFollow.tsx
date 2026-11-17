@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { IconBell, IconBellOff, IconBellRinging } from '@tabler/icons-react'
-import { Button, MembersPill, Menu, MenuItem, MenuSection, ToolbarButton, WhoFollowsDialog, type MembersDialogCandidate, type MembersDialogMember } from '@estiva-app/ui'
+import { MembersPill, Menu, MenuItem, MenuSection, ToolbarButton, WhoFollowsDialog, type MembersDialogCandidate, type MembersDialogMember } from '@estiva-app/ui'
 import type { SwitchChoice } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import type { FollowTarget, PlaceFollow } from '@/api'
@@ -28,10 +28,11 @@ export interface PlaceFollowControls {
   inIt: boolean | undefined
   /** The place could not be read: no bell and no Join, rather than a guess. */
   failed: boolean
-  /** The bell, for the header's strip: only while you are in a place that can change (PL-12, PL-13, Q-38). */
+  /**
+   * The bell, for the header's strip, in a place that can change (Q-38): in it or not — Important or Everything on it is
+   * how you join (Katerina, 17 November). A team's chat only while you are in it: you come into it by joining its team.
+   */
   bell: ReactNode
-  /** Join, the header's button with words, while you are not in a live topic (PL-09). None on a chat: its team is joined. */
-  join: ReactNode
   /** Who follows it: faces and a count, opening the list. */
   pill: ReactNode
   /** The Who follows dialog, while open. */
@@ -43,10 +44,12 @@ export interface PlaceFollowControls {
  * 16 November, the decisions' step 5), over today's reads and writes (TEA-6, SPEC §11.8; the same choices as today's
  * switch, so Ship says and writes the same):
  *
- * - **Not in it:** Join, the header's button with words. It lands you at Important, and its toast says so (Q-39).
- * - **In it:** the bell, its own control, its icon the level — ringing Everything, plain Important. Its menu, "Notify me
- *   about", ticks the current one. Not following is Leave, as today (Q-40): the place leaves your list and Join comes
- *   back. It never changes what the page shows (PL-01, PL-12). No "Back to <team>'s default" (Q-35).
+ * - **The bell**, its own control, its icon the level — ringing Everything, plain Important, crossed out Not following —
+ *   in the place or not (Katerina, 17 November: "I should be able to choose how to follow a file … even if I haven't
+ *   joined. Choosing important or everything means i joined"). Its menu, "Notify me about", ticks the current one.
+ *   Important or Everything while you are not in it joins you, at that level, and its toast says so (Q-39); the place
+ *   is then in your Initiatives. Not following is Leave, as today (Q-40). No Join button in the header any more. It
+ *   never changes what the page shows (PL-01, PL-12). No "Back to <team>'s default" (Q-35).
  * - **Who follows:** the pill, only people at Everything or Important (PL-08); your own row holds Leave, or Join (PL-10).
  *   Add opens the standard add layer; whoever is added joins at Important. A team's chat has no Add and no Join: you come
  *   into it by joining the team (Miky, 6 November).
@@ -100,6 +103,12 @@ export function usePlaceFollowControls({
   */
   const pick = async (level: BellLevel, was: BellLevel) => {
     if (!(await choose(level))) return
+    // From Not following, a level is joining: said as Join said it, at the level chosen, with Undo back out (Q-39).
+    if (was === 'not-following' && level !== 'not-following') {
+      const label = LEVELS.find((one) => one.level === level)?.label ?? 'Important'
+      showToast({ label: `You joined ${title}. Notifications: ${label}.`, type: 'success', actionLabel: 'Undo', onAction: () => void choose('not-following') })
+      return
+    }
     const said =
       level === 'all'
         ? `You’ll hear about every message in ${title}`
@@ -108,7 +117,7 @@ export function usePlaceFollowControls({
           : `You’re not following ${title}. You are only notified when someone names you.`
     showToast({ label: said, type: 'success', actionLabel: 'Undo', onAction: () => void choose(was) })
   }
-  // Join lands you at Important (Katerina, 16 November, Q-39): the toast names it, with Undo.
+  // Join, on your own row in Who follows, lands you at Important (Katerina, 16 November, Q-39): the toast names it, with Undo.
   const join = async () => {
     if (await choose('important'))
       showToast({ label: `You joined ${title}. Notifications: Important.`, type: 'success', actionLabel: 'Undo', onAction: () => void choose('not-following') })
@@ -127,8 +136,9 @@ export function usePlaceFollowControls({
   }
 
   const current = LEVELS.find((one) => one.level === shown)
+  // In it or not; a team's chat only while you are in it (you come into a chat by joining its team).
   const bell =
-    inIt && !frozen && current ? (
+    inIt !== undefined && (inIt || !chat) && !frozen && current ? (
       <Menu
         align="right"
         trigger={
@@ -152,13 +162,6 @@ export function usePlaceFollowControls({
           ))}
         </MenuSection>
       </Menu>
-    ) : undefined
-
-  const joinButton =
-    inIt === false && !frozen && !chat ? (
-      <Button variant="primary" size="small" onClick={() => void join()}>
-        Join
-      </Button>
     ) : undefined
 
   const pill =
@@ -189,5 +192,5 @@ export function usePlaceFollowControls({
     />
   ) : undefined
 
-  return { inIt, failed: follow.failed, bell, join: joinButton, pill, dialog }
+  return { inIt, failed: follow.failed, bell, pill, dialog }
 }
