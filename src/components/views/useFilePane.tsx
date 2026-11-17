@@ -11,7 +11,7 @@ import { SidePanelButton } from '@/components/SidePanelButton'
 import { OpenWorkButton } from '@/components/OpenWorkButton'
 import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { listingOf, mayMove, spaceTeamOf, useFileMembers, useFileTopics, useForeignObjects, useMembership, useOpenWorkFiles, useResolvedReferences, useTeams, useTeamTopics, useTopicPageDot, useWorkspaceDirectory } from '@/api'
+import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useResolvedReferences, useTeams, useTopicPageDot, useWorkspaceDirectory } from '@/api'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import { PageDot } from '@/components/PageListDot'
 import { useToast } from '@/lib/toast'
@@ -265,10 +265,10 @@ export function useFilePane(
     ) : undefined
 
   /*
-    Another app's file (Katerina, 16 November, F-04 to F-06): its title is a trail, its team / its project / its kind's
-    icon and its name, the team and the project opening in place, no icon on the team or at the far left; after it, one
-    chip per live initiative that lists it or its project, each opening that initiative; then Open, into its own app.
-    A topic keeps its own title, with no trail.
+    Another app's file (Katerina, 16–17 November, F-04 to F-06): its title is a trail, its project / its kind's icon and
+    its name, the project opening in place; after it one chip, the team it belongs to, and no other ("we agreed to only
+    have the team it belongs to": no chips for the initiatives that list it); then Open, into its own app. A topic keeps
+    its own title, with no trail.
   */
   const elsewhere = !!file && !isTopic
   const parentAddress = elsewhere ? (file?.parentRef ?? undefined) : undefined
@@ -276,16 +276,6 @@ export function useFilePane(
   const home = elsewhere && teams && file?.address
     ? (listingOf(teams, file.address)?.team ?? (parentAddress ? listingOf(teams, parentAddress)?.team : undefined) ?? teams.find((team) => team.id === file.folder))
     : undefined
-  const listedIn = useFileTopics(elsewhere ? [file?.address, parentAddress] : NO_REFERENCES)
-  const { topics: readable } = useTeamTopics()
-  const initiatives =
-    listedIn && teams
-      ? [...listedIn].flatMap((address) => {
-          const topic = readable.get(address)
-          // An initiative only: a live topic no team marks as its space (Q-01 A); an archived one gives no chip.
-          return topic && !topic.archived && !spaceTeamOf(teams, address) ? [topic] : []
-        })
-      : []
   const go = (href: string, column?: 'topics' | 'folders', address?: string) => (event: React.MouseEvent) => {
     if (!isPlainClick(event)) return
     event.preventDefault()
@@ -304,18 +294,6 @@ export function useFilePane(
         ]}
       />
     ) : undefined
-  const chips = initiatives.map((topic) => {
-    const href = filePath(topic.address!, topic.slots.title?.value)
-    return (
-      <Chip
-        key={topic.address}
-        label={topic.slots.title?.value ?? 'Untitled'}
-        leadingIcon={<IconTarget size={12} stroke={1.5} aria-hidden />}
-        href={href}
-        onClick={go(href, 'topics', topic.address!)}
-      />
-    )
-  })
 
   /*
     The team it belongs to, a chip right after its name, opening the team's page (Katerina, 17 November, as the 6 November
@@ -366,9 +344,8 @@ export function useFilePane(
               </>
             ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
               <>
-              {/* Its team, then its initiatives, each a chip, then Open (Katerina, 16–17 November, F-05, F-06). */}
+              {/* Its team, the one chip, then Open (Katerina, 17 November). */}
               {teamChip}
-              {chips}
               <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
                 <Button
                   href={openInAppUrl(file)}
@@ -382,12 +359,9 @@ export function useFilePane(
                 </Button>
               </WithTooltip>
               </>
-            ) : teamChip || chips.length > 0 ? (
-              <>
-                {teamChip}
-                {chips}
-              </>
-            ) : undefined
+            ) : (
+              teamChip
+            )
           }
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.

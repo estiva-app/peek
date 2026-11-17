@@ -98,7 +98,6 @@ import {
   planRemoveFromTopic,
   topicList,
   topicLists,
-  topicsOfFile,
   writeArrangement,
   type ArrangedFile,
   type WriteArrangementArgs,
@@ -1074,16 +1073,6 @@ export async function topicAddressesAsViewer(relayUrl: string, token: StoredToke
 export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, ActivityFile[]>> {
   const lists = await topicLists(viewerQuery(relayUrl, token), topics)
   return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [{ address: entry.address, folder: entry.folder }] : []))]))
-}
-
-/**
- * Which topics list a file, by the file's id (its `d`): interop's `topicsOfFile`, the read Ship's and Leaf's file pages
- * name their topics by, as the viewer (B-04). Addresses only: Peek names them from the topics it already holds.
- *
- * **Throws {@link RelayReadError} when the read failed.**
- */
-export async function fileTopicsAsViewer(file: string, relayUrl: string, token: StoredToken): Promise<string[]> {
-  return (await topicsOfFile(viewerQuery(relayUrl, token), file)).map((topic) => topic.address)
 }
 
 /**

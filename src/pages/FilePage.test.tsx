@@ -265,8 +265,9 @@ vi.mock('@/api', async () => ({
   // Subscribed, as the real read is: a test that sets them after mounting (`arrive`) redraws the page.
   useTeams: () => ({ teams: useSyncExternalStore(teamsHeld.subscribe, () => teamsHeld.teams), failed: false, reload: async () => {} }),
   useTeamChatNews: () => ({ unread: {}, news: {} }),
-  // Which topics list the open file (B-04): none unless a test says.
-  useFileTopics: () => fileTopics.listed,
+  // An initiative lists the open file, as the relay would say if asked (B-04): the page no longer asks, and shows no
+  // chip for it (Katerina, 17 November: only the team's).
+  useFileTopics: () => new Set([TOPIC_ADDRESS]),
   // useMayMove's own rule over the teams above (its hook reads useTeams inside its module, past this mock).
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
@@ -284,8 +285,6 @@ vi.mock('@/api', async () => ({
     }
   },
 }))
-/** Which topics list the open file or its project, as the relay would answer: unread unless a test says. */
-const fileTopics = vi.hoisted(() => ({ listed: undefined as ReadonlySet<string> | undefined }))
 /** The files in Open work: none, unless a test puts one there. */
 const openWork = vi.hoisted(() => {
   const listeners = new Set<() => void>()
@@ -479,7 +478,6 @@ beforeEach(() => {
   follows.setMember.mockClear()
   topicsColumn.mine = []
   topicsColumn.others = [topic]
-  fileTopics.listed = undefined
   // The Folder is a team the person is in, the topic one of its topics (#, today's space): its row is under the team in Teams
   // (Katerina, 16 November, T-14). A test about an initiative (a topic no team marks as its space) says so itself.
   teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
@@ -858,7 +856,7 @@ describe('a file opened by its address lands where it lives (DK-03, Q-54)', () =
   })
 })
 
-describe('another app’s file: its trail, its initiatives, then Open (F-04 to F-06)', () => {
+describe('another app’s file: its trail, its team’s chip, then Open (F-04 to F-06)', () => {
   // No team in the trail: the team is the chip after the name (Katerina, 17 November: "make sure the breadcrumbs now dont show the team").
   it('its title is a trail — its project, then its name — and its team is a chip after it, opening in place', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
@@ -877,31 +875,17 @@ describe('another app’s file: its trail, its initiatives, then Open (F-04 to F
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull()
   })
 
-  it('one chip per initiative that lists it, opening that initiative; then Open', () => {
+  // One chip, the team it belongs to (Katerina, 17 November: "we agreed to only have the team it belongs to").
+  it('one chip after its name, its team, then Open: no chip for an initiative, even one that lists it', () => {
     objects.byAddress[ISSUE_ADDRESS] = { ...issue, openUrl: 'https://ship.estiva.app/issue/the-file-route' } as unknown as ForeignObject
-    fileTopics.listed = new Set([TOPIC_ADDRESS])
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = within(screen.getByTestId('middle'))
-    const chip = middle.getByRole('link', { name: 'FOL-15 test topic 2' })
-    expect(chip.getAttribute('href')).toBe(TOPIC_SHORT)
-    expect(chip.querySelector('.tabler-icon-target')).not.toBeNull()
+    const teamChip = middle.getByRole('link', { name: 'Folders' })
     const open = middle.getByRole('link', { name: 'Open in Estiva Ship' })
-    expect(chip.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('a team’s topic (#) that lists it gives no chip: chips are initiatives', () => {
-    fileTopics.listed = new Set([TOPIC_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(within(screen.getByTestId('middle')).queryByRole('link', { name: 'FOL-15 test topic 2' })).toBeNull()
-  })
-
-  it('an archived initiative gives no chip', () => {
-    fileTopics.listed = new Set([TOPIC_ADDRESS])
-    topicsColumn.others = [{ ...topic, archived: { by: CATH, at: 1_790_000_000 } } as unknown as ForeignObject]
-    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
-    mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(within(screen.getByTestId('middle')).queryByRole('link', { name: 'FOL-15 test topic 2' })).toBeNull()
+    expect(teamChip.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(middle.queryByRole('link', { name: 'FOL-15 test topic 2' })).toBeNull()
+    expect(screen.getByTestId('middle').querySelector('header .tabler-icon-target, [data-page-header] .tabler-icon-target')).toBeNull()
   })
 })
 
