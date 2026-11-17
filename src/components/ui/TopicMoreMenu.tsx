@@ -74,6 +74,11 @@ export interface TopicMoreMenuProps {
   /** A topic's team marks it one of its spaces, or takes the mark off (TEA-5): offered to the team's members only. */
   spaceAction?: 'mark' | 'unmark'
   onToggleSpace?: () => void
+  /**
+   * Archive… set apart with Delete, after the line: a topic's page ⋮ as the navigation prototype has it (Katerina, 16
+   * November, Q-27). A row's ⋮ keeps it before the line (T-19). Unarchive always stays before it.
+   */
+  archiveApart?: boolean
 }
 
 export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
@@ -106,13 +111,16 @@ export function TopicMenuItems({
   onToggleArchive,
   spaceAction,
   onToggleSpace,
+  archiveApart = false,
 }: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
   const opensWork = !!(openWorkAction && onToggleOpenWork)
   const spaces = !!(spaceAction && onToggleSpace)
   const archives = !!(archiveAction && onToggleArchive)
+  // Archive… after the line, with Delete (the page's ⋮); Unarchive, and a row's Archive…, before it.
+  const archivesApart = archives && archiveApart && archiveAction === 'archive'
   const member = !!(memberAction && onToggleMember)
-  const first = !!(opensWork || onOpenDetails || onRename || onMove || onCopyLink || spaces || onHideDm || archives)
-  const last = member || !!onDeleteTopic
+  const first = !!(opensWork || onOpenDetails || onRename || onMove || onCopyLink || spaces || onHideDm || (archives && !archivesApart))
+  const last = archivesApart || member || !!onDeleteTopic
   return (
     <>
       {/* The object is the one the menu hangs off, so its items do not name it:
@@ -130,11 +138,14 @@ export function TopicMenuItems({
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onMove && <MenuItem label="Move…" onClick={onMove} />}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
-      {spaces && <MenuItem label={spaceAction === 'mark' ? 'Make it a space' : 'Stop being a space'} onClick={onToggleSpace} />}
+      {/* Today's space mark in the new words (Katerina, 16 November): a team's topic is today's space, an initiative today's topic. */}
+      {spaces && <MenuItem label={spaceAction === 'mark' ? 'Make it a topic' : 'Make it an initiative'} onClick={onToggleSpace} />}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
-      {archives && <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />}
+      {archives && !archivesApart && <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />}
       {first && last && <MenuSeparator />}
-      {member && <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} onClick={onToggleMember} />}
+      {archivesApart && <MenuItem label="Archive…" onClick={onToggleArchive} />}
+      {/* Leave in the error colour, as Delete and the Members dialog's Leave are (Katerina, 16 November). */}
+      {member && <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} destructive={memberAction === 'leave'} onClick={onToggleMember} />}
       {onDeleteTopic && <MenuItem label="Delete" destructive onClick={onDeleteTopic} />}
     </>
   )

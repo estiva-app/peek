@@ -86,7 +86,7 @@ describe('a reaction to your message in a DM, on the People list (ACT-7)', () =>
     relay.seed(message, thumbs)
     const user = userEvent.setup()
     render(
-      <MemoryRouter initialEntries={['/app/people']}>
+      <MemoryRouter initialEntries={['/app/dms']}>
         <PeekSetup>
           <ReadStateSync />
           <KaterinaRow />
@@ -122,7 +122,7 @@ function KaterinaUrgentRow() {
         name: 'Katerina',
         isUnread: true,
         isUrgent: true,
-        href: `/app/people/${KATERINA}`,
+        href: `/app/dms/${KATERINA}`,
         isSelected: false,
         onClick: () => {},
         card: { items: urgentNews(dmNews(KATERINA)), place: 'dm', open: () => {} },

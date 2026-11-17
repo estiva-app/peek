@@ -1,21 +1,27 @@
-import { useState } from 'react'
-import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar, type UnreadDotTone } from '@estiva-app/ui'
+import { useMemo, useState } from 'react'
+import { IconListSearch, IconPlus } from '@tabler/icons-react'
+import { EmptyState, ListColumn, NavItem, NavTree, SkeletonList, Toolbar, ToolbarButton, type UnreadDotTone } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { ListedFillsProvider, listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type RowNewsItem, type TopicsColumnState } from '@/api'
+import { initiativesOf, ListedFillsProvider, listingOf, useConversationBadges, useFolders, useListedNews, usePeekActions, useTeams, useTopicsColumn, type RowNewsItem, type TopicsColumnState } from '@/api'
 import { useToast } from '@/lib/toast'
 import { TreeRow } from '@/components/views/FileTreeView'
 
 type SpaceToggle = { action: 'mark' | 'unmark'; onToggle: () => void }
-import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
+import { HeaderStartTopic } from '@/components/views/HeaderStartTopic'
 import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
 import { useRailClosed } from '@/layouts/railClosed'
 
-/** Where Explore topics is (TOPI-6). */
-export const EXPLORE_TOPICS_PATH = '/app/topics/explore'
+/** Where Explore initiatives is (TOPI-6). */
+export const EXPLORE_TOPICS_PATH = '/app/initiatives/explore'
 
 /**
- * **Peek's Topics column** (TOP-4, TOPI-10): the topics you are a member of,
+ * **Initiatives** (Katerina, 16 November: the navigation prototype; the decisions' step 7): today's Topics column in the
+ * new word, an initiative being today's topic that no team marks as its space (Q-01 A). Its rows wear ◎; its + is New
+ * initiative; its last row is Explore initiatives, with the list-and-magnifier icon (her pick, A of seven). No Archived
+ * fold: archived initiatives are on Explore's Archived tab (Q-44).
+ *
+ * Today's column, kept: **Peek's Topics column** (TOP-4, TOPI-10): the topics you are a member of,
  * one flat list, the one where something just happened on top, re-sorted live
  * (Miky, 3 and 6 Nov: "sort the topics … based on recent activity", "remove
  * the subfiles from topics so it's plain list"). A topic's files, its archived
@@ -36,7 +42,10 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   exploring?: boolean
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
-  const { state, signedOut } = useTopicsColumn()
+  // Initiatives only: a space is a team's topic now, under its team in Teams. The teams read is the one the Teams column shares.
+  const { state: topics, signedOut } = useTopicsColumn()
+  const { teams, failed: teamsFailed } = useTeams()
+  const state = useMemo(() => initiativesOf(topics, teams, teamsFailed), [topics, teams, teamsFailed])
   const railClosed = useRailClosed()
   // Your topics carry the dot, as the Folder tree's rows do; the others are not yours to hear about.
   // A topic also lights for news on a file it lists, and for what names you one level under one, from what the column already holds (TOPI-3, ACT-2).
@@ -45,10 +54,9 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
   const { unread, news, fills, tones } = useConversationBadges(typeof state === 'object' && 'mine' in state ? state.mine : undefined, { listed, reactions: true })
   const [starting, setStarting] = useState(false)
   /*
-    A topic's row offers Make it a space to a member of its team, as the Teams column does (TEA-5, TOPI-7). The teams
+    An initiative's row offers Make it a topic (today's Make it a space) to a member of its team, as the Teams column does (TEA-5, TOPI-7). The teams
     read is the one a topic's page and the Teams column share, kept for the tab; Leave names the topic's team from it too.
   */
-  const { teams } = useTeams()
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const spaceOf = (topic: ForeignObject): SpaceToggle | undefined => {
@@ -124,18 +132,23 @@ export function TopicsColumnView({
   spaceOf?: (topic: ForeignObject) => SpaceToggle | undefined
   /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
   leavesOf?: (topic: ForeignObject) => boolean
-  /** The header's New topic (TOP-9), as Folders' header has; none signed out, since starting one acts as somebody. */
+  /** The header's New initiative (TOP-9's New topic, in the new word); none signed out, since starting one acts as somebody. */
   onNewTopic?: () => void
 }) {
   return (
     <ListColumn
-      title="Topics"
+      // Drawn again on another page (a team's, a topic's, a file's), it opens where it was left (Katerina, 17 November).
+      rememberAs="initiatives"
+      title="Initiatives"
       collapsed={railClosed}
       actions={
         !signedOut &&
         onNewTopic && (
-          <Toolbar aria-label="Topic list actions" surface={false}>
-            <NewTopicButton onClick={onNewTopic} />
+          <Toolbar aria-label="Initiative list actions" surface={false}>
+            {/* A plus, as the prototype draws it (I-04): it opens today's Start a topic, as Start an initiative. */}
+            <ToolbarButton tooltip="New initiative" aria-label="New initiative" onClick={onNewTopic}>
+              <IconPlus size={16} stroke={1.5} />
+            </ToolbarButton>
           </Toolbar>
         )
       }
@@ -172,25 +185,28 @@ function TopicsBody({
   /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
   leavesOf?: (topic: ForeignObject) => boolean
 }) {
-  if (signedOut) return <EmptyState scope="section" message="Sign in to see topics." />
+  if (signedOut) return <EmptyState scope="section" message="Sign in to see initiatives." />
   if (state === 'loading') return <SkeletonList />
-  if ('failed' in state) return <EmptyState scope="section" message="Couldn’t load your topics. Reload to try again." />
+  if ('failed' in state) return <EmptyState scope="section" message="Couldn’t load your initiatives. Reload to try again." />
   return (
     <NavTree selected={selectedRef}>
-      {/* The approved story's empty line (Miky, 6 Nov), above Explore topics, where every other topic is. */}
-      {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no topics yet." />}
+      {/* The approved story's empty line (Miky, 6 Nov), in the new word (Q-43), above Explore initiatives, where every other one is. */}
+      {state.mine.length === 0 && <EmptyState scope="section" message="You’re in no initiatives yet." />}
       {state.mine.map((topic) => (
-        <TreeRow key={topic.ref} file={topic} unread={unread} news={news} tones={tones} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves={leavesOf?.(topic) ?? true} nested />
+        <TreeRow key={topic.ref} file={topic} unread={unread} news={news} tones={tones} selectedRef={selectedRef} onControl={onControl} space={spaceOf?.(topic)} leaves={leavesOf?.(topic) ?? true} nested place="initiative" />
       ))}
-      {/* Where every other topic is, archived ones too, in place of the Other topics and Archived sections; no icon: a way in, not another kind of topic (Miky, 6 Nov). */}
+      {/* Where every other initiative is, archived ones too, in place of Other and Archived sections (Miky, 6 Nov; Katerina, 16 November, Q-44). */}
       <ExploreRow exploring={exploring} />
     </NavTree>
   )
 }
 
-/** The last row: Explore topics, a link the kit's router follows, current while its page is open. */
+/**
+ * The last row: Explore initiatives, a link the kit's router follows, current while its page is open. Its icon a list with
+ * a magnifier (Katerina, 16 November: her pick, A of seven).
+ */
 function ExploreRow({ exploring }: { exploring: boolean }) {
-  return <NavItem href={EXPLORE_TOPICS_PATH} label="Explore topics" active={exploring} />
+  return <NavItem href={EXPLORE_TOPICS_PATH} label="Explore initiatives" icon={<IconListSearch size={16} stroke={1.5} aria-hidden />} active={exploring} />
 }
 
 /** The column while the file's page has not yet decided which it shows: a skeleton, under no title. */

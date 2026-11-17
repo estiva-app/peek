@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
@@ -7,8 +7,10 @@ import { PendingColumn, TopicsColumn } from '@/components/views/TopicsColumn'
 import { forgetOpenedFrom, openedFrom, type ListColumnName } from '@/lib/openedFrom'
 import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
-import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder, useRememberFile, useTopicsColumn } from '@/api'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { useFileAddress, rememberFileAddress, spaceTeamOf, useFolderContents, useReferenceFolder, useRememberFile, useTeams } from '@/api'
 import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
+import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
 import { KIND_TOPIC } from '@/nostr/foreign'
@@ -101,8 +103,18 @@ export function FilePage() {
     only exists in this tab.
   */
   const openThreadId = searchParams.get('thread') ?? undefined
+  /*
+    A thread the address names on arrival — a line in a dot's list or a row's card, a Screener item, a link — is shown
+    where it was said: scrolled into view once drawn (Katerina, 15 November, U-07). A thread opened on the page itself
+    is already where the person is looking, so it is left where it is.
+  */
+  const openedHere = useRef<string | null>(null)
+  useEffect(() => {
+    if (openThreadId && openThreadId !== openedHere.current) void showConversationItemWhenDrawn(openThreadId)
+  }, [openThreadId])
   const setOpenThread = useCallback(
     (id: string | null) => {
+      openedHere.current = id
       const next = new URLSearchParams(searchParams)
       if (id) next.set('thread', id)
       else next.delete('thread')
@@ -287,19 +299,24 @@ export function FilePage() {
 }
 
 /**
- * Which column a file's page shows beside it, Topics or Folders (TOP-4): the
+ * Which column a file's page shows beside it, Initiatives or Teams (TOP-4): the
  * one the clicked row was in. Opened any other way — a link, a card, Desk,
- * the launcher — Topics when it is one of your topics or one of them lists
- * it, else Folders, decided once per file so the column does not change under
- * the person. Kept in the history entry once the address bar has settled, so
- * a reload or Back shows the same one. `undefined` until it is known.
+ * the launcher — by what the file is (Katerina, 16 November, the navigation
+ * prototype: "the rail lights the section you are in"): an initiative, a place
+ * no team marks as its space, under Initiatives; a team's space and every
+ * other file under Teams, where it lives. Decided once per file so the column
+ * does not change under the person. Kept in the history entry once the address
+ * bar has settled, so a reload or Back shows the same one. `undefined` until
+ * it is known.
  */
 const FILE_COLUMN_WAIT_MS = 3_000
 
 function useFileColumn(address: string | null, settled: boolean): ListColumnName | undefined {
   const location = useLocation()
   const navigate = useNavigate()
-  const { column } = useTopicsColumn()
+  const { teams } = useTeams()
+  const column = (at: string): ListColumnName | undefined =>
+    Number(at.split(':')[0]) !== KIND_BARE_FILE ? 'folders' : teams === null ? undefined : spaceTeamOf(teams, at) ? 'folders' : 'topics'
   const state = location.state as { column?: unknown } | null
   const kept = state?.column === 'topics' || state?.column === 'folders' ? state.column : undefined
   const clicked = !kept && address ? openedFrom(address) : undefined

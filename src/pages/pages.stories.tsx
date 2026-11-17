@@ -13,7 +13,7 @@ import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
 import { ArchiveTreeView, FolderColumn } from '@/components/views/FolderTree'
 import { TeamsColumnView } from '@/components/views/TeamsColumn'
-import type { FolderSummary } from '@estiva-app/interop'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import type { Team } from '@/api'
 import { ObjectPageView } from './ObjectPage'
@@ -49,7 +49,7 @@ const row = (
   kind,
   name,
   // The addresses the live Desk gives its rows: a file opens on the Desk, a DM on the person's page.
-  href: kind === 'file' ? `/app/desk?open=${id}` : `/app/people/${name.split(' ')[0].toLowerCase()}`,
+  href: kind === 'file' ? `/app/desk?open=${id}` : `/app/dms/${name.split(' ')[0].toLowerCase()}`,
   isUnread: false,
   isSelected: false,
   onClick: noop,
@@ -127,7 +127,7 @@ const meta = {
   decorators: [
     // The rail lights the page at this address: a story on another page names its own in `parameters.route`.
     (Story, { parameters }) => (
-      <MemoryRouter initialEntries={[(parameters.route as string | undefined) ?? '/app/people/alice']}>
+      <MemoryRouter initialEntries={[(parameters.route as string | undefined) ?? '/app/dms/alice']}>
         <DebugProvider>
           <PeekDataProvider>
             <LastSelectionProvider>
@@ -260,6 +260,17 @@ export const DeskLoading: Story = {
   ),
 }
 
+/**
+ * The first team's places, made up: two topics (#, a team's lasting rooms) and two initiatives it leads (◎), drawn under
+ * it in that order (T-14, as Katerina changed it on 16 November).
+ */
+const PLACE_AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const place = (d: string, title: string) =>
+  ({ ref: `30840:${PLACE_AUTHOR}:${d}`, address: `30840:${PLACE_AUTHOR}:${d}`, kind: 30840, folder: FOLDERS[0]!.id, slots: { title: { value: title } } }) as unknown as ForeignObject
+const TEAM_TOPICS = [place('design-reviews', 'Design reviews'), place('releases', 'Releases')]
+const TEAM_INITIATIVES = [place('onboarding-refresh', 'Onboarding refresh'), place('faster-search', 'Faster search')]
+const PLACES = new Map([...TEAM_TOPICS, ...TEAM_INITIATIVES].map((topic) => [topic.address!, topic]))
+
 /** The fixture's teams: you are in Peek, follow Ship, and the rest are other teams. Their places are relay reads. */
 const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   id: folder.id,
@@ -271,7 +282,10 @@ const TEAMS: Team[] = FOLDERS.map((folder, i) => ({
   members: [],
   isMember: i === 0,
   isFollowing: i === 1,
-  listed: [],
+  listed:
+    i === 0
+      ? [...TEAM_TOPICS.map((topic) => ({ address: topic.address!, space: true })), ...TEAM_INITIATIVES.map((topic) => ({ address: topic.address!, space: false }))]
+      : [],
   chatAddress: `39000::${folder.id}`,
   chat: { kind: 'chat', in: i === 0, ways: i === 0 ? ['team'] : [], ...(i === 0 ? { level: 'important' as const } : {}) },
 }))
@@ -299,11 +313,13 @@ function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDE
       ) : (
         <TeamsColumnView
           teams={TEAMS.filter((team) => folders?.some((folder) => folder.id === team.id))}
-          topics={new Map()}
+          topics={PLACES}
           chatUnread={chatUnread}
           unread={{}}
           show={show}
           openTeam={currentFolder}
+          // Releases is a topic you are not following: point at its row for the crossed-out bell (Q-22).
+          notFollowingOf={(_team, topic) => topic.address === TEAM_TOPICS[1]!.address}
         />
       )}
     </FolderColumn>
@@ -315,6 +331,8 @@ function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDE
  * you follow, then every other team. A team's own link lands here, with it open.
  */
 export const Teams: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
@@ -324,6 +342,8 @@ export const Teams: Story = {
  * header actions: nothing is made or filtered here (Katerina, 5 October).
  */
 export const Archive: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FoldersPageView
       nav={<Column view="archive" folders={[...FOLDERS, { id: '0a9b8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d', name: 'Old launch plan', hasState: true, archived: { by: 'a'.repeat(64), at: 1 } }]} />}
@@ -338,6 +358,8 @@ export const Archive: Story = {
  * signed-out viewer "No folders yet" about a workspace holding eighty-one.
  */
 export const FoldersSignedOut: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column view="all" signedOut folders={null} />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
@@ -346,6 +368,8 @@ export const FoldersSignedOut: Story = {
  * chosen, because the tree is hiding rows and nothing else on screen says so.
  */
 export const FoldersFiltered: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FoldersPageView
       nav={<Column show="unread" chatUnread={{ '925897ad-796e-4bc6-999c-ca19df26c4aa': true }} />}
@@ -360,6 +384,8 @@ export const FoldersFiltered: Story = {
  * show, so the page hands them over as nodes; here they stand in as empties.
  */
 export const File: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
@@ -376,6 +402,8 @@ export const File: Story = {
  * messages here are stand-ins.
  */
 export const FileArchived: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => (
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
@@ -431,5 +459,7 @@ export const ObjectUnopenable: Story = {
 /** **A workspace with no Folders in it at all** — which is a different sentence
  *  from "not signed in", and from a read still in flight. */
 export const FoldersEmpty: Story = {
+  // The rail lights Teams: these are its pages (the default route is a DM).
+  parameters: { route: '/app/teams' },
   render: () => <FoldersPageView nav={<Column view="all" folders={[]} />} rightPanel={<EmptyState message="No file selected" />} />,
 }

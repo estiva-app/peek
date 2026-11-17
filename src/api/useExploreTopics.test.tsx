@@ -33,11 +33,19 @@ vi.mock('./useTopicsColumn', () => ({
   readTopicsAgain: column.readAgain,
 }))
 vi.mock('./useFolderContents', () => ({ useFolders: () => ({ folders: [{ id: TEAM, name: 'Product' }] }) }))
+/* The teams read, which says which topics are a team's spaces: none unless a test marks one (Katerina, 16 November, Q-01 A). */
+const teamsRead = vi.hoisted(() => ({ teams: [] as unknown[] | null }))
+vi.mock('./useTeams', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('./useTeams')),
+  useTeams: () => ({ teams: teamsRead.teams, failed: false, reload: async () => {} }),
+}))
 const viewer = { relayUrl: 'https://relay.test', token: { accessToken: 't', pubkey: PK } }
 vi.mock('./foreign', () => ({ useRelayViewer: () => () => viewer }))
 vi.mock('./relayUrl', () => ({ hasRelay: true }))
 const reads = vi.hoisted(() => ({ members: vi.fn(), lists: vi.fn(), activity: vi.fn() }))
-vi.mock('@/nostr/topicMembers', () => ({ topicMemberCountsAsViewer: reads.members }))
+vi.mock('@/nostr/topicMembers', () => ({ topicMembersAsViewer: reads.members }))
+/** A listing of n people, by key: the read hands back who, and the count is how many (17 November). */
+const listOf = (n: number) => Array.from({ length: n }, (_, i) => `${i}`.padStart(64, 'a'))
 vi.mock('@/nostr/foreign', () => ({ topicListsAsViewer: reads.lists, topicActivityAsViewer: reads.activity }))
 
 const { useExploreTopics, resetExploreTopics } = await import('./useExploreTopics')
@@ -51,7 +59,8 @@ beforeEach(() => {
   column.signedOut = false
   column.yours = new Map([[WIDGETS.address!, 300], [ALPHA.address!, 200]])
   column.readAgain.mockReset()
-  reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 4])))
+  teamsRead.teams = []
+  reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(4)])))
   reads.lists.mockReset().mockResolvedValue(new Map())
   reads.activity.mockReset().mockImplementation(async (topics: { address: string }[]) => ({ at: new Map(topics.map((t) => [t.address, 100])) }))
 })
@@ -87,7 +96,7 @@ describe('useExploreTopics', () => {
   it('a topic left moves to Other topics as soon as the column hears it, and has its Members read again', async () => {
     const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'yours' as const } })
     await waitFor(() => expect(asked(reads.members)).toContain(ALPHA.address))
-    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 3])))
+    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(3)])))
     // The column hears the leave: alpha is no longer yours.
     column.state = { mine: [WIDGETS], others: [ALPHA, PRICING, BETA], archived: [OLD] }
     rerender({ tab: 'yours' })
@@ -99,7 +108,7 @@ describe('useExploreTopics', () => {
   it('a topic joined moves to Your topics as soon as the column hears it, and has its Members read again', async () => {
     const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'others' as const } })
     await waitFor(() => expect(asked(reads.members)).toContain(PRICING.address))
-    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 5])))
+    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(5)])))
     // The column hears the join: Pricing is yours.
     column.state = { mine: [WIDGETS, ALPHA, PRICING], others: [BETA], archived: [OLD] }
     rerender({ tab: 'others' })
@@ -107,6 +116,20 @@ describe('useExploreTopics', () => {
     expect(titles(lists().yours!)).toContain('Pricing')
     expect(titles(lists().others!)).toEqual(['Beta plan'])
     await waitFor(() => expect(lists().all!.find((row) => row.title === 'Pricing')!.members).toBe(5))
+  })
+
+  it('lists initiatives only: a topic its team marks as a space is under the team in Teams, on no tab (Q-01 A)', () => {
+    teamsRead.teams = [{ id: TEAM, name: 'Product', listed: [{ address: PRICING.address!, space: true }, { address: ALPHA.address!, space: false }] }]
+    const { result } = renderHook(() => useExploreTopics('all'))
+    const lists = result.current.state as Record<string, { title: string }[]>
+    expect(titles(lists.all!)).toEqual(['alpha', 'Beta plan', 'Widgets'])
+    expect(titles(lists.others!)).toEqual(['Beta plan'])
+  })
+
+  it('waits for the teams before listing, so a space is never drawn and taken away', () => {
+    teamsRead.teams = null
+    const { result } = renderHook(() => useExploreTopics('all'))
+    expect(result.current.state).toBe('loading')
   })
 
   it('says signed out, not loading, when nobody is signed in: the column never reads then', () => {

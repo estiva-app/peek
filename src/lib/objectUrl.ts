@@ -353,6 +353,25 @@ export function copyFileLink(address: string, title: string | undefined): Promis
 }
 
 /**
+ * Copy a page's own link (a path of Peek's, such as a team's chat), as `copyFileLink` copies a file's: `true` once it is
+ * on the clipboard; a browser that refuses is shown the link to copy by hand.
+ */
+export function copyPageLink(path: string): Promise<boolean> {
+  const link = new URL(path, window.location.origin).href
+  if (!navigator.clipboard) {
+    window.prompt('Copy this link:', link)
+    return Promise.resolve(false)
+  }
+  return navigator.clipboard.writeText(link).then(
+    () => true,
+    () => {
+      window.prompt('Copy this link:', link)
+      return false
+    },
+  )
+}
+
+/**
  * Whether a `/<word>/<ref>` names this file, in either grammar — the launcher's
  * "the page you are on is not somewhere to go" (FOL-37).
  *

@@ -125,7 +125,7 @@ const reaction = (by: string, on: SignedEvent, ago: number, emoji = '👍') =>
 
 const mount = () =>
   render(
-    <MemoryRouter initialEntries={['/app/topics']}>
+    <MemoryRouter initialEntries={['/app/initiatives']}>
       <PeekSetup>
         <TopicsColumn />
       </PeekSetup>

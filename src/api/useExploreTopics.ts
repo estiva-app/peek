@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { topicActivityAsViewer, topicListsAsViewer } from '@/nostr/foreign'
-import { topicMemberCountsAsViewer } from '@/nostr/topicMembers'
+import { topicMembersAsViewer } from '@/nostr/topicMembers'
 import { filePath } from '@/lib/objectUrl'
 import { launcherMatch } from '@/lib/launcherSearch'
 import { useRelayViewer } from './foreign'
 import { useFolders } from './useFolderContents'
 import { readTopicsAgain, useTopicsColumn, useTopicTimes } from './useTopicsColumn'
+import { initiativesOf } from './initiatives'
+import { useTeams } from './useTeams'
 import { hasRelay } from './relayUrl'
 
 /** Explore topics' tabs, as Ship's and Leaf's. */
@@ -25,6 +27,8 @@ export interface ExploreRow {
   team?: string
   /** How many people it lists; absent until read, or when that read failed. */
   members?: number
+  /** Who they are, by key, in the listing's order: the members pill's faces (Katerina, 17 November). Absent until read. */
+  people?: readonly string[]
   /** When anything last happened in it, Unix seconds (the shared order rule); absent until read. */
   active?: number
   archived: boolean
@@ -42,9 +46,11 @@ export type ExploreState = 'loading' | 'signedOut' | { failed: true } | Record<E
 interface Facts {
   pubkey: string | undefined
   members: ReadonlyMap<string, number | undefined>
+  /** Who each lists, by key: the faces beside the number (17 November). */
+  people: ReadonlyMap<string, readonly string[]>
   active: ReadonlyMap<string, number>
 }
-const NO_FACTS: Facts = { pubkey: undefined, members: new Map(), active: new Map() }
+const NO_FACTS: Facts = { pubkey: undefined, members: new Map(), people: new Map(), active: new Map() }
 let facts: Facts = NO_FACTS
 /** Asked since the page opened (`m:` members, `a:` active), answered or not: a failed one stays blank until the next open. */
 const asked = new Set<string>()
@@ -64,13 +70,15 @@ type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 async function readMembers(viewer: Viewer, topics: readonly ForeignObject[]) {
   const pubkey = viewer.token.pubkey
   try {
-    const counts = await topicMemberCountsAsViewer(
+    const lists = await topicMembersAsViewer(
       topics.map((topic) => ({ address: topic.address!, folder: topic.folder ?? '' })),
       viewer.relayUrl,
       viewer.token,
     )
     if (facts.pubkey !== pubkey) return
-    put({ ...facts, members: new Map([...facts.members, ...counts]) })
+    const counts = [...lists].map(([address, people]): [string, number | undefined] => [address, people?.length])
+    const known = [...lists].flatMap(([address, people]): [string, readonly string[]][] => (people ? [[address, people]] : []))
+    put({ ...facts, members: new Map([...facts.members, ...counts]), people: new Map([...facts.people, ...known]) })
   } catch (error) {
     console.warn('[nostr] topic members read failed:', error)
   }
@@ -122,7 +130,10 @@ const titleOf = (topic: ForeignObject) => topic.slots.title?.value ?? 'Untitled'
  * requests, then their activity); your topics' Active is the column's.
  */
 export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry: () => void } {
-  const { state: column, signedOut } = useTopicsColumn()
+  // Initiatives only: a space is a team's topic now, under its team in Teams (Katerina, 16 November, Q-01 A).
+  const { state: topics, signedOut } = useTopicsColumn()
+  const { teams, failed: teamsFailed } = useTeams()
+  const column = useMemo(() => initiativesOf(topics, teams, teamsFailed), [topics, teams, teamsFailed])
   const times = useTopicTimes()
   const { folders } = useFolders()
   const viewer = useRelayViewer()
@@ -168,6 +179,7 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
       const summary = topic.slots.subtitle?.value?.trim()
       const team = teamName(topic.folder)
       const members = known.members.get(address)
+      const people = known.people.get(address)
       const active = times.yours?.get(address) ?? known.active.get(address)
       return {
         topic,
@@ -177,6 +189,7 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
         href: filePath(address, topic.slots.title?.value),
         ...(team ? { team } : {}),
         ...(members !== undefined ? { members } : {}),
+        ...(people ? { people } : {}),
         ...(active ? { active } : {}),
         archived,
         yours: yours.has(address),
@@ -209,6 +222,46 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
 
   const state: ExploreState = signedOut ? 'signedOut' : column === 'loading' ? 'loading' : 'failed' in column ? { failed: true } : lists ?? 'loading'
   return { state, retry: readTopicsAgain }
+}
+
+/**
+ * Who is in some topics and when each was last active, read as Explore reads them and kept with Explore's, read again
+ * each time the page asking opens or its list changes (B-05, B-08): a team's page lists its topics and initiatives with
+ * Explore's facts (Katerina, 16 November, TP-09). Who is counted is Explore's and a place's own pill's: people at All or
+ * Important (Q-31). A topic of yours takes the column's time, with no read of its own.
+ */
+export function useTopicFacts(topics: readonly ForeignObject[]): {
+  members: ReadonlyMap<string, number | undefined>
+  /** Who each lists, by key, in the listing's order: the members pill's faces (17 November). */
+  people: ReadonlyMap<string, readonly string[]>
+  active: ReadonlyMap<string, number>
+} {
+  const times = useTopicTimes()
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const held = useSyncExternalStore(subscribe, snapshot, snapshot)
+  const known = held.pubkey === pubkey ? held : NO_FACTS
+  const key = topics.map((topic) => topic.address).join(',')
+  // What the read takes, as it is when the list changes: the column's times change with every message, the list does not.
+  const now = useRef({ topics, yours: times.yours, createdAt: times.createdAt })
+  // Before the read below: effects run in order, so it reads them as they are now.
+  useEffect(() => {
+    now.current = { topics, yours: times.yours, createdAt: times.createdAt }
+  })
+  useEffect(() => {
+    const v = viewer()
+    if (!hasRelay || !v || !key) return
+    if (facts.pubkey !== v.token.pubkey) put({ ...NO_FACTS, pubkey: v.token.pubkey })
+    const { topics: list, yours, createdAt } = now.current
+    for (const topic of list) asked.add(`m:${topic.address}`)
+    void readMembers(v, list)
+    const needActive = list.filter((topic) => !yours?.has(topic.address!))
+    for (const topic of needActive) asked.add(`a:${topic.address}`)
+    if (needActive.length) void readActive(v, needActive, createdAt)
+  }, [viewer, key])
+  const yours = times.yours
+  const active = useMemo(() => new Map([...known.active, ...(yours ?? [])]), [known.active, yours])
+  return { members: known.members, people: known.people, active }
 }
 
 /** For tests: forget what Explore has read. */

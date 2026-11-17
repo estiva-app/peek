@@ -91,7 +91,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
     dmForChannel(id)
       .then((dm) => {
         if (cancelled) return
-        if (dm && dm !== 'not-a-person') navigate(`/app/people/${dm}`, { replace: true })
+        if (dm && dm !== 'not-a-person') navigate(`/app/dms/${dm}`, { replace: true })
         else setDmCheck({ id, isFolder: dm === null })
       })
       .catch(() => {
@@ -224,7 +224,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
             team && chat ? (
               <TeamChat team={team} />
             ) : team ? (
-              <TeamPage team={team} folder={selected} folders={folders} reloadFolders={reload} onControl={fileControls.open} />
+              <TeamPage team={team} folder={selected} folders={folders} reloadFolders={reload} />
             ) : teamsFailed ? (
               <EmptyState message="Couldn’t load this team. Reload to try again." />
             ) : (

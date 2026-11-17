@@ -51,9 +51,10 @@ export { fileChoices, referenceSections, subscribeReferences, useReferenceFolder
 export { useTopicFiles, type TopicFile, type TopicFilesState } from './useTopicFiles'
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'
-export { useTopicsColumn, useListedNews, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
+export { useTopicsColumn, useTopicFollowing, useListedNews, topicListChanged, fileArchiveChanged, type TopicsColumnState } from './useTopicsColumn'
 export { useDeskListedNews } from './deskListedNews'
-export { useExploreTopics, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
+export { initiativesOf } from './initiatives'
+export { useExploreTopics, useTopicFacts, findsTopic, type ExploreRow, type ExploreState, type ExploreTab } from './useExploreTopics'
 export { useFileMembers } from '@/api/internal/fileMembers'
 export type { StreamTerms } from '@estiva-app/conversation'
 export { PeekDataProvider } from './store'
@@ -71,6 +72,7 @@ export {
 export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
 export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
 export type { StartTopicArgs } from './startTopic'
+export { showStartedTopicWhenWritten } from './topicStarted'
 export {
   useForeignConversation,
   useFileAddress,
@@ -102,7 +104,7 @@ export { useReactionsToMe, REACTIONS_TO_ME_READ, type ReactionsToMe } from './us
 export { unreadToneOf } from './reactionNews'
 export { useReactionsSeenOn, useReactionsSeenOnClose, seeReactions } from './reactionsSeen'
 export { useRowNewsDetails } from './rowNewsDetails'
-export { PAGE_LINES, useDmPageDot, usePageLines, useTeamChatPageDot, useTeamPageDot, useTopicPageDot, type PageDot, type PageLine, type PageSource } from './pageLines'
+export { PAGE_LINES, useDmPageDot, usePageLines, usePageLinesAhead, useTeamChatPageDot, useTeamPageDot, useTopicPageDot, type PageDot, type PageLine, type PageSource } from './pageLines'
 export { ListedFillsProvider, useListedFill, useListedFillOf } from './listedFill'
 export type { ListedFill } from './placeDots'
 export {
@@ -113,7 +115,7 @@ export {
   useUrgentReplyThreads,
   type ReplyStream,
 } from './useNewReplyThreads'
-export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFolders, teamOf, teamPlaces, useLeavesTopic, useMayMove, useTeamChatNews, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
+export { chatMessagesOf, entryNames, listingOf, mayChangeTopicIn, mayMove, spaceTeamOf, teamFactsOf, teamFolders, teamOf, teamPlaces, useLeavesTopic, useMayMove, useTeamChatActive, useTeamChatNews, useTeamChatUnread, useTeamFiles, useTeams, useTeamTopics, type ListedEntry, type Team } from './useTeams'
 export { useMentionConversation, type MentionConversation } from './useMentionConversation'
 export { placeLevelChanged, topicFollowTarget, usePlaceFollow, type FollowTarget, type PlaceFollow } from './usePlaceFollow'
 export { useListedConversations, type ListedSource, type ListedState } from './useListedConversations'

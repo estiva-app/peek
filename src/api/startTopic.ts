@@ -16,6 +16,11 @@ export interface StartTopicArgs {
   /** The address of the file it sits under, of any kind. */
   parent?: string
   hasState: boolean
+  /**
+   * Started as one of its team's topics (#, today's space): listed with the team's mark in the one add that lists it,
+   * never a second write after it (Katerina, 17 November: a topic started from a team came out an initiative).
+   */
+  space?: boolean
   /** Given when a topic the relay refused is started again: the same `d`, so its draft comes back with it. Never one that was saved and deleted. */
   fileId?: string
   /** For Start's dialog, should the relay refuse it: the Folder's name and the file it was started under. */
@@ -76,6 +81,7 @@ export async function startTopicAsViewer(
       folder: args.folder,
       folderName: args.folderName,
       hasState: args.hasState,
+      ...(args.space ? { space: true } : {}),
       parent: args.parentFile,
       file: drawn,
     },

@@ -79,7 +79,7 @@ describe('app smoke (seam wiring)', () => {
       ['the pre-FOL-37 /topic/<slug>-<uuid>', `/topic/folders-${CHANNEL}`, FILE],
       ['a topic whose conversation is a Ship project', '/topic-old/feedback-on-peek-2303e8c1-c866-43b8-9b4c-e263f313a683', PROJECT],
       ['For testing, discarded, to its team', '/topics/t_1788464201556_1', '/app/teams/fd03975a-eb00-49d6-a4b7-33ead1854672'],
-      ['/topics, the directory, to the Topics screen (TOP-4)', '/topics', '/app/topics'],
+      ['/topics, the directory, to the Topics screen (TOP-4)', '/topics', '/app/initiatives'],
     ])('%s', (_label, from, to) => {
       renderApp(from)
       expect(currentUrl()).toBe(to)
@@ -115,8 +115,8 @@ describe('app smoke (seam wiring)', () => {
       ['/folders', '/app/teams'],
       // Any Folder that was not one of the old topics: those lead on to their file (FOL-23).
       ['/folders/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a', '/app/teams/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a'],
-      ['/people', '/app/people'],
-      ['/people/alice?x=1', '/app/people/alice?x=1'],
+      ['/people', '/app/dms'],
+      ['/people/alice?x=1', '/app/dms/alice?x=1'],
       // A team's old folder links keep opening it, at the teams address, in one hop.
       ['/app/folders', '/app/teams'],
       ['/app/folders/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a?x=1', '/app/teams/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a?x=1'],
@@ -143,7 +143,7 @@ describe('app smoke (seam wiring)', () => {
   })
 
   it('renders a DM with its partner in the header', () => {
-    renderApp('/app/people/alice')  // DMs are keyed by the partner's person key (§2.4)
+    renderApp('/app/dms/alice')  // DMs are keyed by the partner's person key (§2.4)
     expect(present('Alice Johnson')).toBeGreaterThan(0)
     // The conversation itself is the relay's since REM-1 — there is no mock
     // copy of it to render, and `useFileConversation.test.tsx` pins the read.

@@ -398,12 +398,25 @@ export function useFileThreads(
     { enabled: !!key },
   )
 
+  /*
+    A new comment on the same file changes the comments read (`key`): until the new read lands, the replies already read
+    stay drawn — the new comment has none yet — rather than the thread panel going back to a skeleton and every comment's
+    reply count dropping out a moment (Katerina, 17 November: "IS there any other case where this happens?"). Another
+    file's answer is never drawn for this one.
+  */
+  // The key's file part with its separator, whichever character that is: an answer under the same prefix is this file's.
+  const filePrefix = reference ? key.slice(0, reference.length + 1) : ''
+  const sameFile = !!answer && !!filePrefix && answer.key.startsWith(filePrefix)
   const state: FileThreadsState =
-    answer?.key !== key || !key
+    !key
       ? 'loading'
-      : answer.failed
-        ? { failed: answer.failed }
-        : (answer.threads ?? 'loading')
+      : answer?.key !== key
+        ? sameFile && answer?.threads
+          ? answer.threads
+          : 'loading'
+        : answer.failed
+          ? { failed: answer.failed }
+          : (answer.threads ?? 'loading')
 
   return { state, reload }
 }

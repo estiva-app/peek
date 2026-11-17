@@ -31,7 +31,7 @@ function drawn(emoji: string): string {
   }
   const { container, unmount } = render(
     <MemoryRouter>
-      <NewsLine item={item} details={details} href="/app/topics" />
+      <NewsLine item={item} details={details} href="/app/initiatives" />
     </MemoryRouter>,
   )
   const text = container.textContent ?? ''

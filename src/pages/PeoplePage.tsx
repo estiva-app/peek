@@ -52,8 +52,8 @@ export function PeoplePage() {
 
   // URL is the source of truth — derive selection from routeId.
   const selectedId: string | null = routeId ?? lastDmId ?? null
-  // The person whose conversation is open, once the roster names them; "People" with none open.
-  useTabTitle(selectedId ? DMS?.find((dm) => dm.id === selectedId)?.name || undefined : 'People')
+  // The person whose conversation is open, once the roster names them; "DMs" with none open (People until 16 November).
+  useTabTitle(selectedId ? DMS?.find((dm) => dm.id === selectedId)?.name || undefined : 'DMs')
 
   const starredDmItems: StarredItem[] = starredEntries
     .filter((e) => e.kind === 'dm')
@@ -90,7 +90,7 @@ export function PeoplePage() {
     // and reopening it would undo the hide).
     if (selectedId === dmId) {
       setLastDmId(null)
-      navigate('/app/people', { replace: true })
+      navigate('/app/dms', { replace: true })
     }
   }
 
@@ -103,7 +103,7 @@ export function PeoplePage() {
     */
     if (routeId && hasRelay && !isPersonKey(routeId)) {
       if (lastDmId === routeId) setLastDmId(null)
-      navigate('/app/people', { replace: true })
+      navigate('/app/dms', { replace: true })
       return
     }
     if (routeId && DM_IDS.has(routeId)) {
@@ -111,8 +111,8 @@ export function PeoplePage() {
       // The launcher's Recent group (UIG-29, C3).
       rememberRecent({ kind: 'person', id: routeId })
     } else if (!routeId && lastDmId != null) {
-      // Returning to /app/people with no id — restore last selection in URL.
-      navigate(`/app/people/${lastDmId}`, { replace: true })
+      // Returning to /app/dms with no id — restore last selection in URL.
+      navigate(`/app/dms/${lastDmId}`, { replace: true })
     }
   }, [routeId, lastDmId, navigate, setLastDmId, DM_IDS])
 
@@ -212,7 +212,7 @@ export function PeoplePageView({
     <PeekFrame
       leftPanel={
         /* No Sort by and no New conversation until they do something: only what can succeed is offered (Katerina, 2 November). */
-        <RailListColumn title="People">
+        <RailListColumn title="DMs" rememberAs="dms">
           {loading ? (
             <SkeletonList rows={8} />
           ) : (

@@ -196,7 +196,7 @@ export function useFileControls({
   useEffect(() => {
     teamsNow.current = { teams, teamsFailed }
   })
-  const { leavePlace } = usePeekActions()
+  const { leavePlace, joinPlace } = usePeekActions()
   // A row's Open work, said as the page's button says it (TOPI-7); read through a ref, as membership is, so `open` stays stable.
   const openWork = useToggleOpenWork()
   const openWorkNow = useRef(openWork)
@@ -285,7 +285,8 @@ export function useFileControls({
       showToast(
         archived
           ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchivedRef.current(file, false) }
-          : { label: `Unarchived “${title}”`, type: 'success' },
+          // Unarchive has Undo too, as Archive has (Katerina, 16 November, Q-10).
+          : { label: `Unarchived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchivedRef.current(file, true) },
       )
       return true
     },
@@ -348,7 +349,21 @@ export function useFileControls({
           membershipCallback.current?.(file)
           // The topic's page, open beside the column, reads its switch again: Not following, as the relay holds it.
           placeLevelChanged(target.place.address)
-          showToast({ label: `Left “${title}”`, type: 'success' })
+          // Today's words (Katerina, 16 November, Q-26): only the prototype's ("It no longer shows in your list") were wrong — a
+          // topic you leave stays in its team's list.
+          // With Undo (Katerina, 16 November, Q-10): back in, at Important, where Join lands.
+          showToast({
+            label: `Left “${title}”`,
+            type: 'success',
+            actionLabel: 'Undo',
+            onAction: () =>
+              void joinPlace({ place: target.place, folder: target.folder, archived: target.archived, muted: false }).then(async (back) => {
+                if (!back.ok) return showToast({ label: `“${title}” could not be joined again. ${back.reason}`, type: 'error' })
+                await membershipNow.current.refresh()
+                membershipCallback.current?.(file)
+                placeLevelChanged(target.place.address)
+              }),
+          })
         })
         return
       }
@@ -372,8 +387,11 @@ export function useFileControls({
           showToast(
             outcome === true
               ? {
+                  // A topic or an initiative: Join lands you at Important, and says so (Katerina, 16 November, Q-39). A file keeps today's.
                   label: joining
-                    ? `Joined “${title}”: every new message shows as unread.`
+                    ? isTopic(file)
+                      ? `You joined ${title}. Notifications: Important.`
+                      : `Joined “${title}”: every new message shows as unread.`
                     : `Left “${title}”: only messages that mention you show as unread.`,
                   type: 'success',
                 }
@@ -425,7 +443,7 @@ export function useFileControls({
         replaceReading(moveStateOf(file, place))
       })()
     },
-    [refuse, readPlace, archiveImpact, setArchived, showToast, leavePlace],
+    [refuse, readPlace, archiveImpact, setArchived, showToast, leavePlace, joinPlace],
   )
 
   /*
@@ -527,7 +545,8 @@ export function useFileControls({
     return {
       label: (folder: string) => {
         const team = teams?.find((candidate) => candidate.id === folder)
-        return team?.isMember ? `Keep it a space in ${team.name}` : undefined
+        // Today's space is a team's topic now (Katerina, 16 November, Q-01 A).
+        return team?.isMember ? `Keep it a topic in ${team.name}` : undefined
       },
       checked: true,
     }

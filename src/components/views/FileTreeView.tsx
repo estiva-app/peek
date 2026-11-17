@@ -1,5 +1,6 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { EmptyState, NavItem, WithTooltip, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { IconBellOff, IconHash, IconTarget } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState, RowNewsItem } from '@/api'
@@ -39,6 +40,7 @@ export function FileTreeView({
   selectedRef,
   expand,
   onControl,
+  placeOf,
 }: {
   state: FolderContentsState
   /** Archive's listing: what is archived in the Folder. Its rows' folds are not remembered. */
@@ -57,6 +59,8 @@ export function FileTreeView({
    * without this has no menus, exactly as before.
    */
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** What kind of place a row is, for its icon (# a team's topic, ◎ an initiative): Archive's, which knows the teams. */
+  placeOf?: (file: ForeignObject) => 'topic' | 'initiative' | undefined
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
@@ -90,6 +94,7 @@ export function FileTreeView({
           expand={expand}
           onControl={onControl}
           remember={!archive}
+          {...(placeOf?.(file) ? { place: placeOf(file) } : {})}
         />
       ))}
     </>
@@ -116,6 +121,8 @@ export function TreeRow({
   leaves = false,
   news,
   tones,
+  place,
+  notFollowing = false,
 }: {
   file: ForeignObject
   listed?: ForeignObject[]
@@ -148,6 +155,13 @@ export function TreeRow({
   news?: Record<string, readonly RowNewsItem[]>
   /** A lit row's dot colour, by ref (ACT-7): orange when reactions to you are all that is new there. */
   tones?: Record<string, UnreadDotTone>
+  /**
+   * What kind of place the row is, by its icon and never by how you follow it (Katerina, 16 November, the navigation
+   * prototype): a team's topic `#` (today's space), an initiative ◎ (today's topic). Absent: the file's own glyph.
+   */
+  place?: 'topic' | 'initiative'
+  /** You picked Not following here: the row says so while it is pointed at, the one level a row shows (Q-22). */
+  notFollowing?: boolean
 }) {
   const column = useContext(TreeColumn)
   /*
@@ -213,6 +227,7 @@ export function TreeRow({
   const copies = listRow && !!followKey
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
+  // Every row, a file's as a place's (Katerina, 17 November: "it should also be in files", T-20 changed back); on a page it is the header's button (F-08).
   const openWorkAction = followKey && !readOnly ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   // The open file's row is brought into view by the package's `NavTree` around the Folders (ui 0.94): a long Folder can hold it below the fold (5 October).
@@ -260,12 +275,33 @@ export function TreeRow({
       }
       label={title}
       icon={
-        <TopicState
-          type={type}
-          status={type === 'topic' ? 'unresolved' : 'default'}
-          iconClassName={selected || isUnread ? 'text-text-primary' : undefined}
-        />
+        place === 'topic' ? (
+          <IconHash size={16} stroke={1.5} aria-hidden />
+        ) : place === 'initiative' ? (
+          <IconTarget size={16} stroke={1.5} aria-hidden />
+        ) : (
+          <TopicState
+            type={type}
+            status={type === 'topic' ? 'unresolved' : 'default'}
+            iconClassName={selected || isUnread ? 'text-text-primary' : undefined}
+          />
+        )
       }
+      /*
+        Not following, beside the name while the row is pointed at (Q-22): the crossed-out bell alone, which the bell in
+        the page's header wears at that level, and what it means in a tooltip on the bell itself (Katerina, 17 November:
+        the chip's words were too long and covered the name; "the tooltip … should appear when hovering over the bell").
+        A screen reader still hears "Not following".
+      */
+      {...(notFollowing
+        ? {
+            hint: (
+              <WithTooltip label="Not following: you are only notified when someone names you">
+                <IconBellOff size={16} stroke={1.5} className="text-text-muted" role="img" aria-label="Not following" />
+              </WithTooltip>
+            ),
+          }
+        : {})}
       /* `=== true`: an unjudged file draws no dot, not a dark one. */
       unread={isUnread}
       active={selected}
@@ -278,8 +314,8 @@ export function TreeRow({
             // Through the page's controls, which say so in a toast; on its own (a story, a test), straight to the clipboard.
             onCopyLink={copies ? () => (onControl ? onControl('copy-link', file) : void copyFileLink(followKey!, file.slots.title?.value)) : undefined}
             openWorkAction={openWorkAction}
-            // The key acts on the open topic's page only, so only that topic's row names it.
-            openWorkShortcut={listRow && selected ? shortcutLabel(OPEN_WORK_KEY) : undefined}
+            // The key acts on the open page only (a topic's or a file's), so only that page's row names it.
+            openWorkShortcut={selected && openWorkAction ? shortcutLabel(OPEN_WORK_KEY) : undefined}
             onToggleOpenWork={
               followKey && openWorkAction
                 ? () =>

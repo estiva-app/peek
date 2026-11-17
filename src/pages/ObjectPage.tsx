@@ -106,7 +106,7 @@ export function ObjectPage() {
     thread (PEE-36). Its channel is not a Folder, and landing by `h` drew an
     empty "DM" page that offered to delete the conversation.
   */
-  if (state.dm) return <Navigate to={`/app/people/${state.dm}`} replace />
+  if (state.dm) return <Navigate to={`/app/dms/${state.dm}`} replace />
   // A channel, or something said in one: a retired topic's lands on the file its
   // conversation moved to, and a team's on its Folder (FOL-26).
   return <Navigate to={channelDestination(state.folder)} replace />

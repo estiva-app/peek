@@ -49,7 +49,14 @@ vi.mock('@/components/views/useFileView', () => ({
   and where its writes leave the person.
 */
 const filePane = vi.hoisted(() => ({
-  callbacks: undefined as { onDeleted: (deleted: unknown) => void } | undefined,
+  callbacks: undefined as { onDeleted: (deleted: unknown) => void; openLineHere?: (line: unknown) => void } | undefined,
+}))
+/** What the Desk hands a DM's view and a team's chat: their title dots' "open here" (17 November). */
+const handed = vi.hoisted(() => ({
+  dm: undefined as ((line: unknown) => void) | undefined,
+  chat: undefined as ((line: unknown) => void) | undefined,
+  /** The open DM's thread, as the Desk opens it for a reply's line. */
+  dmThread: [] as (string | null)[],
 }))
 vi.mock('@/components/views/useFilePane', () => ({
   useFilePane: (
@@ -71,10 +78,15 @@ vi.mock('@/components/views/useFilePane', () => ({
   },
 }))
 vi.mock('@/components/views/useDmConversationView', () => ({
-  useDmConversationView: ({ dmId }: { dmId: string | null }) => ({
-    rightPanel: dmId ? <div data-testid="dm-pane">{dmId}</div> : <div data-testid="nothing-open" />,
-    threadPanel: undefined,
-  }),
+  useDmConversationView: ({ dmId, openLineHere }: { dmId: string | null; openLineHere?: (line: unknown) => void }) => {
+    handed.dm = openLineHere
+    return {
+      rightPanel: dmId ? <div data-testid="dm-pane">{dmId}</div> : <div data-testid="nothing-open" />,
+      threadPanel: undefined,
+      replyOnlyThread: undefined,
+      openThread: (id: string | null) => void handed.dmThread.push(id),
+    }
+  },
 }))
 const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn(), addScreener: vi.fn() }))
 /** A second Open work file, for the order test. */
@@ -88,6 +100,11 @@ const desk = vi.hoisted(() => ({
   news: {} as Record<string, unknown[]>,
   dmUnread: {} as Record<string, boolean>,
   dmNews: {} as Record<string, unknown[]>,
+  /** The tab's teams read, for a team's chat in Open work (Q-37): none unless a test says. */
+  teams: [] as unknown[],
+  chatUnread: {} as Record<string, boolean>,
+  /** What lit each team's chat, by team: its row's card. */
+  chatNews: {} as Record<string, unknown[]>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -97,7 +114,7 @@ vi.mock('@/api', async () => ({
   useUnread: () => ({ dmHasUnread: (dmId: string) => desk.dmUnread[dmId] === true, dmNews: (dmId: string) => desk.dmNews[dmId] ?? [], dmTone: () => 'blue' }),
   useDeskListedNews: () => new Map(),
   useMentionNames: () => [{ pubkey: 'qa2', name: 'QA-2' }],
-  useRowNewsDetails: (items: { id: string; words?: string }[]) => ({
+  useRowNewsDetails: () => ({
     wordsOf: (item: { words?: string }) => item.words,
     titleOf: () => undefined,
   }),
@@ -109,11 +126,20 @@ vi.mock('@/api', async () => ({
   }),
   useDeskLoading: () => false,
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
+  useTeams: () => ({ teams: desk.teams, failed: false, reload: async () => {} }),
+  useTeamChatNews: () => ({ unread: desk.chatUnread, news: desk.chatNews, tones: {} }),
   useScreenerItems: () => desk.screener,
   useOpenWorkActivity: () => () => undefined,
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread, news: desk.news, fills: {}, tones: {} }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
+}))
+// A team's chat beside the Desk is its own page's (TeamChat's tests draw it): here, which team it is.
+vi.mock('@/components/views/TeamChat', () => ({
+  TeamChat: ({ team, openLineHere }: { team: { name: string }; openLineHere?: (line: unknown) => void }) => {
+    handed.chat = openLineHere
+    return <div data-testid="team-chat">{team.name}</div>
+  },
 }))
 /** Whether the frame's rail is folded: the frame provides it around the list column, as `PeekFrame` does. */
 const frame = vi.hoisted(() => ({ railClosed: false }))
@@ -150,8 +176,8 @@ function mount(url = '/app/desk') {
       <LastSelectionProvider>
         <MemoryRouter initialEntries={[url]}>
           <Routes>
-            <Route path="/app/desk" element={<><DeskPage /><Go to="/app/people" label="Leave Desk" /><Probe /></>} />
-            <Route path="/app/people" element={<><Go to="/app/desk" label="Back to Desk" /><Probe /></>} />
+            <Route path="/app/desk" element={<><DeskPage /><Go to="/app/dms" label="Leave Desk" /><Probe /></>} />
+            <Route path="/app/dms" element={<><Go to="/app/desk" label="Back to Desk" /><Probe /></>} />
             <Route path="*" element={<Probe />} />
           </Routes>
         </MemoryRouter>
@@ -185,6 +211,8 @@ beforeEach(() => {
   desk.news = {}
   desk.dmUnread = {}
   desk.dmNews = {}
+  desk.chatNews = {}
+  handed.dmThread = []
 })
 
 /** Katerina, 31 October: the fold hides the rail and the page's list column together, on Desk as in Folders. */
@@ -296,7 +324,7 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
     expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
     // Leave Desk, and come back to it.
     fireEvent.click(screen.getByRole('button', { name: 'Leave Desk' }))
-    expect(url()).toBe('/app/people')
+    expect(url()).toBe('/app/dms')
     fireEvent.click(screen.getByRole('button', { name: 'Back to Desk' }))
     expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
   })
@@ -344,7 +372,7 @@ describe('Desk rows on NavItem', () => {
   it('each row is a link: a file to its Desk address, a DM to the person', () => {
     mount()
     expect(linkFor('Issue one').getAttribute('href')).toBe(deskWith(ISSUE))
-    expect(linkFor('Ana').getAttribute('href')).toBe('/app/people/dm-1')
+    expect(linkFor('Ana').getAttribute('href')).toBe('/app/dms/dm-1')
   })
 
   it('a plain click on a starred DM opens it here, and the Desk stays the page', () => {
@@ -406,6 +434,75 @@ describe('Desk rows on NavItem', () => {
     mount()
     fireEvent.click(left().getByRole('button', { name: 'Remove from list: Bo' }))
     expect(openWork.removeDm).toHaveBeenCalledWith('dm-2')
+  })
+
+  /*
+    A team's chat in Open work (Katerina, 16 November, Q-37): a row wearing `#` and its team's chat name, which opens
+    the chat beside the Desk as any Open work row opens (Q-52), and whose ✕ takes it off by its address.
+  */
+  describe('a team’s chat in Open work (Q-37, B-14)', () => {
+    const CHAT = '39000::eng'
+    const ENG = { id: 'eng', name: 'Engineering', chatAddress: CHAT, chat: { in: true }, company: false, archived: false, members: [], listed: [] }
+    beforeEach(() => {
+      desk.openWork = [{ id: `ow_chat_${CHAT}`, kind: 'chat', address: CHAT }]
+      desk.teams = [ENG]
+      desk.chatUnread = {}
+    })
+
+    it('is a # row named as the team’s chat; a click opens it beside the Desk', () => {
+      mount()
+      const row = left().getByRole('link', { name: 'engineering' })
+      expect(row.closest('li, div')!.parentElement!.querySelector('.tabler-icon-hash')).not.toBeNull()
+      fireEvent.click(row)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+      expect(screen.getByTestId('url').textContent).toContain(`open=${encodeURIComponent(CHAT)}`)
+    })
+
+    it('carries the chat’s dot while it is lit', () => {
+      desk.chatUnread = { eng: true }
+      mount()
+      expect(left().getByRole('link', { name: 'engineering' }).closest('li, div')!.parentElement!.querySelector('[data-unread], [data-unread-dot]')).not.toBeNull()
+    })
+
+    it('its ✕ takes it off by its address', () => {
+      mount()
+      fireEvent.click(left().getByRole('button', { name: 'Remove from list: engineering' }))
+      expect(openWork.remove).toHaveBeenCalledWith(CHAT)
+    })
+
+    it('a line in its title dot opens here, at its thread: the Desk stays the Desk (Katerina, 17 November)', () => {
+      mount()
+      fireEvent.click(left().getByRole('link', { name: 'engineering' }))
+      expect(handed.chat).toBeTypeOf('function')
+      act(() => handed.chat!({ id: 'm-7', by: 'qa2', at: 1, reason: 'mention', root: 'm-5', seen: false, href: '/app/teams/eng/chat?thread=m-5' }))
+      expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: CHAT, thread: 'm-5' })}`)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+    })
+
+    it('draws no row while its team is not held, or once the viewer is not in its chat', () => {
+      desk.teams = []
+      const first = mount()
+      expect(left().queryByRole('link', { name: 'engineering' })).toBeNull()
+      first.unmount()
+      desk.teams = [{ ...ENG, chat: { in: false } }]
+      mount()
+      expect(left().queryByRole('link', { name: 'engineering' })).toBeNull()
+    })
+  })
+
+  // One icon per kind on the Desk too (Katerina, 17 November): # a team's topic, ◎ an initiative, never the dashed circle.
+  it('a topic in Open work wears ◎ as an initiative, and # once its team marks it as one of its topics', () => {
+    const TOPIC = `30840:${'c'.repeat(64)}:launch`
+    desk.openWork = [{ ...openWorkFile(TOPIC, 'Launch'), object: { ref: TOPIC, kind: 30840 } }]
+    desk.teams = []
+    const first = mount()
+    const rowOf = () => left().getByRole('link', { name: 'Launch' }).closest('li, div')!.parentElement!
+    expect(rowOf().querySelector('.tabler-icon-target')).not.toBeNull()
+    first.unmount()
+    desk.teams = [{ id: 'eng', name: 'Engineering', chatAddress: '39000::eng', chat: { in: true }, listed: [{ address: TOPIC, space: true }] }]
+    mount()
+    expect(rowOf().querySelector('.tabler-icon-hash')).not.toBeNull()
+    desk.teams = []
   })
 
   it('only Open work has the ✕: a starred row has none', () => {
@@ -495,11 +592,19 @@ describe('a click on a Screener row reads the item on its own page (Katerina, 30
     expect(openWork.addScreener).not.toHaveBeenCalled()
   })
 
+  // At the comment that brought it in: its thread opens, and the conversation lands on it (Katerina, 17 November, U-07).
+  it('a file goes to its page at the thread of the comment that brought it in', () => {
+    desk.screener = [{ ...screenerFile(SECOND, 'Issue two'), thread: 'comment-7' }]
+    mount()
+    fireEvent.click(leftColumn().getByText('A comment on Issue two'))
+    expect(url()).toBe(`${filePath(SECOND, 'Issue two')}?thread=comment-7`)
+  })
+
   it('a DM goes to the person’s page', () => {
     desk.screener = [screenerDm('dm-7', 'Cleo')]
     mount()
     fireEvent.click(leftColumn().getByText('A message from Cleo'))
-    expect(url()).toBe('/app/people/dm-7')
+    expect(url()).toBe('/app/dms/dm-7')
   })
 })
 
@@ -547,6 +652,28 @@ describe('resting on a lit Desk row shows what is new there, as in the sidebar (
     expect(screen.getByTestId('file-pane').dataset.address).toBe(PAGE)
   })
 
+  it('a line in the open file’s title dot opens here too, at its thread, never on its own page (Katerina, 17 November)', () => {
+    mount()
+    fireEvent.click(leftColumn().getByText('Issue one'))
+    expect(filePane.callbacks?.openLineHere).toBeTypeOf('function')
+    // A comment on the file itself: the same file, at its thread.
+    act(() => filePane.callbacks!.openLineHere!({ ...line('c-9', 'On the issue'), seen: false, href: `/issue/x?thread=c-9` }))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: ISSUE, thread: 'c-9' })}`)
+    // One said on a file it lists: that file, here, at its thread.
+    act(() => filePane.callbacks!.openLineHere!({ ...line('c-10', 'On a listed page', { file: PAGE }), seen: false, href: `/page/x?thread=c-10` }))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: PAGE, thread: 'c-10' })}`)
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(PAGE)
+  })
+
+  it('a line in the open DM’s title dot opens it here (Katerina, 17 November)', () => {
+    mount()
+    fireEvent.click(leftColumn().getByText('Ana'))
+    expect(handed.dm).toBeTypeOf('function')
+    act(() => handed.dm!({ ...line('m-4', 'See you at three'), seen: false, href: '/app/dms/dm-1' }))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
+    expect(url()).toBe('/app/desk')
+  })
+
   it('a row with no dot opens no card, whatever its news says', async () => {
     desk.news = { [ISSUE]: [line('c-2', 'Read already')] }
     mount()
@@ -583,5 +710,71 @@ describe('resting on a lit Desk row shows what is new there, as in the sidebar (
     expect(screen.getByText('mentioned you')).toBeTruthy()
     fireEvent.click(screen.getByText('Totals are off'))
     expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: SECOND, thread: 'c-3' })}`)
+  })
+})
+
+/*
+  Every activity line on the Desk opens beside the Desk's lists, never on its own page (Katerina, 17 November: "we need
+  to make sure eveything works like that on desk"): each section's row card, for a file, a team's chat and a DM, its
+  "N more", and the open item's title dot (above). Only the Screener opens where an item lives, as she decided (Q-54).
+*/
+describe('every activity line on the Desk opens here (17 November)', () => {
+  it('Open work: a file’s card line opens it here, at its thread', async () => {
+    desk.unread = { [ISSUE]: true }
+    desk.news = { [ISSUE]: [line('c-11', 'Ready for review')] }
+    mount()
+    await hoverCard(leftColumn().getByText('Issue one'))
+    fireEvent.click(screen.getByText('Ready for review'))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: ISSUE, thread: 'c-11' })}`)
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(ISSUE)
+  })
+
+  it('Open work: a card’s “N more” opens the item here', async () => {
+    desk.unread = { [ISSUE]: true }
+    desk.news = { [ISSUE]: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => line(`c-${id}`, `Comment ${id}`)) }
+    mount()
+    await hoverCard(leftColumn().getByText('Issue one'))
+    fireEvent.click(screen.getByRole('button', { name: '1 more' }))
+    expect(url()).toBe(deskWith(ISSUE))
+  })
+
+  it('Open work: a DM’s card line opens the DM here, and a reply its thread there', async () => {
+    desk.openWork = [{ id: 'ow_dm_dm-2', kind: 'dm', dmId: 'dm-2', name: 'Bo' }]
+    desk.dmUnread = { 'dm-2': true }
+    desk.dmNews = { 'dm-2': [line('m-8', 'Agreed', { root: 'm-6' })] }
+    mount()
+    await hoverCard(leftColumn().getByText('Bo'))
+    fireEvent.click(screen.getByText('Agreed'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-2')
+    expect(url()).toBe('/app/desk')
+    expect(handed.dmThread).toContain('m-6')
+  })
+
+  it('Open work: a team chat’s card line opens the chat here, at its thread', async () => {
+    const CHAT = '39000::eng'
+    desk.openWork = [{ id: `ow_chat_${CHAT}`, kind: 'chat', address: CHAT }]
+    desk.teams = [{ id: 'eng', name: 'Engineering', chatAddress: CHAT, chat: { in: true }, company: false, archived: false, members: [], listed: [] }]
+    desk.chatUnread = { eng: true }
+    desk.chatNews = { eng: [line('m-9', 'In the chat', { root: 'm-5' })] }
+    try {
+      mount()
+      await hoverCard(leftColumn().getByText('engineering'))
+      fireEvent.click(screen.getByText('In the chat'))
+      expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: CHAT, thread: 'm-5' })}`)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+    } finally {
+      desk.teams = []
+      desk.chatUnread = {}
+    }
+  })
+
+  it('Urgent: a DM’s card line opens the DM here', async () => {
+    desk.urgent = [{ id: 'urg_dm_dm-8', kind: 'dm', dmId: 'dm-8', name: 'Dara' }]
+    desk.dmNews = { 'dm-8': [line('m-2', 'Server is down', { urgent: true })] }
+    mount()
+    await hoverCard(leftColumn().getByText('Dara'))
+    fireEvent.click(screen.getByText('Server is down'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-8')
+    expect(url()).toBe('/app/desk')
   })
 })

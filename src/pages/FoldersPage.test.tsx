@@ -68,8 +68,10 @@ const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] })
   Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
   it. Refused here, so the page stays put and the test reads only the call.
 */
+/** The team's topic mark a topic started from its ⋮ is given at once (T-12, Q-16). */
+const peek = vi.hoisted(() => ({ markSpace: vi.fn(async () => ({ ok: true as const })) }))
 const created = vi.hoisted(() => ({
-  folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })),
+  folder: vi.fn(async () => ({ ok: false as const, reason: 'Refused.' })),
   /*
     Starting a topic from the header (FOL-41) — a bare file on the relay, the
     same writer the folder pane's control uses. Refused, like the folder create
@@ -144,6 +146,8 @@ const marks = vi.hoisted(() => ({
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  // A team chat's followers, for its row on the team's page: read from the relay, which these tests do not have.
+  usePlaceFollow: () => ({ state: undefined, listed: undefined, failed: false, choose: async () => ({ ok: true }), add: async () => ({ ok: true }) }),
   useReadActions: () => ({
     markFileRead: marks.file,
     markContainerRead: marks.container,
@@ -180,14 +184,15 @@ vi.mock('@/api', async () => ({
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useWorkspaceDirectory: () => undefined,
-  useMembership: () => ({ isMember: () => false, setMember: async () => {} }),
+  // `termsOf` as the real seam has it: a team's page asks it whether you are not following a place (useNotFollowing).
+  useMembership: () => ({ isMember: () => false, termsOf: () => ({ member: false, muted: false }), setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
   useResolvedReferences: () => ({}),
   useTeams: () => ({ teams: teamsRead.teams, failed: teamsRead.failed }),
-  // The team page's writes are `TeamPage.test.tsx`'s; here they are never pressed.
-  usePeekActions: () => ({}),
+  // The team page's writes are `TeamPage.test.tsx`'s; here only the team's topic mark is (T-12).
+  usePeekActions: () => ({ markSpace: peek.markSpace }),
   useMentionNames: () => [],
   useTopicsColumn: () => ({ state: { mine: [], others: places.topics }, signedOut: false }),
   useTeamTopics: () => ({ topics: new Map((places.topics as { address: string }[]).map((topic) => [topic.address, topic])), loading: false, signedOut: false }),
@@ -288,7 +293,7 @@ describe('FoldersPage opens a file at its own address', () => {
     places.topics = [topic]
     mount(`/app/teams/${FOLDER}`)
     expect(title('Teams')).toBeTruthy()
-    expect(await screen.findByText(/^Members · /)).toBeTruthy()
+    expect(await screen.findByText(/^Members$/)).toBeTruthy()
     expect(screen.queryByText('No file selected')).toBeNull()
     await userEvent.click(screen.getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
@@ -352,6 +357,20 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     await teamMenu()
     expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
+  })
+
+  it('a topic started from the ⋮ is one of the team’s topics (#): started with the team’s mark, in one write (T-12, Q-16; 17 November)', async () => {
+    const ADDRESS = `30840:${'c'.repeat(64)}:from-the-menu`
+    created.topic.mockResolvedValueOnce({ ok: true, address: ADDRESS, naddr: 'naddr1menu' } as never)
+    peek.markSpace.mockClear()
+    mount(`/app/teams/${FOLDER}`)
+    await teamMenu()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Start a topic' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Weekly review')
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Weekly review', space: true })))
+    // No second write: a mark sent apart raced the topic's own add and lost, so it came out an initiative.
+    expect(peek.markSpace).not.toHaveBeenCalled()
   })
 
   it('never Delete on a team, and never asks the relay about one (FOL-9)', async () => {
@@ -418,7 +437,7 @@ describe('a stateless channel’s link offers Delete only where it loses nothing
 describe('FoldersPage never treats a DM channel as a Folder', () => {
   it('opens the viewer’s DM as the DM', async () => {
     mount(`/app/teams/${DM_CHANNEL}`)
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/people/${PARTNER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/dms/${PARTNER}`))
   })
 
   it('says a DM with no single partner is not a folder, and offers nothing on it', async () => {
@@ -463,7 +482,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     teamsRead.teams = [teamOf(FOLDER, 'Folders', { isMember: true })]
     mount(`/app/teams/${FOLDER}/chat`)
     expect((await screen.findByTestId('team-chat')).textContent).toBe('Folders')
-    expect(screen.queryByText(/^Members · /)).toBeNull()
+    expect(screen.queryByText(/^Members$/)).toBeNull()
   })
 
   it('the chat’s link opens the chat for someone not in the team too: a person named there can read it', async () => {
@@ -478,7 +497,7 @@ describe("a team's page and its chat, at their own links (TEA-5)", () => {
     mount(`/app/teams/${FOLDER}`)
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
     await waitFor(() => expect(document.querySelector('.animate-skeleton-in')).not.toBeNull())
-    expect(screen.queryByText(/^Members · /)).toBeNull()
+    expect(screen.queryByText(/^Members$/)).toBeNull()
     expect(screen.queryByText('No file selected')).toBeNull()
   })
 
@@ -520,7 +539,8 @@ describe('FoldersPage starts a topic from the header', () => {
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Launch plan', hasState: true }))
+    // From Teams, one of the team's topics (#): the team's mark is in the one write that lists it (17 November).
+    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Launch plan', hasState: true, space: true }))
   })
 
   it('starts it in the Folder that was chosen', async () => {

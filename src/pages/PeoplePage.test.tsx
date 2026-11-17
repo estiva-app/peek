@@ -42,7 +42,7 @@ function mount({
   const onToggleOpenWork = vi.fn()
   render(
     <DebugProvider>
-      <MemoryRouter initialEntries={['/app/people']}>
+      <MemoryRouter initialEntries={['/app/dms']}>
         <PeekSetup>
           <PeoplePageView
             loading={false}
@@ -66,16 +66,16 @@ const linkFor = (name: string) => within(screen.getByTestId('left')).getByText(n
 describe('People rows on NavItem', () => {
   it('each person is a link to their page', () => {
     mount({ people: [person('greg', 'Greg Bothman')], starred: [{ id: 'amie', name: 'Amie Miles' }] })
-    expect(linkFor('Greg Bothman').getAttribute('href')).toBe('/app/people/greg')
-    expect(linkFor('Amie Miles').getAttribute('href')).toBe('/app/people/amie')
+    expect(linkFor('Greg Bothman').getAttribute('href')).toBe('/app/dms/greg')
+    expect(linkFor('Amie Miles').getAttribute('href')).toBe('/app/dms/amie')
   })
 
   it('a plain click opens the person’s page, in the list and in Starred', () => {
     mount({ people: [person('greg', 'Greg Bothman')], starred: [{ id: 'amie', name: 'Amie Miles' }] })
     fireEvent.click(linkFor('Greg Bothman'))
-    expect(url()).toBe('/app/people/greg')
+    expect(url()).toBe('/app/dms/greg')
     fireEvent.click(linkFor('Amie Miles'))
-    expect(url()).toBe('/app/people/amie')
+    expect(url()).toBe('/app/dms/amie')
   })
 
   it('a click with Ctrl or Cmd is the browser’s, for a new tab: this page stays where it is', () => {
@@ -83,7 +83,7 @@ describe('People rows on NavItem', () => {
     // `fireEvent` answers false when the click was stopped: then the browser opens no tab.
     expect(fireEvent.click(linkFor('Greg Bothman'), { ctrlKey: true })).toBe(true)
     expect(fireEvent.click(linkFor('Greg Bothman'), { metaKey: true })).toBe(true)
-    expect(url()).toBe('/app/people')
+    expect(url()).toBe('/app/dms')
   })
 
   it('the selected person is the current row', () => {
@@ -98,7 +98,7 @@ describe('People rows on NavItem', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More options for Greg Bothman' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /Hide conversation/ }))
     expect(onHideDm).toHaveBeenCalledWith('greg')
-    expect(url()).toBe('/app/people')
+    expect(url()).toBe('/app/dms')
   })
 
   it('a starred person has no ⋮: Hide is for the list below', () => {
@@ -135,7 +135,7 @@ describe('Open work on a person’s ⋮ (Katerina, 30 October)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More options for Greg Bothman' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Add to Open work' }))
     expect(onToggleOpenWork).toHaveBeenCalledWith('greg')
-    expect(url()).toBe('/app/people')
+    expect(url()).toBe('/app/dms')
   })
 
   it('a person already in Open work offers Remove instead', () => {

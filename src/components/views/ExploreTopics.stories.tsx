@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { ExploreRow, ExploreState, ExploreTab } from '@/api'
+import { PEOPLE } from '@/data/peopleData'
 import { ExploreTopicsView } from './ExploreTopics'
 
 /**
@@ -24,15 +25,22 @@ const row = (d: string, title: string, extra: Partial<ExploreRow>): ExploreRow =
   ...extra,
 })
 const at = (hoursAgo: number) => NOW / 1000 - hoursAgo * HOUR
+/** Who a row lists, by key: the fixture's people, so each row's members pill has its faces (Katerina, 17 November). */
+const KEYS = PEOPLE.map((_, i) => String(i + 1).repeat(64))
+const listing = (n: number) => KEYS.slice(0, n)
+const faceOf = (key: string) => {
+  const person = PEOPLE[KEYS.indexOf(key)]
+  return { name: person?.name ?? '—', ...(person?.avatarSrc ? { picture: person.avatarSrc } : {}) }
+}
 
-const widgets = row('widgets', 'Widgets', { yours: true, team: 'Product', members: 4, active: at(0.2), summary: 'The widget catalogue and its roadmap' })
-const release = row('release', 'Release notes', { yours: true, team: 'Company', members: 6, active: at(5) })
-const speed = row('speed', 'Speed', { yours: true, team: 'Product', members: 3, active: at(30) })
-const onboarding = row('onboarding', 'Onboarding', { team: 'People', members: 5, active: at(50) })
-const hiring = row('hiring', 'Hiring', { team: 'People', members: 2, active: at(24 * 9) })
+const widgets = row('widgets', 'Widgets', { yours: true, team: 'Product', members: 4, people: listing(4), active: at(0.2), summary: 'The widget catalogue and its roadmap' })
+const release = row('release', 'Release notes', { yours: true, team: 'Company', members: 6, people: listing(6), active: at(5) })
+const speed = row('speed', 'Speed', { yours: true, team: 'Product', members: 3, people: listing(3), active: at(30) })
+const onboarding = row('onboarding', 'Onboarding', { team: 'People', members: 5, people: listing(5), active: at(50) })
+const hiring = row('hiring', 'Hiring', { team: 'People', members: 2, people: listing(2), active: at(24 * 9) })
 const pricing = row('pricing', 'Pricing', { team: 'Sales' })
-const domain = row('domain', 'Domain name - brainstorming', { archived: true, team: 'Company', members: 3, active: at(24 * 60) })
-const level2 = row('level-2', 'Level 2', { archived: true, team: 'Product', members: 2, active: at(24 * 120) })
+const domain = row('domain', 'Domain name - brainstorming', { archived: true, team: 'Company', members: 3, people: listing(3), active: at(24 * 60) })
+const level2 = row('level-2', 'Level 2', { archived: true, team: 'Product', members: 2, people: listing(2), active: at(24 * 120) })
 
 const byTitle = (a: ExploreRow, b: ExploreRow) => a.title.localeCompare(b.title)
 const LISTS: ExploreState = {
@@ -44,7 +52,7 @@ const LISTS: ExploreState = {
 
 function Explore({ state, start = 'all' }: { state: ExploreState; start?: ExploreTab }) {
   const [tab, setTab] = useState<ExploreTab>(start)
-  return <ExploreTopicsView state={state} tab={tab} onTab={setTab} onRetry={() => {}} onJoin={() => {}} now={NOW} />
+  return <ExploreTopicsView state={state} tab={tab} onTab={setTab} onRetry={() => {}} onJoin={() => {}} now={NOW} faceOf={faceOf} />
 }
 
 const meta = {

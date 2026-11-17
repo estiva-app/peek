@@ -176,7 +176,8 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
 
 /** A group's open state: its heading's `aria-expanded`, as the package's section draws it. */
 const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
-const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
+/** A team's fold in Archive (A-01: the kit's row-look fold), by its id. */
+const section = (id: string) => document.querySelector(`[data-archive-team="${id}"]`) as HTMLElement
 /** The column's title: the view, and the button that opens their menu. */
 const title = (name: string) => screen.getByRole('button', { name })
 
@@ -331,19 +332,22 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(window.localStorage.getItem('peek.tree.view')).toBeNull()
   })
 
-  it('switching to it closes the open file: the page says No file selected', async () => {
+  // Switching view keeps the open page open (Katerina, 16 November, Q-13): only archiving what is open closes it.
+  it('switching to it keeps the open file open', async () => {
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
     await userEvent.click(title('Teams'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
+    expect(title('Archive')).toBeTruthy()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
-  it('an archived file open in Archive closes when the column turns to Teams', async () => {
+  it('an archived file open in Archive stays open when the column turns to Teams', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
     await userEvent.click(title('Archive'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Teams' }))
-    expect(screen.getByTestId('url').textContent).toBe('/app/teams')
+    expect(title('Teams')).toBeTruthy()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   /*
@@ -384,6 +388,14 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(items).toContain('Unarchive')
     expect(items).toContain('Delete')
     for (const gone of ['Rename', 'New topic inside', 'Move…', 'Add to Open work', 'Join']) expect(items).not.toContain(gone)
+  })
+
+  // One icon per kind, in Archive too (Katerina, 16 November): ◎ an initiative, # a team's topic; never the dashed circle.
+  it('an archived topic’s row wears its kind’s icon: ◎ for an initiative no team marks as its space', async () => {
+    reads.extra = [archivedTopic({ by: CATH, at: 1 })]
+    await menuOf('Old topic')
+    const row = document.querySelector(`[data-file="30840:${CATH}:old-topic"]`)!
+    expect(row.querySelector('.tabler-icon-target')).not.toBeNull()
   })
 
   it('a topic archived with a page above it offers neither Unarchive nor anything that changes it', async () => {

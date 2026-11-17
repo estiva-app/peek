@@ -2,7 +2,7 @@ import { useEffect, useReducer, useState, type DragEvent } from 'react'
 import { IconArchive, IconPlus } from '@tabler/icons-react'
 import { CollapsibleSection, CommandPalette, CommandPaletteSearch, CornerMenu, EmptyState, KindIcon, SectionHeader, isApplePlatform, thingKindOf, type CommandPaletteRow } from '@estiva-app/ui'
 import type { FileLook } from '@estiva-app/interop'
-import { fileChoices, subscribeReferences, type TopicFile, type useTopicFiles } from '@/api'
+import { fileChoices, spaceTeamOf, subscribeReferences, useTeams, type TopicFile, type useTopicFiles } from '@/api'
 import { MessageCard } from '@/components/ui/MessageLinks'
 import { referenceOfValue } from '@/lib/embedValue'
 import { useToast } from '@/lib/toast'
@@ -59,6 +59,9 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
   const live = files.filter((file) => !file.archived)
   const archived = files.filter((file) => file.archived)
   const changes = !readOnly && mayChange
+  // An initiative is a topic no team marks as its space (Katerina, 16 November, Q-01 A): its empty line says so (I-18).
+  const { teams } = useTeams()
+  const initiative = !!teams && !spaceTeamOf(teams, topic)
 
   const change = async (file: string, listed: boolean) => {
     const result = await setListed(file, listed)
@@ -126,7 +129,7 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
         {state === 'loading' ? null : 'failed' in state ? (
           <EmptyState scope="section" message="Couldn’t load the files. Reload to try again." />
         ) : files.length === 0 ? (
-          <EmptyState scope="section" message="None yet. A topic can be only a conversation." />
+          <EmptyState scope="section" message={`None yet. ${initiative ? 'An initiative' : 'A topic'} can be only a conversation.`} />
         ) : (
           <>
             {live.map((entry, index) => {
@@ -178,7 +181,9 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
               // The kit's folding row, closed: out of the way, one press from here (Miky, 6 Nov). Read-only inside, as an archived file is everywhere.
               <CollapsibleSection
                 look="row"
-                title={`Archived · ${archived.length}`}
+                title="Archived"
+                // The count beside the title, in a count's type, not typed into it (Katerina, 16 November).
+                count={archived.length}
                 icon={<IconArchive size={16} stroke={1.5} />}
                 defaultOpen={false}
                 contentClassName="flex flex-col gap-3 pt-2"

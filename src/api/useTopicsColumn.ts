@@ -450,8 +450,20 @@ export function readTopicsAgain(): void {
   if (lastViewer) void readTopics(lastViewer)
 }
 
+/**
+ * The viewers whose topics have all resolved once in this tab. From then on a read naming a topic not resolved yet —
+ * one just started, before its object is read — keeps the columns drawn and adds it once it resolves, rather than
+ * taking them back to a skeleton (Katerina, 17 November: after starting a topic "the left column is like it's
+ * reloaded"). Before it, nothing is drawn until everything is: no column of half its rows on a first visit.
+ */
+const resolvedOnce = new Set<string>()
+/** The viewers whose Topics column has been drawn in this tab: from then on it is never taken back to a skeleton. */
+const drawnOnce = new Set<string>()
+
 /** For tests: forget what this tab has read. */
 export function resetTopicsColumn(): void {
+  resolvedOnce.clear()
+  drawnOnce.clear()
   topicsReading = false
   listsReading.clear()
   pastReading.clear()
@@ -568,18 +580,28 @@ export function useTopicsColumn(): {
   // Nothing to draw the order by until the read answers: the first time on this browser, a skeleton rather than a jump.
   const orderUnknown = mine.length > 0 && !activity && activityFailed !== activityKey && mine.every((topic) => !stored.has(topic.address!))
 
+  const drawn = !!pubkey && drawnOnce.has(pubkey)
   const state = useMemo<TopicsColumnState>(() => {
     if (mineHeld.failed && mineHeld.topics === null) return { failed: true }
-    if (mineHeld.topics === null || !known || !topicsResolved || pastUnread) return 'loading'
+    if (mineHeld.topics === null || !known) return 'loading'
     /*
       Loading only until the first answer: after it, a topic just joined is
       drawn at once, and a list read again keeps the rows, rather than the
-      whole column going back to a skeleton.
+      whole column going back to a skeleton. Drawn once for this viewer, it
+      waits on nothing more: a later read's topic — one just started, one
+      somebody else started that only the history read can place, the first
+      of yours, whose list and order are not read yet — is drawn once it is
+      judged, never by taking the column back to a skeleton meanwhile
+      (Katerina, 17 November: "IS there any other case where this happens?").
     */
-    if (mine.length && mine.every((topic) => !lists.has(topic.address!))) return mineHeld.failed ? { failed: true } : 'loading'
-    if (orderUnknown) return 'loading'
+    if (!drawn) {
+      if (!topicsResolved || pastUnread) return 'loading'
+      if (mine.length && mine.every((topic) => !lists.has(topic.address!))) return mineHeld.failed ? { failed: true } : 'loading'
+      if (orderUnknown) return 'loading'
+    }
     return { mine: ordered, others: live.filter((topic) => !isYours(topic)), archived }
-  }, [mineHeld.failed, mineHeld.topics, known, topicsResolved, pastUnread, mine, lists, orderUnknown, ordered, live, archived, isYours])
+  }, [mineHeld.failed, mineHeld.topics, known, drawn, topicsResolved, pastUnread, mine, lists, orderUnknown, ordered, live, archived, isYours])
+  if (pubkey && typeof state === 'object' && !('failed' in state)) drawnOnce.add(pubkey)
 
   // Unknown while loading; a failed read cannot say, and Folders draws every file.
   const yours = useMemo(
@@ -658,7 +680,10 @@ function useReadableTopicsHeld() {
   )
   const live = useMemo(() => readable.filter((topic) => !isArchived(topic)), [readable])
   const archived = useMemo(() => readable.filter((topic) => isArchived(topic)), [readable])
-  const topicsResolved = (mineHeld.topics ?? []).every((address) => address in topicObjects)
+  const allResolved = mineHeld.topics !== null && mineHeld.topics.every((address) => address in topicObjects)
+  if (allResolved && pubkey) resolvedOnce.add(pubkey)
+  // Ready once everything resolved the first time; a later read's new topic is added when it resolves (`resolvedOnce`).
+  const topicsResolved = allResolved || (!!pubkey && resolvedOnce.has(pubkey))
   return { viewer, pubkey, mineHeld, topicsResolved, objectOf, live, archived }
 }
 

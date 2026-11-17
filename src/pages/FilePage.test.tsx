@@ -250,6 +250,8 @@ vi.mock('@/api', async () => ({
     state: follows.state,
     me: ME,
     isMember: (key: string) => follows.keys.has(key),
+    // Nobody muted anything: the Teams column's rows say nothing of their level (Q-22).
+    termsOf: () => ({}),
     setMember: follows.setMember,
     refresh: follows.refresh,
   }),
@@ -263,6 +265,9 @@ vi.mock('@/api', async () => ({
   // Subscribed, as the real read is: a test that sets them after mounting (`arrive`) redraws the page.
   useTeams: () => ({ teams: useSyncExternalStore(teamsHeld.subscribe, () => teamsHeld.teams), failed: false, reload: async () => {} }),
   useTeamChatNews: () => ({ unread: {}, news: {} }),
+  // An initiative lists the open file, as the relay would say if asked (B-04): the page no longer asks, and shows no
+  // chip for it (Katerina, 17 November: only the team's).
+  useFileTopics: () => new Set([TOPIC_ADDRESS]),
   // useMayMove's own rule over the teams above (its hook reads useTeams inside its module, past this mock).
   useMayMove: (address: string | undefined) => (real.api.mayMove as typeof import('@/api/useTeams').mayMove)(teamsHeld.teams as unknown as Team[], address),
   // Which column a file opened by link shows (TOP-4): Folders, unless a test lists it in a topic of yours.
@@ -292,15 +297,24 @@ const openWork = vi.hoisted(() => {
     },
   }
 })
+// A team's Files fold reads the team's listing inside `@/api/useTeams`, past the mock above: the same listing there.
+vi.mock('@/api/useFolderContents', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useFolderContents: (id: string | undefined) => ({
+    state: id ? { id, name: 'Folders', hasState: true, source: 'state', files: relay.files } : 'loading',
+    reload: async () => {},
+  }),
+}))
 // The Teams column reads its topics inside `@/api/useTeams`, past the mock above: the same topics there.
 vi.mock('@/api/useTopicsColumn', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useTopicsColumn: () => topicsColumnNow(),
-  useReadableTopics: () => ({ topics: [...topicsColumn.mine.map(({ topic }) => topic), ...topicsColumn.others], loading: false, failed: false, signedOut: false }),
+  // A test may list a topic of yours as the column's entry ({ topic, files }) or as the topic itself.
+  useReadableTopics: () => ({ topics: [...topicsColumn.mine.map((mine) => ('topic' in mine ? mine.topic : mine) as ForeignObject), ...topicsColumn.others], loading: false, failed: false, signedOut: false }),
 }))
 const topicsColumnNow = vi.hoisted(() => () => ({
   // The topics the Teams column titles its rows from: every bare file a test opens.
-  state: { mine: topicsColumn.mine, others: topicsColumn.others },
+  state: { mine: topicsColumn.mine, others: topicsColumn.others, archived: [] },
   column: (address: string) => (topicsColumn.mine.some(({ topic, files }) => [topic, ...files].some((file) => file.address === address)) ? 'topics' : 'folders'),
   signedOut: false,
 }))
@@ -433,16 +447,17 @@ function threadControls(pane: HTMLElement): HTMLElement[] {
   })
 }
 
-/** The team's section is drawn in the Teams column (TEA-5): its name leads to its page, and its topic is a row under it. */
+/** The team's row is drawn in the Teams column (TEA-5): it leads to its page, and its topic is a row under it. */
 const teamDrawn = (box: HTMLElement) =>
-  within(box).queryByRole('link', { name: 'Open Folders' }) !== null && box.querySelector(`[data-file="${CSS.escape(TOPIC_ADDRESS)}"]`) !== null
+  within(box).queryByRole('link', { name: 'Folders' }) !== null && box.querySelector(`[data-file="${CSS.escape(TOPIC_ADDRESS)}"]`) !== null
 
 /** What one mounted page looks like, reduced to what must not differ between apps. */
 function shape() {
   const left = screen.getByTestId('left')
   const middle = screen.getByTestId('middle')
   return {
-    myTeams: within(left).queryByText('My teams') !== null,
+    // No label over your teams (Katerina, 16 November, T-08).
+    teamsLabel: within(left).queryByText('My teams') !== null,
     teamDrawn: teamDrawn(left),
     comments: middle.querySelectorAll('[data-comment]').length,
     threadButtons: threadControls(middle).length,
@@ -463,8 +478,9 @@ beforeEach(() => {
   follows.setMember.mockClear()
   topicsColumn.mine = []
   topicsColumn.others = [topic]
-  // The Folder is a team the person is in, leading the topic (TEA-5): its section in the column draws the topic's row.
-  teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+  // The Folder is a team the person is in, the topic one of its topics (#, today's space): its row is under the team in Teams
+  // (Katerina, 16 November, T-14). A test about an initiative (a topic no team marks as its space) says so itself.
+  teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
   roster.members = new Map()
   roster.reload.mockClear()
   roster.directory = undefined
@@ -707,20 +723,37 @@ describe('FilePage serves every declared shape', () => {
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 
-  it('opened by link and listed in no topic of yours, it is shown under Folders, which comes back to it with its open thread', () => {
+  it('opened by link and listed in no initiative of yours, it is shown under Teams, which comes back to it with its open thread', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
     expect(screen.getByTestId('topics-path').textContent).toBe('')
   })
 
-  it('opened by link and listed in a topic of yours, it is shown under Topics, which comes back to it (TOP-4)', () => {
+  // The rail lights the section you are in (Katerina, 16 November, the navigation prototype): a file lives in its team,
+  // so an initiative of yours listing it no longer sends it under Initiatives.
+  it('opened by link and listed in an initiative of yours, a Ship issue is still shown under Teams, where it lives', () => {
     topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(screen.getByTestId('topics-path').textContent).toBe('')
+  })
+
+  it('opened by link, an initiative (a topic no team marks as its space) is shown under Initiatives, which comes back to it', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
     expect(screen.getByTestId('file-column').textContent).toBe('topics')
-    expect(within(screen.getByTestId('left')).getByText('Topics')).toBeInTheDocument()
-    expect(screen.getByTestId('topics-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+    expect(within(screen.getByTestId('left')).getByText('Initiatives')).toBeInTheDocument()
+    expect(screen.getByTestId('topics-path').textContent).toBe(TOPIC_SHORT)
     expect(screen.getByTestId('folders-path').textContent).toBe('')
+  })
+
+  it('opened by link, a team’s space (a topic in the team) is shown under Teams', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    expect(screen.getByTestId('folders-path').textContent).toBe(TOPIC_SHORT)
   })
 
   it('clicked in Folders, it is shown under Folders though a topic of yours lists it (TOP-4)', () => {
@@ -739,7 +772,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
     // Both have comments and neither may be commented on; the numbers differ
     // by fixture, the shape must not.
     expect(ship).toEqual({
-      myTeams: true,
+      teamsLabel: false,
       teamDrawn: true,
       comments: 2,
       threadButtons: 2,
@@ -751,7 +784,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
   it('…and the Peek file, from the same address grammar', () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(shape()).toEqual({
-      myTeams: true,
+      teamsLabel: false,
       teamDrawn: true,
       comments: 1,
       threadButtons: 1,
@@ -779,6 +812,83 @@ describe('FilePage draws every app’s file in the same panes', () => {
   })
 })
 
+/*
+  Another app's file (Katerina, 16 November, F-04 to F-06): its title is a trail — its team, its project, then its
+  kind's icon and its name — the team and the project opening in place; after it, one chip per live initiative that
+  lists it or its project, each opening that initiative; then Open, into its own app.
+*/
+/*
+  A Screener item that is a file opens on its own page where it lives (Katerina, 16 November, Q-54): Teams, its team
+  open, its row selected in the team's Files fold, which opens. The Screener opens it by its address, as a link does.
+*/
+/* The team an initiative belongs to, as a chip right after its name, opening the team's page (Katerina, 17 November). */
+describe('an initiative’s page names its team', () => {
+  it('a chip right after its name, with the team’s icon, opening the team’s page', () => {
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const chip = within(screen.getByTestId('middle')).getByRole('link', { name: 'Folders' })
+    expect(chip.getAttribute('href')).toBe(`/app/teams/${FOLDER}`)
+    expect(chip.querySelector('.tabler-icon-users')).not.toBeNull()
+    fireEvent.click(chip)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`)
+  })
+
+  it('a team’s topic (#) has none: it sits under its team', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(screen.getByTestId('middle')).queryByRole('link', { name: 'Folders' })).toBeNull()
+  })
+})
+
+describe('a file opened by its address lands where it lives (DK-03, Q-54)', () => {
+  it('a project shows under Teams, its row current in its team’s Files fold, which is open', async () => {
+    relay.files = [project, topic]
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    expect(screen.getByTestId('file-column').textContent).toBe('folders')
+    const left = screen.getByTestId('left')
+    const fold = within(left).getByRole('button', { name: 'Files' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    const row = await waitFor(() => {
+      const found = left.querySelector(`[data-file="${CSS.escape(PROJECT_ADDRESS)}"]`)
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    expect(row.getAttribute('aria-current')).toBe('page')
+  })
+})
+
+describe('another app’s file: its trail, its team’s chip, then Open (F-04 to F-06)', () => {
+  // No team in the trail: the team is the chip after the name (Katerina, 17 November: "make sure the breadcrumbs now dont show the team").
+  it('its title is a trail — its project, then its name — and its team is a chip after it, opening in place', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
+    expect(trail.queryByRole('link', { name: 'Folders' })).toBeNull()
+    expect(trail.getByRole('link', { name: 'Folders: navigation for the whole suite' })).toBeInTheDocument()
+    expect(trail.getByText('The file route')).toBeInTheDocument()
+    const team = within(screen.getByTestId('middle')).getByRole('link', { name: 'Folders' })
+    expect(team.querySelector('.tabler-icon-users')).not.toBeNull()
+    fireEvent.click(team)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${FOLDER}`)
+  })
+
+  it('a topic keeps its own title, with no trail', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull()
+  })
+
+  // One chip, the team it belongs to (Katerina, 17 November: "we agreed to only have the team it belongs to").
+  it('one chip after its name, its team, then Open: no chip for an initiative, even one that lists it', () => {
+    objects.byAddress[ISSUE_ADDRESS] = { ...issue, openUrl: 'https://ship.estiva.app/issue/the-file-route' } as unknown as ForeignObject
+    teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const middle = within(screen.getByTestId('middle'))
+    const teamChip = middle.getByRole('link', { name: 'Folders' })
+    const open = middle.getByRole('link', { name: 'Open in Estiva Ship' })
+    expect(teamChip.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(middle.queryByRole('link', { name: 'FOL-15 test topic 2' })).toBeNull()
+    expect(screen.getByTestId('middle').querySelector('header .tabler-icon-target, [data-page-header] .tabler-icon-target')).toBeNull()
+  })
+})
+
 describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
   const OTHER_D = '6b1e0c2d-3f4a-4b5c-8d6e-7f8091a2b3c4'
   const OTHER_ADDRESS = `30840:${CATH}:${OTHER_D}`
@@ -795,10 +905,10 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
   beforeEach(() => {
     relay.files = [project, topic, other]
     objects.byAddress[OTHER_ADDRESS] = other
-    // The team leads both topics: each is a row in its section.
+    // Both are the team's topics (#, today's spaces): each is a row under it (T-14).
     topicsColumn.others = [topic, other]
     teamsHeld.teams = [
-      team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }, { address: OTHER_ADDRESS, space: false }] }),
+      team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }, { address: OTHER_ADDRESS, space: true }] }),
     ]
   })
 
@@ -871,6 +981,38 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     expect(within(screen.getByTestId('middle')).getByText('First on the topic')).toBeInTheDocument()
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
     expect(within(screen.getByTestId('middle')).queryByText('First on the topic')).toBeNull()
+  })
+})
+
+/*
+  A thread the address names on arrival — a line in a dot's list or a row's card, a Screener item, a link — is shown
+  where it was said: its message scrolled into view once drawn (Katerina, 15 November, U-07). One opened on the page
+  itself is already in view.
+*/
+describe('a thread named on arrival is scrolled into view where it was said (U-07)', () => {
+  const scrolled = vi.fn()
+  beforeEach(() => {
+    scrolled.mockClear()
+    Element.prototype.scrollIntoView = scrolled
+  })
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  })
+  /** The messages scrolled into view, by their conversation item's id. */
+  const scrolledItems = () =>
+    scrolled.mock.contexts.map((el) => (el as HTMLElement).getAttribute('data-conversation-item') ?? (el as HTMLElement).getAttribute('data-comment')).filter(Boolean)
+
+  it('arriving at a thread scrolls its message into view', async () => {
+    const rootId = issue.comments[0].id
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    await waitFor(() => expect(scrolledItems()).toContain(rootId))
+  })
+
+  it('a thread opened on the page itself is not scrolled to', async () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(threadControls(screen.getByTestId('middle'))[0])
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(scrolledItems()).toEqual([])
   })
 })
 
@@ -1554,19 +1696,19 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
   })
 
-  it('the header of a Ship issue has nothing from the manifest — only Move and Open work, still in its ⋮', () => {
+  it('the header of a Ship issue has nothing from the manifest — Move in its ⋮, and Open work as its button (F-08)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     expect(within(middle).queryByRole('link', { name: 'Open folder' })).toBeNull()
-    // Open work is the reader's, not the manifest's: any addressable file can be put there.
-    // And Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.
-    expect(openHeaderMenu()).toEqual(['Add to Open work', 'Move…'])
-    // Only a topic has Open work as a button beside its ⋮ (TOPI-7).
-    expect(within(middle).queryByRole('button', { name: /Open work/ })).toBeNull()
+    // Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.
+    expect(openHeaderMenu()).toEqual(['Move…'])
+    // Open work is the reader's, not the manifest's: any addressable file can be put there, from the header's button,
+    // as on a topic (Katerina, 16 November: "just the Add to open work button in the header and not in the menu").
+    expect(within(middle).getByRole('button', { name: 'Add to Open work' })).toBeInTheDocument()
   })
 
-  it('the team’s row of a topic offers Open work, Copy link and Make it a space — nothing done to the topic itself (TOPI-7)', () => {
+  it('the team’s row of a topic offers Open work, Copy link and Make it an initiative — nothing done to the topic itself (TOPI-7)', () => {
     const archivable = {
       ...bareFile,
       actions: [...(bareFile.actions ?? []), { id: 'archive', label: 'Archive', control: 'toggle', effect: 'writes', field: 'archived' }],
@@ -1580,7 +1722,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     fireEvent.click(within(topicRow.parentElement!).getByRole('button', { name: 'More options' }))
     const items = screen.getAllByRole('menuitem')
     // Open work names its key, as the topic's page binds it.
-    expect(items.map((item) => item.textContent)).toEqual([expect.stringMatching(/^Add to Open work(Ctrl|⌘)/), 'Copy link', 'Make it a space'])
+    expect(items.map((item) => item.textContent)).toEqual([expect.stringMatching(/^Add to Open work(Ctrl|⌘)/), 'Copy link', 'Make it an initiative'])
     // Details, Rename, Move, Archive and Delete are on the topic's own page, though its manifest offers them;
     // and Leave only in the Topics column, where every topic is yours.
     for (const gone of ['Details', 'Rename', 'Move…', 'Archive…', 'Delete', 'Leave', 'New topic inside']) {
@@ -1736,30 +1878,18 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 })
 
 /*
-  SPEC §11.8. Join / leave and mute on the file page and on the row, the state
-  visible without hovering: the header's button is pressed when the person is a
-  member, a member row carries its mark when idle, and both write through the
-  one seam the dots are judged over. Nothing is offered until the relay has
-  said what the person is a member of — a toggle then would write a guess.
-  There is no mute control: muting is a private list read, not a screen.
+  SPEC §11.8. Join and Leave on another app's file are in its Members dialog (Katerina, 16 November, F-07: "no Join
+  button"), and write through the one seam the dots are judged over. A row carries no mark when idle. There is no mute
+  control: muting is a private list read, not a screen.
 */
-describe('FilePage offers Join and Leave on the header and the row (§11.8)', () => {
-  it('the header button joins a file the person is not in, in the file’s Folder', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
-    const join = screen.getByRole('button', { name: 'Join' })
-    expect(join).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(join)
-    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
-    expect(screen.queryByRole('button', { name: 'Mute' })).toBeNull()
-  })
-
-  it('reads pressed for a member, and leaves', () => {
+describe('FilePage offers Join and Leave in Members, not on the header (§11.8, F-07)', () => {
+  it('no Join or Leave button on the header, for somebody not in it or somebody in it', () => {
+    const first = mount(`/topic/${ISSUE_ADDRESS}`)
+    for (const name of ['Join', 'Leave', 'Mute']) expect(screen.queryByRole('button', { name })).toBeNull()
+    first.unmount()
     follows.keys = new Set([ISSUE_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
-    const leave = screen.getByRole('button', { name: 'Leave' })
-    expect(leave).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(leave)
-    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, false)
+    for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
   /*
@@ -1796,12 +1926,11 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     await waitFor(() => expect(roster.reload).toHaveBeenCalled())
   })
 
-  it('keeps the toolbar Join when the roster could not be read: no pill, and Join does not go with it', () => {
+  it('when the roster could not be read: no pill, and no Join on the header in its place (F-07)', () => {
     roster.members = undefined
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(screen.queryByRole('button', { name: /members?$/ })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Join' }))
-    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
   })
 
   it('a project says that leaving it does not leave its issues', () => {
@@ -2094,7 +2223,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   it('into a team the person is in, the box is there and ticked, and the move keeps it a space', async () => {
     holdTeams()
     await openMove('Steer')
-    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][2]).toEqual({ id: STEER, hasState: true })
@@ -2104,7 +2233,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   it('unticked, it arrives as a topic the team leads', async () => {
     holdTeams()
     await openMove('Steer')
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][3]).toBe(false)
@@ -2159,7 +2288,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     act(() => teamsHeld.arrive(teamsOf()))
     await userEvent.click(await readTeamList())
     await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
-    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.moveFile).toHaveBeenCalledTimes(1))
     expect(writes.moveFile.mock.calls[0][3]).toBe(true)
@@ -2188,7 +2317,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   })
 })
 
-describe('A topic is marked a space of its team from its row, not its page’s ⋮ (TEA-5, TOPI-7)', () => {
+describe('A topic is made an initiative, or an initiative a topic, from its row, not its page’s ⋮ (TEA-5, TOPI-7, T-31)', () => {
   const headerMenu = () => {
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem').map((item) => item.textContent)
@@ -2202,21 +2331,25 @@ describe('A topic is marked a space of its team from its row, not its page’s �
   }
   beforeEach(() => writes.markSpace.mockClear())
 
-  it('a member of the team that leads it makes it a space from its row; its page’s ⋮ does not offer it', () => {
+  // Today's Make it a space, in the new words (Katerina, 16 November, T-31): an initiative's row is in Initiatives.
+  it('a member of its team makes an initiative one of the team’s topics from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
+    // An initiative of yours: its row is in the Initiatives column beside its page.
+    topicsColumn.mine = [topic as never]
+    topicsColumn.others = []
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(headerMenu()).not.toContain('Make it a space')
+    expect(headerMenu()).not.toContain('Make it a topic')
     rowMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Make it a space' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Make it a topic' }))
     expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, true)
   })
 
-  it('a member stops one of its spaces being a space from its row; its page’s ⋮ does not offer it', () => {
+  it('a member makes one of the team’s topics an initiative from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(headerMenu()).not.toContain('Stop being a space')
+    expect(headerMenu()).not.toContain('Make it an initiative')
     rowMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Stop being a space' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Make it an initiative' }))
     expect(writes.markSpace).toHaveBeenCalledWith(FOLDER, TOPIC_ADDRESS, false)
   })
 
@@ -2226,8 +2359,8 @@ describe('A topic is marked a space of its team from its row, not its page’s �
     mount(`/topic/${TOPIC_ADDRESS}`)
     rowMenu()
     expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(0)
-    expect(screen.queryByRole('menuitem', { name: 'Stop being a space' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Make it a space' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Make it an initiative' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Make it a topic' })).toBeNull()
   })
 })
 
@@ -2285,8 +2418,9 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
       relay.files = [project, topic, other]
       objects.byAddress[OTHER_ADDRESS] = other
       topicsColumn.others = [topic, other]
+      // Both are the team's topics (#): each is a row under it (T-14).
       teamsHeld.teams = [
-        team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }, { address: OTHER_ADDRESS, space: false }] }),
+        team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }, { address: OTHER_ADDRESS, space: true }] }),
       ]
     })
 

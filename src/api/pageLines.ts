@@ -7,11 +7,12 @@
  *
  * The dot is lit from what the page's row already judges (`useConversationBadges`, `useTeamChatNews`, `useUnread`).
  * The list reads only while it is open (its content mounts with it): one pooled read of the place's recent talk, and
- * its listed files', never on the page's open.
+ * its listed files', never on the page's open. Or a moment before: when the pointer reaches the dot, or it gets focus
+ * (`usePageLinesAhead`), so the answer is in by the time the card opens (Katerina, 17 November).
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/at-important-what-names-you-on-a-listed-file-lights-the-topic.md
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import {
   channelContext,
@@ -262,6 +263,55 @@ const cacheRead = (key: string, events: readonly SignedEvent[]) => {
   while (readCache.size > CACHED_LISTS) readCache.delete(readCache.keys().next().value!)
 }
 
+/** Who reads, as `useRelayViewer` hands them. */
+type ListReader = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
+
+/** A list's read asked and not yet answered, by the cache's key: whoever asks the same read meanwhile joins it. */
+const readsOut = new Map<string, Promise<readonly SignedEvent[]>>()
+
+/** A list's key: who reads, and what. */
+const listKey = (reader: ListReader | null, filters: readonly Record<string, unknown>[]) => `${reader?.token.pubkey ?? ''}|${JSON.stringify(filters)}`
+
+/** A list's read: the answer kept from the last minute, the read already out, or a new one, kept once it answers. */
+function readList(key: string, filters: readonly Record<string, unknown>[], reader: ListReader): Promise<readonly SignedEvent[]> {
+  const kept = cachedRead(key)
+  if (kept) return Promise.resolve(kept)
+  const out = readsOut.get(key)
+  if (out) return out
+  const query = viewerQuery(reader.relayUrl, reader.token)
+  const batches: Record<string, unknown>[][] = []
+  for (let start = 0; start < filters.length; start += MAX_FILTERS_PER_QUERY) batches.push(filters.slice(start, start + MAX_FILTERS_PER_QUERY))
+  const read = Promise.all(batches.map((batch) => query(batch))).then((answers) => {
+    const events = answers.flat() as SignedEvent[]
+    cacheRead(key, events)
+    return events
+  })
+  readsOut.set(key, read)
+  const settled = () => {
+    if (readsOut.get(key) === read) readsOut.delete(key)
+  }
+  read.then(settled, settled)
+  return read
+}
+
+/**
+ * Starts a page's list read before its card opens (Katerina, 17 November): the card waits 350ms after the pointer
+ * reaches the dot, and the read takes about 180ms (measured on the relay), so the card opens on its answer — the lines,
+ * or the empty line — rather than on a skeleton that turns into it. The card's own read joins this one, or finds its
+ * answer kept. Passing over the dot reads once, kept for a minute; a refusal is the card's to say, once it asks.
+ */
+export function usePageLinesAhead(sources: readonly PageSource[] | undefined): () => void {
+  const viewer = useRelayViewer()
+  return useCallback(() => {
+    const reader = viewer()
+    if (!sources || !hasRelay || !reader) return
+    const since = horizon()
+    const filters = sources.flatMap((source) => filtersOf(source, since))
+    if (filters.length === 0) return
+    readList(listKey(reader, filters), filters, reader).catch(() => undefined)
+  }, [sources, viewer])
+}
+
 /**
  * A page's list, read once it is open: undefined while it reads. New is everything unread now, and every line the page
  * already held (`held`) stays in it, so the list never says less than the dot; Earlier is what was about you. Newest
@@ -278,7 +328,7 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
     const since = horizon()
     return sources.flatMap((source) => filtersOf(source, since))
   }, [sources])
-  const key = filters ? `${viewer()?.token.pubkey ?? ''}|${JSON.stringify(filters)}` : ''
+  const key = filters ? listKey(viewer(), filters) : ''
   const [read, setRead] = useState<{ key: string; events: readonly SignedEvent[] | 'failed' } | undefined>(() => {
     const events = key ? cachedRead(key) : undefined
     return events ? { key, events } : undefined
@@ -297,13 +347,9 @@ export function usePageLines(sources: readonly PageSource[] | undefined, held: r
       return
     }
     let live = true
-    const query = viewerQuery(at.relayUrl, at.token)
-    const batches: Record<string, unknown>[][] = []
-    for (let start = 0; start < filters.length; start += MAX_FILTERS_PER_QUERY) batches.push(filters.slice(start, start + MAX_FILTERS_PER_QUERY))
-    Promise.all(batches.map((batch) => query(batch))).then(
-      (answers) => {
-        const events = answers.flat() as SignedEvent[]
-        cacheRead(key, events)
+    // The read the dot started as the pointer reached it, if it is still out: joined, not asked again.
+    readList(key, filters, at).then(
+      (events) => {
         if (live) setRead({ key, events })
       },
       () => {

@@ -1,11 +1,11 @@
 /**
  * Peek's Topics column as a person sees it (TOP-4, TOPI-10): your topics as
  * one flat list, in the order they come (newest activity first, as the hook
- * orders them), with no files folded under any; then one Explore topics row,
+ * orders them), with no files folded under any; then one Explore initiatives row,
  * in place of the Other topics and Archived sections (TOPI-6); and the
  * approved empty line when you are in none.
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -25,7 +25,7 @@ const ALPHA = file(30840, 'alpha', 'alpha')
 const STRANGER = file(30840, 'stranger', 'Somebody else’s')
 const OLD = file(30840, 'old', 'Level 2')
 
-function mount(state: TopicsColumnState, props: { selectedRef?: string; unread?: Record<string, boolean>; exploring?: boolean } = {}) {
+function mount(state: TopicsColumnState, props: { selectedRef?: string; unread?: Record<string, boolean>; exploring?: boolean; onNewTopic?: () => void } = {}) {
   return render(
     <MemoryRouter>
       <TopicsColumnView state={state} {...props} />
@@ -59,29 +59,45 @@ describe('the Topics column (TOP-4, TOPI-10)', () => {
     expect(row(WIDGETS).querySelector('[data-unread]')).toBeNull()
   })
 
-  it('ends with one Explore topics row and no Other topics or Archived section, nor any of their topics (TOPI-6)', () => {
+  it('ends with one Explore initiatives row and no Other topics or Archived section, nor any of their topics (TOPI-6)', () => {
     mount({ mine: [WIDGETS, DESIGN], others: [STRANGER], archived: [OLD] })
     const links = [...document.querySelectorAll('a')]
-    expect(links.map((link) => link.textContent)).toEqual(['Widgets', 'Design', 'Explore topics'])
-    expect(links.at(-1)!.getAttribute('href')).toBe('/app/topics/explore')
+    expect(links.map((link) => link.textContent)).toEqual(['Widgets', 'Design', 'Explore initiatives'])
+    expect(links.at(-1)!.getAttribute('href')).toBe('/app/initiatives/explore')
     expect(screen.queryByText('Other topics')).toBeNull()
     expect(screen.queryByText('Archived')).toBeNull()
     expect(screen.queryByText('Somebody else’s')).toBeNull()
     expect(screen.queryByText('Level 2')).toBeNull()
   })
 
-  it('marks Explore topics as the current row while its page is open, and only then', () => {
+  it('marks Explore initiatives as the current row while its page is open, and only then', () => {
     const first = mount({ mine: [WIDGETS], others: [], archived: [] }, { exploring: true })
-    expect(screen.getByText('Explore topics').closest('a')!.getAttribute('aria-current')).toBe('page')
+    expect(screen.getByText('Explore initiatives').closest('a')!.getAttribute('aria-current')).toBe('page')
     first.unmount()
     mount({ mine: [WIDGETS], others: [], archived: [] })
-    expect(screen.getByText('Explore topics').closest('a')!.getAttribute('aria-current')).toBeNull()
+    expect(screen.getByText('Explore initiatives').closest('a')!.getAttribute('aria-current')).toBeNull()
   })
 
-  it('in no topic, says “You’re in no topics yet.” above Explore topics', () => {
+  it('wears ◎ on every row, and the list-and-magnifier on Explore initiatives (Katerina, 16 November)', () => {
+    mount({ mine: [WIDGETS, DESIGN], others: [], archived: [] })
+    expect(document.querySelectorAll('a[data-file] .tabler-icon-target')).toHaveLength(2)
+    expect(screen.getByText('Explore initiatives').closest('a')!.querySelector('.tabler-icon-list-search')).not.toBeNull()
+  })
+
+  it('offers New initiative, a plus, where New topic was (I-04)', async () => {
+    const onNewTopic = vi.fn()
+    mount({ mine: [], others: [], archived: [] }, { onNewTopic })
+    const button = screen.getByRole('button', { name: 'New initiative' })
+    expect(button.querySelector('.tabler-icon-plus')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
+    await userEvent.click(button)
+    expect(onNewTopic).toHaveBeenCalledTimes(1)
+  })
+
+  it('in no initiative, says “You’re in no initiatives yet.” above Explore initiatives', () => {
     mount({ mine: [], others: [STRANGER], archived: [OLD] })
-    const empty = screen.getByText('You’re in no topics yet.')
-    const explore = screen.getByText('Explore topics')
+    const empty = screen.getByText('You’re in no initiatives yet.')
+    const explore = screen.getByText('Explore initiatives')
     expect(empty.compareDocumentPosition(explore) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

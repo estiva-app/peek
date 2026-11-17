@@ -1,17 +1,19 @@
 import { useNavigate } from 'react-router-dom'
-import { IconCheck, IconDotsVertical, IconExternalLink, IconLayoutDashboard, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { IconDotsVertical, IconExternalLink, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { Button, ConversationLayout, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, shortcutLabel, useShortcut } from '@estiva-app/ui'
+import { Breadcrumb, Button, Chip, ConversationLayout, KindIcon, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, isPlainClick, thingKindOf, useShortcut } from '@estiva-app/ui'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
 import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
+import { OpenWorkButton } from '@/components/OpenWorkButton'
 import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
-import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useTeams, useTopicPageDot, useWorkspaceDirectory } from '@/api'
-import { PageDot } from '@/components/PageListDot'
+import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useResolvedReferences, useTeams, useTopicPageDot, useWorkspaceDirectory } from '@/api'
+import { rememberOpenedFrom } from '@/lib/openedFrom'
+import { PageDot, type PageLine } from '@/components/PageListDot'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
@@ -31,16 +33,22 @@ import { formatDateLabel } from '@/api'
  * file's Folder and into a new topic's page, the Desk stays on the Desk
  * (Miky, OPT-12's kickoff).
  */
+/** No references, for a hook that reads none: one array, so it does not read again each time. */
+const NO_REFERENCES: readonly string[] = []
+
 export function useFilePane(
   view: ReturnType<typeof useFileView>,
   {
     onDeleted,
     onListingChanged,
+    openLineHere,
   }: {
     /** The open file was deleted. */
     onDeleted: (deleted: ForeignObject) => void
     /** An archive or a move changed where the file is listed. */
     onListingChanged?: () => Promise<unknown> | void
+    /** A line in its title dot's list opens here, not at its link: the Desk's panel (Katerina, 17 November; ACT-9). */
+    openLineHere?: (line: PageLine) => void
   },
 ) {
   const { file, title, reload: reloadConversation } = view
@@ -65,7 +73,8 @@ export function useFilePane(
     space is on the topic's row now (TOPI-7).
   */
   const isTopic = Number(file?.address?.split(':')[0]) === KIND_BARE_FILE
-  const { teams } = useTeams({ read: isTopic })
+  // A topic's kind, and another app's file's team (its trail) and initiatives (its chips): the tab's one teams read.
+  const { teams } = useTeams({ read: !!file })
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
   const listing = isTopic ? listingOf(teams, file?.address ?? undefined) : undefined
@@ -166,27 +175,34 @@ export function useFilePane(
         onAdd={(pubkeys) => fileControls.addMembers(file, pubkeys, nameOf)}
       />
     ) : undefined
-  // Also when the roster could not be read: no pill then, and Join must not go with it.
-  const showToggle = !isTopic && toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
 
   /*
-    A topic or a space (TEA-6): one switch before its title — Not following,
-    Important or All — and Who follows in the members pill's place, with Add
-    there and in ⋮. They take the place of the Members pill and Join/Leave;
-    every other file keeps those. The place is read by the view
-    (`topicFollowTarget`), whose middle column follows the same level (TOPI-3).
+    A topic or an initiative (TEA-6; the navigation prototype, Katerina 16 November, step 5): the bell, in it or not
+    (Important or Everything joins: Katerina, 17 November), and Who follows in the members pill's place with your own
+    Leave or Join in it. They take the
+    place of the Members pill and Join/Leave; every other file keeps those. The place is read by the view
+    (`topicFollowTarget`).
   */
   const follow = usePlaceFollowControls({
     follow: view.follow,
     target: view.followTarget,
-    // A topic in a team gets a switch once its teams are read (`topicFollowTarget`).
-    coming: isTopic && !!file?.folder,
     title,
-    teamName: listing?.team.name,
     me,
     directory: people,
     people: file?.people,
   })
+  /*
+    Its kind, before its title, in the icon its rows wear (PL-02; Katerina, 16 November: one icon per kind): # a team's
+    topic (today's space), ◎ an initiative (today's topic). Its room is held while the teams are read, so the title does
+    not jump when it lands.
+  */
+  const kindIcon = isTopic
+    ? teams
+      ? listing?.space
+        ? <IconHash size={16} stroke={1.5} aria-hidden />
+        : <IconTarget size={16} stroke={1.5} aria-hidden />
+      : <span aria-hidden="true" className="size-4" data-kind-pending />
+    : undefined
 
   /*
     Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
@@ -201,21 +217,10 @@ export function useFilePane(
     A topic's Open work is a button in its header, and Ctrl/Cmd+O anywhere on its page, in place of the browser's Open
     file (Miky, 3 and 6 Nov; the approved story, TOPI-7). Another app's file keeps it in its ⋮.
   */
-  useShortcut(OPEN_WORK_KEY, () => toggleOpenWork?.(), isTopic && !!toggleOpenWork)
+  // On every file's page (Katerina, 16 November, F-08): Open work is the header's button for another app's file too.
+  useShortcut(OPEN_WORK_KEY, () => toggleOpenWork?.(), !!toggleOpenWork)
   const openWorkButton =
-    isTopic && toggleOpenWork ? (
-      <WithTooltip label={inOpenWork ? 'Take out of Open work' : 'Add to Open work'} shortcut={shortcutLabel(OPEN_WORK_KEY)}>
-        <Button
-          size="small"
-          variant="outlined"
-          leadingIcon={inOpenWork ? <IconCheck size={14} stroke={1.5} /> : <IconLayoutDashboard size={14} stroke={1.5} />}
-          aria-pressed={inOpenWork}
-          onClick={toggleOpenWork}
-        >
-          {inOpenWork ? 'In Open work' : 'Add to Open work'}
-        </Button>
-      </WithTooltip>
-    ) : undefined
+    toggleOpenWork ? <OpenWorkButton inIt={inOpenWork} onToggle={toggleOpenWork} /> : undefined
 
   /*
     Archived (FOL-46): the file is out of every list, and a link still opens
@@ -263,6 +268,52 @@ export function useFilePane(
       />
     ) : undefined
 
+  /*
+    Another app's file (Katerina, 16–17 November, F-04 to F-06): its title is a trail, its project / its kind's icon and
+    its name, the project opening in place; after it one chip, the team it belongs to, and no other ("we agreed to only
+    have the team it belongs to": no chips for the initiatives that list it); then Open, into its own app. A topic keeps
+    its own title, with no trail.
+  */
+  const elsewhere = !!file && !isTopic
+  const parentAddress = elsewhere ? (file?.parentRef ?? undefined) : undefined
+  const parent = useResolvedReferences(parentAddress ? [parentAddress] : NO_REFERENCES)[parentAddress ?? ''] ?? undefined
+  const home = elsewhere && teams && file?.address
+    ? (listingOf(teams, file.address)?.team ?? (parentAddress ? listingOf(teams, parentAddress)?.team : undefined) ?? teams.find((team) => team.id === file.folder))
+    : undefined
+  const go = (href: string, column?: 'topics' | 'folders', address?: string) => (event: React.MouseEvent) => {
+    if (!isPlainClick(event)) return
+    event.preventDefault()
+    if (column && address) rememberOpenedFrom(address, column)
+    navigate(href)
+  }
+  const trail =
+    elsewhere && file ? (
+      <Breadcrumb
+        items={[
+          // No team in the trail: the team is the chip after the name (Katerina, 17 November).
+          ...(parentAddress && parent && typeof parent === 'object'
+            ? [{ label: parent.slots.title?.value ?? 'Untitled', href: filePath(parentAddress, parent.slots.title?.value), onClick: go(filePath(parentAddress, parent.slots.title?.value), 'folders', parentAddress) }]
+            : []),
+          { label: title, icon: <KindIcon kind={thingKindOf(file.kind)} tone="inherit" /> },
+        ]}
+      />
+    ) : undefined
+
+  /*
+    The team it belongs to, a chip right after its name, opening the team's page (Katerina, 17 November, as the 6 November
+    prototype drew it; its icon at a chip's 12px, R-15): an initiative's, and another app's file's, whose trail then holds
+    no team ("make sure the breadcrumbs now dont show the team"). A team's topic needs none: it sits under its team.
+  */
+  const chipTeam = isTopic ? (listing && !listing.space ? listing.team : undefined) : elsewhere ? home : undefined
+  const teamChip = chipTeam ? (
+    <Chip
+      label={chipTeam.name}
+      leadingIcon={<IconUsers size={12} stroke={1.5} aria-hidden />}
+      href={`/app/teams/${chipTeam.id}`}
+      onClick={go(`/app/teams/${chipTeam.id}`)}
+    />
+  ) : undefined
+
   const header = (
         /*
           The kit's PageHeader. One row: the file's name, and whose file it is
@@ -270,8 +321,8 @@ export function useFilePane(
           shows where the file sits — and a trail in one row cut every name short.
         */
         <PageHeader
-          title={title}
-          leading={follow.switcher}
+          title={trail ?? title}
+          leading={kindIcon}
           after={
             /*
             Another app's file: one way into the app that owns it, "Open" —
@@ -291,8 +342,14 @@ export function useFilePane(
               earlier, when you rest on it or tap it. A file of another app has its Open here instead.
             */
             pageDot ? (
-              <PageDot dot={pageDot} />
+              <>
+                {teamChip}
+                <PageDot dot={pageDot} {...(openLineHere ? { openHere: openLineHere } : {})} />
+              </>
             ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
+              <>
+              {/* Its team, the one chip, then Open (Katerina, 17 November). */}
+              {teamChip}
               <WithTooltip label={`Open in ${elsewhereAppName(file)}`}>
                 <Button
                   href={openInAppUrl(file)}
@@ -305,29 +362,27 @@ export function useFilePane(
                   Open
                 </Button>
               </WithTooltip>
-            ) : undefined
+              </>
+            ) : (
+              teamChip
+            )
           }
           // The pill in PageHeader's own place, 12px clear of the buttons, as in Leaf (Katerina, 2 November: it was 8px
           // in the actions). Shown where the buttons are, as before: it opens a dialog, not an action.
           members={file?.folder || view.sidePanel ? (isTopic ? follow.pill : members) : undefined}
+          /*
+            The header's one button with words (PL-09): Add to Open work, whether you are in the topic or not (Katerina,
+            17 November: "add to open work even if I haven't joined … I dont think the join needs to be in the header").
+            You join with the bell beside it, or on your own row in Who follows.
+          */
+          button={file?.folder || view.sidePanel ? openWorkButton : undefined}
           actions={
             file?.folder || view.sidePanel ? (
-              // Open work's button 8px before the strip, as the approved story draws it (TOPI-7).
-              <div className="flex items-center gap-2">
-              {openWorkButton}
-              {/* One strip: one Tab stop, arrows along it (UIG-14). */}
+              // One strip: one Tab stop, arrows along it (UIG-14).
               <Toolbar aria-label="File actions" surface={false}>
                 {/* No Open folder: on the page the Folder is the column beside, its row open (Katerina, 5 October). */}
-                {showToggle && (
-                  <ToolbarButton
-                    tooltip={member ? 'Leave' : 'Join'}
-                    aria-label={member ? 'Leave' : 'Join'}
-                    pressed={member}
-                    onClick={toggleMember}
-                  >
-                    {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
-                  </ToolbarButton>
-                )}
+                {/* The bell, before the side panel, in the topic or not: Important or Everything on it joins (PL-02, PL-13; Katerina, 17 November). */}
+                {isTopic && follow.bell}
                 {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
                 {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
                 {/*
@@ -340,7 +395,7 @@ export function useFilePane(
                   summary, 9 Nov). Open work is the button beside it, Make it
                   a space is on its row, Add is in Who follows (TOPI-7).
                 */}
-                {file?.folder && (hasFileControls(controls) || moves || (!isTopic && toggleOpenWork)) && (
+                {file?.folder && (hasFileControls(controls) || moves) && (
                   <TopicMoreMenu
                     trigger={
                       <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -351,15 +406,14 @@ export function useFilePane(
                     onCopyLink={hasTopicControls ? copyLink : undefined}
                     archiveAction={archiveAction}
                     onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
-                    openWorkAction={toggleOpenWork && !isTopic ? (inOpenWork ? 'remove' : 'add') : undefined}
-                    onToggleOpenWork={isTopic ? undefined : toggleOpenWork}
                     onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
                     onMove={moves && file && !readOnly ? () => fileControls.open('move', file) : undefined}
                     onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                    // As the prototype has it (Q-27, F-10): Details, Rename, Move…, Copy link, then Archive… and Delete apart.
+                    archiveApart
                   />
                 )}
               </Toolbar>
-              </div>
             ) : undefined
           }
         />

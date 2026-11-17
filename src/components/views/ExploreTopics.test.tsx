@@ -60,6 +60,22 @@ describe('Explore topics (TOPI-6)', () => {
     expect(shownTitles()).toEqual(['Pricing', 'Q4-plan review', 'Widgets'])
   })
 
+  it('is Explore initiatives on screen: its title, tabs and search in the new word, ◎ on every row (I-10, I-11)', () => {
+    hook.state = LISTS
+    render(
+      <MemoryRouter>
+        <ExploreTopics onControl={() => {}} />
+      </MemoryRouter>,
+    )
+    // The panel's title, and the tabs and list it names.
+    expect(screen.getByText('Explore initiatives', { selector: ':not([role=tablist]):not(table)' })).toBeTruthy()
+    expect(screen.getByRole('tablist', { name: 'Explore initiatives' })).toBeTruthy()
+    for (const label of ['All', 'Your initiatives', 'Other initiatives', 'Archived']) expect(screen.getByRole('tab', { name: new RegExp(label) })).toBeTruthy()
+    expect(screen.getByLabelText('Find an initiative')).toBeTruthy()
+    expect(rowOf('Widgets').querySelector('.tabler-icon-target')).not.toBeNull()
+    expect(screen.queryByText('Explore topics')).toBeNull()
+  })
+
   it('counts each tab', () => {
     mount(LISTS)
     for (const [label, count] of [['All', 3], ['Your topics', 1], ['Other topics', 2], ['Archived', 1]] as const) {
@@ -87,6 +103,22 @@ describe('Explore topics (TOPI-6)', () => {
     expect(within(rowOf('Pricing')).getAllByText('–')).toHaveLength(3)
   })
 
+  // "We need to use the estiva ui component for the members pill"; "clicking on the pill should not show the members list" (Katerina, 17 November).
+  it('a row’s members are the kit’s pill: up to three faces and the number, nothing to press', () => {
+    const people = ['1', '2', '3', '4'].map((n) => n.repeat(64))
+    const faceOf = vi.fn((pubkey: string) => ({ name: `Person ${pubkey[0]}` }))
+    render(
+      <MemoryRouter>
+        <ExploreTopicsView state={{ ...LISTS, all: [{ ...WIDGETS, members: 4, people }] }} tab="all" onTab={() => {}} onRetry={() => {}} onJoin={() => {}} now={NOW} faceOf={faceOf} />
+      </MemoryRouter>,
+    )
+    const pill = within(rowOf('Widgets')).getByRole('img', { name: '4 members' })
+    expect(pill.tagName).not.toBe('BUTTON')
+    expect(pill.textContent).toContain('4')
+    // Three faces, the first three it lists.
+    expect(faceOf.mock.calls.map(([key]) => key)).toEqual(people.slice(0, 3))
+  })
+
   it('offers Join only on a topic you are not in, and Join joins that topic', async () => {
     const onJoin = vi.fn()
     mount(LISTS, 'all', { onJoin })
@@ -95,11 +127,12 @@ describe('Explore topics (TOPI-6)', () => {
     expect(onJoin).toHaveBeenCalledWith(PRICING.topic)
   })
 
-  it('an archived topic has no Join, is marked archived, and opens with the Topics column beside it', async () => {
+  it('an archived topic has no Join, is said archived by its tab alone, and opens with the Topics column beside it', async () => {
     mount(LISTS, 'archived')
     const archived = rowOf('Level 2')
     expect(within(archived).queryByRole('button', { name: 'Join' })).toBeNull()
-    expect(within(archived).getByLabelText('Archived')).toBeInTheDocument()
+    // The Archived tab says it; an icon inside the Active date said it again and read as part of the date (Katerina, 16 November).
+    expect(within(archived).queryByLabelText('Archived')).toBeNull()
     const link = within(archived).getByRole('link')
     expect(link.getAttribute('href')).toBe('/topic/old')
     await userEvent.click(link)

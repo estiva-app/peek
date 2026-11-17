@@ -7,7 +7,7 @@ import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { useStarred, useDmChannels, useDmPageDot, useDmVisibility, useOpenWorkDms } from '@/api'
-import { PageDot } from '@/components/PageListDot'
+import { PageDot, type PageLine } from '@/components/PageListDot'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -21,6 +21,8 @@ interface UseDmConversationViewArgs {
    * page knows where to go. Absent on pages whose list this does not affect.
    */
   onHideDm?: () => void
+  /** A line in its title dot's list opens here, not at its link: the Desk's panel (Katerina, 17 November; ACT-9). */
+  openLineHere?: (line: PageLine) => void
 }
 
 interface ViewSlots {
@@ -52,7 +54,7 @@ interface ViewSlots {
  * `useChannelSync` ran for a DM is gone with them: it fed the DM dots and the
  * Desk, which read the relay now.
  */
-export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm }: UseDmConversationViewArgs): ViewSlots {
+export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm, openLineHere }: UseDmConversationViewArgs): ViewSlots {
   // A link may name a thread (`?thread=<root>`, a row card's reply line, ACT-3): it opens, and each new one opens again.
   const linked = useSearchParams()[0].get('thread')
   const [threadConvId, setThreadConvId] = useState<string | null>(linked)
@@ -120,7 +122,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   // is open (PEE-44); an open thread reads its replies, inside the view.
   useMarkDmRead(dmId, dm.seenAt, 0)
   // The dot beside the name (ACT-4): the one the DM's row has in People, with its list.
-  const pageDot = useDmPageDot(dmId ?? '', channelUuid, `/app/people/${dmId ?? ''}`)
+  const pageDot = useDmPageDot(dmId ?? '', channelUuid, `/app/dms/${dmId ?? ''}`)
 
   /*
     A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the
@@ -157,7 +159,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
       isStarred={isDmStarred(dmId)}
       onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
       onHideDm={onHideDm}
-      titleDot={<PageDot dot={pageDot} />}
+      titleDot={<PageDot dot={pageDot} {...(openLineHere ? { openHere: openLineHere } : {})} />}
       openWorkAction={openWorkDms ? (openWorkDms.has(dmId) ? 'remove' : 'add') : undefined}
       onToggleOpenWork={openWorkDms ? () => (openWorkDms.has(dmId) ? openWorkDms.remove(dmId) : openWorkDms.add(dmId)) : undefined}
       {...dm.conversationParts}

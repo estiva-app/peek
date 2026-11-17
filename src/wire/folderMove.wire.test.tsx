@@ -199,7 +199,7 @@ describe('moving a space at the wire', () => {
 
   it('ticked, the move makes it a space of the team it goes to', async () => {
     const onMoved = await pick('Steer')
-    expect(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(commands()).toEqual(['move HQ→Steer'])
@@ -208,7 +208,7 @@ describe('moving a space at the wire', () => {
 
   it('unticked, it arrives a topic the team leads', async () => {
     const onMoved = await pick('Steer')
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a space in Steer' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Keep it a topic in Steer' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(roleAtTarget()).toBeUndefined()

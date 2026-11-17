@@ -5,7 +5,7 @@
  * topic's conversation (the badges read), the read markers, and the list's own read, which waits for the list to open.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -177,25 +177,51 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
     expect(relay.listReads).toHaveLength(1)
   })
 
-  it('says "Nothing here yet." when nothing there was ever about you', async () => {
+  it('says “Nothing for you here yet.” when nothing there was ever about you', async () => {
     relay.events = [PLAIN]
     relay.mentioned = new Set()
     relay.merged = { [fileContext(TOPIC)!]: NOW }
     await mount()
     await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
     await openList()
-    expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
+    expect(await screen.findByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
     expect(screen.queryByText(/Totals moved/)).toBeNull()
   })
 
-  it('says Earlier could not be read when the relay refuses the list, never "Nothing here yet."', async () => {
+  it('starts its read as the pointer reaches the dot, before the card opens, and the card opens on the answer, never on a skeleton (17 November)', async () => {
+    relay.events = [PLAIN]
+    relay.mentioned = new Set()
+    relay.merged = { [fileContext(TOPIC)!]: NOW }
+    await mount()
+    await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
+    expect(relay.listReads).toEqual([])
+    await userEvent.hover(document.querySelector('[data-page-dot]')!)
+    // Asked at once, while the card still waits to open.
+    expect(relay.listReads).toHaveLength(1)
+    await openList()
+    await waitFor(() => expect(document.querySelector('[data-page-list]')).not.toBeNull())
+    expect(document.querySelector('[data-page-list-part="reading"]')).toBeNull()
+    expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
+    // The card's own read found the answer kept: the relay was asked once.
+    expect(relay.listReads).toHaveLength(1)
+  })
+
+  it('starts its read when the dot gets focus, as a keyboard reaches it', async () => {
+    relay.merged = { [fileContext(TOPIC)!]: NOW }
+    await mount()
+    await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
+    act(() => document.querySelector<HTMLElement>('[data-page-dot]')!.focus())
+    expect(relay.listReads).toHaveLength(1)
+  })
+
+  it('says Earlier could not be read when the relay refuses the list, never “Nothing for you here yet.”', async () => {
     relay.refuse = true
     relay.merged = { [fileContext(TOPIC)!]: NOW }
     await mount()
     await waitFor(() => expect(document.querySelector('[data-page-dot]')?.getAttribute('data-page-dot')).toBe('quiet'))
     await openList()
     expect(await screen.findByText('Earlier could not be read.')).toBeInTheDocument()
-    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+    expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeNull()
   })
 
   it('opened again a minute later, lists a mention said and read since it was first opened', async () => {
@@ -275,8 +301,8 @@ describe('the dot beside a team’s title (ACT-4)', () => {
     )
   }
 
-  /** The list once its read is back: "Nothing here yet." or its lines. */
-  const listRead = () => waitFor(() => expect(screen.queryByText('Nothing here yet.') ?? document.querySelector('[data-page-list-part="new"]')).not.toBeNull())
+  /** The list once its read is back: “Nothing for you here yet.” or its lines. */
+  const listRead = () => waitFor(() => expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.') ?? document.querySelector('[data-page-list-part="new"]')).not.toBeNull())
 
   beforeEach(() => {
     relay.events = [SAID]
@@ -298,7 +324,7 @@ describe('the dot beside a team’s title (ACT-4)', () => {
     await openList()
     await listRead()
     expect(screen.queryByText(/Sketches are up/)).toBeNull()
-    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
   })
 })
 
@@ -319,7 +345,7 @@ describe('a page’s list (ACT-4)', () => {
     expect(within(earlier).getAllByText(/^Words /).map((el) => el.textContent)).toEqual(['Words seen-1', 'Words old-seen'])
   })
 
-  it('shows New at once and a loading Earlier while its read is out, and "Nothing here yet." only once it returned empty', async () => {
+  it('while its read is out: New at once, then one line’s skeleton with no Earlier heading; “Nothing for you here yet.” only once it returned empty (17 November)', async () => {
     const { PageList } = await import('./PageListDot')
     const { rerender } = render(
       <MemoryRouter>
@@ -327,13 +353,45 @@ describe('a page’s list (ACT-4)', () => {
       </MemoryRouter>,
     )
     expect(within(document.querySelector<HTMLElement>('[data-page-list-part="new"]')!).getByText('Words new-1')).toBeInTheDocument()
-    expect(document.querySelector('[data-page-list-part="earlier"]')).not.toBeNull()
-    expect(screen.queryByText('Nothing here yet.')).toBeNull()
+    expect(document.querySelector('[data-page-list-part="reading"]')).not.toBeNull()
+    expect(document.querySelector('[data-page-list-part="earlier"]')).toBeNull()
+    expect(screen.queryByText('Earlier')).toBeNull()
+    expect(screen.queryByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeNull()
     rerender(
       <MemoryRouter>
         <PageList lines={[]} />
       </MemoryRouter>,
     )
-    expect(screen.getByText('Nothing here yet.')).toBeInTheDocument()
+    expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
+    expect(document.querySelector('[data-page-list-part="reading"]')).toBeNull()
+  })
+
+  it('where the page opens a line itself (the Desk), a plain click opens it there and the link is not followed; Ctrl/Cmd-click still is (17 November)', async () => {
+    const { PageList } = await import('./PageListDot')
+    const openHere = vi.fn()
+    const one = line('new-1', NOW - 100, false)
+    render(
+      <MemoryRouter>
+        <PageList lines={[one]} openHere={openHere} />
+      </MemoryRouter>,
+    )
+    const link = screen.getByText('Words new-1').closest('a')!
+    // `fireEvent` answers false when the click's default was prevented: the link stays put.
+    expect(fireEvent.click(link)).toBe(false)
+    expect(openHere).toHaveBeenCalledWith(one)
+    openHere.mockClear()
+    fireEvent.click(link, { ctrlKey: true })
+    expect(openHere).not.toHaveBeenCalled()
+  })
+
+  it('refused: Earlier says it could not be read, with no skeleton', async () => {
+    const { PageList } = await import('./PageListDot')
+    render(
+      <MemoryRouter>
+        <PageList lines={undefined} failed />
+      </MemoryRouter>,
+    )
+    expect(within(document.querySelector<HTMLElement>('[data-page-list-part="earlier"]')!).getByText('Earlier could not be read.')).toBeInTheDocument()
+    expect(document.querySelector('[data-page-list-part="reading"]')).toBeNull()
   })
 })

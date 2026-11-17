@@ -9,7 +9,7 @@ import { buildMembershipChange, serializeTeamsBlob, parseTeamsBlob } from '@esti
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import { signed } from '@/test/wireRelay'
 import { topicFollowingOf } from './placeDots'
-import { chatHasUnread, chatNews, leavesTopicIn, mayChangeTopicIn, mayMove, teamOf, type Team } from './useTeams'
+import { chatHasUnread, chatNews, leavesTopicIn, mayChangeTopicIn, mayMove, teamFilesOf, teamOf, type Team } from './useTeams'
 import type { TeamsRead } from '@/nostr/teams'
 
 const RELAY = 'b'.repeat(64)
@@ -219,5 +219,23 @@ describe('which of a team’s rows offer Leave', () => {
   // A muted topic reaches here as undefined too; that the hook says so is useTopicsColumn.test's "a muted topic is not yours".
   it('a topic whose following is not known offers none', () => {
     expect(leavesTopicIn([teamOf(folder, read([MIKY, KATERINA]), KATERINA)], place(SPACE), () => undefined)).toBe(false)
+  })
+})
+
+// A team's Files are its projects and documents (Katerina, 17 November).
+describe('teamFilesOf — a team’s Files', () => {
+  const entry = (address: string, archived = false) =>
+    ({ ref: address, address, kind: Number(address.split(':')[0]), folder: TEAM, slots: {}, ...(archived ? { archived: { at: 1 } } : {}) }) as unknown as ForeignObject
+  const PROJECT = `30617:${MIKY}:read-unread`
+  const DOC = `30023:${MIKY}:strategy`
+  const BARE = `30840:${MIKY}:brief`
+  const FOLDER = `39000:${RELAY}:44444444-4444-4444-8444-444444444444`
+
+  it('lists its projects and documents, never a Folder placed in it, nor its topics', () => {
+    expect(teamFilesOf([entry(FOLDER), entry(PROJECT), entry(BARE), entry(DOC)]).map((file) => file.address)).toEqual([PROJECT, DOC])
+  })
+
+  it('leaves out what is archived', () => {
+    expect(teamFilesOf([entry(PROJECT, true), entry(DOC)]).map((file) => file.address)).toEqual([DOC])
   })
 })

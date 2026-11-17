@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { followingOf, teamMembersOf, unreadOnPlace, type Following, type TeamMember, type TeamsList } from '@estiva-app/conversation'
-import { KIND_BARE_FILE, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, KIND_CHANNEL_METADATA, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { heldToken } from '@/auth/heldSession'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { dOfAddress, entryNames, listedByTopicsAsViewer, listedOf, readTeamsAsViewer, type ListedEntry, type TeamsRead } from '@/nostr/teams'
+import { dOfAddress, entryNames, listedOf, readTeamsAsViewer, type ListedEntry, type TeamsRead } from '@/nostr/teams'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { RELAY_URL } from './relayUrl'
 import { useChannelStreams } from './useChannelStreams'
@@ -187,9 +187,19 @@ export function useTeams({ read = true }: {
   }, [key, ids, chats])
 
   const teams = useMemo(() => {
-    if (!folderList || !viewer || state.key !== key || !state.read) return null
+    if (!folderList || !viewer || !state.read) return null
     const read = state.read
-    return folderList.map((folder) => teamOf(folder, read, viewer))
+    if (state.key === key) return folderList.map((folder) => teamOf(folder, read, viewer))
+    /*
+      Another set of teams is being read (one was just made, or one went): the last read's teams stay drawn meanwhile,
+      and a team that read did not cover waits for its own, rather than every list going back to a skeleton (Katerina,
+      17 November: on New team "the left column flickers a little and then the new team appears"). The viewer's own
+      only: somebody else's teams are never drawn for them.
+    */
+    const [whose, idsRead = ''] = state.key.split('|')
+    if (whose !== viewer) return null
+    const covered = new Set(idsRead.split(','))
+    return folderList.filter((folder) => covered.has(folder.id)).map((folder) => teamOf(folder, read, viewer))
   }, [folderList, viewer, state, key])
 
   return { teams, failed: state.key === key && state.failed, reload }
@@ -297,38 +307,33 @@ export function mayMove(teams: readonly Team[] | null, address: string | undefin
 }
 
 /**
- * What a team holds outside any topic (Decided, 3 November: "Files" on its
- * page): the first level of its list, less its topics and every file some
- * topic lists. Its listing is the Folder's own read; the topics' entries are
- * one more. `null` while either is read; `failed` when one could not be.
+ * What a team holds that is not a place: the first level of its list, less its topics — every project and document,
+ * whichever initiative lists them. Its listing is the Folder's own read. `null` while it is read; `failed` when it
+ * could not be.
  */
 export function useTeamFiles(team: string | null | undefined): { files: ForeignObject[] | null; failed: boolean } {
   const { state } = useFolderContents(team)
-  const candidates = useMemo(
-    () =>
-      typeof state === 'object' && 'files' in state
-        ? state.files.filter((file) => !file.archived && file.address && Number(file.address.split(':')[0]) !== KIND_BARE_FILE)
-        : null,
-    [state],
-  )
-  const [listed, setListed] = useState<{ of: readonly ForeignObject[]; ids: Set<string> } | 'failed' | null>(null)
-  useEffect(() => {
-    const token = heldToken()
-    if (!candidates || !RELAY_URL || !token) return
-    let cancelled = false
-    listedByTopicsAsViewer(candidates.map((file) => dOf(file.address!)), RELAY_URL, token)
-      .then((ids) => !cancelled && setListed({ of: candidates, ids }))
-      .catch(() => !cancelled && setListed('failed'))
-    return () => {
-      cancelled = true
-    }
-  }, [candidates])
-  const failed = (typeof state === 'object' && 'failed' in state) || listed === 'failed'
-  const files = candidates && listed && listed !== 'failed' && listed.of === candidates ? candidates.filter((file) => !listed.ids.has(dOf(file.address!))) : null
-  return { files, failed }
+  /*
+    Every project and document the team holds, whichever initiative lists them (Katerina, 16 November, the navigation
+    prototype: a team's Files and its page show where things live). Until then a file a topic listed was left out
+    (Decided, 3 November), which needed a read of every topic's list; that read is gone with it.
+  */
+  const files = useMemo(() => (typeof state === 'object' && 'files' in state ? teamFilesOf(state.files) : null), [state])
+  return { files, failed: typeof state === 'object' && 'failed' in state }
 }
 
-const dOf = dOfAddress
+/**
+ * The rows of a team's Files, from its listing: every live file but its topics, and never a Folder. No app makes a
+ * Folder inside a team (Peek's New team, Ship's New folder and the shared create step all make a team); drawn as a
+ * file, a Folder's link would open it as a team, which it is not. What it holds is listed where it lives.
+ */
+export function teamFilesOf(files: readonly ForeignObject[]): ForeignObject[] {
+  return files.filter((file) => {
+    const kind = Number(file.address?.split(':')[0])
+    return !file.archived && !!file.address && kind !== KIND_BARE_FILE && kind !== KIND_CHANNEL_METADATA
+  })
+}
+
 
 /** A stream message as the shared rule reads one: a reply names its root, as NIP-10's marked `e` does. */
 const asPlaceMessage = (message: StreamMessage) => ({
@@ -342,6 +347,17 @@ const asPlaceMessage = (message: StreamMessage) => ({
 
 /** A team chat's messages from a Folder's channel stream: those about no file (§11.1's general stream). */
 export const chatMessagesOf = (messages: readonly StreamMessage[]) => messages.filter((message) => message.about.length === 0)
+
+/**
+ * When a team's chat was last written in, Unix seconds, from the stream its dot already reads: `undefined` until it is
+ * read, for someone not in it, or when nothing was said there (TP-12: a dash, never a made-up date).
+ */
+export function useTeamChatActive(team: Team | null | undefined): number | undefined {
+  const ids = useMemo(() => (team?.chat.in ? [team.id] : []), [team])
+  const { streams } = useChannelStreams(ids)
+  const stream = team?.chat.in ? streams[team.id] : undefined
+  return useMemo(() => (stream ? chatMessagesOf(stream).reduce<number | undefined>((latest, m) => (latest === undefined || m.at > latest ? m.at : latest), undefined) : undefined), [stream])
+}
 
 /** Whether a team's chat has something new for `viewer` in its channel's stream (§11.8): only for someone in it. */
 export function chatHasUnread(team: Team, stream: readonly StreamMessage[], merged: Readonly<Record<string, number>>, viewer: string): boolean {

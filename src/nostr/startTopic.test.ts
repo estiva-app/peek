@@ -91,6 +91,23 @@ describe('starting a topic', () => {
     expect(command.tags.find((t) => t[0] === 'a')?.[1]).toBe(`30840:${AUTHOR}:${file.tags[0][1]}`)
   })
 
+  it('started as its team’s topic (#), the one add that lists it carries the space role, and nothing is written after it (17 November)', async () => {
+    const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true, space: true }, RELAY, token)
+    expect(result.ok).toBe(true)
+    const events = sent()
+    // The file, then one add: no second add can land after the mark and take it off.
+    expect(events.map((e) => e.kind)).toEqual([30840, 1852])
+    const [file, command] = events
+    expect(command.tags.find((t) => t[0] === 'op')?.[1]).toBe('add')
+    expect(command.tags.find((t) => t[0] === 'a')).toEqual(['a', `30840:${AUTHOR}:${file.tags[0][1]}`, '', 'space'])
+  })
+
+  it('started as an initiative, its add carries no role', async () => {
+    await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
+    const command = sent()[1]
+    expect(command.tags.find((t) => t[0] === 'a')?.length).toBe(2)
+  })
+
   it('reads the accepted field, not the status code', async () => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'restricted: kind not allowed' })
     const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)

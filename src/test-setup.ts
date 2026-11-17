@@ -3,6 +3,7 @@ import { configure } from '@testing-library/react'
 import { beforeEach, vi } from 'vitest'
 import { clearListingCaches } from '@/platform/listingCache'
 import { resetConversationsForTests } from '@/api/conversations'
+import { clearRailMemory } from '@/lib/railMemory'
 
 // `findBy…`, `waitFor` and `vi.waitFor` give up after 1 s by default, which a
 // starved worker on a busy box misses with nothing wrong (2164b3d5). A real
@@ -19,4 +20,6 @@ beforeEach(() => {
   resetConversationsForTests()
   // What a tab holds for its visit only — the column's view a Folder link chose.
   if (typeof window !== 'undefined') window.sessionStorage.clear()
+  // Where the rail's items come back to is also kept for the next tab, in localStorage (17 November).
+  if (typeof window !== 'undefined') clearRailMemory()
 })

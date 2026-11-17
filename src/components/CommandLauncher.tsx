@@ -183,7 +183,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const { setPendingTopicMessage, dmId: selectedPersonId } = useLastSelection()
   const { pathname } = useLocation()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
-  const openPersonId = pathname.startsWith('/app/people/') ? selectedPersonId : null
+  const openPersonId = pathname.startsWith('/app/dms/') ? selectedPersonId : null
   // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
   const openFileRef = fileRouteFromPath(pathname)?.ref ?? null
   // The People page's list, keyed by pubkey — a row opens the DM (REM-3).
@@ -765,7 +765,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     label: p.name,
     description: p.role,
     leading: <Avatar src={p.avatarSrc} name={p.name} bot={p.bot} size={24} />,
-    onSelect: close(() => navigate(`/app/people/${encodeURIComponent(p.id)}`)),
+    onSelect: close(() => navigate(`/app/dms/${encodeURIComponent(p.id)}`)),
     onForget: forget,
   })
 

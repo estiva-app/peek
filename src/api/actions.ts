@@ -68,6 +68,13 @@ export function usePeekActions() {
         if (!read) return { ok: false, reason: 'Peek could not read this topic, so nothing changed. Try again.' }
         return choosePlaceLevelAsViewer({ ...args, choice: 'not-following', read }, relayUrl, token)
       }),
+    /** Back into a place from a list (a row's Leave undone, Q-10): read it first, as Leave does, then Important, where Join lands. */
+    joinPlace: (args: { place: Place; folder: string; archived: boolean; muted: boolean }) =>
+      asViewer(async (relayUrl, token) => {
+        const read = await readPlaceAsViewer(args.place, relayUrl, token).catch(() => undefined)
+        if (!read) return { ok: false, reason: 'Peek could not read this topic, so nothing changed. Try again.' }
+        return choosePlaceLevelAsViewer({ ...args, choice: 'important', read }, relayUrl, token)
+      }),
     /** Add someone to the place: they join it at Important, and can leave. */
     addToPlace: (args: { place: Place; folder: string; person: string; read: PlaceRead }) =>
       asViewer((relayUrl, token) => addToPlaceAsViewer(args, relayUrl, token)),

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { onTopicRefused, useForeignObjects, type RefusedTopic } from '@/api'
+import { onTopicRefused, showStartedTopicWhenWritten, useForeignObjects, type RefusedTopic } from '@/api'
 import { browserDrafts, draftKeys } from '@/lib/drafts'
 import { filePath } from '@/lib/objectUrl'
 import { useToast } from '@/lib/toast'
@@ -60,6 +60,7 @@ export function StartedTopicRefusals() {
           summary,
           parent: again.parent?.address,
           hasState: again.hasState,
+          ...(again.space ? { space: true } : {}),
           // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-unique-across-every-kind.md
           fileId: again.deleted ? undefined : again.fileId,
           folderName: again.folderName,
@@ -76,6 +77,8 @@ export function StartedTopicRefusals() {
           if (draft?.text.trim()) drafts.write(draftKeys.object(result.address), draft.text, draft.urgent)
           drafts.clear(draftKeys.object(again.address))
         }
+        // Its row beside, once it is written this time (T-12).
+        showStartedTopicWhenWritten(result.address)
         navigate(filePath(result.address, title))
         return true
       }}

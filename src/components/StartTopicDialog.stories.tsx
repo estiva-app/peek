@@ -31,6 +31,11 @@ type Story = StoryObj<typeof meta>
 /** A topic at the top of the Folder — no parent, no `a` tag. */
 export const InAFolder: Story = {}
 
+/** An initiative, from the Initiatives column: the same fields, and no line about a conversation (Katerina, 17 November). */
+export const AnInitiative: Story = {
+  args: { noun: 'initiative', folderName: undefined, folders: PICKER_FOLDERS },
+}
+
 /** With its optional summary filled in (SPEC §6.12): seeded on the topic as it is started. */
 export const WithASummary: Story = {
   args: { initialTitle: 'Launch naming', initialSummary: 'Where we pick the product’s name, by Friday.' },

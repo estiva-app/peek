@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { nestingOf } from '@estiva-app/interop'
+import { IconFilter, IconUsers, IconUsersPlus } from '@tabler/icons-react'
+import { Chip, CollapsibleSection, EmptyState, ListColumn, Menu, MenuItem, NavTree, SkeletonList, Tabs, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { DeletedProjectsState } from '@/api'
 import {
   reloadFoldersOnScreen,
+  spaceTeamOf,
   teamFolders,
   topLevelFolders,
   useDeletedProjects,
   useFolderContents,
   useFolders,
   useForeignObjects,
+  useTeams,
 } from '@/api'
 import { DeletedProjects } from '@/components/views/DeletedProjects'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
-import { TopicState } from '@/components/ui/TopicState'
 import { TeamsColumn } from '@/components/views/TeamsColumn'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { HeaderStartTopic, NewTopicButton } from '@/components/views/HeaderStartTopic'
@@ -204,22 +205,16 @@ export function FolderTree({
   )
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
   const [making, setMaking] = useState<'folder' | 'topic' | null>(null)
+  /** The team a + asked to start a topic in (Q-16): Start a topic opens with it chosen. */
+  const [startIn, setStartIn] = useState<string | null>(null)
 
   return (
     <>
       <FolderColumn
         view={view}
         onViewChange={(next) => {
+          // Switching view keeps the open page open (Katerina, 16 November, Q-13): only archiving what is open closes it.
           setView(next)
-          /*
-            A view that does not draw the open file closes it, and the page
-            says "No file selected" (Katerina, 5 October): a selection the
-            column cannot show is a page about nothing beside it. Archive
-            draws only what is archived; Teams only what is not.
-          */
-          if (selectedRef && next !== view && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
-            navigate('/app/teams')
-          }
         }}
         show={show}
         onShowChange={setShow}
@@ -232,9 +227,14 @@ export function FolderTree({
           <TeamsColumn
             show={show}
             selectedRef={selectedRef}
+            selectedParent={selectedParent}
             openTeam={section}
             chatOpen={chatOpen}
             onControl={onControl}
+            onStartTopic={(team) => {
+              setStartIn(team.id)
+              setMaking('topic')
+            }}
           />
         ) : (
           <ArchiveTreeView
@@ -260,7 +260,16 @@ export function FolderTree({
         <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reload} onClose={close} />
       )}
       {making === 'folder' && <NewFolderDialog reload={reload} onClose={() => setMaking(null)} />}
-      {making === 'topic' && <HeaderStartTopic column="folders" defaultFolder={section ?? undefined} onClose={() => setMaking(null)} />}
+      {making === 'topic' && (
+        <HeaderStartTopic
+          column="folders"
+          defaultFolder={startIn ?? section ?? undefined}
+          onClose={() => {
+            setMaking(null)
+            setStartIn(null)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -282,10 +291,10 @@ function NewFolderDialog({ reload, onClose }: { reload: () => Promise<unknown>; 
         /*
           Re-read before navigating: the relay emits the `kind:39000` this
           list reads as a side effect of accepting the create, but the list in
-          hand does not have it yet. The new Folder's link opens it, in Folders.
+          hand does not have it yet. The new team's chat opens, its row marked (Katerina, 16 November, Q-28).
         */
         await reload()
-        navigate(`/app/teams/${result.id}`)
+        navigate(`/app/teams/${result.id}/chat`)
         return true
       }}
     />
@@ -425,6 +434,8 @@ export function FolderColumn({
 }) {
   return (
     <ListColumn
+      // Drawn again on another page (a team's, a topic's, a file's), it opens where it was left (Katerina, 17 November).
+      rememberAs={view === 'archive' ? 'archive' : 'teams'}
       title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Teams'}
       titleMenu={TREE_VIEWS.map((option) => (
         <MenuItem key={option.value} label={option.label} selected={view === option.value} onClick={() => onViewChange(option.value)} />
@@ -433,10 +444,11 @@ export function FolderColumn({
       actions={
         // One strip: one Tab stop, arrows along it (UIG-14). Archive makes nothing and filters nothing.
         !signedOut && view !== 'archive' && (
-          <Toolbar aria-label="Topic list actions" surface={false}>
+          <Toolbar aria-label="Team list actions" surface={false}>
             {view === 'all' && (
               <ToolbarButton tooltip="New team" aria-label="New team" onClick={onNewFolder}>
-                <IconFolderPlus size={16} stroke={1.5} />
+                {/* People with a plus, as the prototype draws New team (Katerina, 16 November). */}
+                <IconUsersPlus size={16} stroke={1.5} />
               </ToolbarButton>
             )}
             <NewTopicButton onClick={onNewTopic} />
@@ -636,7 +648,8 @@ function ArchiveSection({
     open (Katerina, 5 October): the package's `NavTree` (`selectedGroup`, ui
     0.99) and `openFor`, once per arrival — the person can close it again.
   */
-  const openFor = current && selectedRef ? `archive:${selectedRef}` : undefined
+  // The team's own link too, with no file open: it lands open, as its heading did (the kit's fold has no group to select).
+  const openFor = current ? (selectedRef ? `archive:${selectedRef}` : `archive:team:${folder.id}`) : undefined
   // The read is the fold: `null` while closed is the hook's "nothing to read".
   const own = useFolderContents(open ? folder.id : null, { archived: true, folderArchived: !!folder.archived })
   // The last listing drawn stays drawn while the next read of the same Folder is in flight (SID-2).
@@ -666,22 +679,39 @@ function ArchiveSection({
     : undefined
   const expand = expandSelected && selectedRow ? [...(chain ?? []), selectedRow.ref] : chain
 
+  // Its places wear their kind's icon, as everywhere (Katerina, 16 November): # a team's topic, ◎ an initiative.
+  const { teams } = useTeams()
+  const placeOf = useCallback(
+    (file: ForeignObject) =>
+      Number(file.address?.split(':')[0]) === KIND_BARE_FILE ? (spaceTeamOf(teams, file.address ?? undefined) ? ('topic' as const) : ('initiative' as const)) : undefined,
+    [teams],
+  )
+  const name = folder.name ?? folder.id
+
   return (
-    <NavTreeSection
-      id={folder.id}
+    /*
+      A team in Archive is the kit's fold drawn as a row among rows, with the team's icon (Katerina, 16 November, A-01):
+      the whole row folds and opens no page, as Teams' Files and Other teams do.
+    */
+    // Which team the fold is, as a row says which file it is (`data-file`).
+    <div data-archive-team={folder.id} className="flex flex-col">
+    <CollapsibleSection
+      look="row"
       // The id when there is no name: a channel created by an app rather than a person may carry none.
-      title={folder.name ?? folder.id}
+      title={name}
       open={open}
       pending={pending}
       onOpenChange={setOpen}
       openFor={openFor}
-      icon={<TopicState type="folder" />}
-      // An archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
+      icon={<IconUsers size={16} stroke={1.5} aria-hidden />}
+      // An archived team says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
-      menu={menu}
+      {...(menu ? { menu, menuLabel: `More options for ${name}` } : {})}
+      contentClassName="gap-0.5"
     >
-      {open && <FileTreeView state={state} archive selectedRef={selectedRef} expand={expand} onControl={onControl} />}
-    </NavTreeSection>
+      {open && <FileTreeView state={state} archive selectedRef={selectedRef} expand={expand} onControl={onControl} placeOf={placeOf} />}
+    </CollapsibleSection>
+    </div>
   )
 }
 

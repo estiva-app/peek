@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, MetaText, Person, isPlainClick } from '@estiva-app/ui'
+import { ActivityLine, Button, MenuSection, isPlainClick } from '@estiva-app/ui'
+import { IconArrowBackUp, IconAt, IconMessage, IconMoodSmile } from '@tabler/icons-react'
 import type { UnreadReason } from '@estiva-app/conversation'
-import { useMemo, type MouseEvent } from 'react'
+import { useMemo, type MouseEvent, type ReactNode } from 'react'
 import { CARD_LINES, formatActive, newestFirst, useListedFill, useListedFillOf, type RowNewsItem } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { filePath } from '@/lib/objectUrl'
@@ -13,6 +14,19 @@ const VERB: Record<UnreadReason, string> = {
   'new-conversation': 'started a conversation',
   'reply-in-yours': 'replied in your conversation',
   message: 'wrote',
+}
+
+const MARK_ICON = { size: 16, stroke: 1.5, 'aria-hidden': true } as const
+/**
+ * What kind of thing a line is, beside its first line (the navigation prototype's marks, Katerina, 6 and 16 November):
+ * a mention in the accent, a reply, a new conversation or a message, a reaction to you — in the dot's orange while it
+ * is new (ACT-7: the 6px disc that said so before).
+ */
+function markOf(item: RowNewsItem, seen: boolean): ReactNode {
+  if (item.reaction) return <IconMoodSmile {...MARK_ICON} className={seen ? undefined : 'text-warning-default'} />
+  if (item.reason === 'mention') return <IconAt {...MARK_ICON} className="text-accent-text" />
+  if (item.reason === 'reply-in-yours') return <IconArrowBackUp {...MARK_ICON} />
+  return <IconMessage {...MARK_ICON} />
 }
 
 /**
@@ -79,8 +93,14 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
       : place === 'topic' || item.root !== (item.reaction?.target ?? item.id)
         ? `${placeHref}${thread(item)}`
         : placeHref
+  /*
+    As the navigation prototype draws a lit row's card (Katerina, 17 November): "New" over the lines, the kit's
+    MenuSection as the title dot's list heads them (its heading in the kit's secondary text, the quieter one), and the
+    lines' box 4px in from the card's own 4px on every side, so a line's background sits 8px from the card's edges.
+  */
   return (
-    <>
+    <div className="p-1">
+      <MenuSection label="New">
       {shown.map((item) => (
         <NewsLine
           key={item.id}
@@ -106,7 +126,8 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
           {`${more} more`}
         </Button>
       )}
-    </>
+      </MenuSection>
+    </div>
   )
 }
 
@@ -130,25 +151,22 @@ export function NewsLine({ item, details, href, onClick, where, seen = false }: 
   const title = item.file ? details.titleOf(item.file) : undefined
   const words = details.wordsOf(item)
   const place = [where, title].filter(Boolean).join(' › ')
+  const picture = details.avatarSrcFor(name)
+  // The kit's line (Katerina, 16 November): it was drawn here by hand, a card whose edge showed on hover, as the
+  // navigation prototype drew it a second time. Same words; the reason's mark beside the first line.
   return (
-    <Card href={href} fill="none" quietUntilHover hover="fill" onClick={onClick} className="flex min-w-0 flex-col gap-0.5 p-2" data-seen={seen || undefined} data-reaction={item.reaction ? '' : undefined}>
-      <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
-        {/* A reaction to you while it is new: the 6px disc in the dot's orange, its words in the line's own colour (ACT-7; the activity indicator story). */}
-        {item.reaction && !seen && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-default" />}
-        <span className={`flex min-w-0 shrink-0 text-h5 leading-tight ${seen ? 'text-text-secondary' : 'text-text-primary'}`}>
-          <Person size={16} name={name} picture={details.avatarSrcFor(name)} {...(person?.bot ? { bot: true } : {})} />
-        </span>
-        <span className="truncate">{item.reaction ? reactedWords(item.reaction.emoji) : VERB[item.reason as UnreadReason]}</span>
-        <MetaText size="chip" className="ml-auto shrink-0">
-          {formatActive(item.at * 1000)}
-        </MetaText>
-      </div>
-      {(place || words) && (
-        <div className="truncate text-caption text-text-muted">
-          {place && <span className="text-text-secondary">{place}{words ? ' · ' : ''}</span>}
-          {words ? previewText(words) : null}
-        </div>
-      )}
-    </Card>
+    <ActivityLine
+      href={href}
+      {...(onClick ? { onClick } : {})}
+      mark={markOf(item, seen)}
+      person={{ name, ...(picture ? { picture } : {}), ...(person?.bot ? { bot: true } : {}) }}
+      did={item.reaction ? reactedWords(item.reaction.emoji) : VERB[item.reason as UnreadReason]}
+      time={formatActive(item.at * 1000)}
+      {...(place ? { where: place } : {})}
+      {...(words ? { words: previewText(words) } : {})}
+      seen={seen}
+      data-seen={seen || undefined}
+      data-reaction={item.reaction ? '' : undefined}
+    />
   )
 }

@@ -9,7 +9,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story, ctx) => (
-      <MemoryRouter initialEntries={[ctx.parameters.route ?? '/app/people']}>
+      <MemoryRouter initialEntries={[ctx.parameters.route ?? '/app/dms']}>
         <LastSelectionProvider>
           <div className="bg-bg-base h-[260px] flex">
             <Story />
