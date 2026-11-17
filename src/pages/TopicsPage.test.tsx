@@ -88,6 +88,8 @@ describe('Topics starts a topic from its header (TOP-9)', () => {
     await user.click(screen.getByRole('button', { name: 'New initiative' }))
     // Today's Start a topic, in the new word (Katerina, 16 November).
     expect(await screen.findByText('Start an initiative')).toBeTruthy()
+    // No line about a conversation: that is a topic's (Katerina, 17 November).
+    expect(screen.queryByText(/A conversation/)).toBeNull()
     await user.click(screen.getByRole('combobox', { name: 'Team' }))
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')

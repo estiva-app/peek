@@ -106,11 +106,17 @@ export function StartTopicDialog({
         <EmptyState scope="section" message="There is nowhere to start one yet — make a team first." />
       ) : (
         <>
-          <p className="text-body-2 text-text-secondary">
-            {parent
-              ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
-              : `A conversation in ${where}. Everyone in the team can read it.`}
-          </p>
+          {/*
+            A topic is a conversation in its team, and says so. An initiative says nothing here (Katerina, 17 November:
+            "it's more for topics dialog. We need to remove that text altogether").
+          */}
+          {(parent || noun === 'topic') && (
+            <p className="text-body-2 text-text-secondary">
+              {parent
+                ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
+                : `A conversation in ${where}. Everyone in the team can read it.`}
+            </p>
+          )}
           <Field label="Title">
             <TextInput
               value={title}
