@@ -72,6 +72,7 @@ export {
 export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
 export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
 export type { StartTopicArgs } from './startTopic'
+export { showStartedTopicWhenWritten } from './topicStarted'
 export {
   useForeignConversation,
   useFileAddress,

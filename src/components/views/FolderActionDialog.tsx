@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { FolderSummary } from '@estiva-app/interop'
 import { ArchiveDialog } from '@estiva-app/ui'
-import { useForeignObjects, usePeekActions } from '@/api'
+import { showStartedTopicWhenWritten, useForeignObjects } from '@/api'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import type { FolderAction } from '@/components/views/useFolderActions'
@@ -28,7 +28,6 @@ export function FolderActionDialog({
 }) {
   const navigate = useNavigate()
   const { createTopic, renameFolder, archiveFolder, archiveImpact } = useForeignObjects()
-  const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const { folder } = action
   const name = folder.name ?? 'Untitled team'
@@ -97,17 +96,18 @@ export function FolderActionDialog({
         defaultFolder={folder.id}
         onClose={onClose}
         onCreate={async (title, _chosen, summary) => {
-          const result = await createTopic({ folder: folder.id, title, summary, hasState: folder.hasState, folderName: name })
+          /*
+            Started from its team, it is one of the team's topics (#): today's space mark, carried by the add that lists
+            it, as the + on its row and the column's New topic do (Katerina, 16 November, T-12, Q-16). One write: as a
+            second one it lost to the add, and the topic came out an initiative (17 November).
+          */
+          const result = await createTopic({ folder: folder.id, title, summary, hasState: folder.hasState, folderName: name, space: true })
           if (!result.ok) {
             showToast({ label: result.reason, type: 'error' })
             return false
           }
-          /*
-            Started from its team, it is one of the team's topics (#): today's space mark, set at once, as the + on its row
-            and the column's New topic do (Katerina, 16 November, T-12, Q-16). A refusal is said; the topic stays an initiative.
-          */
-          const marked = await markSpace(folder.id, result.address, true)
-          if (!marked.ok) showToast({ label: marked.reason, type: 'error' })
+          // Its row in Teams once it is written: shown and marked, as the open page's (T-12).
+          showStartedTopicWhenWritten(result.address)
           // Into the topic, with Teams beside it: under a filter the tree may not be showing it.
           navigate(filePath(result.address, title), { state: { column: 'folders' } })
           return true

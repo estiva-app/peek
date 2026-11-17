@@ -31,6 +31,8 @@ export interface StartedTopic {
   folder: string
   folderName?: string
   hasState: boolean
+  /** Started as one of its team's topics (#): started again after a refusal, it is one still. */
+  space?: boolean
   /** The file it was started under, when it was: Start's dialog names it again. */
   parent?: ForeignObject
   /** The file as its Folder's listing and its page will draw it. */

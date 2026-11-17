@@ -71,7 +71,7 @@ const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] })
 /** The team's topic mark a topic started from its ⋮ is given at once (T-12, Q-16). */
 const peek = vi.hoisted(() => ({ markSpace: vi.fn(async () => ({ ok: true as const })) }))
 const created = vi.hoisted(() => ({
-  folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })),
+  folder: vi.fn(async () => ({ ok: false as const, reason: 'Refused.' })),
   /*
     Starting a topic from the header (FOL-41) — a bare file on the relay, the
     same writer the folder pane's control uses. Refused, like the folder create
@@ -359,7 +359,7 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
   })
 
-  it('a topic started from the ⋮ is one of the team’s topics (#): marked as the team’s at once (T-12, Q-16)', async () => {
+  it('a topic started from the ⋮ is one of the team’s topics (#): started with the team’s mark, in one write (T-12, Q-16; 17 November)', async () => {
     const ADDRESS = `30840:${'c'.repeat(64)}:from-the-menu`
     created.topic.mockResolvedValueOnce({ ok: true, address: ADDRESS, naddr: 'naddr1menu' } as never)
     peek.markSpace.mockClear()
@@ -368,7 +368,9 @@ describe("a team's page offers the team's own actions, in its ⋮, to who may ta
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Start a topic' }))
     await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Weekly review')
     await userEvent.click(screen.getByRole('button', { name: 'Start' }))
-    await waitFor(() => expect(peek.markSpace).toHaveBeenCalledWith(FOLDER, ADDRESS, true))
+    await waitFor(() => expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Weekly review', space: true })))
+    // No second write: a mark sent apart raced the topic's own add and lost, so it came out an initiative.
+    expect(peek.markSpace).not.toHaveBeenCalled()
   })
 
   it('never Delete on a team, and never asks the relay about one (FOL-9)', async () => {
@@ -537,7 +539,8 @@ describe('FoldersPage starts a topic from the header', () => {
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Launch plan', hasState: true }))
+    // From Teams, one of the team's topics (#): the team's mark is in the one write that lists it (17 November).
+    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Launch plan', hasState: true, space: true }))
   })
 
   it('starts it in the Folder that was chosen', async () => {

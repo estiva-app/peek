@@ -1,5 +1,5 @@
 import { buildBareFile, buildDeletion, encodeNaddr, type UnsignedEvent } from '@estiva-app/protocol'
-import { KIND_BARE_FILE, SUMMARY_FIELD, planPlaceFile } from '@estiva-app/interop'
+import { KIND_BARE_FILE, SUMMARY_FIELD, planMarkSpace, planPlaceFile } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { summaryText } from '@/lib/summary'
 import { publishConfirmed } from './fileConversation'
@@ -81,13 +81,23 @@ export function planTopic(
  */
 export async function publishTopicAsViewer(
   planned: PlannedTopic,
-  args: { folder: string; hasState: boolean },
+  args: { folder: string; hasState: boolean; space?: boolean },
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string; deleted?: true }> {
   const file = await publishConfirmed(planned.event, relayUrl, token, 'The relay refused to create the topic.')
   if (!file.ok) return file
-  for (const command of planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address: planned.address, hasState: args.hasState })) {
+  /*
+    Started as one of its team's topics (#, today's space), the add that lists it carries the team's mark itself: one
+    write. As a second add it raced this one — the topic opens before these writes run (PEE-6), so the mark went out
+    first and this plain add, arriving after it, took the role off: the topic came out an initiative (Katerina,
+    17 November). An add naming an entry replaces its role, so the one add is the whole of it.
+  */
+  const listing =
+    args.space && args.hasState
+      ? [planMarkSpace(token.pubkey, Date.now(), { team: args.folder, address: planned.address, space: true })]
+      : planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address: planned.address, hasState: args.hasState })
+  for (const command of listing) {
     const placed = await publishConfirmed(command, relayUrl, token, 'The team refused to list the topic.')
     if (placed.ok) continue
     const deleted = file.id
@@ -104,7 +114,7 @@ export async function publishTopicAsViewer(
 
 /** Plan and write a topic in one go, answering once the relay has — for the fixture seeds, which wait. */
 export async function createTopicAsViewer(
-  args: { folder: string; stored?: string; title: string; summary?: string; parent?: string; hasState: boolean },
+  args: { folder: string; stored?: string; title: string; summary?: string; parent?: string; hasState: boolean; space?: boolean },
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {
