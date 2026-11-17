@@ -52,7 +52,12 @@ const filePane = vi.hoisted(() => ({
   callbacks: undefined as { onDeleted: (deleted: unknown) => void; openLineHere?: (line: unknown) => void } | undefined,
 }))
 /** What the Desk hands a DM's view and a team's chat: their title dots' "open here" (17 November). */
-const handed = vi.hoisted(() => ({ dm: undefined as ((line: unknown) => void) | undefined, chat: undefined as ((line: unknown) => void) | undefined }))
+const handed = vi.hoisted(() => ({
+  dm: undefined as ((line: unknown) => void) | undefined,
+  chat: undefined as ((line: unknown) => void) | undefined,
+  /** The open DM's thread, as the Desk opens it for a reply's line. */
+  dmThread: [] as (string | null)[],
+}))
 vi.mock('@/components/views/useFilePane', () => ({
   useFilePane: (
     view: { panel: { children: React.ReactNode } },
@@ -78,6 +83,8 @@ vi.mock('@/components/views/useDmConversationView', () => ({
     return {
       rightPanel: dmId ? <div data-testid="dm-pane">{dmId}</div> : <div data-testid="nothing-open" />,
       threadPanel: undefined,
+      replyOnlyThread: undefined,
+      openThread: (id: string | null) => void handed.dmThread.push(id),
     }
   },
 }))
@@ -96,6 +103,8 @@ const desk = vi.hoisted(() => ({
   /** The tab's teams read, for a team's chat in Open work (Q-37): none unless a test says. */
   teams: [] as unknown[],
   chatUnread: {} as Record<string, boolean>,
+  /** What lit each team's chat, by team: its row's card. */
+  chatNews: {} as Record<string, unknown[]>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -105,7 +114,7 @@ vi.mock('@/api', async () => ({
   useUnread: () => ({ dmHasUnread: (dmId: string) => desk.dmUnread[dmId] === true, dmNews: (dmId: string) => desk.dmNews[dmId] ?? [], dmTone: () => 'blue' }),
   useDeskListedNews: () => new Map(),
   useMentionNames: () => [{ pubkey: 'qa2', name: 'QA-2' }],
-  useRowNewsDetails: (items: { id: string; words?: string }[]) => ({
+  useRowNewsDetails: () => ({
     wordsOf: (item: { words?: string }) => item.words,
     titleOf: () => undefined,
   }),
@@ -118,7 +127,7 @@ vi.mock('@/api', async () => ({
   useDeskLoading: () => false,
   useDeskItems: () => ({ openWork: desk.openWork, urgent: desk.urgent }),
   useTeams: () => ({ teams: desk.teams, failed: false, reload: async () => {} }),
-  useTeamChatNews: () => ({ unread: desk.chatUnread, news: {}, tones: {} }),
+  useTeamChatNews: () => ({ unread: desk.chatUnread, news: desk.chatNews, tones: {} }),
   useScreenerItems: () => desk.screener,
   useOpenWorkActivity: () => () => undefined,
   useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread, news: desk.news, fills: {}, tones: {} }),
@@ -202,6 +211,8 @@ beforeEach(() => {
   desk.news = {}
   desk.dmUnread = {}
   desk.dmNews = {}
+  desk.chatNews = {}
+  handed.dmThread = []
 })
 
 /** Katerina, 31 October: the fold hides the rail and the page's list column together, on Desk as in Folders. */
@@ -699,5 +710,71 @@ describe('resting on a lit Desk row shows what is new there, as in the sidebar (
     expect(screen.getByText('mentioned you')).toBeTruthy()
     fireEvent.click(screen.getByText('Totals are off'))
     expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: SECOND, thread: 'c-3' })}`)
+  })
+})
+
+/*
+  Every activity line on the Desk opens beside the Desk's lists, never on its own page (Katerina, 17 November: "we need
+  to make sure eveything works like that on desk"): each section's row card, for a file, a team's chat and a DM, its
+  "N more", and the open item's title dot (above). Only the Screener opens where an item lives, as she decided (Q-54).
+*/
+describe('every activity line on the Desk opens here (17 November)', () => {
+  it('Open work: a file’s card line opens it here, at its thread', async () => {
+    desk.unread = { [ISSUE]: true }
+    desk.news = { [ISSUE]: [line('c-11', 'Ready for review')] }
+    mount()
+    await hoverCard(leftColumn().getByText('Issue one'))
+    fireEvent.click(screen.getByText('Ready for review'))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: ISSUE, thread: 'c-11' })}`)
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(ISSUE)
+  })
+
+  it('Open work: a card’s “N more” opens the item here', async () => {
+    desk.unread = { [ISSUE]: true }
+    desk.news = { [ISSUE]: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => line(`c-${id}`, `Comment ${id}`)) }
+    mount()
+    await hoverCard(leftColumn().getByText('Issue one'))
+    fireEvent.click(screen.getByRole('button', { name: '1 more' }))
+    expect(url()).toBe(deskWith(ISSUE))
+  })
+
+  it('Open work: a DM’s card line opens the DM here, and a reply its thread there', async () => {
+    desk.openWork = [{ id: 'ow_dm_dm-2', kind: 'dm', dmId: 'dm-2', name: 'Bo' }]
+    desk.dmUnread = { 'dm-2': true }
+    desk.dmNews = { 'dm-2': [line('m-8', 'Agreed', { root: 'm-6' })] }
+    mount()
+    await hoverCard(leftColumn().getByText('Bo'))
+    fireEvent.click(screen.getByText('Agreed'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-2')
+    expect(url()).toBe('/app/desk')
+    expect(handed.dmThread).toContain('m-6')
+  })
+
+  it('Open work: a team chat’s card line opens the chat here, at its thread', async () => {
+    const CHAT = '39000::eng'
+    desk.openWork = [{ id: `ow_chat_${CHAT}`, kind: 'chat', address: CHAT }]
+    desk.teams = [{ id: 'eng', name: 'Engineering', chatAddress: CHAT, chat: { in: true }, company: false, archived: false, members: [], listed: [] }]
+    desk.chatUnread = { eng: true }
+    desk.chatNews = { eng: [line('m-9', 'In the chat', { root: 'm-5' })] }
+    try {
+      mount()
+      await hoverCard(leftColumn().getByText('engineering'))
+      fireEvent.click(screen.getByText('In the chat'))
+      expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: CHAT, thread: 'm-5' })}`)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+    } finally {
+      desk.teams = []
+      desk.chatUnread = {}
+    }
+  })
+
+  it('Urgent: a DM’s card line opens the DM here', async () => {
+    desk.urgent = [{ id: 'urg_dm_dm-8', kind: 'dm', dmId: 'dm-8', name: 'Dara' }]
+    desk.dmNews = { 'dm-8': [line('m-2', 'Server is down', { urgent: true })] }
+    mount()
+    await hoverCard(leftColumn().getByText('Dara'))
+    fireEvent.click(screen.getByText('Server is down'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-8')
+    expect(url()).toBe('/app/desk')
   })
 })
