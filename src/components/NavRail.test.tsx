@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
+import { clearRailMemory } from '@/lib/railMemory'
 import { NavRail } from './NavRail'
 
 function Opened({ topics, folders, desk, dm, column }: { topics?: string; folders?: string; desk?: string; dm?: string; column?: 'topics' | 'folders' }) {
@@ -134,9 +135,19 @@ describe('the rail after a reload', () => {
     expect(screen.getByTestId('here').textContent).toBe('/topic/release-notes-abc folders')
   })
 
-  it('a new tab starts from each item’s own page', () => {
-    mount({ topics: '/topic/release-notes-abc', folders: '/app/teams/team-1' })
+  // "yes it should" (Katerina, 17 November): a new tab too.
+  it('a new tab leads every item back to where the last tab left it', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/app/teams/team-1', dm: 'f00d' })
     window.sessionStorage.clear()
+    reload()
+    expect(hrefOf('Initiatives')).toBe('/topic/release-notes-abc')
+    expect(hrefOf('Teams')).toBe('/app/teams/team-1')
+    expect(hrefOf('DMs')).toBe('/app/dms/f00d')
+  })
+
+  it('after sign-out, every item leads to its own page', () => {
+    mount({ topics: '/topic/release-notes-abc', folders: '/app/teams/team-1' })
+    clearRailMemory()
     reload()
     expect(hrefOf('Initiatives')).toBe('/app/initiatives')
     expect(hrefOf('Teams')).toBe('/app/teams')

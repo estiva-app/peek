@@ -21,6 +21,18 @@ describe('railMemory', () => {
     expect(readRailMemory()).toEqual(memory)
   })
 
+  it('in a new tab, reads what the browser kept last', () => {
+    keepRailMemory({ ...NO_RAIL_MEMORY, foldersPath: '/app/teams/team-1' })
+    window.sessionStorage.clear()
+    expect(readRailMemory().foldersPath).toBe('/app/teams/team-1')
+  })
+
+  it('on a reload, reads its own tab’s place over a later one another tab left', () => {
+    keepRailMemory({ ...NO_RAIL_MEMORY, foldersPath: '/app/teams/mine' })
+    window.localStorage.setItem(KEY, JSON.stringify({ ...NO_RAIL_MEMORY, foldersPath: '/app/teams/other-tab' }))
+    expect(readRailMemory().foldersPath).toBe('/app/teams/mine')
+  })
+
   it('reads nothing when nothing was kept, and after sign-out', () => {
     expect(readRailMemory()).toEqual(NO_RAIL_MEMORY)
     keepRailMemory({ ...NO_RAIL_MEMORY, topicsPath: '/app/initiatives' })

@@ -1,17 +1,18 @@
 /**
  * Where each of the rail's items comes back to — the last DM, the last page
- * under Initiatives and under Teams, what Desk had open — kept in this tab's
- * storage, so a reload keeps it too (Katerina, 17 November: "when i switch
- * pages from the navrail, i need the selection to persist. no matter what").
- * Until then it was held in memory only, and every reload — a refresh, the
- * app updating, a dev server restarting — sent each item back to its bare
- * page.
+ * under Initiatives and under Teams, what Desk had open — kept in storage, so
+ * a reload and a new tab keep it too (Katerina, 17 November: "when i switch
+ * pages from the navrail, i need the selection to persist. no matter what";
+ * "yes it should" for a new tab). Until then it was held in memory only, and
+ * every reload — a refresh, the app updating, a dev server restarting — sent
+ * each item back to its bare page.
  *
- * This tab's, not the browser's: two tabs each keep their own place, as the
- * kit's `ListColumn` keeps its scroll per tab (`rememberAs`). A new tab starts
- * from each item's own page. Sign-out, or another person's copy on this
- * device, clears it (`deviceCopy`), so nobody is sent to a page of the last
- * person's.
+ * Kept twice: in this tab's storage and in the browser's. A reload reads the
+ * tab's own, so two tabs open side by side each come back to their own place;
+ * a new tab, which has none, reads the browser's, where the last tab to move
+ * left it. Sign-out, or another person's copy on this device, clears both
+ * (`deviceCopy`, before the app is drawn), so nobody is sent to a page of the
+ * last person's.
  *
  * What is read back is checked: an app path (`/…`, never `//…`, which a
  * router would take for another site), a DM id, a Desk query. Anything else
@@ -55,31 +56,44 @@ function deskOf(value: unknown): DeskMemory | null {
   }
 }
 
-/** What this tab kept, or nothing: never throws. */
-export function readRailMemory(): RailMemory {
+/** What one storage kept, or nothing: never throws. */
+function readFrom(storage: () => Storage): RailMemory | null {
   try {
-    const kept = record(JSON.parse(window.sessionStorage.getItem(KEY) ?? 'null'))
-    if (!kept) return NO_RAIL_MEMORY
+    const kept = record(JSON.parse(storage().getItem(KEY) ?? 'null'))
+    if (!kept) return null
     return { dmId: text(kept.dmId), topicsPath: appPath(kept.topicsPath), foldersPath: appPath(kept.foldersPath), desk: deskOf(kept.desk) }
   } catch {
-    return NO_RAIL_MEMORY
+    return null
   }
 }
 
-/** Keep where the rail's items come back to. Full or blocked storage keeps it for this visit only, as before. */
+const tab = () => window.sessionStorage
+const browser = () => window.localStorage
+
+/** What this tab kept; in a new tab, what the browser kept last; else nothing. Never throws. */
+export function readRailMemory(): RailMemory {
+  return readFrom(tab) ?? readFrom(browser) ?? NO_RAIL_MEMORY
+}
+
+/** Keep where the rail's items come back to, for this tab and for the next one. Full or blocked storage keeps it for this visit only, as before. */
 export function keepRailMemory(memory: RailMemory): void {
-  try {
-    window.sessionStorage.setItem(KEY, JSON.stringify(memory))
-  } catch {
-    // Nothing kept without storage.
+  const value = JSON.stringify(memory)
+  for (const storage of [tab, browser]) {
+    try {
+      storage().setItem(KEY, value)
+    } catch {
+      // Nothing kept without storage.
+    }
   }
 }
 
 /** Sign-out, or another person's copy on this device. */
 export function clearRailMemory(): void {
-  try {
-    window.sessionStorage.removeItem(KEY)
-  } catch {
-    // Nothing kept without storage.
+  for (const storage of [tab, browser]) {
+    try {
+      storage().removeItem(KEY)
+    } catch {
+      // Nothing kept without storage.
+    }
   }
 }

@@ -29,7 +29,7 @@ mount it, and what you see there is the rail lighting the row you were last in.
 
 ## When not
 
-- **For a preference.** Where each rail item comes back to is kept in this tab's storage, so a reload keeps it (Katerina, 17 November, `railMemory`), and a new tab starts from each item's own page. The rest — the open file's column and the one-shot intentions — is `useState`, gone with the page. A choice the person makes once and expects everywhere belongs in `localStorage`, as the launcher's Recent does.
+- **For a preference.** Where each rail item comes back to is kept in storage, so a reload and a new tab keep it (Katerina, 17 November, `railMemory`): a reload reads its own tab's, a new tab the browser's last. The rest — the open file's column and the one-shot intentions — is `useState`, gone with the page. A choice the person makes once and expects everywhere belongs in `localStorage`, as the launcher's Recent does.
 - **To pass a value down one screen.** A prop does that, and a prop can be seen in a story. Reach for this only when the setter and the reader are on different screens.
 - **To remember more than one thing at a time.** Each one-shot is a single slot. A second intention set before the first is answered replaces it.
 

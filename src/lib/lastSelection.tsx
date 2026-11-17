@@ -56,9 +56,10 @@ const LastSelectionContext = createContext<LastSelectionValue | null>(null)
 
 export function LastSelectionProvider({ children }: { children: ReactNode }) {
   /*
-    Where the rail's items come back to starts from what this tab kept, so a
-    reload keeps every item's place (Katerina, 17 November: "no matter what"),
-    and is kept again each time it changes. The file's column and the one-shot
+    Where the rail's items come back to starts from what this tab kept — in a
+    new tab, what the browser kept last — so a reload and a new tab keep every
+    item's place (Katerina, 17 November: "no matter what"), and is kept again
+    each time it changes. The file's column and the one-shot
     are this page's own and start empty.
   */
   const [kept] = useState(readRailMemory)
