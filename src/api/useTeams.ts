@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { followingOf, teamMembersOf, unreadOnPlace, type Following, type TeamMember, type TeamsList } from '@estiva-app/conversation'
-import { KIND_BARE_FILE, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { KIND_BARE_FILE, KIND_CHANNEL_METADATA, topLevelFolders, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { heldToken } from '@/auth/heldSession'
 import type { StreamMessage } from '@/nostr/channelStreams'
@@ -308,14 +308,20 @@ export function useTeamFiles(team: string | null | undefined): { files: ForeignO
     prototype: a team's Files and its page show where things live). Until then a file a topic listed was left out
     (Decided, 3 November), which needed a read of every topic's list; that read is gone with it.
   */
-  const files = useMemo(
-    () =>
-      typeof state === 'object' && 'files' in state
-        ? state.files.filter((file) => !file.archived && file.address && Number(file.address.split(':')[0]) !== KIND_BARE_FILE)
-        : null,
-    [state],
-  )
+  const files = useMemo(() => (typeof state === 'object' && 'files' in state ? teamFilesOf(state.files) : null), [state])
   return { files, failed: typeof state === 'object' && 'failed' in state }
+}
+
+/**
+ * The rows of a team's Files, from its listing: every live file but its topics, and never a Folder. No app makes a
+ * Folder inside a team (Peek's New team, Ship's New folder and the shared create step all make a team); drawn as a
+ * file, a Folder's link would open it as a team, which it is not. What it holds is listed where it lives.
+ */
+export function teamFilesOf(files: readonly ForeignObject[]): ForeignObject[] {
+  return files.filter((file) => {
+    const kind = Number(file.address?.split(':')[0])
+    return !file.archived && !!file.address && kind !== KIND_BARE_FILE && kind !== KIND_CHANNEL_METADATA
+  })
 }
 
 
