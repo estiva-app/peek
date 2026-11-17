@@ -434,6 +434,11 @@ export function DeskPage() {
     dmId: selected?.dmId ?? null,
     dmName: selected?.dmName,
     onToggleStarred: selected ? handleToggleStarredOnDesk : undefined,
+    /*
+      Its title dot's lines open here, as its row's card's do (ACT-9): the Desk stays the Desk (Katerina, 17 November:
+      "I would expect that i would stay on the desk and see the highlighted message there").
+    */
+    ...(selected ? { openLineHere: openDmLine(selected.dmId, selected.dmName, selected.section) } : {}),
   })
   /*
     The open file, as its own page draws it (OPT-12, Miky 7 October: "It
@@ -457,9 +462,16 @@ export function DeskPage() {
   */
   const openName = selected ? selected.dmName || undefined : openChat ? chatLabel(openChat) : fileTabTitle(fileView.file)
   useTabTitle(selected || openAddress ? openName : 'Desk')
+  /*
+    The section the open item was opened from, for a line opened from its title dot: the same row stays lit. After a
+    reload that is not known, and Open work is where an opened item usually lives.
+  */
+  const openSection: SectionKey = openedFrom?.section ?? 'openWork'
   const filePaneParts = useFilePane(fileView, {
     // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file’s pane closes.
     onDeleted: () => closeFile(),
+    // Its title dot's lines open here, at their thread, as its row's card's do (ACT-9; Katerina, 17 November).
+    ...(openAddress ? { openLineHere: openFileLine(openAddress, fileView.title, openSection) } : {}),
   })
   /*
     A row lit only by a thread reply opens that thread (CON-34, Miky
@@ -501,7 +513,14 @@ export function DeskPage() {
 
   const filePane = openAddress && !openAddress.startsWith('39000:') ? filePaneParts.pane : null
 
-  const rightPanel = selected ? dmView.rightPanel : openChat ? <TeamChat key={openChat.id} team={openChat} /> : (filePane ?? dmView.rightPanel)
+  const rightPanel = selected ? (
+    dmView.rightPanel
+  ) : openChat ? (
+    // Its title dot's lines open here too (ACT-9; Katerina, 17 November).
+    <TeamChat key={openChat.id} team={openChat} openLineHere={openFileLine(openChat.chatAddress, chatLabel(openChat), openSection)} />
+  ) : (
+    (filePane ?? dmView.rightPanel)
+  )
   // Another app's file only: a DM, and Peek's own file, draw their open thread in their own layout's column (B1).
   const threadPanel = !selected && filePane ? fileView.threadPanel : undefined
 

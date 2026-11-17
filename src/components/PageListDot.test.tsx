@@ -5,7 +5,7 @@
  * topic's conversation (the badges read), the read markers, and the list's own read, which waits for the list to open.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -364,6 +364,24 @@ describe('a page’s list (ACT-4)', () => {
     )
     expect(screen.getByText('Nothing for you here yet. Replies to you, mentions and reactions to your messages show here.')).toBeInTheDocument()
     expect(document.querySelector('[data-page-list-part="reading"]')).toBeNull()
+  })
+
+  it('where the page opens a line itself (the Desk), a plain click opens it there and the link is not followed; Ctrl/Cmd-click still is (17 November)', async () => {
+    const { PageList } = await import('./PageListDot')
+    const openHere = vi.fn()
+    const one = line('new-1', NOW - 100, false)
+    render(
+      <MemoryRouter>
+        <PageList lines={[one]} openHere={openHere} />
+      </MemoryRouter>,
+    )
+    const link = screen.getByText('Words new-1').closest('a')!
+    // `fireEvent` answers false when the click's default was prevented: the link stays put.
+    expect(fireEvent.click(link)).toBe(false)
+    expect(openHere).toHaveBeenCalledWith(one)
+    openHere.mockClear()
+    fireEvent.click(link, { ctrlKey: true })
+    expect(openHere).not.toHaveBeenCalled()
   })
 
   it('refused: Earlier says it could not be read, with no skeleton', async () => {

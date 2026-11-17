@@ -42,7 +42,12 @@ export function PageListDot({ lit, tone = 'blue', list, onOpenChange, onAhead }:
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-reaction-is-seen-once-in-its-conversation.md
  */
-export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: PageLine) => void }) {
+export function PageDot({ dot, onOpen, openHere }: {
+  dot: PageDotState
+  onOpen?: (line: PageLine) => void
+  /** A plain click opens the line here, not at its link (the Desk's panel, ACT-9): see {@link PageList}. */
+  openHere?: (line: PageLine) => void
+}) {
   /** What the list draws while it is open (it is mounted only then); its New lines are what closing it sees. */
   const [listed, setListed] = useState<readonly PageLine[] | undefined>(undefined)
   const fresh = useMemo(() => (listed ?? dot.held).filter((line) => !line.seen), [listed, dot.held])
@@ -63,19 +68,32 @@ export function PageDot({ dot, onOpen }: { dot: PageDotState; onOpen?: (line: Pa
       tone={dot.tone}
       onOpenChange={onOpenChange}
       onAhead={ahead}
-      list={<PageListRead dot={dot} onListed={setListed} {...(onOpen ? { onOpen } : {})} />}
+      list={<PageListRead dot={dot} onListed={setListed} {...(onOpen ? { onOpen } : {})} {...(openHere ? { openHere } : {})} />}
     />
   )
 }
 
 /** The list's content: mounted only while the card is open, so this is when its read is asked. */
-function PageListRead({ dot, onOpen, onListed }: { dot: PageDotState; onOpen?: (line: PageLine) => void; onListed?: (lines: readonly PageLine[]) => void }) {
+function PageListRead({ dot, onOpen, openHere, onListed }: {
+  dot: PageDotState
+  onOpen?: (line: PageLine) => void
+  openHere?: (line: PageLine) => void
+  onListed?: (lines: readonly PageLine[]) => void
+}) {
   const lines = usePageLines(dot.sources, dot.held)
   const shown = lines === 'failed' || lines === undefined ? dot.held : lines
   useEffect(() => {
     onListed?.(shown)
   }, [shown, onListed])
-  return <PageList lines={lines === 'failed' ? undefined : lines} failed={lines === 'failed'} held={dot.held} {...(onOpen ? { onOpen } : {})} />
+  return (
+    <PageList
+      lines={lines === 'failed' ? undefined : lines}
+      failed={lines === 'failed'}
+      held={dot.held}
+      {...(onOpen ? { onOpen } : {})}
+      {...(openHere ? { openHere } : {})}
+    />
+  )
 }
 
 /**
@@ -84,7 +102,7 @@ function PageListRead({ dot, onOpen, onListed }: { dot: PageDotState; onOpen?: (
  * already held draw at once, then one line's skeleton with no heading; Earlier, or "Nothing for you here yet.", only
  * once the read returned.
  */
-export function PageList({ lines, held, onOpen, failed = false }: {
+export function PageList({ lines, held, onOpen, openHere, failed = false }: {
   lines: readonly PageLine[] | undefined
   /** The read was refused: New's held lines, and Earlier says it could not be read rather than waiting for good. */
   failed?: boolean
@@ -92,6 +110,11 @@ export function PageList({ lines, held, onOpen, failed = false }: {
   held?: readonly PageLine[]
   /** What a plain click on a line does before its link opens (a topic keeps the column beside it). */
   onOpen?: (line: PageLine) => void
+  /**
+   * A plain click opens the line here, in place of its link: the Desk's panel, where the page is open beside the Desk's
+   * lists (Katerina, 17 November: "I would expect that i would stay on the desk"), as a row's card does there (ACT-9).
+   */
+  openHere?: (line: PageLine) => void
 }) {
   const all = [...(lines ?? held ?? [])].sort((a, b) => b.at - a.at)
   const fresh = all.filter((line) => !line.seen)
@@ -106,7 +129,14 @@ export function PageList({ lines, held, onOpen, failed = false }: {
       seen={item.seen}
       {...(item.where ? { where: item.where } : {})}
       onClick={(event) => {
-        if (isPlainClick(event)) onOpen?.(item)
+        if (!isPlainClick(event)) return
+        // Where the page opens it itself (the Desk's panel), the link does not leave the page; a modifier still opens a tab.
+        if (openHere) {
+          event.preventDefault()
+          openHere(item)
+          return
+        }
+        onOpen?.(item)
       }}
     />
   )

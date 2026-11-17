@@ -13,7 +13,7 @@ import { Members } from '@/components/Members'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
 import { listingOf, mayMove, useFileMembers, useForeignObjects, useMembership, useOpenWorkFiles, useResolvedReferences, useTeams, useTopicPageDot, useWorkspaceDirectory } from '@/api'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
-import { PageDot } from '@/components/PageListDot'
+import { PageDot, type PageLine } from '@/components/PageListDot'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
@@ -41,11 +41,14 @@ export function useFilePane(
   {
     onDeleted,
     onListingChanged,
+    openLineHere,
   }: {
     /** The open file was deleted. */
     onDeleted: (deleted: ForeignObject) => void
     /** An archive or a move changed where the file is listed. */
     onListingChanged?: () => Promise<unknown> | void
+    /** A line in its title dot's list opens here, not at its link: the Desk's panel (Katerina, 17 November; ACT-9). */
+    openLineHere?: (line: PageLine) => void
   },
 ) {
   const { file, title, reload: reloadConversation } = view
@@ -341,7 +344,7 @@ export function useFilePane(
             pageDot ? (
               <>
                 {teamChip}
-                <PageDot dot={pageDot} />
+                <PageDot dot={pageDot} {...(openLineHere ? { openHere: openLineHere } : {})} />
               </>
             ) : file && elsewhereAppName(file) && openInAppUrl(file) ? (
               <>

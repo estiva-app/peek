@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { IconDotsVertical, IconHash } from '@tabler/icons-react'
 import { ConversationLayout, EmptyState, Menu, MenuItem, PageHeader, Toolbar, ToolbarButton, useShortcut } from '@estiva-app/ui'
 import { useMembership, usePlaceFollow, useTeamChatPageDot, useWorkspaceDirectory, type Team } from '@/api'
-import { PageDot } from '@/components/PageListDot'
+import { PageDot, type PageLine } from '@/components/PageListDot'
 import { usePlaceFollowControls } from '@/components/PlaceFollow'
 import { chatLabel, teamChatPath } from '@/components/views/TeamsColumn'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
@@ -23,7 +23,11 @@ import { useToast } from '@/lib/toast'
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-teams-chat-is-followed-like-a-space.md
  */
-export function TeamChat({ team }: { team: Team }) {
+export function TeamChat({ team, openLineHere }: {
+  team: Team
+  /** A line in its title dot's list opens here, not at its link: the Desk's panel (Katerina, 17 November; ACT-9). */
+  openLineHere?: (line: PageLine) => void
+}) {
   // A link may name a thread (`?thread=<root>`, a row card's reply line, ACT-3): it opens, and each new one opens again.
   const linked = useSearchParams()[0].get('thread')
   const [thread, setThread] = useState<string | null>(linked)
@@ -81,7 +85,7 @@ export function TeamChat({ team }: { team: Team }) {
             title={name}
             // `#`, as its row in Teams wears it: one icon per kind.
             leading={<IconHash size={16} stroke={1.5} aria-hidden />}
-            after={<PageDot dot={pageDot} />}
+            after={<PageDot dot={pageDot} {...(openLineHere ? { openHere: openLineHere } : {})} />}
             members={follow.pill}
             button={toggleOpenWork ? <OpenWorkButton inIt={openWork.has(team.chatAddress)} onToggle={toggleOpenWork} /> : undefined}
             actions={

@@ -49,8 +49,10 @@ vi.mock('@/components/views/useFileView', () => ({
   and where its writes leave the person.
 */
 const filePane = vi.hoisted(() => ({
-  callbacks: undefined as { onDeleted: (deleted: unknown) => void } | undefined,
+  callbacks: undefined as { onDeleted: (deleted: unknown) => void; openLineHere?: (line: unknown) => void } | undefined,
 }))
+/** What the Desk hands a DM's view and a team's chat: their title dots' "open here" (17 November). */
+const handed = vi.hoisted(() => ({ dm: undefined as ((line: unknown) => void) | undefined, chat: undefined as ((line: unknown) => void) | undefined }))
 vi.mock('@/components/views/useFilePane', () => ({
   useFilePane: (
     view: { panel: { children: React.ReactNode } },
@@ -71,10 +73,13 @@ vi.mock('@/components/views/useFilePane', () => ({
   },
 }))
 vi.mock('@/components/views/useDmConversationView', () => ({
-  useDmConversationView: ({ dmId }: { dmId: string | null }) => ({
-    rightPanel: dmId ? <div data-testid="dm-pane">{dmId}</div> : <div data-testid="nothing-open" />,
-    threadPanel: undefined,
-  }),
+  useDmConversationView: ({ dmId, openLineHere }: { dmId: string | null; openLineHere?: (line: unknown) => void }) => {
+    handed.dm = openLineHere
+    return {
+      rightPanel: dmId ? <div data-testid="dm-pane">{dmId}</div> : <div data-testid="nothing-open" />,
+      threadPanel: undefined,
+    }
+  },
 }))
 const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn(), addScreener: vi.fn() }))
 /** A second Open work file, for the order test. */
@@ -121,7 +126,12 @@ vi.mock('@/api', async () => ({
   usePeekActions: () => ({ removeDmFromOpenWork: openWork.removeDm, addScreenerToOpenWork: openWork.addScreener }),
 }))
 // A team's chat beside the Desk is its own page's (TeamChat's tests draw it): here, which team it is.
-vi.mock('@/components/views/TeamChat', () => ({ TeamChat: ({ team }: { team: { name: string } }) => <div data-testid="team-chat">{team.name}</div> }))
+vi.mock('@/components/views/TeamChat', () => ({
+  TeamChat: ({ team, openLineHere }: { team: { name: string }; openLineHere?: (line: unknown) => void }) => {
+    handed.chat = openLineHere
+    return <div data-testid="team-chat">{team.name}</div>
+  },
+}))
 /** Whether the frame's rail is folded: the frame provides it around the list column, as `PeekFrame` does. */
 const frame = vi.hoisted(() => ({ railClosed: false }))
 vi.mock('@/layouts/PeekFrame', async () => {
@@ -449,6 +459,15 @@ describe('Desk rows on NavItem', () => {
       expect(openWork.remove).toHaveBeenCalledWith(CHAT)
     })
 
+    it('a line in its title dot opens here, at its thread: the Desk stays the Desk (Katerina, 17 November)', () => {
+      mount()
+      fireEvent.click(left().getByRole('link', { name: 'engineering' }))
+      expect(handed.chat).toBeTypeOf('function')
+      act(() => handed.chat!({ id: 'm-7', by: 'qa2', at: 1, reason: 'mention', root: 'm-5', seen: false, href: '/app/teams/eng/chat?thread=m-5' }))
+      expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: CHAT, thread: 'm-5' })}`)
+      expect(within(screen.getByTestId('middle')).getByTestId('team-chat').textContent).toBe('Engineering')
+    })
+
     it('draws no row while its team is not held, or once the viewer is not in its chat', () => {
       desk.teams = []
       const first = mount()
@@ -620,6 +639,28 @@ describe('resting on a lit Desk row shows what is new there, as in the sidebar (
     // The Desk stays the page: the listed page opens in its panel, at the comment's thread.
     expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: PAGE, thread: 'c-1' })}`)
     expect(screen.getByTestId('file-pane').dataset.address).toBe(PAGE)
+  })
+
+  it('a line in the open file’s title dot opens here too, at its thread, never on its own page (Katerina, 17 November)', () => {
+    mount()
+    fireEvent.click(leftColumn().getByText('Issue one'))
+    expect(filePane.callbacks?.openLineHere).toBeTypeOf('function')
+    // A comment on the file itself: the same file, at its thread.
+    act(() => filePane.callbacks!.openLineHere!({ ...line('c-9', 'On the issue'), seen: false, href: `/issue/x?thread=c-9` }))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: ISSUE, thread: 'c-9' })}`)
+    // One said on a file it lists: that file, here, at its thread.
+    act(() => filePane.callbacks!.openLineHere!({ ...line('c-10', 'On a listed page', { file: PAGE }), seen: false, href: `/page/x?thread=c-10` }))
+    expect(url()).toBe(`/app/desk?${new URLSearchParams({ open: PAGE, thread: 'c-10' })}`)
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(PAGE)
+  })
+
+  it('a line in the open DM’s title dot opens it here (Katerina, 17 November)', () => {
+    mount()
+    fireEvent.click(leftColumn().getByText('Ana'))
+    expect(handed.dm).toBeTypeOf('function')
+    act(() => handed.dm!({ ...line('m-4', 'See you at three'), seen: false, href: '/app/dms/dm-1' }))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
+    expect(url()).toBe('/app/desk')
   })
 
   it('a row with no dot opens no card, whatever its news says', async () => {
