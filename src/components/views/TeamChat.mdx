@@ -1,0 +1,38 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/TeamChat" />
+
+# TeamChat
+
+A team's chat: the messages with the team's `h` and no file named, with a composer, in the conversation view a DM uses, under a topic's header.
+
+**Seen in** — No story: its messages, its follow and its Open work are read from and written to the relay. Its parts are the kit's **ConversationLayout** and **PageHeader**.
+
+## When
+
+- The Teams page, when a team's chat is opened from its row in Teams.
+- The Desk's panel, when a team's chat is opened from a line or from Open work. Pass `openLineHere` so a line in its title dot's list opens in that panel.
+
+## When not
+
+- For a topic's or a file's conversation. Those are a file's page, **FilePage**.
+- For a DM. A DM has its own page.
+
+## How
+
+```tsx
+import { TeamChat } from '@/components/views/TeamChat'
+
+<TeamChat team={team} />
+<TeamChat key={team.id} team={team} openLineHere={openLine} />
+```
+
+- `team` is a row from `useTeams`: its `chatAddress`, `chat.in` and `archived` decide the follow, the bell and Add to Open work.
+- A link may name a thread (`?thread=<root>`). It opens beside the messages and is scrolled into view where it was said.
+
+## What it owns
+
+- **The header:** `#` before the chat's name, the title dot, Who follows (people only, no Add or Join), the bell while you are in it, **OpenWorkButton** for someone in the chat, and a ⋮ with Copy link alone.
+- **Reading:** opening the chat marks it read, as opening a DM does.
+- **Ctrl/⌘+O:** adds the chat to Open work, or takes it out.
+- **An archived team's chat:** read-only, with no Add to Open work.
