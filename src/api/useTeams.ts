@@ -187,9 +187,19 @@ export function useTeams({ read = true }: {
   }, [key, ids, chats])
 
   const teams = useMemo(() => {
-    if (!folderList || !viewer || state.key !== key || !state.read) return null
+    if (!folderList || !viewer || !state.read) return null
     const read = state.read
-    return folderList.map((folder) => teamOf(folder, read, viewer))
+    if (state.key === key) return folderList.map((folder) => teamOf(folder, read, viewer))
+    /*
+      Another set of teams is being read (one was just made, or one went): the last read's teams stay drawn meanwhile,
+      and a team that read did not cover waits for its own, rather than every list going back to a skeleton (Katerina,
+      17 November: on New team "the left column flickers a little and then the new team appears"). The viewer's own
+      only: somebody else's teams are never drawn for them.
+    */
+    const [whose, idsRead = ''] = state.key.split('|')
+    if (whose !== viewer) return null
+    const covered = new Set(idsRead.split(','))
+    return folderList.filter((folder) => covered.has(folder.id)).map((folder) => teamOf(folder, read, viewer))
   }, [folderList, viewer, state, key])
 
   return { teams, failed: state.key === key && state.failed, reload }
