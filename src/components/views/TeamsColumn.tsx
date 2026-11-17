@@ -492,7 +492,8 @@ export function TeamsColumnView({
 
   const selected = chatOpen && openTeam ? `chat:${openTeam}` : (selectedRef ?? openTeam ?? undefined)
   return (
-    <NavTree {...(selected ? { selected } : {})}>
+    // 8px between the teams and above Other teams (Katerina, 17 November: "a bit more spacing between the parent expandable items").
+    <NavTree spaced {...(selected ? { selected } : {})}>
       {yoursShown}
       {othersShown.length > 0 && (
         // The kit's fold as a row among rows, a row's size and colour, with its count (Katerina, 16 November).
