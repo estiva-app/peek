@@ -103,6 +103,22 @@ describe('Explore topics (TOPI-6)', () => {
     expect(within(rowOf('Pricing')).getAllByText('–')).toHaveLength(3)
   })
 
+  // "We need to use the estiva ui component for the members pill"; "clicking on the pill should not show the members list" (Katerina, 17 November).
+  it('a row’s members are the kit’s pill: up to three faces and the number, nothing to press', () => {
+    const people = ['1', '2', '3', '4'].map((n) => n.repeat(64))
+    const faceOf = vi.fn((pubkey: string) => ({ name: `Person ${pubkey[0]}` }))
+    render(
+      <MemoryRouter>
+        <ExploreTopicsView state={{ ...LISTS, all: [{ ...WIDGETS, members: 4, people }] }} tab="all" onTab={() => {}} onRetry={() => {}} onJoin={() => {}} now={NOW} faceOf={faceOf} />
+      </MemoryRouter>,
+    )
+    const pill = within(rowOf('Widgets')).getByRole('img', { name: '4 members' })
+    expect(pill.tagName).not.toBe('BUTTON')
+    expect(pill.textContent).toContain('4')
+    // Three faces, the first three it lists.
+    expect(faceOf.mock.calls.map(([key]) => key)).toEqual(people.slice(0, 3))
+  })
+
   it('offers Join only on a topic you are not in, and Join joins that topic', async () => {
     const onJoin = vi.fn()
     mount(LISTS, 'all', { onJoin })

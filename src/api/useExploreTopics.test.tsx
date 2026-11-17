@@ -43,7 +43,9 @@ const viewer = { relayUrl: 'https://relay.test', token: { accessToken: 't', pubk
 vi.mock('./foreign', () => ({ useRelayViewer: () => () => viewer }))
 vi.mock('./relayUrl', () => ({ hasRelay: true }))
 const reads = vi.hoisted(() => ({ members: vi.fn(), lists: vi.fn(), activity: vi.fn() }))
-vi.mock('@/nostr/topicMembers', () => ({ topicMemberCountsAsViewer: reads.members }))
+vi.mock('@/nostr/topicMembers', () => ({ topicMembersAsViewer: reads.members }))
+/** A listing of n people, by key: the read hands back who, and the count is how many (17 November). */
+const listOf = (n: number) => Array.from({ length: n }, (_, i) => `${i}`.padStart(64, 'a'))
 vi.mock('@/nostr/foreign', () => ({ topicListsAsViewer: reads.lists, topicActivityAsViewer: reads.activity }))
 
 const { useExploreTopics, resetExploreTopics } = await import('./useExploreTopics')
@@ -58,7 +60,7 @@ beforeEach(() => {
   column.yours = new Map([[WIDGETS.address!, 300], [ALPHA.address!, 200]])
   column.readAgain.mockReset()
   teamsRead.teams = []
-  reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 4])))
+  reads.members.mockReset().mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(4)])))
   reads.lists.mockReset().mockResolvedValue(new Map())
   reads.activity.mockReset().mockImplementation(async (topics: { address: string }[]) => ({ at: new Map(topics.map((t) => [t.address, 100])) }))
 })
@@ -94,7 +96,7 @@ describe('useExploreTopics', () => {
   it('a topic left moves to Other topics as soon as the column hears it, and has its Members read again', async () => {
     const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'yours' as const } })
     await waitFor(() => expect(asked(reads.members)).toContain(ALPHA.address))
-    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 3])))
+    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(3)])))
     // The column hears the leave: alpha is no longer yours.
     column.state = { mine: [WIDGETS], others: [ALPHA, PRICING, BETA], archived: [OLD] }
     rerender({ tab: 'yours' })
@@ -106,7 +108,7 @@ describe('useExploreTopics', () => {
   it('a topic joined moves to Your topics as soon as the column hears it, and has its Members read again', async () => {
     const { result, rerender } = renderHook(({ tab }) => useExploreTopics(tab), { initialProps: { tab: 'others' as const } })
     await waitFor(() => expect(asked(reads.members)).toContain(PRICING.address))
-    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, 5])))
+    reads.members.mockImplementation(async (topics: { address: string }[]) => new Map(topics.map((t) => [t.address, listOf(5)])))
     // The column hears the join: Pricing is yours.
     column.state = { mine: [WIDGETS, ALPHA, PRICING], others: [BETA], archived: [OLD] }
     rerender({ tab: 'others' })

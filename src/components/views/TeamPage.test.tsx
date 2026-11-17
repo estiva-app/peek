@@ -62,7 +62,11 @@ vi.mock('@/api', async () => ({
   useConversationBadges: () => ({ unread: api.unread, news: {}, tones: {}, fills: {} }),
   useTeamChatNews: () => ({ unread: {}, news: {}, tones: {} }),
   // Explore's facts, as its read answers them: four follow Launch, last active an hour before the page opened.
-  useTopicFacts: () => ({ members: new Map([[LAUNCH.address!, 4]]), active: new Map([[LAUNCH.address!, Math.floor(Date.now() / 1000) - 3600]]) }),
+  useTopicFacts: () => ({
+    members: new Map([[LAUNCH.address!, 4]]),
+    people: new Map([[LAUNCH.address!, ['1'.repeat(64), '2'.repeat(64), '3'.repeat(64), '4'.repeat(64)]]]),
+    active: new Map([[LAUNCH.address!, Math.floor(Date.now() / 1000) - 3600]]),
+  }),
   useTeamChatActive: () => undefined,
   usePlaceFollow: () => ({ state: undefined, listed: [{ pubkey: KATERINA, level: 'important', ways: ['team'] }], failed: false, choose: vi.fn(), add: vi.fn() }),
   // How the viewer follows each place, as the rule judges it: where a test says.
@@ -260,6 +264,15 @@ describe('what a team’s page shows (TP-08, TP-09, TP-14)', () => {
   it('a row says how many follow it and when it was last active, as Explore does (TP-09)', () => {
     mount(team())
     expect(rowOf('Launch').textContent).toContain('4')
+  })
+
+  // "We need to use the estiva ui component for the members pill"; "clicking on the pill should not show the members list" (Katerina, 17 November).
+  it('a row’s members are the kit’s pill, three faces and the number, nothing to press', () => {
+    mount(team())
+    const pill = within(rowOf('Launch')).getByRole('img', { name: '4 members' })
+    expect(pill.tagName).not.toBe('BUTTON')
+    expect(pill.querySelectorAll('img, [data-avatar], span[aria-label], [role="img"]').length).toBeGreaterThan(0)
+    expect(within(rowOf('Launch')).queryByRole('button', { name: /members/ })).toBeNull()
   })
 
   it('a lit place carries its dot; the others do not', () => {

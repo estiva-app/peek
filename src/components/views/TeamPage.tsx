@@ -1,7 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { IconBellOff, IconDotsVertical, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
 import {
-  AvatarGroup,
   EmptyState,
   IconButton,
   KindIcon,
@@ -53,7 +52,8 @@ const ICON = { size: 16, stroke: 1.5 } as const
 
 /** Who is in it and when it was last active, as Explore lists them; both give way first in a narrow window (TP-11). */
 const PLACE_COLUMNS: ListTableColumn[] = [
-  { label: 'Members', width: 'small', keep: 'low' },
+  // The members pill's width: three faces and the number (Katerina, 17 November).
+  { label: 'Members', width: 'large', keep: 'low' },
   { label: 'Active', width: 'medium', keep: 'low' },
 ]
 
@@ -213,6 +213,8 @@ export function TeamPage({
     // One icon per kind, as its row in the column wears it: # a team's topic, ◎ an initiative.
     icon: initiative ? <IconTarget {...ICON} aria-hidden /> : <IconHash {...ICON} aria-hidden />,
     ...(topic.address && facts.members.get(topic.address) !== undefined ? { members: facts.members.get(topic.address) } : {}),
+    // Who they are, as the chat's row shows them: up to three faces in its members pill (17 November).
+    ...(topic.address && facts.people.get(topic.address) ? { faces: facts.people.get(topic.address)!.slice(0, 3).map(faceOf) } : {}),
     ...(topic.address && facts.active.get(topic.address) ? { active: facts.active.get(topic.address) } : {}),
     lit: unread[topic.ref] === true,
     ...(tones?.[topic.ref] ? { tone: tones[topic.ref] } : {}),
@@ -352,12 +354,8 @@ function PlaceTable({ label, lines, now }: { label: string; lines: PlaceLine[]; 
           icon={line.icon}
           {...(line.onClick ? { onClick: line.onClick } : {})}
           cells={[
-            line.members === undefined ? undefined : (
-              <>
-                {line.faces && line.faces.length > 0 && <AvatarGroup members={line.faces} size={20} />}
-                {line.members}
-              </>
-            ),
+            // The kit's members pill, nothing to press: the row opens its place (Katerina, 17 November).
+            line.members === undefined ? undefined : line.members === 0 ? '0' : <MembersPill readOnly members={line.faces ?? []} count={line.members} />,
             // Nothing said yet, or not read: a dash, never a made-up date (TP-12).
             line.active ? formatActive(line.active * 1000, now) : undefined,
           ]}

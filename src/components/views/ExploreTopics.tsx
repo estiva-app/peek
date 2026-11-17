@@ -1,17 +1,21 @@
 import { useState, type ReactNode } from 'react'
 import { IconTarget } from '@tabler/icons-react'
-import { AvatarGroup, Button, EmptyState, KindIcon, ListTable, ListTableRow, Panel, SearchInput, SkeletonList, Tabs, type ListTableColumn } from '@estiva-app/ui'
+import { Button, EmptyState, KindIcon, ListTable, ListTableRow, MembersPill, Panel, SearchInput, SkeletonList, Tabs, type AvatarGroupMember, type ListTableColumn } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
-import { findsTopic, formatActive, useExploreTopics, type ExploreRow, type ExploreState, type ExploreTab } from '@/api'
+import { findsTopic, formatActive, useExploreTopics, useFaceOf, type ExploreRow, type ExploreState, type ExploreTab } from '@/api'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
 
 const TAB_ORDER: ExploreTab[] = ['all', 'yours', 'others', 'archived']
 
+/** Nobody Peek can name: a dash, as the team page draws them. */
+const NO_FACE = (): AvatarGroupMember => ({ name: '—' })
+
 /** Its team stays longest; who is in it and when it was last active give way first in a narrow window (Katerina, 16 November). */
 const COLUMNS: ListTableColumn[] = [
   { label: 'Team', width: 'large' },
-  { label: 'Members', width: 'small', keep: 'low' },
+  // The members pill's width: three faces and the number (Katerina, 17 November).
+  { label: 'Members', width: 'large', keep: 'low' },
   { label: 'Active', width: 'medium', keep: 'low' },
 ]
 
@@ -75,6 +79,7 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
   const { state, retry } = useExploreTopics(tab)
   // Active counts back from when the page opened, as Ship's and Leaf's do.
   const [now] = useState(() => Date.now())
+  const faceOf = useFaceOf()
   // Join is Peek's own (its toast says what happened); the row turns yours at once, and back if the relay refuses.
   // Explore initiatives (Katerina, 16 November): its words, and ◎ on every row, the icon of the column beside it (I-11).
   return (
@@ -85,6 +90,7 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
       onRetry={retry}
       onJoin={(topic) => onControl('join', topic)}
       now={now}
+      faceOf={faceOf}
       words={INITIATIVE_WORDS}
       icon={<IconTarget size={16} stroke={1.5} aria-hidden />}
     />
@@ -99,6 +105,7 @@ export function ExploreTopicsView({
   onRetry,
   onJoin,
   now,
+  faceOf = NO_FACE,
   words = TOPIC_WORDS,
   icon = <KindIcon kind="topic" />,
 }: {
@@ -109,6 +116,8 @@ export function ExploreTopicsView({
   onJoin: (topic: ForeignObject) => void
   /** What Active counts back from, in ms: when the page opened. */
   now: number
+  /** A person's face by their key, for each row's members pill. Default a dash: the number alone tells. */
+  faceOf?: (pubkey: string) => AvatarGroupMember
   /** What it calls what it lists. Default Peek's topics. */
   words?: ExploreWords
   /** Each row's icon, its kind's: the same as the column beside it draws (Katerina, 16 November). Default a topic's. */
@@ -126,7 +135,7 @@ export function ExploreTopicsView({
       ) : 'failed' in state ? (
         <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message={words.failed} action={{ label: 'Try again', onClick: onRetry }} />
       ) : (
-        <ExploreBody lists={state} tab={tab} onTab={onTab} query={query} asked={asked} onQuery={setQuery} onJoin={onJoin} now={now} words={words} icon={icon} />
+        <ExploreBody lists={state} tab={tab} onTab={onTab} query={query} asked={asked} onQuery={setQuery} onJoin={onJoin} now={now} faceOf={faceOf} words={words} icon={icon} />
       )}
     </Panel>
   )
@@ -141,6 +150,7 @@ function ExploreBody({
   onQuery,
   onJoin,
   now,
+  faceOf,
   words,
   icon,
 }: {
@@ -152,6 +162,7 @@ function ExploreBody({
   onQuery: (query: string) => void
   onJoin: (topic: ForeignObject) => void
   now: number
+  faceOf: (pubkey: string) => AvatarGroupMember
   words: ExploreWords
   icon: ReactNode
 }) {
@@ -172,7 +183,7 @@ function ExploreBody({
       ) : (
         <ListTable aria-label={words.title} columns={COLUMNS} end>
           {rows.map((row) => (
-            <TopicRow key={row.address} row={row} now={now} icon={icon} onJoin={!row.yours && !row.archived ? () => onJoin(row.topic) : undefined} />
+            <TopicRow key={row.address} row={row} now={now} faceOf={faceOf} icon={icon} onJoin={!row.yours && !row.archived ? () => onJoin(row.topic) : undefined} />
           ))}
         </ListTable>
       )}
@@ -184,12 +195,12 @@ function ExploreBody({
  * One topic, as Ship's and Leaf's `TopicRow`: its name and summary, its team,
  * who is in it, when anything last happened in it, and Join on a live topic
  * you are not in — the kit's list row, which draws the row, the dashes and the
- * columns giving way. Who is in it is their faces with the number where the
- * faces are known, else the number. The Archived tab says it is archived; the
+ * columns giving way. Who is in it is the kit's members pill, nothing to press:
+ * up to three faces and the number (Katerina, 17 November). The Archived tab says it is archived; the
  * row no longer does it again inside its date. It opens the topic's page with
  * the Topics column beside it, an archived one read-only.
  */
-function TopicRow({ row, now, icon, onJoin }: { row: ExploreRow; now: number; icon: ReactNode; onJoin?: (() => void) | undefined }) {
+function TopicRow({ row, now, faceOf, icon, onJoin }: { row: ExploreRow; now: number; faceOf: (pubkey: string) => AvatarGroupMember; icon: ReactNode; onJoin?: (() => void) | undefined }) {
   return (
     <ListTableRow
       data-topic={row.address}
@@ -200,11 +211,8 @@ function TopicRow({ row, now, icon, onJoin }: { row: ExploreRow; now: number; ic
       onClick={() => rememberOpenedFrom(row.address, 'topics')}
       cells={[
         row.team,
-        row.members === undefined ? undefined : (
-          <>
-            {row.people && row.people.length > 0 && <AvatarGroup members={row.people} size={20} />}
-            {row.members}
-          </>
+        row.members === undefined ? undefined : row.members === 0 ? '0' : (
+          <MembersPill readOnly members={(row.people ?? []).slice(0, 3).map(faceOf)} count={row.members} />
         ),
         row.active ? formatActive(row.active * 1000, now) : undefined,
       ]}

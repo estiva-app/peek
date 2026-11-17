@@ -186,3 +186,21 @@ export function useViewerProfile(): { pubkey: string; profile?: WorkspaceProfile
     return profile ? { pubkey, profile } : { pubkey }
   }, [events, pubkey])
 }
+
+/**
+ * A person's face as a members pill draws it — their name, their picture, and whether they are an agent — by their key:
+ * the team page's own, shared with Explore (Katerina, 17 November: "the members and their avatars is known already").
+ * Someone Peek cannot name yet is a dash, as the team page drew them.
+ */
+export function useFaceOf(): (pubkey: string) => { name: string; picture?: string; bot?: boolean } {
+  const names = useMentionNames()
+  const roster = usePeople()
+  return useMemo(() => {
+    const named = new Map((names ?? []).map((person) => [person.pubkey, person]))
+    const pictured = new Map((roster ?? []).flatMap((person) => (person.pubkey && person.avatarSrc ? [[person.pubkey, person.avatarSrc] as const] : [])))
+    return (pubkey: string) => {
+      const picture = pictured.get(pubkey)
+      return { name: named.get(pubkey)?.name ?? '—', ...(picture ? { picture } : {}), ...(named.get(pubkey)?.bot ? { bot: true } : {}) }
+    }
+  }, [names, roster])
+}

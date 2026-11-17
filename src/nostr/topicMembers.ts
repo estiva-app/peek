@@ -89,6 +89,21 @@ export async function topicMemberCountsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<Map<string, number | undefined>> {
+  const lists = await topicMembersAsViewer(topics, relayUrl, token)
+  return new Map([...lists].map(([address, people]): [string, number | undefined] => [address, people?.length]))
+}
+
+/**
+ * Who each topic lists, by key, in the listing's order: the same read as {@link topicMemberCountsAsViewer}, for a
+ * members pill's faces beside the number (Katerina, 17 November: "the members and their avatars is known already").
+ *
+ * **Throws when the read failed.**
+ */
+export async function topicMembersAsViewer(
+  topics: readonly { address: string; folder: string }[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Map<string, string[] | undefined>> {
   if (topics.length === 0) return new Map()
   const asked = topics.map((topic) => {
     const place = { address: topic.address, team: topic.folder }
@@ -101,13 +116,13 @@ export async function topicMemberCountsAsViewer(
   })
   const events = await readWhole(viewerQuery(relayUrl, token), mergedFilters(asked.flatMap(({ filters }) => filters ?? [])))
   return new Map(
-    asked.map(({ topic, place, filters }): [string, number | undefined] => {
+    asked.map(({ topic, place, filters }): [string, string[] | undefined] => {
       if (!filters) return [topic.address, undefined]
       const mine = events.filter((event) => filters.some((filter) => answersFilter(event, filter)))
       const roster = mine.filter((event) => event.kind === KIND_ROSTER || ROSTER_COMMANDS.includes(event.kind))
       const listing = mine.filter((event) => event.kind === KIND_FOLDER_STATE || event.kind === KIND_FOLDER_COMMAND)
       const own = mine.filter((event) => !roster.includes(event) && !listing.includes(event))
-      return [topic.address, placeListing(place, { events: own, roster, listing }).length]
+      return [topic.address, placeListing(place, { events: own, roster, listing }).map((listed) => listed.pubkey)]
     }),
   )
 }
