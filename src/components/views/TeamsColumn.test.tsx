@@ -279,10 +279,19 @@ describe('what a team’s rows offer (step 3)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Make it an initiative' })).toBeNull()
   })
 
-  it('a topic at Not following says so on its row (Q-22); the others say nothing of their level', () => {
+  it('a topic at Not following says so on its row with the crossed-out bell alone (Q-22; 17 November); the others say nothing of their level', () => {
     mount({ notFollowingOf: (_team, t) => t.address === HIRING.address })
-    // The chip is in the row's link, so the row reads "Hiring Not following" to a screen reader too.
-    expect(within(rowBlock(/^Hiring/, 'More options')).getByText('Not following')).toBeTruthy()
-    expect(screen.getAllByText('Not following')).toHaveLength(1)
+    // The bell is in the row's link, named, so the row reads "Hiring Not following" to a screen reader too.
+    const mark = within(rowBlock(/^Hiring/, 'More options')).getByRole('img', { name: 'Not following' })
+    expect(mark.classList.contains('tabler-icon-bell-off')).toBe(true)
+    expect(screen.getAllByRole('img', { name: 'Not following' })).toHaveLength(1)
+    // No words beside the name: they covered it.
+    expect(screen.queryByText('Not following')).toBeNull()
+  })
+
+  it('what Not following means is the bell’s own tooltip, shown when the bell is pointed at (17 November)', async () => {
+    mount({ notFollowingOf: (_team, t) => t.address === HIRING.address })
+    await userEvent.hover(screen.getByRole('img', { name: 'Not following' }))
+    expect(await screen.findByText('Not following: you are only notified when someone names you')).toBeTruthy()
   })
 })

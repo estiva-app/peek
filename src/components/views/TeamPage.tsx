@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { IconDotsVertical, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
+import { IconBellOff, IconDotsVertical, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
 import {
   AvatarGroup,
   EmptyState,
@@ -15,6 +15,7 @@ import {
   SectionHeader,
   SkeletonList,
   UnreadDot,
+  WithTooltip,
   thingKindOf,
   type ListTableColumn,
   type MembersDialogCandidate,
@@ -42,6 +43,7 @@ import { PageDot } from '@/components/PageListDot'
 import { Button } from '@/components/ui/Button'
 import { chatLabel, teamChatPath } from '@/components/views/TeamsColumn'
 import { useFolderActions } from '@/components/views/useFolderActions'
+import { useNotFollowing } from '@/components/views/useNotFollowing'
 import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { filePath } from '@/lib/objectUrl'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
@@ -69,6 +71,8 @@ interface PlaceLine {
   active?: number
   lit: boolean
   tone?: UnreadDotTone
+  /** You picked Not following on it: the one level a row shows (Q-22), as its row in the column shows it. */
+  notFollowing?: boolean
   onClick?: () => void
 }
 
@@ -143,6 +147,8 @@ export function TeamPage({
     [team.isMember, team.chatAddress, team.id, team.archived],
   )
   const chatFollow = usePlaceFollow(chatTarget)
+  // Not following, as the team's rows in the column say it (Katerina, 17 November: "everywhere it appears").
+  const notFollowing = useNotFollowing()
 
   /*
     Every member may leave, a team's last owner too; nobody leaves the Company team (§3.4). A team left with no owner is
@@ -210,6 +216,7 @@ export function TeamPage({
     ...(topic.address && facts.active.get(topic.address) ? { active: facts.active.get(topic.address) } : {}),
     lit: unread[topic.ref] === true,
     ...(tones?.[topic.ref] ? { tone: tones[topic.ref] } : {}),
+    ...(notFollowing(team, topic) ? { notFollowing: true } : {}),
     // Opened from its team's page, a topic or an initiative keeps Teams beside it, as from the team's rows in the column
     // (Katerina, 17 November: TP-08, "Initiatives under the team, opened in the team page").
     onClick: () => topic.address && rememberOpenedFrom(topic.address, 'folders'),
@@ -354,7 +361,24 @@ function PlaceTable({ label, lines, now }: { label: string; lines: PlaceLine[]; 
             // Nothing said yet, or not read: a dash, never a made-up date (TP-12).
             line.active ? formatActive(line.active * 1000, now) : undefined,
           ]}
-          {...(line.lit ? { end: <UnreadDot {...(line.tone ? { tone: line.tone } : {})} /> } : {})}
+          {...(line.lit || line.notFollowing
+            ? {
+                end: (
+                  /*
+                    Its row's end: the crossed-out bell while you are not following it, as the header's bell wears it,
+                    its words in the tooltip (Katerina, 17 November); then its dot while it lights.
+                  */
+                  <span className="flex items-center gap-2">
+                    {line.notFollowing && (
+                      <WithTooltip label="Not following: you are only notified when someone names you">
+                        <IconBellOff {...ICON} className="text-text-muted" role="img" aria-label="Not following" />
+                      </WithTooltip>
+                    )}
+                    {line.lit && <UnreadDot {...(line.tone ? { tone: line.tone } : {})} />}
+                  </span>
+                ),
+              }
+            : {})}
         />
       ))}
     </ListTable>

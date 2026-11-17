@@ -184,7 +184,8 @@ vi.mock('@/api', async () => ({
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useWorkspaceDirectory: () => undefined,
-  useMembership: () => ({ isMember: () => false, setMember: async () => {} }),
+  // `termsOf` as the real seam has it: a team's page asks it whether you are not following a place (useNotFollowing).
+  useMembership: () => ({ isMember: () => false, termsOf: () => ({ member: false, muted: false }), setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.

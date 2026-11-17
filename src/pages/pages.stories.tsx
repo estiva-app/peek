@@ -318,6 +318,8 @@ function Column({ view = 'all', show = 'all', signedOut = false, folders = FOLDE
           unread={{}}
           show={show}
           openTeam={currentFolder}
+          // Releases is a topic you are not following: point at its row for the crossed-out bell (Q-22).
+          notFollowingOf={(_team, topic) => topic.address === TEAM_TOPICS[1]!.address}
         />
       )}
     </FolderColumn>

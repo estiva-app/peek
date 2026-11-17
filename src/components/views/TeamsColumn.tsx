@@ -3,18 +3,15 @@ import { IconFolder, IconHash, IconPlus, IconUsers } from '@tabler/icons-react'
 import { CollapsibleSection, EmptyState, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, type UnreadDotTone } from '@estiva-app/ui'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import {
-  teamFactsOf,
   teamPlaces,
   useConversationBadges,
   useLeavesTopic,
-  useMembership,
   usePeekActions,
   useReactionsSeenOnClose,
   useTeamChatNews,
   useTeamFiles,
   useTeams,
   useTeamTopics,
-  useTopicFollowing,
   type RowNewsItem,
   type Team,
 } from '@/api'
@@ -22,6 +19,7 @@ import { RowNewsCard } from '@/components/RowNewsCard'
 import { TreeRow } from '@/components/views/FileTreeView'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
+import { useNotFollowing } from '@/components/views/useNotFollowing'
 import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import type { FileControl } from '@/components/views/useFileControls'
 import type { TreeShow } from '@/components/views/treeFilter'
@@ -85,8 +83,8 @@ export function TeamsColumn({
   const { markSpace } = usePeekActions()
   const { showToast } = useToast()
   const leaves = useLeavesTopic(teams)
-  const followingOf = useTopicFollowing()
-  const membership = useMembership()
+  // Not following: the one level a row shows (Q-22), as the team's page shows it too.
+  const notFollowing = useNotFollowing()
   // A team's chat in Open work, by its address, as its page's button does it (B-14), with the same toast and Undo.
   const openWork = useToggleOpenWork()
 
@@ -125,14 +123,6 @@ export function TeamsColumn({
       () => showToast({ label: 'Link copied', type: 'success' }),
       () => void window.prompt('Copy this link:', link),
     )
-  }
-
-  // Not following: the one level a row shows (Q-22). Muted is Not following too, as the switch shows a mute.
-  const notFollowing = (team: Team, topic: ForeignObject) => {
-    if (!topic.address) return false
-    if (membership.termsOf(topic.address).muted) return true
-    const following = followingOf(topic, teamFactsOf(team))
-    return following !== undefined && !(following.in && following.level)
   }
 
   return (

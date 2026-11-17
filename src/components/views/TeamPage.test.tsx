@@ -34,6 +34,8 @@ const api = vi.hoisted(() => ({
   markSpace: vi.fn(),
   files: [] as ForeignObject[] | null,
   unread: {} as Record<string, boolean>,
+  /** How the viewer follows each place, by address: `in` false is Not following. */
+  following: {} as Record<string, { in: boolean; level?: string }>,
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -63,6 +65,8 @@ vi.mock('@/api', async () => ({
   useTopicFacts: () => ({ members: new Map([[LAUNCH.address!, 4]]), active: new Map([[LAUNCH.address!, Math.floor(Date.now() / 1000) - 3600]]) }),
   useTeamChatActive: () => undefined,
   usePlaceFollow: () => ({ state: undefined, listed: [{ pubkey: KATERINA, level: 'important', ways: ['team'] }], failed: false, choose: vi.fn(), add: vi.fn() }),
+  // How the viewer follows each place, as the rule judges it: where a test says.
+  useTopicFollowing: () => (topic: ForeignObject) => (topic.address ? api.following[topic.address] : undefined),
 }))
 vi.mock('@/components/views/useFolderActions', () => ({ useFolderActions: () => ({ menuFor: () => undefined, action: null, close: () => {} }) }))
 /** What the toasts said, in order: each with its Undo when it has one. */
@@ -107,6 +111,7 @@ beforeEach(() => {
   for (const write of [api.joinTeam, api.leaveTeam, api.addToTeam, api.followTeam, api.markSpace]) write.mockResolvedValue(ok)
   api.files = []
   api.unread = {}
+  api.following = {}
 })
 
 /** The header's Members pill: faces and how many (TP-02). */
@@ -262,6 +267,13 @@ describe('what a team’s page shows (TP-08, TP-09, TP-14)', () => {
     mount(team())
     expect(rowOf('Launch').querySelector('[data-unread], [data-unread-dot]')).not.toBeNull()
     expect(rowOf('Brief').querySelector('[data-unread], [data-unread-dot]')).toBeNull()
+  })
+
+  it('a place you are not following wears the crossed-out bell at its row’s end; one you follow does not (Katerina, 17 November)', () => {
+    api.following = { [LAUNCH.address!]: { in: false }, [BRIEF.address!]: { in: true, level: 'important' } }
+    mount(team())
+    expect(within(rowOf('Launch')).getByRole('img', { name: 'Not following' }).classList.contains('tabler-icon-bell-off')).toBe(true)
+    expect(within(rowOf('Brief')).queryByRole('img', { name: 'Not following' })).toBeNull()
   })
 
   it('no ⋮ on any row, files included (TP-09)', () => {

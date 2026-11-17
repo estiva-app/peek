@@ -1,5 +1,5 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { Chip, EmptyState, NavItem, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { EmptyState, NavItem, WithTooltip, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
 import { IconBellOff, IconHash, IconTarget } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -287,9 +287,21 @@ export function TreeRow({
           />
         )
       }
-      // Not following, beside the name while the row is pointed at, with what it means where no card shows (Q-22).
-      {...(notFollowing ? { hint: <Chip label="Not following" leadingIcon={<IconBellOff size={14} stroke={1.5} aria-hidden />} /> } : {})}
-      {...(notFollowing && !lines?.length ? { tooltip: 'Not following: you are only notified when someone names you' } : {})}
+      /*
+        Not following, beside the name while the row is pointed at (Q-22): the crossed-out bell alone, which the bell in
+        the page's header wears at that level, and what it means in a tooltip on the bell itself (Katerina, 17 November:
+        the chip's words were too long and covered the name; "the tooltip … should appear when hovering over the bell").
+        A screen reader still hears "Not following".
+      */
+      {...(notFollowing
+        ? {
+            hint: (
+              <WithTooltip label="Not following: you are only notified when someone names you">
+                <IconBellOff size={16} stroke={1.5} className="text-text-muted" role="img" aria-label="Not following" />
+              </WithTooltip>
+            ),
+          }
+        : {})}
       /* `=== true`: an unjudged file draws no dot, not a dark one. */
       unread={isUnread}
       active={selected}
