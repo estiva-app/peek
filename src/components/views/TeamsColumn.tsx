@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { IconFolder, IconHash, IconPlus, IconUsers } from '@tabler/icons-react'
-import { CollapsibleSection, EmptyState, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, type UnreadDotTone } from '@estiva-app/ui'
+import { IconFolder, IconHash, IconPlus, IconTarget, IconUsers } from '@tabler/icons-react'
+import { CollapsibleSection, EmptyState, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, UnreadDot, type UnreadDotTone } from '@estiva-app/ui'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import {
   teamPlaces,
@@ -45,8 +45,9 @@ const ICON = { size: 16, stroke: 1.5 } as const
  * - The teams you are in and the ones you follow, together, the Company team first, then A–Z, with no label over them
  *   (Q-14, T-08). Each wears the team icon, opens its page, starts unfolded, and offers + (New topic in it) to its
  *   members.
- * - Under a team: its chat (members only), then its topics (`#`, today's spaces), then the initiatives it leads (◎,
- *   today's topics: today's order, each kind with its own icon; Katerina, 16 November, T-14 changed), then a Files fold
+ * - Under a team: its chat (members only), then its topics (`#`, today's spaces), then an Initiatives fold of the ones it
+ *   leads (◎, today's topics: today's order, each kind with its own icon; Katerina, 16 November, T-14 changed; in a
+ *   fold as its Files are, shut until opened or until one inside is opened, 17 November), then a Files fold
  *   of its projects and documents, whichever initiative lists them, shut until opened or until a file inside it is
  *   opened. An initiative is in Initiatives too; opened from here, its page keeps this column.
  * - The other teams, in one fold drawn as a row among rows, with its count, shut unless the open team is inside it.
@@ -254,6 +255,45 @@ function TeamFilesFold({
   )
 }
 
+/**
+ * A team's initiatives in one fold, as its Files are (Katerina, 17 November: "the initiatives should still be in their
+ * expandable item"): shut until opened, or until one inside is opened. Under Unread it starts open: only the lit ones
+ * are in it. Shut, it wears the dot of what is new inside, which its rows show once it is open.
+ */
+function TeamInitiativesFold({
+  holdsOpen,
+  selectedRef,
+  unreadOnly,
+  litTones,
+  children,
+}: {
+  /** The open file is one of these initiatives: the fold opens for it. */
+  holdsOpen: boolean
+  selectedRef?: string
+  unreadOnly: boolean
+  /** Each lit initiative's dot colour, one entry per lit row (ACT-7). */
+  litTones: readonly (UnreadDotTone | undefined)[]
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(unreadOnly)
+  // One colour when every lit row has it (orange: only reactions to you), else the plain dot.
+  const tone = litTones.length > 0 && litTones.every((one) => one === litTones[0]) ? litTones[0] : undefined
+  return (
+    <CollapsibleSection
+      look="row"
+      title="Initiatives"
+      icon={<IconTarget {...ICON} aria-hidden />}
+      open={open}
+      onOpenChange={setOpen}
+      {...(holdsOpen && selectedRef ? { openFor: selectedRef } : {})}
+      {...(!open && litTones.length > 0 ? { trailing: <UnreadDot {...(tone ? { tone } : {})} /> } : {})}
+      contentClassName="gap-0.5"
+    >
+      {children}
+    </CollapsibleSection>
+  )
+}
+
 /** The rows in a team's Files fold: each file with its kind's icon; a project folds its issues, open for the open one. */
 function TeamFileRows({
   team,
@@ -414,8 +454,20 @@ export function TeamsColumnView({
           />
         )}
         {topicsShown.map((topic) => placeRow(topic, 'topic'))}
-        {/* The initiatives it leads, after its topics, as today's Peek lists them, each with its own icon (Katerina, 16 November: T-14 changed). */}
-        {initiativesShown.map((topic) => placeRow(topic, 'initiative'))}
+        {/*
+          The initiatives it leads, after its topics, as today's Peek lists them, each with its own icon (Katerina, 16
+          November: T-14 changed), in one fold as its Files are (17 November).
+        */}
+        {initiativesShown.length > 0 && (
+          <TeamInitiativesFold
+            holdsOpen={!!selectedRef && initiativesShown.some((topic) => topic.ref === selectedRef)}
+            selectedRef={selectedRef}
+            unreadOnly={unreadOnly}
+            litTones={initiativesShown.filter((topic) => unread[topic.ref] === true).map((topic) => tones?.[topic.ref])}
+          >
+            {initiativesShown.map((topic) => placeRow(topic, 'initiative'))}
+          </TeamInitiativesFold>
+        )}
         {filesShown && (
           <TeamFilesFold
             team={team}

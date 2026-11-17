@@ -74,6 +74,8 @@ const rowBlock = (name: string | RegExp, button: string | RegExp) => {
   while (!within(block).queryByRole('button', { name: button })) block = block.parentElement!
   return block
 }
+/** Engineering's Initiatives fold: the one team here that leads an initiative (Launch). */
+const initiativesFold = () => screen.getByRole('button', { name: /^Initiatives/ })
 
 describe('the Teams column (step 3)', () => {
   it('lists your teams and the ones you follow together, the Company team first, with no label over them', () => {
@@ -92,17 +94,44 @@ describe('the Teams column (step 3)', () => {
     expect(row('Engineering').getAttribute('href')).toBe('/app/teams/eng')
   })
 
-  it('under a team you are in: its chat, its topics, then the initiatives it leads (T-14, changed 16 November); no issue, no archived topic', () => {
+  it('under a team you are in: its chat, its topics, then the initiatives it leads in their own fold, shut (T-14; 17 November); no issue, no archived topic', async () => {
     mount()
     const order = rows()
     const at = order.indexOf('Engineering')
-    expect(order.slice(at, at + 4)).toEqual(['Engineering', 'engineering', 'General', 'Launch'])
+    expect(order.slice(at, at + 3)).toEqual(['Engineering', 'engineering', 'General'])
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull()
+    expect(initiativesFold().getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(initiativesFold())
+    expect(rows().slice(at, at + 4)).toEqual(['Engineering', 'engineering', 'General', 'Launch'])
     expect(screen.queryByRole('link', { name: 'Old plans' })).toBeNull()
     expect(row('engineering').getAttribute('href')).toBe('/app/teams/eng/chat')
   })
 
-  it('a topic wears #, an initiative ◎: each kind its own icon', () => {
+  // "The initiatives should still be in their expandable item" (Katerina, 17 November), as the Files are.
+  it('the Initiatives fold opens for an initiative of its team that is open', () => {
+    mount({ openTeam: 'eng', selectedRef: LAUNCH.ref })
+    expect(initiativesFold().getAttribute('aria-expanded')).toBe('true')
+    expect(row('Launch').getAttribute('aria-current')).toBe('page')
+  })
+
+  it('a shut Initiatives fold wears the dot of a lit initiative inside it; open, the row has it instead', async () => {
+    mount({ unread: { [LAUNCH.ref]: true } })
+    const dots = () => [...document.querySelectorAll('[data-unread], [data-unread-dot]')].filter((dot) => !dot.closest('[hidden]'))
+    expect(dots()).toHaveLength(1)
+    expect(dots()[0]!.closest('a')).toBeNull()
+    await userEvent.click(initiativesFold())
+    expect(dots()).toHaveLength(1)
+    expect(row('Launch').contains(dots()[0]!) || row('Launch').parentElement!.contains(dots()[0]!)).toBe(true)
+  })
+
+  it('only a team that leads an initiative has the fold', () => {
     mount()
+    expect(screen.getAllByRole('button', { name: /^Initiatives/ })).toHaveLength(1)
+  })
+
+  it('a topic wears #, an initiative ◎: each kind its own icon', async () => {
+    mount()
+    await userEvent.click(initiativesFold())
     expect(row('General').querySelector('svg.tabler-icon-hash')).not.toBeNull()
     expect(row('Launch').querySelector('svg.tabler-icon-target')).not.toBeNull()
     expect(row('Launch').querySelector('svg.tabler-icon-hash')).toBeNull()
@@ -259,6 +288,7 @@ describe('what a team’s rows offer (step 3)', () => {
   it('a member makes one of its initiatives a topic (T-31)', async () => {
     const onMarkSpace = vi.fn()
     mount({ onMarkSpace })
+    await userEvent.click(initiativesFold())
     await userEvent.click(within(rowBlock('Launch', 'More options')).getByRole('button', { name: 'More options' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Make it a topic' }))
     expect(onMarkSpace).toHaveBeenCalledWith(ENGINEERING, LAUNCH, true)
