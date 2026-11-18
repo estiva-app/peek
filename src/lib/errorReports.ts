@@ -10,9 +10,10 @@
  */
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { matchPath, useLocation } from 'react-router-dom'
-import { createErrorReporter } from '@estiva-app/platform'
-import { reportCrashesTo } from '@estiva-app/ui'
+import { createErrorReporter, type Failure } from '@estiva-app/platform'
+import { reportCrashesTo, reportFailuresTo } from '@estiva-app/ui'
 import { ESTIVA_ID_ORIGIN, currentEstivaToken } from '@/auth/estivaId'
+import { reportDrawnFailuresTo, reportRefusalsTo } from '@/lib/failureReports'
 
 /**
  * Peek's routes as patterns, most specific first: `/:word/:ref` would match
@@ -71,6 +72,10 @@ export const errorReporter = createErrorReporter({
 export function startErrorReports(): void {
   errorReporter.listen(window)
   reportCrashesTo((error) => errorReporter.report(error, 'boundary'))
+  // A failure Peek shows (every error toast, and a warning that names what failed), and a write the relay refuses (PROD-5).
+  reportFailuresTo((failure) => errorReporter.failure((failure ?? 'unnamed') as Failure))
+  reportRefusalsTo((code) => errorReporter.refused(code))
+  reportDrawnFailuresTo((failure) => errorReporter.failure(failure))
   window.__crashOnPurpose = crashOnPurpose
 }
 

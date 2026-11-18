@@ -8,6 +8,7 @@ import { EditableText, Person } from '@estiva-app/ui'
 import { SectionLabel } from './ui/SectionHeader'
 import { SummaryCount } from './SummaryField'
 import { summaryText } from '@/lib/summary'
+import { reportFailureNow } from '@/lib/failureReports'
 
 /**
  * What a bare-file topic is, and where its name is changed (FOL-33).
@@ -105,12 +106,15 @@ export function FileDetailsDialog({
           defaultEditing={initialEditing}
           onCommit={async (name) => {
             if (!onRename) return false
+            let outcome: RenameOutcome | true
             try {
-              return (await onRename(name)) ?? true
+              outcome = (await onRename(name)) ?? true
             } catch (error) {
               // Nothing may leave this control stuck on "Saving…".
-              return { kind: 'error', message: error instanceof Error ? error.message : 'That rename did not go through.' }
+              outcome = { kind: 'error', message: error instanceof Error ? error.message : 'That rename did not go through.' }
             }
+            if (typeof outcome === 'object' && outcome?.kind === 'error') reportFailureNow('not-renamed')
+            return outcome
           }}
         />
       </Section>
@@ -186,6 +190,7 @@ function SummarySection({ summary, onSummarize }: { summary: string; onSummarize
           } catch (error) {
             outcome = { kind: 'error', message: error instanceof Error ? error.message : 'The relay gave no reason.' }
           }
+          if (outcome?.kind === 'error') reportFailureNow('not-saved')
           // A refusal keeps the field open with your text, and says so in these words.
           return outcome?.kind === 'error' ? { kind: 'error', message: `Summary not saved. ${outcome.message} Your text is still here.` } : (outcome ?? true)
         }}

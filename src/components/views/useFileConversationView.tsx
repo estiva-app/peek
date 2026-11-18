@@ -47,6 +47,7 @@ import { formatTimestamp } from '@/api/format'
 import { notSavedNote, notSentNote } from '@/lib/notSent'
 import { putBackEdit } from '@/lib/refusedEdits'
 import type { ReactionAnswer } from '@/lib/reactions'
+import { useReportFailure } from '@/lib/failureReports'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -231,6 +232,7 @@ export function useFileConversationView({
 
   const isLoading = state === 'loading'
   const failed = typeof state === 'object' && 'failed' in state ? state.failed : null
+  useReportFailure(failed ? 'not-loaded' : undefined)
   const conversation: FileConversation | null = typeof state === 'object' && 'roots' in state ? state : null
   const address = container ? conversationKeyOf(container) : null
   /*
@@ -391,7 +393,7 @@ export function useFileConversationView({
 
   /** Toasts a refusal; true when the relay took the write. */
   const refuse = (result: WriteResult): result is { ok: true; id: string } => {
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
     return result.ok
   }
 
@@ -418,7 +420,7 @@ export function useFileConversationView({
     has moved on by the time the relay answers.
   */
   const notSaved = (change: 'edit' | 'delete', target: string, result: WriteResult | { ok: false; reason: unknown }) => {
-    if (!result.ok) showToast({ label: notSavedNote(change, noteNameOf(target), result.reason), type: 'error' })
+    if (!result.ok) showToast({ label: notSavedNote(change, noteNameOf(target), result.reason), type: 'error', failure: change === 'delete' ? 'not-deleted' : 'not-saved' })
   }
 
   const setResolution = (targetEventId: string, resolved: boolean, message?: string, supportingEventId?: string) =>
@@ -515,7 +517,7 @@ export function useFileConversationView({
   const notSent = (where: string, payload: SendPayload, reason: string, away: () => boolean): SendAnswer => {
     const text = !!payload.text.trim()
     if (reason === TOPIC_NOT_CREATED && container?.kind === 'file') topicTextBack(container.address, text)
-    else if (away()) showToast({ label: notSentNote(where, reason, { text, files: false, filesLost: !!payload.files?.length }), type: 'error' })
+    else if (away()) showToast({ label: notSentNote(where, reason, { text, files: false, filesLost: !!payload.files?.length }), type: 'error', failure: 'not-sent' })
     return { accepted: false, reason }
   }
 

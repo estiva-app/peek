@@ -47,6 +47,7 @@ import {
   parsePublishResponse,
   parseQueryResponse,
   RELAY_BUSY_MESSAGE,
+  refusalCodeOf,
   retryAfterMsOf,
   retryWhileBusy,
   timesOf,
@@ -64,6 +65,7 @@ import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/prot
 export type QueryLane = ReadLane | 'first'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
+import { heardRefusal } from '@/lib/failureReports'
 import { relayBudget } from './relayBudget'
 import { RelayReadError } from './relayRead'
 import { keepRelayAnswer } from './deviceCopy'
@@ -178,8 +180,19 @@ export async function publishSigned(
   pubkey?: string,
 ): Promise<PublishResult> {
   const { status, text } = await bridgePost(relayUrl, '/events', event, token, pubkey)
-  if (isRelayBusyResponse(status, text)) return { ok: false, reason: RELAY_BUSY_MESSAGE, httpStatus: status }
-  return parsePublishResponse(status, text)
+  const result = isRelayBusyResponse(status, text)
+    ? { ok: false, reason: RELAY_BUSY_MESSAGE, httpStatus: status }
+    : parsePublishResponse(status, text)
+  // Every refused write is reported by its reason code, busy answers included, never the relay's sentence (PROD-5).
+  // Reading the code is inside the guard too: a malformed answer never turns a refusal into a thrown write.
+  if (!result.ok) {
+    try {
+      heardRefusal(refusalCodeOf(result))
+    } catch {
+      /* the publish answer stands */
+    }
+  }
+  return result
 }
 
 /**

@@ -94,7 +94,7 @@ export function usePlaceFollowControls({
 
   const choose = async (choice: SwitchChoice) => {
     const result = await follow.choose(choice)
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: choice === 'not-following' ? 'not-left' : 'not-saved' })
     return result.ok
   }
   /*
@@ -129,7 +129,7 @@ export function usePlaceFollowControls({
   }
   const add = async (chosen: MembersDialogCandidate[]) => {
     const result = await follow.add(chosen.map((c) => c.id))
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-added' })
     // Said, with no Undo: they may already have seen it (Q-10).
     else showToast({ label: `Added to ${title}. They can choose their own notifications, or leave.`, type: 'success' })
     return result.ok

@@ -24,6 +24,7 @@ import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import type { FileControl } from '@/components/views/useFileControls'
 import type { TreeShow } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** A team's chat: its own path beside the team's page (TEA-5). */
 export const teamChatPath = (team: string) => `/app/teams/${team}/chat`
@@ -79,6 +80,7 @@ export function TeamsColumn({
   onStartTopic?: (team: Team) => void
 }) {
   const { teams, failed } = useTeams()
+  useReportFailure(failed ? 'not-loaded' : undefined)
   const { unread: chatUnread, news: chatNews, tones: chatTones } = useTeamChatNews(teams, { reactions: true })
   const { topics, loading, signedOut } = useTeamTopics()
   const { markSpace } = usePeekActions()
@@ -105,14 +107,14 @@ export function TeamsColumn({
     if (!topic.address) return
     const title = topic.slots.title?.value ?? 'This topic'
     const result = await markSpace(team.id, topic.address, space)
-    if (!result.ok) return showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) return showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
     showToast({
       label: space
         ? `${title} is a topic now: it shows under ${team.name} in Teams.`
         : `${title} is an initiative now: it shows under Initiatives for everyone in it.`,
       type: 'success',
       actionLabel: 'Undo',
-      onAction: () => void markSpace(team.id, topic.address!, !space).then((undone) => !undone.ok && showToast({ label: undone.reason, type: 'error' })),
+      onAction: () => void markSpace(team.id, topic.address!, !space).then((undone) => !undone.ok && showToast({ label: undone.reason, type: 'error', failure: 'not-saved' })),
     })
   }
 
@@ -309,6 +311,7 @@ function TeamFileRows({
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { files, failed } = useTeamFiles(team.id)
+  useReportFailure(failed ? 'not-loaded' : undefined)
   if (failed) return <EmptyState scope="rows" message="Couldn’t load its files. Reload to try again." />
   if (!files) return <SkeletonRow />
   // Under Unread, only the open file (or the project holding it): files have no dot of their own.

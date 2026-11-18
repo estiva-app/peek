@@ -39,6 +39,8 @@ import { previewText } from '@/lib/textParsing'
 import { useToast } from '@/lib/toast'
 import { objectLabel } from '@/lib/appName'
 import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'
+import { useReportFailure } from '@/lib/failureReports'
+import type { Failure } from '@estiva-app/platform'
 
 /**
  * The launcher (Cmd/Ctrl+K anywhere, or the top bar's search field) — Peek's
@@ -505,7 +507,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const [drafts, setDrafts] = useState<Record<string, FormDraft>>({})
   const [attempted, setAttempted] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<{ text: string; failure?: Failure } | null>(null)
+  useReportFailure(submitError?.failure)
 
   const formLevel = level.kind === 'form' ? level : null
   /*
@@ -592,7 +595,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       const result = await applyAction({ naddr: action.target, actionId: action.id, value })
       setSubmitting(false)
       if (!result.ok) {
-        setSubmitError(result.reason ?? 'The relay rejected the change.')
+        setSubmitError({ text: result.reason ?? 'The relay rejected the change.', failure: 'not-saved' })
         return
       }
       showToast({ label: `${action.label} · ${action.targetLabel ?? 'saved'}`, type: 'success' })
@@ -610,7 +613,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const declared =
       (form.app ? liveActions(form.app).some((a) => a.id === action.id) : false) || form.entry?.launcher.id === action.id
     if (!declared) {
-      setSubmitError(`${appLabel} has not published this action, so there is nothing to send.`)
+      setSubmitError({ text: `${appLabel} has not published this action, so there is nothing to send.`, failure: 'unnamed' })
       return
     }
     // Create topic's members are Peek's to write once the file exists (INT-12), never a property of it.
@@ -619,18 +622,18 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const { parent, properties: typed } = splitSubmission(action.membersField ? declaredValues : values)
     const { properties, contentFormat } = proseSubmission(action, typed, formats)
     if (!parent) {
-      setSubmitError('Choose where this should go before creating it.')
+      setSubmitError({ text: 'Choose where this should go before creating it.' })
       return
     }
     // The pickers drop a retired topic's channel (FOL-26); a prefilled draft
     // does not go through a picker, so the same rule holds here too.
     if (parent.startsWith('39000:') && legacyTopicByChannel(parent.split(':')[2] ?? '')) {
-      setSubmitError('That topic has moved to a file. Open it from Topics and write there.')
+      setSubmitError({ text: 'That topic has moved to a file. Open it from Topics and write there.' })
       return
     }
     // DMs only, also for a prefilled draft: Peek has no screen for a Folder's own chat (parked, Miky 2026-10-17, REC-1 2726532e).
     if (action.id === 'start-a-conversation' && !action.dmParents?.includes(parent)) {
-      setSubmitError('Start a conversation in one of your DMs.')
+      setSubmitError({ text: 'Start a conversation in one of your DMs.' })
       return
     }
     setSubmitting(true)
@@ -647,12 +650,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       } catch (error) {
         // A send that throws (signing, the network) says so, as the Folder's path does below.
         setSubmitting(false)
-        setSubmitError(error instanceof Error ? error.message : String(error))
+        setSubmitError({ text: error instanceof Error ? error.message : String(error), failure: 'not-sent' })
         return
       }
       setSubmitting(false)
       if (!sent.ok) {
-        setSubmitError(sent.reason ?? 'The relay rejected it.')
+        setSubmitError({ text: sent.reason ?? 'The relay rejected it.', failure: 'not-sent' })
         return
       }
       // C5, as a conversation started in a Folder says it.
@@ -673,13 +676,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       })
     } catch (error) {
       setSubmitting(false)
-      setSubmitError(error instanceof Error ? error.message : String(error))
+      setSubmitError({ text: error instanceof Error ? error.message : String(error), failure: 'not-created' })
       return
     }
     setSubmitting(false)
     if (!result.ok) {
       // The runtime's own words: it is the only participant that knows what the manifest allowed.
-      setSubmitError(result.reason ?? 'The relay rejected it.')
+      setSubmitError({ text: result.reason ?? 'The relay rejected it.', failure: 'not-created' })
       return
     }
     if (result.created) {
@@ -688,19 +691,19 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         placed = insertReferenceIntoActiveComposer(addrToNaddr(result.created, []))
       } catch (error) {
         // The object WAS created, so "failed" would be a lie about the half that worked.
-        setSubmitError(`Created, but its reference could not be encoded: ${error instanceof Error ? error.message : String(error)}`)
+        setSubmitError({ text: `Created, but its reference could not be encoded: ${error instanceof Error ? error.message : String(error)}`, failure: 'not-added' })
         return
       }
       // No composer is legitimate; a composer that was open and is gone is the trace going missing.
       if (!placed && context.composer) {
-        setSubmitError('Created, but its reference could not be placed — the composer is gone.')
+        setSubmitError({ text: 'Created, but its reference could not be placed — the composer is gone.', failure: 'not-added' })
         return
       }
     }
     // A `listed` creation whose Folder command was refused (SPEC §7.3): the
     // object exists and its Folder does not show it, which is not a success.
     if (result.incomplete) {
-      setSubmitError(`Created, but its team does not list it yet: ${result.incomplete}`)
+      setSubmitError({ text: `Created, but its team does not list it yet: ${result.incomplete}`, failure: 'not-added' })
       return
     }
     /*
@@ -717,7 +720,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       }
       if (refused.length > 0) {
         // The topic exists, so the form closes: sending it again would make a second one.
-        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error' })
+        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error', failure: 'not-added' })
         void reloadFoldersOnScreen()
         onClose()
         return
@@ -1205,7 +1208,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
                 : { button: 'Creating…', line: `Creating it in ${owner ?? 'the app'}…` }
               : undefined
           }
-          error={submitError ?? undefined}
+          error={submitError?.text}
         >
           <ActionFormFields
             app={app}

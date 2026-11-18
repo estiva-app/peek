@@ -2,6 +2,7 @@ import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
 import { EmptyState, SkeletonList } from '@estiva-app/ui'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** The box the comments live in, written once: the comments, or the line that says why there are none. */
 const COMMENTS = 'flex flex-col gap-1 p-4'
@@ -69,6 +70,7 @@ export function ForeignConversationView({
    */
   deletedRoots?: readonly { id: string; createdAt: number; unseen?: true }[]
 }) {
+  useReportFailure(state === 'unresolved' || (typeof state === 'object' && 'failed' in state) ? 'not-loaded' : undefined)
   if (state === 'loading') {
     return (
       <div className="p-4" data-loading="foreign-conversation">

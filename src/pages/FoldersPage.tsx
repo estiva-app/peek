@@ -18,6 +18,7 @@ import { filePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useTabTitle } from '@/lib/useTabTitle'
 import { formatDateLabel } from '@/api'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * `/app/teams` and `/app/teams/:id` — the Folders column, with no file open.
@@ -105,6 +106,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
   const selected = folders?.find((folder) => folder.id === id)
   // A Folder with state is a team (TEA-5): its link opens the team's page, an archived one under its notice.
   const { teams, failed: teamsFailed } = useTeams()
+  useReportFailure(teamsFailed ? 'not-loaded' : undefined)
   const team = teams?.find((candidate) => candidate.id === id)
   // "Not a DM" is not "a Folder" (PEE-42): a Folder is one the relay lists to this viewer.
   const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder && !!selected
@@ -190,7 +192,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
       reason: `Nothing was unarchived: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
     }))
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: 'not-restored' })
       return false
     }
     await reload()
@@ -266,7 +268,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
           onConfirm={async () => {
             const result = await deleteFolder(id)
             if (!result.ok) {
-              showToast({ label: result.reason, type: 'error' })
+              showToast({ label: result.reason, type: 'error', failure: 'not-deleted' })
               return false
             }
             await reload()

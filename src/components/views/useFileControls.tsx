@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { KIND_BARE_FILE, SUMMARY_FIELD, isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { Failure } from '@estiva-app/platform'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
 import { fileArchiveChanged, folderLoad, placeLevelChanged, reloadFoldersOnScreen, topicFollowTarget, useForeignObjects, useMembership, usePeekActions, useReloadHeldObject, useTeams, entryNames } from '@/api'
@@ -205,7 +206,9 @@ export function useFileControls({
   })
 
   const refuse = useCallback(
-    (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
+    // `failure` names what did not happen, from the reporter's fixed list: the label carries titles and the relay's words (PROD-5).
+    (label: string, failure: Failure) =>
+      showToast({ label, type: 'warning', failure, leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
     [showToast],
   )
 
@@ -233,14 +236,14 @@ export function useFileControls({
     async (file: ForeignObject, pubkeys: string[], nameOf: (pubkey: string) => string): Promise<boolean> => {
       const title = file.slots.title?.value ?? 'this file'
       if (!file.address || !file.folder) {
-        refuse(`“${title}” is in no team Peek can read, so nobody can be added from here.`)
+        refuse(`“${title}” is in no team Peek can read, so nobody can be added from here.`, 'not-added')
         return false
       }
       let added = true
       for (const pubkey of pubkeys) {
         const outcome = await membershipNow.current.setMember(file.address, file.folder, true, pubkey)
         if (outcome !== true) {
-          showToast({ label: `Nothing changed: ${nameOf(pubkey)} could not be added to “${title}”. ${outcome}`, type: 'error' })
+          showToast({ label: `Nothing changed: ${nameOf(pubkey)} could not be added to “${title}”. ${outcome}`, type: 'error', failure: 'not-added' })
           added = false
           break
         }
@@ -257,7 +260,7 @@ export function useFileControls({
     async (file: ForeignObject, archived: boolean, resolution?: string): Promise<boolean> => {
       const action = fileControlsOf(file).archive
       if (!action || !file.naddr) {
-        refuse('This file cannot be archived from here.')
+        refuse('This file cannot be archived from here.', 'not-archived')
         return false
       }
       /*
@@ -269,7 +272,7 @@ export function useFileControls({
         (error: unknown) => ({ ok: false as const, reason: `Nothing was archived: ${(error as Error)?.message ?? 'the write failed'}. Try again.` }),
       )
       if (!result.ok) {
-        refuse(result.reason)
+        refuse(result.reason, archived ? 'not-archived' : 'not-restored')
         return false
       }
       archivedCallback.current?.(file, archived)
@@ -335,16 +338,16 @@ export function useFileControls({
       if (control === 'leave' && isTopic(file)) {
         const title = file.slots.title?.value ?? 'this topic'
         const target = topicFollowTarget(file, teamsNow.current.teams, teamsNow.current.teamsFailed)
-        if (!target) return refuse(`Peek has not read your teams yet, so “${title}” cannot be left from here. Try again.`)
+        if (!target) return refuse(`Peek has not read your teams yet, so “${title}” cannot be left from here. Try again.`, 'not-left')
         // An archived team's topics are read-only (§3.2), as their page's switch is: nothing is written.
-        if (target.archived) return refuse(`“${title}” is in an archived team, so it cannot be left.`)
+        if (target.archived) return refuse(`“${title}” is in an archived team, so it cannot be left.`, 'not-left')
         void leavePlace({
           place: target.place,
           folder: target.folder,
           archived: target.archived,
           muted: membershipNow.current.termsOf(target.place.address).muted,
         }).then(async (result) => {
-          if (!result.ok) return showToast({ label: `“${title}” could not be left. ${result.reason}`, type: 'error' })
+          if (!result.ok) return showToast({ label: `“${title}” could not be left. ${result.reason}`, type: 'error', failure: 'not-left' })
           await membershipNow.current.refresh()
           membershipCallback.current?.(file)
           // The topic's page, open beside the column, reads its switch again: Not following, as the relay holds it.
@@ -358,7 +361,7 @@ export function useFileControls({
             actionLabel: 'Undo',
             onAction: () =>
               void joinPlace({ place: target.place, folder: target.folder, archived: target.archived, muted: false }).then(async (back) => {
-                if (!back.ok) return showToast({ label: `“${title}” could not be joined again. ${back.reason}`, type: 'error' })
+                if (!back.ok) return showToast({ label: `“${title}” could not be joined again. ${back.reason}`, type: 'error', failure: 'not-joined' })
                 await membershipNow.current.refresh()
                 membershipCallback.current?.(file)
                 placeLevelChanged(target.place.address)
@@ -381,7 +384,7 @@ export function useFileControls({
       if (control === 'join' || control === 'leave') {
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
-        if (!file.address || !file.folder) return refuse(`“${title}” is in no team Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
+        if (!file.address || !file.folder) return refuse(`“${title}” is in no team Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`, joining ? 'not-joined' : 'not-left')
         void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) => {
           if (outcome === true) membershipCallback.current?.(file)
           showToast(
@@ -395,7 +398,7 @@ export function useFileControls({
                     : `Left “${title}”: only messages that mention you show as unread.`,
                   type: 'success',
                 }
-              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. ${outcome}`, type: 'error' },
+              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. ${outcome}`, type: 'error', failure: joining ? 'not-joined' : 'not-left' },
           )
         })
         return
@@ -404,7 +407,7 @@ export function useFileControls({
       if (control === 'unarchive') return void setArchived(file, false)
       if (control === 'archive') {
         const address = file.address
-        if (!address) return refuse('This file cannot be archived from here.')
+        if (!address) return refuse('This file cannot be archived from here.', 'not-archived')
         // One count at a time, and the delete question closes now: a Delete
         // pressed while the count is read would leave an archive to confirm
         // for a file that is gone.
@@ -413,7 +416,7 @@ export function useFileControls({
         setDialog(null)
         void archiveImpact(address)
           .then((impact) => setDialog({ kind: 'archive', file, ...archiveImpactWords(impact) }))
-          .catch(() => refuse('What archiving would hide could not be read, so nothing was archived. Try again.'))
+          .catch(() => refuse('What archiving would hide could not be read, so nothing was archived. Try again.', 'not-archived'))
           .finally(() => {
             counting.current = false
           })
@@ -424,7 +427,7 @@ export function useFileControls({
       }
       const ownFolder = file.folder
       if (!ownFolder) {
-        return refuse('This file is in no team Peek can read, so it cannot be moved from here.')
+        return refuse('This file is in no team Peek can read, so it cannot be moved from here.', 'not-moved')
       }
       setTeamsWanted(true)
       setDialog({ kind: 'move-reading', file })
@@ -437,7 +440,7 @@ export function useFileControls({
           place = await readPlace(file, ownFolder)
         } catch {
           replaceReading(null)
-          refuse('The team could not be read. Try again.')
+          refuse('The team could not be read. Try again.', 'not-moved')
           return
         }
         replaceReading(moveStateOf(file, place))
@@ -470,7 +473,7 @@ export function useFileControls({
     const changesFolder = to.id !== from
     // A topic may be a space, and whether to keep it one is asked only once its teams are read: never a guess.
     if (changesFolder && !teams && isTopic(file)) {
-      refuse(teamsFailed ? 'Its team could not be read, so nothing was moved. Try again.' : 'Its team is still being read. Try again in a moment.')
+      refuse(teamsFailed ? 'Its team could not be read, so nothing was moved. Try again.' : 'Its team is still being read. Try again in a moment.', 'not-moved')
       return false
     }
     const changesParent = choice.parent !== undefined && choice.parent !== (file.parentRef ?? '')
@@ -495,7 +498,7 @@ export function useFileControls({
           const result = await moveFile(file, state.sources, target, choice.checked === true)
           if (result.ok || !('landed' in result)) return result
           // It did arrive, so the move goes on.
-          refuse(partly(result.stillIn, result.why, result.retry))
+          refuse(partly(result.stillIn, result.why, result.retry), 'not-moved')
           return { ok: true as const }
         }
       : undefined
@@ -515,14 +518,14 @@ export function useFileControls({
       const result = await step()
       if (!result.ok) {
         if (!moved) {
-          refuse(result.reason ?? 'Nothing was moved. Try again.')
+          refuse(result.reason ?? 'Nothing was moved. Try again.', 'not-moved')
           // Refused at the relay: the next Move asks with the Folders as they are now.
           if (result.stillIn) await reread(state)
           return false
         }
         // The issue took its new project, and what is listed under it was not moved with it.
-        if (result.stillIn?.length) refuse(partly(result.stillIn, result.why, result.retry))
-        else refuse(`Moved to ${to.name ?? 'the team'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`)
+        if (result.stillIn?.length) refuse(partly(result.stillIn, result.why, result.retry), 'not-moved')
+        else refuse(`Moved to ${to.name ?? 'the team'}, but not all of it: ${result.reason?.replace(/\.$/, '') ?? 'the rest was refused'}. Try moving it again.`, 'not-moved')
         break
       }
       moved = true
@@ -600,7 +603,7 @@ export function useFileControls({
   const runDelete = async (file: ForeignObject) => {
     const action = fileControlsOf(file).delete
     if (!action || !file.naddr || !file.address || !file.folder) {
-      refuse('This file cannot be deleted from here.')
+      refuse('This file cannot be deleted from here.', 'not-deleted')
       return
     }
     // The fact the second write depends on, read now rather than remembered.
@@ -611,13 +614,13 @@ export function useFileControls({
       try {
         hasState = (await resolveFolderContents(file.folder)).hasState
       } catch {
-        refuse('The team could not be read, so nothing was deleted. Try again.')
+        refuse('The team could not be read, so nothing was deleted. Try again.', 'not-deleted')
         return
       }
     }
     const result = await deleteFile({ naddr: file.naddr, actionId: action.id, address: file.address, folder: file.folder, hasState })
     if (!result.ok) {
-      refuse(result.reason)
+      refuse(result.reason, 'not-deleted')
       return
     }
     onDeleted?.(file)

@@ -38,7 +38,7 @@ export function StartedTopicRefusals() {
       onTopicRefused((refused) => {
         const typed = !!browserDrafts().read(draftKeys.object(refused.address))?.trim()
         if (decodeURIComponent(at.current).includes(refused.fileId)) navigate(`/app/teams/${refused.folder}`)
-        showToast({ label: `Topic not created — ${refused.textBack || typed ? 'title and text' : 'title'} restored`, type: 'error' })
+        showToast({ label: `Topic not created — ${refused.textBack || typed ? 'title and text' : 'title'} restored`, type: 'error', failure: 'not-created' })
         setAgain(refused)
       }),
     [navigate, showToast],
@@ -67,7 +67,7 @@ export function StartedTopicRefusals() {
           parentFile: again.parent,
         })
         if (!result.ok) {
-          showToast({ label: result.reason, type: 'error' })
+          showToast({ label: result.reason, type: 'error', failure: 'not-created' })
           return false
         }
         // A new `d` for one that was saved and deleted: what was written in it moves to the new topic's draft.

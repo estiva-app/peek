@@ -56,7 +56,7 @@ export function HeaderStartTopic({ column, defaultFolder, onClose }: {
         */
         const result = await createTopic({ folder, title, summary, hasState: listed?.hasState ?? false, folderName: listed?.name, ...(column === 'folders' ? { space: true } : {}) })
         if (!result.ok) {
-          showToast({ label: result.reason, type: 'error' })
+          showToast({ label: result.reason, type: 'error', failure: 'not-created' })
           return false
         }
         // Its row in the column beside, once it is written: shown and marked, as the open page's (T-12).
