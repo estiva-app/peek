@@ -49,7 +49,8 @@ export function useUploadActions() {
      * is picked.
      */
     async uploadFile(file: File): Promise<UploadedFile> {
-      if (!acceptsFileType(file)) throw new Error(`not an allowed type: ${file.name}`, { cause: 'type' })
+      // No file name in the wording: it is the person's, and wording can reach an error report.
+      if (!acceptsFileType(file)) throw new Error('not an allowed type', { cause: 'type' })
       if (!RELAY_URL) throw new Error('File uploads need the live app.')
       const token = validToken()
       if (!token) throw new Error('no token to upload with', { cause: 'signed-out' })

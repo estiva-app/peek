@@ -66,7 +66,8 @@ export function blobObjectUrl(mediaUrl: string): Promise<string> {
       this module does not know, and guessing would send a signed authorization
       to the wrong host. Say so instead.
     */
-    if (!/^https?:\/\//.test(mediaUrl)) throw new Error(`not an absolute media url: ${mediaUrl}`)
+    // The address stays out of the wording: it comes from someone's event, and wording can reach an error report.
+    if (!/^https?:\/\//.test(mediaUrl)) throw new Error('not an absolute media url')
     /*
       Only this workspace's relay is sent a signed authorization (COM-2 security
       review). A media URL comes from somebody else's event — an `imeta`, or an

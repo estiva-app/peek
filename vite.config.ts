@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { execSync } from 'node:child_process'
 
 /**
  * `react` is deduped because @estiva-app/ui declares it a peer: two copies in
@@ -13,8 +14,32 @@ import path from 'path'
  * exactly one machine.
  */
 // https://vite.dev/config/
+/**
+ * The commit a bundle is built from, for its error reports (PROD-2): CI's
+ * `GITHUB_SHA`, or this checkout's HEAD. Sentry names an error new or back by it.
+ */
+function release(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
+  } catch {
+    return 'unknown'
+  }
+}
+
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'import.meta.env.VITE_PEEK_RELEASE': JSON.stringify(release()),
+  },
+  /**
+   * Source maps are served beside the bundle so Sentry can turn a report's
+   * frames into readable code (PROD-2). The repo is public, so they show
+   * nothing new; a browser fetches one only when its devtools are open.
+   */
+  build: {
+    sourcemap: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
