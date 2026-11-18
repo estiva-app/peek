@@ -15,7 +15,7 @@ import { TopicsColumnView } from '@/components/views/TopicsColumn'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { formatActive, formatDateLabel, formatTimestamp } from '@/api'
-import { MarkAsRows, MarkedNotice, TYPE_META, drawsLine, type MarkWord } from './MarkAs'
+import { MarkAsRows, MarkedNotice, drawsLine, wordIcon, wordTone, type MarkWord } from './MarkAs'
 import { MIKY, TEAM, type Person as Who } from './fixtures'
 import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from './messages'
 
@@ -61,11 +61,11 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
  * Resolved there (Miky, 16 Nov; and Peek's HighlightPill, removed 2 Nov, sat after the time). Hover names it.
  */
 function MarkLabel({ mark, me }: { mark: StoryMark; me: Who }) {
-  const meta = TYPE_META[mark.type]
   return (
     <WithTooltip label={`${mark.word} · ${mark.title} · marked by ${mark.by.key === me.key ? 'you' : mark.by.name}`} wrapperClassName="flex shrink-0">
-      <span className={`flex items-center gap-1 text-caption ${meta.text}`}>
-        {meta.icon(14)}
+      {/* The word's own icon and colour: a Question is orange, not a Risk's red (Miky, 18 Nov). */}
+      <span className="flex items-center gap-1 text-caption" style={wordTone(mark.word)}>
+        {wordIcon(mark.word, 14)}
         {mark.word}
       </span>
     </WithTooltip>
@@ -118,7 +118,7 @@ function ThreadTimeline({ replies, me, onOpen }: { replies: StoryMessage[]; me: 
       {steps.map(({ reply, before }) => (
         <li key={reply.id} className="relative pb-3">
           {/* The square on the line, level with the reply's name line, under any quiet "n replies" above it. */}
-          <span aria-hidden className={`absolute -left-[25px] size-2 rounded-sm ${before ? 'top-[26px]' : 'top-[6px]'} ${FILL[reply.mark!.type]}`} />
+          <span aria-hidden className={`absolute -left-[25px] size-2 rounded-sm ${before ? 'top-[26px]' : 'top-[6px]'}`} style={wordTone(reply.mark!.word, "backgroundColor")} />
           <Card onPress={onOpen} fill="none" hover="fill" quietUntilHover className="-mx-2 flex flex-col gap-1 px-2">
             {quiet(before)}
             <div className="flex h-5 items-center gap-2">
@@ -139,7 +139,6 @@ function ThreadTimeline({ replies, me, onOpen }: { replies: StoryMessage[]; me: 
     </ol>
   )
 }
-const FILL: Record<StoryMark['type'], string> = { insight: 'bg-warning-default', journal: 'bg-info-default', risk: 'bg-error-default' }
 
 /** A message's whole thread in the right column, as Peek's ThreadPanel draws it: the message pinned on top, then every reply. */
 function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who; onClose: () => void }) {

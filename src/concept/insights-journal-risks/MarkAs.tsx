@@ -7,9 +7,11 @@
  * team, its issue or project, and a title from its first line; a notice offers Open. A marked block or message
  * has a thin line in its type's colour; "changed since your last visit" a neutral grey one.
  */
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconNotebook, IconX } from '@tabler/icons-react'
-import { MenuItem, MenuSub, Toast, WithTooltip, type PickerOption } from '@estiva-app/ui'
+import { MenuItem, MenuSub, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 export type ItemType = 'insight' | 'journal' | 'risk'
 /** The six words a person picks; each makes one of the three types (Blocker added for Risks, Miky, 16 Nov). */
@@ -23,6 +25,20 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
   journal: { label: 'Journal entry', plural: 'Journal entries', tab: 'Journal', line: 'border-info-default', text: 'text-info-default', icon: (s = 16) => <IconNotebook size={s} stroke={1.5} /> },
   risk: { label: 'Risk', plural: 'Risks', tab: 'Risks & questions', line: 'border-error-default', text: 'text-error-default', icon: (s = 16) => <IconAlertTriangle size={s} stroke={1.5} /> },
 }
+
+/**
+ * Each type's colour as a CSS value, and a Question's own orange (Miky, 18 Nov: red reads as a problem, and an open
+ * question is just a question; a Concern and a Blocker stay red). The kit has no orange token yet: the concept mixes it
+ * from its amber and red, and the build asks Katerina for one.
+ */
+const TYPE_COLOUR: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
+export const QUESTION_COLOUR = 'color-mix(in srgb, var(--warning-default) 45%, var(--error-default))'
+export const wordColour = (word: MarkWord): string => (word === 'Question' ? QUESTION_COLOUR : TYPE_COLOUR[TYPE_OF[word]])
+/**
+ * The style that paints a word in its colour. @estiva-escape: a computed palette (the lint's own allowed case): the
+ * colour is picked per word and the orange has no token class yet; the build gets a kit token and a class.
+ */
+export const wordTone = (word: MarkWord, prop: 'color' | 'borderColor' | 'backgroundColor' = 'color') => ({ [prop]: wordColour(word) })
 
 /** A word's own icon where its type's would blur them (Miky, 16 Nov: Concern, Question and Blocker each need their own). */
 export const wordIcon = (word: MarkWord, size = 16): ReactNode =>
@@ -72,14 +88,14 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   if (drawsLine(mark) && mark)
     return (
       <>
-        <MenuItem label={`Open ${mark.word}`} leading={<span className={TYPE_META[mark.type].text}>{TYPE_META[mark.type].icon()}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
+        <MenuItem label={`Open ${mark.word}`} leading={<span style={wordTone(mark.word)}>{wordIcon(mark.word)}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
         <MenuItem label="Unmark" leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />} onClick={onUnmark} />
       </>
     )
   return (
     <MenuSub label="Mark as" leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
       {WORDS.map((word) => (
-        <MenuItem key={word} label={word} leading={<span className={TYPE_META[TYPE_OF[word]].text}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
+        <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
     </MenuSub>
   )
@@ -102,7 +118,7 @@ export function MarkedLine({ mark, children }: { mark?: Mark; children: ReactNod
   if (!drawsLine(mark) || !mark) return <>{children}</>
   return (
     <WithTooltip label={`${mark.word} · ${mark.title}`} wrapperClassName="block">
-      <div className={`border-l-2 pl-3 ${TYPE_META[mark.type].line}`} data-marked={mark.type}>
+      <div className="border-l-2 pl-3" style={wordTone(mark.word, "borderColor")} data-marked={mark.type}>
         {children}
       </div>
     </WithTooltip>
@@ -127,26 +143,69 @@ export function ChangedLine({ children }: { children: ReactNode }) {
  * changed since your last visit says "Changed" in grey in the same place. The label opens the item beside the page.
  */
 export function blockLineCss(marks: Record<string, ItemType | MarkWord>, changed: string[] = [], place: 'inside' | 'gutter' = 'inside'): string {
-  const colour: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
   // `gutter`: in the page's right margin, where a page has one (Leaf); `inside`: the block's own right 96px (Ship's description, whose column meets the side panel).
-  const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:96px}'
-  const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:0'
-  // What is marked (Miky, 16 Nov: "not clear what is marked"): a faint edge down the block's right side, under the
+  // `inside` keeps a 40px column for the label at the block's right, with the edge on its inner side, so the label sits
+  // right of the edge as Leaf's does in its margin (Miky, 18 Nov: Ship had it left of the edge).
+  const where = place === 'gutter' ? 'position:relative}' : 'position:relative;padding-right:40px}'
+  const at = place === 'gutter' ? 'left:calc(100% + 12px)' : 'right:4px'
+  // What is marked (Miky, 16 Nov: "not clear what is marked"): a faint edge down the block's right side, beside the
   // label, fading as it goes down, and a wash that fades in from that edge — the block's whole height, never its left
   // side, where the handle is.
-  const edge = place === 'gutter' ? 'right:-4px' : 'right:-8px'
-  const label = (id: string, words: string, c: string, wash: boolean) =>
+  const edge = place === 'gutter' ? 'right:-4px' : 'right:32px'
+  // The label is the word's icon alone, the same line icon Ship's lists draw, in its type's colour (Miky, 18 Nov: the word
+  // is not needed, people learn the icon quickly; emoji were "too realistic"). The editor draws the blocks, so the icon is
+  // the React one rendered to SVG and used as a mask. Hover on the block's label opens the item, which names it.
+  // "Changed" stays a grey word.
+  const edgeAndWash = (id: string, c: string, wash: boolean) =>
     `[data-block-id="${id}"]{${where}` +
     `[data-block-id="${id}"]{background:linear-gradient(to left, color-mix(in srgb, ${c} ${wash ? 7 : 4}%, transparent), transparent 45%)}` +
-    `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}` +
-    `[data-block-id="${id}"]::after{content:"${words}";position:absolute;top:2px;${at};font-size:12px;line-height:18px;font-weight:500;padding:0 6px;border-radius:4px;white-space:nowrap;color:${c};${wash ? `background:color-mix(in srgb, ${c} 14%, transparent);cursor:pointer;` : ''}}`
+    `[data-block-id="${id}"]::before{content:"";position:absolute;top:0;bottom:0;${edge};width:2px;border-radius:1px;pointer-events:none;background:linear-gradient(to bottom, color-mix(in srgb, ${c} ${wash ? 70 : 45}%, transparent), transparent)}`
+  const icon = (id: string, svg: string, c: string) => {
+    const url = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`
+    return edgeAndWash(id, c, true) + `[data-block-id="${id}"]::after{content:"";position:absolute;top:3px;${at};width:16px;height:16px;background:${c};-webkit-mask:${url} center/contain no-repeat;mask:${url} center/contain no-repeat;cursor:pointer}`
+  }
+  const word = (id: string, text: string, c: string) =>
+    edgeAndWash(id, c, false) + `[data-block-id="${id}"]::after{content:"${text}";position:absolute;top:1px;${at};font-size:12px;line-height:20px;font-weight:500;white-space:nowrap;color:${c}}`
   return [
     ...Object.entries(marks).map(([id, m]) => {
       const t = (m in TYPE_META ? m : TYPE_OF[m as MarkWord]) as ItemType
-      return label(id, m in TYPE_META ? TYPE_META[t].label : m, colour[t], true)
+      return m in TYPE_META
+        ? icon(id, renderToStaticMarkup(TYPE_META[t].icon(16)), TYPE_COLOUR[t])
+        : icon(id, renderToStaticMarkup(wordIcon(m as MarkWord, 16)), wordColour(m as MarkWord))
     }),
-    ...changed.filter((id) => !marks[id]).map((id) => label(id, 'Changed', 'var(--text-secondary)', false)),
+    ...changed.filter((id) => !marks[id]).map((id) => word(id, 'Changed', 'var(--text-secondary)')),
   ].join('\n')
+}
+
+/**
+ * The word above a marked block's icon while the pointer is on it (Miky, 18 Nov: hover says "Insight"), in the kit's
+ * tooltip pill. The icon is drawn by CSS, so no WithTooltip can wrap it; the concept watches the pointer instead, and
+ * the build gives the editor a real icon to wrap.
+ */
+export function useMarkHover(marks: Record<string, ItemType | MarkWord>, place: 'inside' | 'gutter' = 'inside'): ReactNode {
+  const [at, setAt] = useState<{ word: string; x: number; y: number }>()
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest?.('[data-block-id]') as HTMLElement | null
+      const m = el?.dataset.blockId ? marks[el.dataset.blockId] : undefined
+      if (!el || !m) return setAt(undefined)
+      const r = el.getBoundingClientRect()
+      // The icon's centre: 20px past the block in the gutter, 12px in from its right edge inside it.
+      const x = place === 'gutter' ? r.right + 20 : r.right - 12
+      const onIcon = Math.abs(e.clientX - x) <= 12 && e.clientY >= r.top && e.clientY <= r.top + 24
+      setAt(onIcon ? { word: m in TYPE_META ? TYPE_META[m as ItemType].label : m, x, y: r.top } : undefined)
+    }
+    document.addEventListener('mousemove', move)
+    return () => document.removeEventListener('mousemove', move)
+  }, [marks, place])
+  if (!at) return null
+  // @estiva-escape(no-rebuilt-behaviour): concept only: the icon is a CSS pseudo-element nothing can wrap; the build draws a real icon inside WithTooltip
+  return createPortal(
+    <span className="pointer-events-none fixed z-50" style={{ left: at.x, top: at.y - 4, transform: 'translate(-50%, -100%)' }}>
+      <Tooltip label={at.word} />
+    </span>,
+    document.body,
+  )
 }
 
 /** The marked block whose label was clicked, if any: a click on `::after` lands on the block, in its right 96px or past it. */
