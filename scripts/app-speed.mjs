@@ -6,6 +6,7 @@
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
+ *   `--ship-query <q>`: every Ship leg opens with `?<q>`, such as `issueFields=on`, a tab's opt-in to a switch (ISS-4).
  *   node scripts/app-speed.mjs --together [--runs 5]   (APP-9: Leaf, Ship, Peek and the agent cold at the same moment)
  *   node scripts/app-speed.mjs --table /tmp/before.json
  *   node scripts/app-speed.mjs --compare /tmp/before.json /tmp/after.json
@@ -87,10 +88,13 @@ const WEEKLY = {
   address: '30842:f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1:52a3269d-afc9-4476-a058-9c71c3d92ee9',
   path: '/document/weekly-plans-52a3269d-afc9-4476-a058-9c71c3d92ee9',
 }
-const SHIP_PROJECT = '/project/cf23dbca-64fb-4802-a804-e0119b0d8584'
-const SHIP_ISSUE = '/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480'
+/** A Ship path with `--ship-query`'s opt-in, so a switch can be measured before the relay turns it on for everyone. */
+const SHIP_QUERY = option('ship-query', '')
+const ship = (path) => (SHIP_QUERY ? `${path}${path.includes('?') ? '&' : '?'}${SHIP_QUERY}` : path)
+const SHIP_PROJECT = ship('/project/cf23dbca-64fb-4802-a804-e0119b0d8584')
+const SHIP_ISSUE = ship('/issue/4fbbf7db-3007-4d38-ae7c-817bd9988480')
 /** A topic QA-1 reads that lists Ship work, first on QA-1's Topics on 3 Nov (SHIPS-4). */
-const SHIP_TOPIC = '/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71'
+const SHIP_TOPIC = ship('/topic/de0f339b-f24e-4d3c-8932-459a11fc9f71')
 /**
  * A team QA-1 is in, not archived: a row of the old Folders column's Joined view, then a My teams section of Teams,
  * which waits on the roster read. ("TEA-3 probe A" was archived, so neither column ever drew it.)
@@ -180,9 +184,9 @@ const LEGS = {
     ...settle(150000), ...whole, ...report('weekly-from-peek')],
   'ship-project': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_PROJECT, ...settle(60000), ...whole, ...report('ship-project')],
   'ship-issue': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_ISSUE, ...settle(60000), ...whole, ...report('ship-issue')],
-  'ship-projects': () => ['--base', 'https://ship.estiva.app', '--url', '/projects', ...settle(60000), ...whole, ...report('ship-projects')],
-  'ship-issues': () => ['--base', 'https://ship.estiva.app', '--url', '/issues', ...settle(60000), ...whole, ...report('ship-issues')],
-  'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', '/topics', ...settle(60000), ...whole, ...report('ship-topics')],
+  'ship-projects': () => ['--base', 'https://ship.estiva.app', '--url', ship('/projects'), ...settle(60000), ...whole, ...report('ship-projects')],
+  'ship-issues': () => ['--base', 'https://ship.estiva.app', '--url', ship('/issues'), ...settle(60000), ...whole, ...report('ship-issues')],
+  'ship-topics': () => ['--base', 'https://ship.estiva.app', '--url', ship('/topics'), ...settle(60000), ...whole, ...report('ship-topics')],
   'ship-topic': () => ['--base', 'https://ship.estiva.app', '--url', SHIP_TOPIC, ...settle(60000), ...whole, ...report('ship-topic')],
   peek: () => ['--base', 'https://peek.estiva.app', '--url', WEEKLY.path, ...settle(60000), ...whole, ...report('peek')],
   teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/teams', ...settle(60000), ...whole, ...report('teams')],
