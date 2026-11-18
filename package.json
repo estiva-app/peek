@@ -23,9 +23,9 @@
   "dependencies": {
     "@estiva-app/conversation": "^0.42.0",
     "@estiva-app/identity": "^0.3.0",
-    "@estiva-app/interop": "^0.102.0",
+    "@estiva-app/interop": "^0.106.0",
     "@estiva-app/platform": "^0.8.0",
-    "@estiva-app/protocol": "^0.59.0",
+    "@estiva-app/protocol": "^0.60.0",
     "@estiva-app/ui": "^0.123.1",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-code-block-lowlight": "^3.22.1",
