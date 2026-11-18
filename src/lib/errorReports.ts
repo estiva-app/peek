@@ -90,9 +90,10 @@ let crashWith: ((text: string) => void) | undefined
  * caught by its ErrorBoundary; `'unhandled'` fails in a timer, which nothing
  * catches, and can be repeated.
  *
- * Its crashes are told apart from real ones by where they break: in this file.
- * The sweep and the process review leave those out of the errors people hit
- * (PROD-3), so keep the failing parse here.
+ * Its crashes are told apart from real ones as a JSON `SyntaxError` breaking
+ * in this file, where nothing else parses JSON. The sweep and the process
+ * review leave those out of the errors people hit (PROD-3), so keep the
+ * failing parse here and no other parse in this file.
  */
 function crashOnPurpose(text: string, how: 'render' | 'unhandled' = 'render'): void {
   if (how === 'unhandled') setTimeout(() => JSON.parse(text))
