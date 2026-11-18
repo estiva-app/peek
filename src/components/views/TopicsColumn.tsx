@@ -186,7 +186,7 @@ function TopicsBody({
   /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
   leavesOf?: (topic: ForeignObject) => boolean
 }) {
-  useReportFailure(typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
+  useReportFailure(!signedOut && typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
   if (signedOut) return <EmptyState scope="section" message="Sign in to see initiatives." />
   if (state === 'loading') return <SkeletonList />
   if ('failed' in state) return <EmptyState scope="section" message="Couldn’t load your initiatives. Reload to try again." />

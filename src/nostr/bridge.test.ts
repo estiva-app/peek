@@ -6,10 +6,17 @@ vi.mock('@estiva-app/identity', async (importOriginal) => ({
   signViaEstivaId: vi.fn(async (event: object) => ({ ...event, id: 'id', sig: `sig-${(signatures.count += 1)}` })),
 }))
 vi.mock('./deviceCopy', () => ({ keepRelayAnswer: vi.fn() }))
+// What the error reports hear of a refused write (PROD-5); `throws` makes the listener break.
+const heard = vi.hoisted(() => ({ codes: [] as string[], throws: false }))
+vi.mock('@/lib/failureReports', () => ({
+  heardRefusal: (code: string) => {
+    if (heard.throws) throw new Error('reporter broke')
+    heard.codes.push(code)
+  },
+}))
 const signatures = vi.hoisted(() => ({ count: 0 }))
 
 import { publishSigned, queryRelay, queryRelayTimes, setSocketReader, type SocketReader } from './bridge'
-import { reportRefusalsTo } from '@/lib/failureReports'
 import { describeRelayFailure, RelayReadError } from './relayRead'
 
 const ME = 'a'.repeat(64)
@@ -236,34 +243,35 @@ describe('the times read, refused or answered wrongly', () => {
   so a report can say "refused: archived" without carrying what was written.
 */
 describe('a write the relay refuses, as the error reports hear it', () => {
-  afterEach(() => {
-    reportRefusalsTo(null)
-    vi.unstubAllGlobals()
+  beforeEach(() => {
+    heard.codes.length = 0
+    heard.throws = false
   })
+  afterEach(() => vi.unstubAllGlobals())
   const answering = (status: number, body: unknown) =>
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })))
 
   it('is heard as the coded refusal’s code, without the relay’s sentence', async () => {
-    const heard: string[] = []
-    reportRefusalsTo((code) => heard.push(code))
     answering(200, { accepted: false, message: 'restricted: archived: Anna’s secret plan is archived' })
     const result = await publishSigned('https://relay', { id: 'e3', kind: 1111 } as never, 'token', ME)
     expect(result.ok).toBe(false)
-    expect(heard).toEqual(['archived'])
+    expect(heard.codes).toEqual(['archived'])
+  })
+
+  it('a busy relay is heard as busy', async () => {
+    answering(503, { error: 'error: relay busy' })
+    await publishSigned('https://relay', { id: 'e6', kind: 1111 } as never, 'token', ME)
+    expect(heard.codes).toEqual(['busy'])
   })
 
   it('is not heard when the relay takes the write', async () => {
-    const heard: string[] = []
-    reportRefusalsTo((code) => heard.push(code))
     answering(200, { accepted: true, message: '' })
     await expect(publishSigned('https://relay', { id: 'e4', kind: 1111 } as never, 'token', ME)).resolves.toMatchObject({ ok: true })
-    expect(heard).toEqual([])
+    expect(heard.codes).toEqual([])
   })
 
   it('a listener that throws never changes the answer the person is shown', async () => {
-    reportRefusalsTo(() => {
-      throw new Error('reporter broke')
-    })
+    heard.throws = true
     answering(200, { accepted: false, message: 'blocked: not a member' })
     await expect(publishSigned('https://relay', { id: 'e5', kind: 1111 } as never, 'token', ME)).resolves.toMatchObject({
       ok: false,

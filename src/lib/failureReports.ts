@@ -19,7 +19,7 @@ export function reportRefusalsTo(next: ((code: string) => void) | null): void {
 
 /**
  * Hears a write the relay refused, busy answers included, by its reason code only (`archived`, `busy`), never its
- * sentence or the event. The app's one write path calls it; a reporter that throws never changes what the write said.
+ * sentence or the event. The app's write path calls it (Peek's `publishSigned`, Ship's and Leaf's `Relay` `onRefused`); a reporter that throws never changes what the write said.
  */
 export function heardRefusal(code: string): void {
   try {
@@ -32,6 +32,11 @@ export function heardRefusal(code: string): void {
 /** Where drawn failures go; set once by `startErrorReports`, `null` stops it. */
 export function reportDrawnFailuresTo(next: ((failure: Failure) => void) | null): void {
   reporter = next
+}
+
+/** Reports `failure` now, for a refusal a control draws itself (a field's line, held open with your text). */
+export function reportFailureNow(failure: Failure): void {
+  reporter?.(failure)
 }
 
 /**

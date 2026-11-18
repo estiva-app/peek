@@ -48,6 +48,7 @@ import { filePath } from '@/lib/objectUrl'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import { useToast } from '@/lib/toast'
 import { useReportFailure } from '@/lib/failureReports'
+import type { Failure } from '@estiva-app/platform'
 
 const ICON = { size: 16, stroke: 1.5 } as const
 
@@ -168,25 +169,27 @@ export function TeamPage({
   const run = async (
     write: () => Promise<{ ok: true } | { ok: false; reason: string }>,
     said?: { label: string; undo?: () => Promise<{ ok: true } | { ok: false; reason: string }> },
+    failure: Failure = 'not-saved',
+    undoFailure: Failure = 'not-saved',
   ) => {
     setBusy(true)
     const result = await write()
     setBusy(false)
-    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure })
     else if (said) {
       const undo = said.undo
       showToast({
         label: said.label,
         type: 'success',
         ...(undo
-          ? { actionLabel: 'Undo', onAction: () => void undo().then((back) => !back.ok && showToast({ label: back.reason, type: 'error', failure: 'not-saved' })) }
+          ? { actionLabel: 'Undo', onAction: () => void undo().then((back) => !back.ok && showToast({ label: back.reason, type: 'error', failure: undoFailure })) }
           : {}),
       })
     }
     return result.ok
   }
-  const join = () => run(() => joinTeam(team.id), { label: `You joined ${team.name}`, undo: () => leaveTeam(team.id) })
-  const leave = () => run(() => leaveTeam(team.id), { label: `You left ${team.name}`, undo: () => joinTeam(team.id) })
+  const join = () => run(() => joinTeam(team.id), { label: `You joined ${team.name}`, undo: () => leaveTeam(team.id) }, 'not-joined', 'not-left')
+  const leave = () => run(() => leaveTeam(team.id), { label: `You left ${team.name}`, undo: () => joinTeam(team.id) }, 'not-left', 'not-joined')
   const follow = (on: boolean) =>
     run(() => followTeam(team.id, on), { label: on ? `You follow ${team.name}` : `You stopped following ${team.name}`, undo: () => followTeam(team.id, !on) })
 

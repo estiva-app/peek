@@ -94,7 +94,7 @@ export function usePlaceFollowControls({
 
   const choose = async (choice: SwitchChoice) => {
     const result = await follow.choose(choice)
-    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: choice === 'not-following' ? 'not-left' : 'not-saved' })
     return result.ok
   }
   /*

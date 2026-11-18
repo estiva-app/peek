@@ -184,7 +184,14 @@ export async function publishSigned(
     ? { ok: false, reason: RELAY_BUSY_MESSAGE, httpStatus: status }
     : parsePublishResponse(status, text)
   // Every refused write is reported by its reason code, busy answers included, never the relay's sentence (PROD-5).
-  if (!result.ok) heardRefusal(refusalCodeOf(result))
+  // Reading the code is inside the guard too: a malformed answer never turns a refusal into a thrown write.
+  if (!result.ok) {
+    try {
+      heardRefusal(refusalCodeOf(result))
+    } catch {
+      /* the publish answer stands */
+    }
+  }
   return result
 }
 
