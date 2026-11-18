@@ -18,7 +18,8 @@ export type ItemType = 'insight' | 'journal' | 'risk'
 export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker'
 
 export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk' }
-export const WORDS: MarkWord[] = ['Insight', 'Decision', 'Update', 'Concern', 'Question', 'Blocker']
+/** Mark as…'s order, in the colours' three groups (Miky, 18 Nov): what sparks thinking, what happened, what to handle. */
+export const WORDS: MarkWord[] = ['Insight', 'Question', 'Decision', 'Update', 'Concern', 'Blocker']
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
   insight: { label: 'Insight', plural: 'Insights', tab: 'Insights', line: 'border-warning-default', text: 'text-warning-default', icon: (s = 16) => <IconBulb size={s} stroke={1.5} /> },
@@ -27,16 +28,16 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
 }
 
 /**
- * Each type's colour as a CSS value, and a Question's own orange (Miky, 18 Nov: red reads as a problem, and an open
- * question is just a question; a Concern and a Blocker stay red). The kit has no orange token yet: the concept mixes it
- * from its amber and red, and the build asks Katerina for one.
+ * Three colours for the six words, by what each asks of you (Miky, 18 Nov): amber for what sparks more thinking
+ * (Insight, Question), blue for what has happened (Decision, Update), red for a risk to handle now (Concern, Blocker).
+ * A Question is a Risk & question in its list but amber, not its type's red: red reads as a problem.
  */
 const TYPE_COLOUR: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
-export const QUESTION_COLOUR = 'color-mix(in srgb, var(--warning-default) 45%, var(--error-default))'
+export const QUESTION_COLOUR = TYPE_COLOUR.insight
 export const wordColour = (word: MarkWord): string => (word === 'Question' ? QUESTION_COLOUR : TYPE_COLOUR[TYPE_OF[word]])
 /**
  * The style that paints a word in its colour. @estiva-escape: a computed palette (the lint's own allowed case): the
- * colour is picked per word and the orange has no token class yet; the build gets a kit token and a class.
+ * colour is picked per word, not per type, so no one token class fits; the build gives the kit a class per word.
  */
 export const wordTone = (word: MarkWord, prop: 'color' | 'borderColor' | 'backgroundColor' = 'color') => ({ [prop]: wordColour(word) })
 
