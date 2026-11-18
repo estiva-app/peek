@@ -6,8 +6,9 @@
  */
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, ConversationLayout, EmptyState, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, WithTooltip } from '@estiva-app/ui'
+import { Card, ConversationLayout, EmptyState, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
 import { ConversationCard, ConceptMessage } from '@/components/ConversationCard'
+import { ReplyCard } from '@/components/ReplyCard'
 import { TopicState } from '@/components/ui/TopicState'
 import { ConversationBox } from '@/components/ui/ConversationBox'
 import { TopicsColumnView } from '@/components/views/TopicsColumn'
@@ -22,7 +23,7 @@ import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from 
  * Hands Peek's message card its Mark as… rows and its line. `privateRoom` is a place whose readers differ from any
  * team's (a DM): no Mark row at all. Marking is at once, with a notice; Unmark takes the line away.
  */
-function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice, children }: { messages: StoryMessage[]; privateRoom: boolean; me: Who; about?: string; notice?: MarkWord; children: ReactNode }) {
+function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice, onOpen, children }: { messages: StoryMessage[]; privateRoom: boolean; me: Who; about?: string; notice?: MarkWord; onOpen?: (id: string) => void; children: ReactNode }) {
   const [marks, setMarks] = useState<Record<string, StoryMark | undefined>>(() => Object.fromEntries(messages.map((m) => [m.id, m.mark])))
   const [notice, setNotice] = useState<MarkWord | undefined>(startNotice)
   const mark = (id: string, text: string, word: MarkWord) => {
@@ -42,7 +43,7 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
       return (
         <InHeader label={drawsLine(m) && m ? <MarkLabel mark={m} me={me} /> : null}>
           {card}
-          {replies?.some((r) => drawsLine(r.mark)) && <ThreadTimeline replies={replies} me={me} />}
+          {replies?.some((r) => drawsLine(r.mark)) && <ThreadTimeline replies={replies} me={me} onOpen={() => onOpen?.(id)} />}
         </InHeader>
       )
     },
@@ -99,9 +100,10 @@ function InHeader({ label, children }: { label: ReactNode; children: ReactNode }
 /**
  * Bubble up (estiva-ui concept/cross-app-navigation, 28 Oct): a thread's marked replies show under its message in the
  * topic's feed, as a timeline — a line down from the message, a square in the type's colour at each marked reply, the
- * plain replies between said quietly on a dotted stretch. Opening it opens the thread beside, as today.
+ * plain replies between said quietly on a dotted stretch. A press anywhere on it opens the whole thread in the right
+ * column, as a message's replies open today (Miky, 18 Nov).
  */
-function ThreadTimeline({ replies, me }: { replies: StoryMessage[]; me: Who }) {
+function ThreadTimeline({ replies, me, onOpen }: { replies: StoryMessage[]; me: Who; onOpen: () => void }) {
   const steps: { reply: StoryMessage; before: number }[] = []
   let plain = 0
   for (const r of replies) {
@@ -114,20 +116,22 @@ function ThreadTimeline({ replies, me }: { replies: StoryMessage[]; me: Who }) {
   return (
     <ol className="ml-[27px] flex flex-col border-l-2 border-border-strong pb-1 pl-5" aria-label="Marked in this thread">
       {steps.map(({ reply, before }) => (
-        <li key={reply.id} className="relative flex flex-col gap-1 pb-3">
-          {quiet(before)}
+        <li key={reply.id} className="relative pb-3">
           {/* The square on the line, level with the reply's name line, under any quiet "n replies" above it. */}
           <span aria-hidden className={`absolute -left-[25px] size-2 rounded-sm ${before ? 'top-[26px]' : 'top-[6px]'} ${FILL[reply.mark!.type]}`} />
-          <div className="flex h-5 items-center gap-2">
-            <Person size={16} name={reply.author.name} />
-            <MarkLabel mark={reply.mark!} me={me} />
-            <MetaText size="chip">{formatTimestamp(NOW - reply.ago, NOW)}</MetaText>
-          </div>
-          <span className="text-body-2 text-text-primary">{reply.text}</span>
+          <Card onPress={onOpen} fill="none" hover="fill" quietUntilHover className="-mx-2 flex flex-col gap-1 px-2">
+            {quiet(before)}
+            <div className="flex h-5 items-center gap-2">
+              <Person size={16} name={reply.author.name} />
+              <MarkLabel mark={reply.mark!} me={me} />
+              <MetaText size="chip">{formatTimestamp(NOW - reply.ago, NOW)}</MetaText>
+            </div>
+            <span className="text-body-2 text-text-primary">{reply.text}</span>
+          </Card>
         </li>
       ))}
       <li>
-        <Card href="#" fill="none" hover="fill" className="flex items-center gap-2 px-2 py-1">
+        <Card onPress={onOpen} fill="none" hover="fill" quietUntilHover className="flex items-center gap-2 px-2 py-1">
           <span className="text-caption text-text-interactive">{replies.length} replies</span>
           {plain ? <span className="text-caption text-text-muted">· {plain} since the last mark</span> : null}
         </Card>
@@ -137,8 +141,27 @@ function ThreadTimeline({ replies, me }: { replies: StoryMessage[]; me: Who }) {
 }
 const FILL: Record<StoryMark['type'], string> = { insight: 'bg-warning-default', journal: 'bg-info-default', risk: 'bg-error-default' }
 
+/** A message's whole thread in the right column, as Peek's ThreadPanel draws it: the message pinned on top, then every reply. */
+function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who; onClose: () => void }) {
+  return (
+    <Thread
+      title="Thread"
+      onClose={onClose}
+      closeLabel="Close thread"
+      start={{ id: message.id, author: { name: message.author.name }, time: formatTimestamp(NOW - message.ago, NOW), at: NOW - message.ago, words: message.text }}
+      box={<ConversationBox kind="reply" onSend={async () => ({ accepted: true })} contextLabel={`Reply to ${message.author.name}`} />}
+    >
+      {message.replies?.map((r) => (
+        <InHeader key={r.id} label={drawsLine(r.mark) && r.mark ? <MarkLabel mark={r.mark} me={me} /> : null}>
+          <ReplyCard messageId={r.id} authorName={r.author.name} timestamp={formatTimestamp(NOW - r.ago, NOW)} createdAtMs={NOW - r.ago} body={r.text} canEditAndDelete={r.author.key === me.key} />
+        </InHeader>
+      ))}
+    </Thread>
+  )
+}
+
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
-export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice }: {
+export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread }: {
   title: string
   messages: StoryMessage[]
   /** Who is signed in: their own messages offer Edit and Delete. */
@@ -149,10 +172,15 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
   dm?: boolean
   /** Start with the notice of a mark just made. */
   notice?: MarkWord
+  /** Start with this message's thread open in the right column. */
+  openThread?: string
 }) {
+  const [open, setOpen] = useState<string | undefined>(openThread)
   const items = messages.map((m) => ({
     id: m.id,
     day: formatDateLabel(NOW - m.ago, NOW),
+    // The whole thread, every reply, each marked one wearing its label beside its time as in the feed.
+    thread: m.replies ? () => <WholeThread message={m} me={me} onClose={() => setOpen(undefined)} /> : undefined,
     card: (
       <ConversationCard
         messageId={m.id}
@@ -169,9 +197,11 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
     ),
   }))
   return (
-    <MarkingProvider messages={messages} privateRoom={privateRoom} me={me} about={about} notice={notice}>
+    <MarkingProvider messages={messages} privateRoom={privateRoom} me={me} about={about} notice={notice} onOpen={(id) => setOpen((o) => (o === id ? undefined : id))}>
       <ConversationLayout
         threads="beside"
+        open={open}
+        onOpenChange={setOpen}
         title={title}
         header={<PageHeader title={title} leading={<TopicState type={dm ? 'DM' : 'topic'} status={dm ? 'default' : 'unresolved'} />} />}
         items={items}

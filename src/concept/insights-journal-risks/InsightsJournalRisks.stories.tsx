@@ -64,10 +64,15 @@ type Story = StoryObj<typeof meta>
  * Bubble up: Miky's question about the names grew a thread. Katerina's decision and Miky's concern in it were marked,
  * so they show under his message in the topic's feed as a timeline; the plain replies between are said quietly.
  */
-export const ThreadBubblesUp: Story = {
-  render: () => (
+export const ThreadBubblesUp: Story = { render: () => <BubbleUp /> }
+/** The timeline pressed: the whole thread opens in the right column, every reply, the marked ones with their labels (Miky, 18 Nov). */
+export const ThreadBubblesUpOpen: Story = { render: () => <BubbleUp open="m3" /> }
+
+function BubbleUp({ open }: { open?: string }) {
+  return (
     <TopicFrame>
       <Conversation
+        openThread={open}
         title="Universal Navigation"
         about={PROJECT}
         messages={[
@@ -87,7 +92,7 @@ export const ThreadBubblesUp: Story = {
         ]}
       />
     </TopicFrame>
-  ),
+  )
 }
 
 /** Miky looks at: Katerina's message marked by him as an Insight wears "Insight" beside its time; every other message's ⋯ offers Mark as ▸. */
