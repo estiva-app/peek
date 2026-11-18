@@ -57,7 +57,8 @@ createRoot(document.getElementById('root')!).render(
         the package's part takes only its room from here. */}
     <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col">
       <ScreenSteps />
-      <ErrorBoundary label="crash on purpose">
+      {/* Its message stays off the page: only a diagnostic call crashes it. */}
+      <ErrorBoundary label="crash on purpose" fallbackClassName="hidden">
         <CrashOnPurpose />
       </ErrorBoundary>
       <DebugProvider>

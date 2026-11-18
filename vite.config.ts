@@ -4,17 +4,6 @@ import path from 'path'
 import { execSync } from 'node:child_process'
 
 /**
- * `react` is deduped because @estiva-app/ui declares it a peer: two copies in
- * one tree is the "invalid hook call" crash, and it appears at runtime rather
- * than at build time.
- *
- * There is no `fs.allow` entry for the package any more — it installs from npm
- * into node_modules like anything else. It used to be a `file:` link to a
- * sibling directory, which resolved outside this repo and therefore existed on
- * exactly one machine.
- */
-// https://vite.dev/config/
-/**
  * The commit a bundle is built from, for its error reports (PROD-2): CI's
  * `GITHUB_SHA`, or this checkout's HEAD. Sentry names an error new or back by it.
  */
@@ -27,6 +16,17 @@ function release(): string {
   }
 }
 
+/**
+ * `react` is deduped because @estiva-app/ui declares it a peer: two copies in
+ * one tree is the "invalid hook call" crash, and it appears at runtime rather
+ * than at build time.
+ *
+ * There is no `fs.allow` entry for the package any more — it installs from npm
+ * into node_modules like anything else. It used to be a `file:` link to a
+ * sibling directory, which resolved outside this repo and therefore existed on
+ * exactly one machine.
+ */
+// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
