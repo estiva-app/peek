@@ -70,6 +70,9 @@ vi.mock('@/nostr/foreign', async () => ({
             state.events.filter((event) => event.kind === 1111).map((event) => ({ id: event.id, root: event.id, at: event.created_at, by: event.pubkey })),
           ]),
         ),
+  // The relay's key, read from its team record: none held here. Unfaked it opened a real socket to relay.test, which a
+  // CI runner can leave hanging past the 5 s wait, so every reaction waited on it.
+  relaySigningKeyOnce: async () => state.events.find((event) => event.kind === 39000)?.pubkey ?? null,
   viewerQuery: () => async (filters: Record<string, unknown>[]) =>
     state.events.filter((event) =>
       filters.some((filter) =>

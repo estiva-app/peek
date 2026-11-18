@@ -71,6 +71,9 @@ vi.mock('@/nostr/foreign', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/nostr/foreign')),
   // The topic's own conversation, as the listing reads it: nothing new from anyone else.
   conversationsAsViewer: async (files: readonly { ref: string }[]) => Object.fromEntries(files.map((file) => [file.ref, []])),
+  // The relay's key, read from its team record: none held here. Unfaked it opened a real socket to relay.test, which a
+  // CI runner left hanging past the 5 s wait (deploy of d48117be), so every reaction waited on it.
+  relaySigningKeyOnce: async () => state.events.find((event) => event.kind === 39000)?.pubkey ?? null,
   viewerQuery: () => async (filters: Record<string, unknown>[]) =>
     state.events.filter((event) =>
       filters.some((filter) =>
