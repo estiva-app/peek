@@ -3,6 +3,7 @@ import { EmptyState, IconButton, MenuSection, PreviewCard, SkeletonRow, UnreadDo
 import { usePageLines, usePageLinesAhead, useReactionsSeenOnClose, type PageDot as PageDotState, type PageLine } from '@/api'
 import { useNewsLineDetails } from '@/components/newsLineDetails'
 import { NewsLine } from '@/components/RowNewsCard'
+import { useReportFailure } from '@/lib/failureReports'
 
 export type { PageLine }
 
@@ -116,6 +117,7 @@ export function PageList({ lines, held, onOpen, openHere, failed = false }: {
    */
   openHere?: (line: PageLine) => void
 }) {
+  useReportFailure(failed ? 'not-loaded' : undefined)
   const all = [...(lines ?? held ?? [])].sort((a, b) => b.at - a.at)
   const fresh = all.filter((line) => !line.seen)
   const earlier = all.filter((line) => line.seen)

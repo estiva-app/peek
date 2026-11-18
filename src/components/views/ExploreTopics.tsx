@@ -5,6 +5,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { findsTopic, formatActive, useExploreTopics, useFaceOf, type ExploreRow, type ExploreState, type ExploreTab } from '@/api'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
+import { useReportFailure } from '@/lib/failureReports'
 
 const TAB_ORDER: ExploreTab[] = ['all', 'yours', 'others', 'archived']
 
@@ -77,6 +78,7 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
   // Opens on All, as the approved story and Slack's browse channels do (Miky, 10 Nov, at /land): the column beside it already lists yours.
   const [tab, setTab] = useState<ExploreTab>('all')
   const { state, retry } = useExploreTopics(tab)
+  useReportFailure(typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
   // Active counts back from when the page opened, as Ship's and Leaf's do.
   const [now] = useState(() => Date.now())
   const faceOf = useFaceOf()

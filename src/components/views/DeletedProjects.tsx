@@ -6,6 +6,7 @@ import { formatShortDate, useWorkspaceDirectory, type DeletedProjectsState } fro
 import { Button } from '@/components/ui/Button'
 import { DELETED_FIELD } from '@/lib/fileControls'
 import { filePath } from '@/lib/objectUrl'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * Archive's Deleted tab (ALO-6; Miky, 6 Nov; the story `Project changes` › Archived view): one list of every deleted
@@ -30,6 +31,7 @@ export function DeletedProjects({
   onRestore: (file: ForeignObject, actionId: string, prev: string | undefined) => Promise<void>
 }) {
   const people = useWorkspaceDirectory()
+  useReportFailure(state === 'error' ? 'not-loaded' : undefined)
   if (state === 'loading') return <SkeletonList />
   if (state === 'error')
     return <EmptyState scope="section" message="Deleted projects could not be read." action={{ label: 'Try again', onClick: () => void onRetry() }} />

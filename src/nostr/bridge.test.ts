@@ -9,6 +9,7 @@ vi.mock('./deviceCopy', () => ({ keepRelayAnswer: vi.fn() }))
 const signatures = vi.hoisted(() => ({ count: 0 }))
 
 import { publishSigned, queryRelay, queryRelayTimes, setSocketReader, type SocketReader } from './bridge'
+import { reportRefusalsTo } from '@/lib/failureReports'
 import { describeRelayFailure, RelayReadError } from './relayRead'
 
 const ME = 'a'.repeat(64)
@@ -227,5 +228,46 @@ describe('the times read, refused or answered wrongly', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
     const error = await queryRelayTimes('https://relay', [{ fields: 'times', kinds: [30851], '#d': ['d'] }], 'token', ME).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(RelayReadError)
+  })
+})
+
+/*
+  PROD-5: every write the relay refuses is heard by its reason code alone, never the relay's sentence or the event,
+  so a report can say "refused: archived" without carrying what was written.
+*/
+describe('a write the relay refuses, as the error reports hear it', () => {
+  afterEach(() => {
+    reportRefusalsTo(null)
+    vi.unstubAllGlobals()
+  })
+  const answering = (status: number, body: unknown) =>
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })))
+
+  it('is heard as the coded refusal’s code, without the relay’s sentence', async () => {
+    const heard: string[] = []
+    reportRefusalsTo((code) => heard.push(code))
+    answering(200, { accepted: false, message: 'restricted: archived: Anna’s secret plan is archived' })
+    const result = await publishSigned('https://relay', { id: 'e3', kind: 1111 } as never, 'token', ME)
+    expect(result.ok).toBe(false)
+    expect(heard).toEqual(['archived'])
+  })
+
+  it('is not heard when the relay takes the write', async () => {
+    const heard: string[] = []
+    reportRefusalsTo((code) => heard.push(code))
+    answering(200, { accepted: true, message: '' })
+    await expect(publishSigned('https://relay', { id: 'e4', kind: 1111 } as never, 'token', ME)).resolves.toMatchObject({ ok: true })
+    expect(heard).toEqual([])
+  })
+
+  it('a listener that throws never changes the answer the person is shown', async () => {
+    reportRefusalsTo(() => {
+      throw new Error('reporter broke')
+    })
+    answering(200, { accepted: false, message: 'blocked: not a member' })
+    await expect(publishSigned('https://relay', { id: 'e5', kind: 1111 } as never, 'token', ME)).resolves.toMatchObject({
+      ok: false,
+      reason: 'blocked: not a member',
+    })
   })
 })

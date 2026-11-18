@@ -3,6 +3,7 @@ import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
 import { CommentReply, CommentRow, type DrawableComment } from '@/components/views/CommentRow'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * One comment and what was said under it — Peek's thread pane, pointed at
@@ -38,6 +39,7 @@ export function FileThreadView({
 }) {
   const replies: FileComment[] | undefined =
     state === 'loading' || 'failed' in state ? undefined : state.replies[root.id]
+  useReportFailure(state !== 'loading' && 'failed' in state ? 'not-loaded' : undefined)
 
   return (
     <div className="flex flex-col p-4" data-thread={root.id}>

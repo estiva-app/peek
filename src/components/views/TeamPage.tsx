@@ -47,6 +47,7 @@ import { FolderActionDialog } from '@/components/views/FolderActionDialog'
 import { filePath } from '@/lib/objectUrl'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import { useToast } from '@/lib/toast'
+import { useReportFailure } from '@/lib/failureReports'
 
 const ICON = { size: 16, stroke: 1.5 } as const
 
@@ -104,6 +105,7 @@ export function TeamPage({
   const names = useMentionNames()
   const { topics } = useTeamTopics()
   const { files, failed: filesFailed } = useTeamFiles(team.id)
+  useReportFailure(filesFailed ? 'not-loaded' : undefined)
   const { menuFor, action, close } = useFolderActions()
   const [busy, setBusy] = useState(false)
   const [members, setMembers] = useState<'list' | 'add' | null>(null)
@@ -170,14 +172,14 @@ export function TeamPage({
     setBusy(true)
     const result = await write()
     setBusy(false)
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
     else if (said) {
       const undo = said.undo
       showToast({
         label: said.label,
         type: 'success',
         ...(undo
-          ? { actionLabel: 'Undo', onAction: () => void undo().then((back) => !back.ok && showToast({ label: back.reason, type: 'error' })) }
+          ? { actionLabel: 'Undo', onAction: () => void undo().then((back) => !back.ok && showToast({ label: back.reason, type: 'error', failure: 'not-saved' })) }
           : {}),
       })
     }
@@ -322,7 +324,7 @@ export function TeamPage({
                   for (const person of chosen) {
                     const result = await addToTeam(team.id, person.id)
                     if (!result.ok) {
-                      showToast({ label: result.reason, type: 'error' })
+                      showToast({ label: result.reason, type: 'error', failure: 'not-added' })
                       return false
                     }
                   }

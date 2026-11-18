@@ -15,6 +15,7 @@ import { fileGlyph } from '@/lib/fileGlyph'
 import { copyFileLink, filePath } from '@/lib/objectUrl'
 import { OPEN_WORK_KEY } from '@/lib/openWorkKey'
 import { rememberOpenedFrom, TreeColumn } from '@/lib/openedFrom'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
@@ -63,6 +64,7 @@ export function FileTreeView({
   placeOf?: (file: ForeignObject) => 'topic' | 'initiative' | undefined
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
+  useReportFailure(typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
 
   if (state === 'loading') {
@@ -419,6 +421,7 @@ function FetchedRows({
   remember?: boolean
 }) {
   const { state } = useForeignChildren(naddr)
+  useReportFailure(state === 'unresolved' || (!Array.isArray(state) && typeof state === 'object' && 'failed' in state) ? 'not-loaded' : undefined)
   const drawn = new Set(exclude.map((file) => file.ref))
   const children = Array.isArray(state) ? state.filter((child) => !drawn.has(child.ref)) : []
   const { unread } = useConversationBadges(Array.isArray(state) ? state : undefined)

@@ -179,7 +179,7 @@ export function FolderTree({
         reason: 'That project could not be restored just now. Try again.',
       }))
       if (!result.ok) {
-        showToast({ label: result.reason, type: 'error' })
+        showToast({ label: result.reason, type: 'error', failure: 'not-restored' })
         return
       }
       // Back in its team's list, and off this one. A re-read that fails leaves the lists as they were.
@@ -285,7 +285,7 @@ function NewFolderDialog({ reload, onClose }: { reload: () => Promise<unknown>; 
       onCreate={async (name) => {
         const result = await createFolder(name)
         if (!result.ok) {
-          showToast({ label: result.reason, type: 'error' })
+          showToast({ label: result.reason, type: 'error', failure: 'not-created' })
           return false
         }
         /*

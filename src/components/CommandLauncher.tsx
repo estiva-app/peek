@@ -39,6 +39,7 @@ import { previewText } from '@/lib/textParsing'
 import { useToast } from '@/lib/toast'
 import { objectLabel } from '@/lib/appName'
 import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * The launcher (Cmd/Ctrl+K anywhere, or the top bar's search field) — Peek's
@@ -506,6 +507,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const [attempted, setAttempted] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  useReportFailure(submitError ? 'not-saved' : undefined)
 
   const formLevel = level.kind === 'form' ? level : null
   /*
@@ -717,7 +719,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       }
       if (refused.length > 0) {
         // The topic exists, so the form closes: sending it again would make a second one.
-        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error' })
+        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error', failure: 'not-added' })
         void reloadFoldersOnScreen()
         onClose()
         return

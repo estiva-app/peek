@@ -7,6 +7,7 @@ import { MessageCard } from '@/components/ui/MessageLinks'
 import { referenceOfValue } from '@/lib/embedValue'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * **A topic's files, in its Overview column** (TOP-3; why:
@@ -50,6 +51,7 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
   mayChange?: boolean
 }) {
   const { state, busy, setListed, move, setLook, putBack } = read
+  useReportFailure(typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
   const { showToast } = useToast()
   const [picking, setPicking] = useState(false)
   // The file being dragged, and where it would land: before the live file at that index (the length: after the last).
@@ -65,10 +67,10 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
 
   const change = async (file: string, listed: boolean) => {
     const result = await setListed(file, listed)
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
   }
   const told = (result: { ok: true } | { ok: false; reason: string }) => {
-    if (!result.ok) showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
   }
 
   // Remove, with Undo bringing it back where it was, as it looked (TOPI-5): the file before it in the topic's own order.
@@ -76,7 +78,7 @@ export function TopicFiles({ topic, files: read, title, readOnly, mayChange = tr
     const at = files.findIndex((f) => f.file === gone.file)
     const after = at > 0 ? files[at - 1].file : null
     const result = await setListed(gone.file, false)
-    if (!result.ok) return showToast({ label: result.reason, type: 'error' })
+    if (!result.ok) return showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
     showToast({ label: `Removed “${nameOf(gone)}”`, type: 'success', actionLabel: 'Undo', onAction: () => void putBack(gone.listed, after).then(told) })
   }
 

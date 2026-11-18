@@ -250,7 +250,7 @@ export function useFilePane(
           controls.delete?.field && file.naddr
             ? () =>
                 restoreFile({ naddr: file.naddr!, actionId: controls.delete!.id }).then((result) => {
-                  if (!result.ok) showToast({ label: result.reason, type: 'error' })
+                  if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-restored' })
                   return Promise.all([reloadConversation(), onListingChanged?.()])
                 })
             : undefined

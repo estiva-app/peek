@@ -11,6 +11,7 @@ import { HeaderStartTopic } from '@/components/views/HeaderStartTopic'
 import { TreeColumn } from '@/lib/openedFrom'
 import type { FileControl } from '@/components/views/useFileControls'
 import { useRailClosed } from '@/layouts/railClosed'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** Where Explore initiatives is (TOPI-6). */
 export const EXPLORE_TOPICS_PATH = '/app/initiatives/explore'
@@ -66,7 +67,7 @@ export function TopicsColumn({ selectedRef, exploring = false, onControl }: {
       action: listing.space ? 'unmark' : 'mark',
       onToggle: () =>
         void markSpace(listing.team.id, topic.address!, !listing.space).then((result) => {
-          if (!result.ok) showToast({ label: result.reason, type: 'error' })
+          if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-saved' })
         }),
     }
   }
@@ -185,6 +186,7 @@ function TopicsBody({
   /** Whether a topic's row offers Leave: not in an archived team. Every row does when absent. */
   leavesOf?: (topic: ForeignObject) => boolean
 }) {
+  useReportFailure(typeof state === 'object' && 'failed' in state ? 'not-loaded' : undefined)
   if (signedOut) return <EmptyState scope="section" message="Sign in to see initiatives." />
   if (state === 'loading') return <SkeletonList />
   if ('failed' in state) return <EmptyState scope="section" message="Couldn’t load your initiatives. Reload to try again." />

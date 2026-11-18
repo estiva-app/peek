@@ -54,6 +54,7 @@ import { PartCard } from './PartCard'
 import { BoxReference } from './BoxReference'
 import { BoxSupplied, suppliedFor } from './boxSupplied'
 import { PEEK_INSERT_ROWS } from './SlashMenu'
+import { useReportFailure } from '@/lib/failureReports'
 
 /**
  * Peek's comment box: estiva-ui's `CommentBox`, the one box every app writes a
@@ -397,6 +398,7 @@ function attachmentOf(value: unknown): FileAttachment {
  * message has open in the box and are kept.
  */
 export function EditBox({ kind = 'conversation', message, refused, here, onSave, onCancel, resolvedObjects, className }: EditBoxProps) {
+  useReportFailure(refused ? 'not-saved' : undefined)
   const { people, labels } = usePeople()
   const upload = useUpload()
   // What the message named before and its cards, read once as the box opens: its own card shows with its ✕, a card

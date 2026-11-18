@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject, People, ResolvedAction } from '@estiva-app/interop'
 import { hasRelay, isFromCopy, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { noteCardAvailability } from '@/lib/unavailableCards'
+import { useReportFailure } from '@/lib/failureReports'
 
 /** How long a pick made on a card from the copy waits for the relay's answer before it is undone. */
 const HELD_PICK_MS = 10_000
@@ -79,6 +80,7 @@ export function useHeldCard(
   }, [remember, resolved, availability, naddr])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  useReportFailure(error ? 'not-sent' : undefined)
   // A card's pick while it is written and read back: shown, not the old value, until the relay's answer replaces it.
   const [chosen, choose] = useState<{ actionId: string; value: string } | null>(null)
   /*

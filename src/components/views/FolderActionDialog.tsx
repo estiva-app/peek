@@ -54,7 +54,7 @@ export function FolderActionDialog({
       reason: `Nothing was ${archived ? 'archived' : 'unarchived'}: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
     }))
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'error' })
+      showToast({ label: result.reason, type: 'error', failure: archived ? 'not-archived' : 'not-restored' })
       return false
     }
     await reload()
@@ -84,7 +84,7 @@ export function FolderActionDialog({
       })
       .catch(() => {
         if (!alive.current) return
-        showToast({ label: 'What archiving would hide could not be read, so nothing was archived. Try again.', type: 'error' })
+        showToast({ label: 'What archiving would hide could not be read, so nothing was archived. Try again.', type: 'error', failure: 'not-archived' })
         onClose()
       })
   }, [action.kind, folder.channel, folders, archiveImpact, showToast, onClose])
@@ -103,7 +103,7 @@ export function FolderActionDialog({
           */
           const result = await createTopic({ folder: folder.id, title, summary, hasState: folder.hasState, folderName: name, space: true })
           if (!result.ok) {
-            showToast({ label: result.reason, type: 'error' })
+            showToast({ label: result.reason, type: 'error', failure: 'not-created' })
             return false
           }
           // Its row in Teams once it is written: shown and marked, as the open page's (T-12).
@@ -123,7 +123,7 @@ export function FolderActionDialog({
         onCreate={async (next) => {
           const result = await renameFolder(folder.id, next)
           if (!result.ok) {
-            showToast({ label: result.reason, type: 'error' })
+            showToast({ label: result.reason, type: 'error', failure: 'not-renamed' })
             return false
           }
           await reload()
