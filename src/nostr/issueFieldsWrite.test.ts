@@ -21,7 +21,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import { applyActionAsViewer, forgetUrlShapes, restoreFileAsViewer } from './foreign'
-import { forgetProjectFields } from './projectFields'
+import { fieldsOptIn, forgetProjectFields, issueFieldsOptIn } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const RELAY = 'cd'.repeat(32)
@@ -148,6 +148,33 @@ describe("A change from an issue's card", () => {
     expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([[1851, 'status', 'done', statusChange.id]])
   })
 
+  it('follows the current change in a tab opted into issues alone, and not in one opted into projects alone', async () => {
+    relayKeeps([])
+    queryRelay.mockImplementation(relayOver(world()))
+    // The tab's own storage, where `?fields` and `?issueFields` are kept apart.
+    const kept = new Map<string, string>()
+    vi.stubGlobal('window', {
+      sessionStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
+    })
+    try {
+      fieldsOptIn('?fields=off')
+      issueFieldsOptIn('?issueFields=on')
+      await applyActionAsViewer({ naddr: ISSUE, actionId: 'set-issue-status', value: 'done' }, 'https://relay.test', token)
+      fieldsOptIn('?fields=on')
+      issueFieldsOptIn('?issueFields=off')
+      forgetProjectFields()
+      await applyActionAsViewer({ naddr: ISSUE, actionId: 'set-issue-status', value: 'done' }, 'https://relay.test', token)
+    } finally {
+      fieldsOptIn('?fields=off')
+      issueFieldsOptIn('?issueFields=off')
+    }
+
+    expect(sent().map((e) => [tag(e, 'field'), tag(e, 'prev')])).toEqual([
+      ['status', statusChange.id],
+      ['status', undefined],
+    ])
+  })
+
   it('names no change it follows while only projects are kept in order (control)', async () => {
     relayKeeps(['osnova.project'])
     queryRelay.mockImplementation(relayOver(world()))
@@ -178,6 +205,22 @@ describe('An issue filed from the launcher', () => {
     expect(first.content).toBe('')
     expect([words.kind, tag(words, 'field'), tag(words, 'value'), tag(words, 'prev'), tag(words, 'content-format')]).toEqual([1851, 'description', text, first.id, FORMAT])
     expect(tag(words, 'a')).toBe(`30851:${AUTHOR}:${tag(first, 'd')}`)
+  })
+
+  it('is reported made, with its address, when its text is refused after its first record landed', async () => {
+    relayKeeps(['osnova.project', 'osnova.issue'])
+    queryRelay.mockImplementation(relayOver(world()))
+    publishSigned.mockImplementation(async (...args: unknown[]) =>
+      (args[1] as { kind: number }).kind === 1851 ? { ok: false, reason: 'blocked: rate limited' } : { ok: true },
+    )
+    const result = await applyActionAsViewer(
+      { naddr: PROJECT, actionId: 'add-issue', value: { title: 'Login fails', description: 'Steps' } },
+      'https://relay.test',
+      token,
+    )
+
+    const first = sent().find((e) => e.kind === 30851)!
+    expect(result).toMatchObject({ ok: true, created: `30851:${AUTHOR}:${tag(first, 'd')}`, textNotSaved: true })
   })
 
   it('is one event carrying its text while issues are not kept in order (control)', async () => {

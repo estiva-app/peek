@@ -345,6 +345,16 @@ describe('the created object leaves a trace in the thread (PEE-2)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('closes with the issue in the thread when its text was not saved, so a second Create files no second issue (ISS-6)', async () => {
+    applyAction.mockResolvedValueOnce({ ok: true as const, created: CREATED, textNotSaved: true } as never)
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false } })
+    await createIssue()
+
+    expect(insertReference).toHaveBeenCalledWith(addrToNaddr(CREATED, []))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Created, but its text was not saved. Open it and add the text again.')
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('does not report a create as failed when only the encode broke', async () => {
     // The object was created. Saying "failed" would be a lie about the half
     // that worked, so the message names the half that did not.

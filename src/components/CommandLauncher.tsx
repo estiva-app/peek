@@ -700,6 +700,14 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         return
       }
     }
+    // A new issue whose text did not land (ISS-6): it exists, so the form closes, as sending it again would file a
+    // second one, and the person is told to add the text in the issue, whose reference is now in the thread.
+    if (result.textNotSaved) {
+      showToast({ label: 'Created, but its text was not saved. Open it and add the text again.', type: 'error', failure: 'not-added' })
+      void reloadFoldersOnScreen()
+      onClose()
+      return
+    }
     // A `listed` creation whose Folder command was refused (SPEC §7.3): the
     // object exists and its Folder does not show it, which is not a success.
     if (result.incomplete) {

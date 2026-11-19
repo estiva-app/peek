@@ -2043,6 +2043,8 @@ export async function applyActionAsViewer(
     listed?: true
     /** The root was accepted and a Folder command after it was refused — the relay's words. */
     incomplete?: string
+    /** A new issue was made and its text, the change after its first record, did not land (ISS-6). */
+    textNotSaved?: true
   }
 > {
   let pointer
@@ -2216,7 +2218,7 @@ export async function applyActionAsViewer(
           (file) => (file && !file.unreachable ? prevOf(file, changedField) : undefined),
           () => undefined,
         )))
-    if (!prev) return fail('It could not be read just now, so nothing was changed. Reload and try again.')
+    if (!prev) return fail(`That ${pointer.kind === ISSUE_KIND ? 'issue' : 'project'} could not be read just now, so nothing was changed. Reload and try again.`)
     const written = await writeChange({
       field: changedField,
       value,
@@ -2258,7 +2260,7 @@ export async function applyActionAsViewer(
         candidate.emits.kind !== KIND.DELETION &&
         [candidate.appliesTo].flat().includes(String(ISSUE_KIND)),
     )
-    if (text && !textAction) return fail('Its app offers no way to write an issue’s text, so nothing was created.')
+    if (text && !textAction) return fail('Its app does not take an issue’s text from Peek yet, so nothing was created.')
     const made = await createFile({
       root: transform ? transform(first[0]) : first[0],
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
@@ -2285,7 +2287,8 @@ export async function applyActionAsViewer(
     })
     if (made.ok) return { ok: true, id: made.root.id, created: made.address }
     if (!made.created) return fail(made.refused)
-    return fail('The issue was made, but its text was not saved. Open it and add the text again.')
+    // The issue exists: it is reported as made, so its reference is placed and no second one is filed by a retry.
+    return { ok: true, id: made.root.id, created: made.address, textNotSaved: true }
   }
 
   const built = buildActionEvents({ ...common, value, contentFormat: args.contentFormat, createdAtMs: Date.now() })

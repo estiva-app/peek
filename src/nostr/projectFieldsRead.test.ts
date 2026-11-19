@@ -253,6 +253,32 @@ describe('a deleted project, whichever way the switch is', () => {
     expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500 }])
   })
 
+  it('lists an issue deleted before the newest 500 issues changed, from the times read’s next page (ISS-6)', async () => {
+    const info = { file_list: { newest: true, text: true, times: true } }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
+    const GONE = `30851:${AUTHOR}:6f1c2b3a-0000-4000-8000-000000000aaa`
+    const gone = event(30851, [['d', GONE.split(':')[2]], ['title', 'Old broken link'], ['h', FOLDER]])
+    const deletingIssue = { ...event(1851, [['a', GONE], ['O', GONE.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]]), created_at: gone.created_at + 5 }
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, gone, deletingIssue], filters))
+    // The newest page: 500 issues changed after it, none deleted; the oldest of them is where the next page starts.
+    const newest = gone.created_at + 1000
+    const busy = Array.from({ length: 500 }, (_, i) => ({
+      a: `30851:${AUTHOR}:busy-${i}`,
+      created_at: newest + i,
+      h: FOLDER,
+      changes: [{ id: `${i}`.padStart(64, 'c'), created_at: newest + i, fields: ['status'] }],
+    }))
+    const older = [{ a: GONE, created_at: gone.created_at, h: FOLDER, changes: [{ id: deletingIssue.id, created_at: deletingIssue.created_at, fields: ['deleted'] }] }]
+    queryRelayTimes.mockImplementation(async (...args: unknown[]) => {
+      const until = (args[1] as { until?: number }[])[0].until
+      return until === undefined ? busy : until === newest ? older : []
+    })
+    const deleted = await deletedProjectsAsViewer('https://relay.test', token)
+
+    expect(deleted?.map((file) => file.address)).toContain(GONE)
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500, until: newest }])
+  })
+
   it('is not on the Deleted tab once restored', async () => {
     relayInfo('list')
     const restoring = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', ''], ['h', FOLDER]])
