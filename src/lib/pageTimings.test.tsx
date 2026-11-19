@@ -159,6 +159,31 @@ describe('Peek page-open timings', () => {
     expect(requests).toEqual([])
   })
 
+  it('times a conversation opened in Desk beside its lists, named as a file, never by which one', async () => {
+    const address = '30840:plantedauthor:9c69f247'
+    await startClean() // on Desk
+    window.history.pushState(null, '', `/app/desk?${new URLSearchParams({ open: address })}`) // as Desk writes it
+    await load(600)
+    window.history.pushState(null, '', `/app/desk?${new URLSearchParams({ open: `${address}x` })}`) // the next one
+    await load(250)
+    expect(bodies()).toEqual([
+      { release: expect.any(String), screen: '/:word/:ref', how: 'in-app', waitMs: 600, ready: 'placeholder-gone' },
+      { release: expect.any(String), screen: '/:word/:ref', how: 'in-app', waitMs: 250, ready: 'placeholder-gone' },
+    ])
+    expect(requests.map((r) => r.body).join()).not.toMatch(/planted|9c69f247|30840/)
+  })
+
+  it('starts no timing when Desk closes its pane or opens a reply in the same conversation', async () => {
+    const open = `open=${encodeURIComponent('30840:qa1:topic')}`
+    window.history.replaceState(null, '', `/app/desk?${open}`)
+    await startClean()
+    window.history.pushState(null, '', `/app/desk?${open}&thread=abc`)
+    await load(300)
+    window.history.pushState(null, '', '/app/desk')
+    await load(300)
+    expect(requests).toEqual([])
+  })
+
   it("times the browser's own back button", async () => {
     await startClean()
     window.history.pushState(null, '', TOPIC)
