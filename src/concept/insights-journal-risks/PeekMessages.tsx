@@ -225,7 +225,9 @@ function TypedBox({ contextLabel, start }: { contextLabel: string; start?: MarkW
   const chip = useRef<HTMLSpanElement>(null)
   const [word, setWord] = useState<MarkWord | undefined>(start)
   const [at, setAt] = useState<{ top: number; left: number; indent: number }>()
-  const picker = useTypedMark(box, { block: '.ProseMirror > p', firstOnly: true, onMark: (w) => setWord(w) })
+  const has = useRef(word)
+  has.current = word
+  const picker = useTypedMark(box, { block: '.ProseMirror > p', firstOnly: true, onMark: (w) => setWord(w), onUnmark: () => (has.current ? (setWord(undefined), true) : false) })
   useLayoutEffect(() => {
     const p = box.current?.querySelector('.ProseMirror > p')
     if (!word || !p || !box.current) return setAt(undefined)

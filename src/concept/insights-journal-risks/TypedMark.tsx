@@ -28,7 +28,18 @@ function blockAtCaret(root: HTMLElement, selector: string): HTMLElement | null {
  */
 export function useTypedMark(
   root: RefObject<HTMLElement | null>,
-  { block, firstOnly = false, onMark }: { block: string; firstOnly?: boolean; onMark: (word: MarkWord, el: HTMLElement) => void },
+  {
+    block,
+    firstOnly = false,
+    onMark,
+    onUnmark,
+  }: {
+    block: string
+    firstOnly?: boolean
+    onMark: (word: MarkWord, el: HTMLElement) => void
+    /** Backspace with the caret at a marked block's start takes the mark off (Miky, 19 Nov); returns false when it had none. */
+    onUnmark?: (el: HTMLElement) => boolean
+  },
 ): ReactNode {
   const [picker, setPicker] = useState<{ rect: DOMRect; el: HTMLElement }>()
   const handle = useRef<SuggestionMenuHandle>(null)
@@ -36,6 +47,8 @@ export function useTypedMark(
   const wait = useRef<ReturnType<typeof setTimeout>>(undefined)
   const mark = useRef(onMark)
   mark.current = onMark
+  const unmark = useRef(onUnmark)
+  unmark.current = onUnmark
 
   useEffect(() => {
     const r = root.current
@@ -43,6 +56,18 @@ export function useTypedMark(
     const key = (e: KeyboardEvent) => {
       const el = blockAtCaret(r, block)
       if (!el) return
+      if (e.key === 'Backspace' && unmark.current) {
+        // The caret at the block's very start, nothing selected: the first Backspace takes the mark off, the next one edits.
+        const sel = window.getSelection()
+        if (!sel?.rangeCount || !sel.isCollapsed) return
+        const before = document.createRange()
+        before.selectNodeContents(el)
+        before.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset)
+        if (before.toString() !== '' || (firstOnly && el.parentElement?.firstElementChild !== el)) return
+        if (unmark.current(el)) (e.preventDefault(), e.stopPropagation())
+        return
+      }
+      // Enter, Ctrl/⌘ + Enter alike (Miky, 19 Nov); Shift + Enter stays a new line.
       if (e.key === 'Enter' && !e.shiftKey) {
         const word = BY_SYMBOL[el.textContent?.trim() ?? '']
         if (!word || (firstOnly && el.parentElement?.firstElementChild !== el)) return
