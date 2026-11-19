@@ -6,7 +6,8 @@
  */
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, ConversationLayout, EmptyState, INLINE_CHIP_CLASSES, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
+import { IconX } from '@tabler/icons-react'
+import { Card, ConversationLayout, EmptyState, IconButton, INLINE_CHIP_CLASSES, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
 import { ConversationCard, ConceptMessage } from '@/components/ConversationCard'
 import { ReplyCard } from '@/components/ReplyCard'
 import { TopicState } from '@/components/ui/TopicState'
@@ -180,10 +181,12 @@ function WholeThread({ message, me, onClose, onOpenItem }: { message: StoryMessa
 }
 
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
-export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, openItem, typedStart }: {
+export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, openItem, typedStart, typedAbove }: {
   title: string
   /** The message box starts already marked, as after typing a symbol and Enter. */
   typedStart?: MarkWord
+  /** The mark's heading sits above the box, which takes its colour, instead of inside it (Miky's second trial). */
+  typedAbove?: boolean
   messages: StoryMessage[]
   /** Who is signed in: their own messages offer Edit and Delete. */
   me?: Who
@@ -235,7 +238,7 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
         title={title}
         header={<PageHeader title={title} leading={<TopicState type={dm ? 'DM' : 'topic'} status={dm ? 'default' : 'unresolved'} />} />}
         items={items}
-        box={<TypedBox contextLabel={title} start={typedStart} />}
+        box={<TypedBox contextLabel={title} start={typedStart} above={typedAbove} />}
         empty={<EmptyState message="No messages yet" />}
       />
     </MarkingProvider>
@@ -247,7 +250,7 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
  * Ctrl/⌘ + . and a symbol, puts the word's label at the message's start, where Peek's box already draws a highlight
  * tag (`extensions/highlight.tsx`, dormant since 2 Nov); the build revives that tag with the eight words.
  */
-function TypedBox({ contextLabel, start }: { contextLabel: string; start?: MarkWord }) {
+function TypedBox({ contextLabel, start, above = false }: { contextLabel: string; start?: MarkWord; above?: boolean }) {
   const box = useRef<HTMLDivElement>(null)
   const chip = useRef<HTMLSpanElement>(null)
   const [word, setWord] = useState<MarkWord | undefined>(start)
@@ -257,11 +260,34 @@ function TypedBox({ contextLabel, start }: { contextLabel: string; start?: MarkW
   const picker = useTypedMark(box, { block: '.ProseMirror > p', firstOnly: true, onMark: (w) => setWord(w), onUnmark: () => (has.current ? (setWord(undefined), true) : false) })
   useLayoutEffect(() => {
     const p = box.current?.querySelector('.ProseMirror')
-    if (!word || !p || !box.current) return setAt(undefined)
+    if (above || !word || !p || !box.current) return setAt(undefined)
     const b = box.current.getBoundingClientRect()
     const r = p.getBoundingClientRect()
     setAt({ top: r.top - b.top, left: r.left - b.left, room: (chip.current?.offsetHeight ?? 20) + 6 })
-  }, [word])
+  }, [word, above])
+  if (above)
+    // The second trial (Miky, 19 Nov): the mark is a property on top of the message, so its heading sits above the
+    // box, outside it, and the box's border takes the word's colour. Marking halfway through a message moves no text.
+    return (
+      <div ref={box} className="flex flex-col gap-1" data-typed-box>
+        {word && (
+          <>
+            <style>{`[data-typed-box] .border-border-field{border-color:${wordTone(word, 'borderColor').borderColor} !important}`}</style>
+            <span className="flex items-center gap-1 px-1">
+              <span className="flex items-center gap-1 text-caption font-medium" style={wordTone(word)}>
+                {wordIcon(word, 14)}
+                {word}
+              </span>
+              <IconButton variant="muted" tooltip="Remove the mark" aria-label="Remove the mark" onClick={() => setWord(undefined)}>
+                <IconX size={14} stroke={1.5} />
+              </IconButton>
+            </span>
+          </>
+        )}
+        <ConversationBox onSend={async () => (setWord(undefined), { accepted: true })} contextLabel={contextLabel} />
+        {picker}
+      </div>
+    )
   // The label is its own row, a heading over the message, and the text (or the placeholder) starts on the line below
   // (Miky, 19 Nov): a sent message shows the word in its header, never inside its text, so the box matches that.
   return (

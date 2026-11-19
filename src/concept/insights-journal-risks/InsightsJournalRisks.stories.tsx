@@ -233,6 +233,19 @@ export const MarkAsYouWrite: Story = {
   ),
 }
 
+/**
+ * The second trial (Miky, 19 Nov): the same marking, its heading above the box rather than inside it, and the box's
+ * border in the word's colour, a property on top of the message. Marking halfway through moves no text; ✕ or
+ * Backspace at the start takes it off.
+ */
+export const MarkAsYouWriteAbove: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation title="Universal Navigation" about={PROJECT} typedStart="Question" typedAbove messages={universal({ m2: BELONGS_INSIGHT })} />
+    </TopicFrame>
+  ),
+}
+
 /** Miky looks at: the moment he highlights a message without a word: where it went, and that it waits to be sorted. */
 export const JustHighlighted: Story = {
   render: () => (
