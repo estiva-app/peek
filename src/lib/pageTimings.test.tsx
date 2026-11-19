@@ -7,6 +7,7 @@
  * here, which navigations in Peek start one, and what Peek adds to a load.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import indexHtml from '../../index.html?raw'
 
 // The sign-in's own token handling is @estiva-app/identity's, tested there; here a signed-in QA-1.
 const leaving = new Set<() => void>()
@@ -55,6 +56,7 @@ beforeEach(() => {
   vi.resetModules()
   leaving.clear()
   sessionStorage.clear()
+  localStorage.clear()
   delete window.__peekPicture
   requests = []
   vi.stubGlobal(
@@ -99,6 +101,35 @@ describe('Peek page-open timings', () => {
       },
     ])
     expect(requests[0]?.url).toBe('https://id.estiva.app/timing')
+  })
+
+  it('a saved picture still up after the live page drew holds the wait until it goes, as the person sees it', async () => {
+    // The picture exactly as index.html draws it, before the app starts.
+    localStorage.setItem('peek.estivaId.token', JSON.stringify({ pubkey: 'qa1' }))
+    localStorage.setItem('peek-device-copy-owner', 'wss://relay|qa1')
+    localStorage.setItem(
+      'peek-desk-picture',
+      JSON.stringify({ owner: 'wss://relay|qa1', css: '/assets/app.css', html: '<main><h1>Saved desk</h1></main>' }),
+    )
+    document.head.innerHTML = '<link rel="stylesheet" href="/assets/app.css">'
+    document.body.innerHTML = '<div id="root"></div>'
+    const script = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].find((m) => m[1]?.includes('peek-picture'))
+    new Function(script?.[1] ?? 'throw new Error("index.html draws no picture")')()
+    expect(document.getElementById('peek-picture')).not.toBeNull()
+    await start()
+    const root = document.getElementById('root') as HTMLElement
+    root.innerHTML = '<main><div class="animate-pulse h-4"></div></main>'
+    await flush()
+    vi.advanceTimersByTime(1800)
+    root.innerHTML = `<main><h1>${PLANTED_TITLE}</h1></main>` // drawn under the picture
+    await flush()
+    vi.advanceTimersByTime(150)
+    const { revealLivePage } = await import('./pagePicture')
+    revealLivePage() // the picture goes 150 ms later, once the live page has settled
+    await flush()
+    vi.advanceTimersByTime(1000)
+    await flush()
+    expect(bodies().map((b) => [b.waitMs, b.pictureMs])).toEqual([[1950, 0]])
   })
 
   it('a new tab with no saved picture sends no picture number', async () => {
