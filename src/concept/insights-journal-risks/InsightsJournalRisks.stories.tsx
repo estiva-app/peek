@@ -10,6 +10,7 @@ import { LastSelectionProvider } from '@/lib/lastSelection'
 import { PeoplePageView } from '@/pages/PeoplePage'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { Conversation, DeciderTopicsColumn, TopicFrame } from './PeekMessages'
+import { ItemBeside, itemOf } from './ItemBeside'
 import { DAY, HOUR, marked, type StoryMessage } from './messages'
 import { CLAUDE, KATERINA, MIKY, PROJECT } from './fixtures'
 
@@ -142,6 +143,18 @@ export const SuggestedAfterSend: Story = {
  * shows nothing where it was; Miky, its marker, is told in his Topics column, and the line opens it, read only, with
  * who deleted it and why. Nobody else sees it, and agents no longer read it.
  */
+/**
+ * A Proposed highlight nobody used or added for 30 days (Miky, 19 Nov, as Linear archives what nobody touches): out of
+ * every list and of what agents read. Anyone who opens it, from search or the list's archived view, can restore it.
+ */
+export const FadedHighlightIsArchived: Story = {
+  render: () => (
+    <div className="flex h-[720px] w-96 border-l border-border-default">
+      <ItemBeside item={{ ...itemOf(BELONGS_INSIGHT, belongs, 'Universal Navigation'), id: 'peek-faded', status: 'proposed', at: '12 Oct', day: '2026-10-12' }} onClose={() => undefined} />
+    </div>
+  ),
+}
+
 export const DeletedHighlightIsTold: Story = {
   render: () => (
     <PeekFrame

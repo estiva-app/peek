@@ -6,7 +6,7 @@
  * unchanged into Leaf.
  */
 import { useState } from 'react'
-import { IconExternalLink, IconSparkles, IconUsers } from '@tabler/icons-react'
+import { IconArchive, IconExternalLink, IconHourglass, IconSparkles, IconUsers } from '@tabler/icons-react'
 import { Button, Card, Link, LinkPickers, MetaText, Select } from '@estiva-app/ui'
 import { STATUSES, type Status } from './MarkAs'
 import { AcceptReject, ItemTag, JournalExtras, SourceAsMarked, acceptedStatus } from './ItemParts'
@@ -15,6 +15,89 @@ import { CATEGORIES, SEVERITIES, PEOPLE, type Item } from './fixtures'
 
 /** An Insight sent by another tool on the protocol: its chart or quote is the source, live. */
 export const fromTool = (item: Item) => item.source?.app === 'PostHog' || item.source?.app === 'Intercom'
+
+/**
+ * Where an item was used (Miky, 19 Nov: "memory shows where it was used"): each answer, summary or loop run that read
+ * it into what it did, newest first, so a person sees why the AI said what it said and can fix the memory behind it.
+ */
+export interface Use { by: string; what: string; where: string; days: number }
+export function usesOf(item: Item): Use[] {
+  if (item.id.startsWith('peek-')) return []
+  if (item.status === 'proposed')
+    return item.category === 'Customer' ? [{ by: 'Claude', what: 'Answer to Katerina about the sidebar', where: 'Peek · Design', days: 2 }] : []
+  if (fromTool(item)) return [{ by: 'Claude', what: 'Answer to Miky about activation', where: 'Peek · Direct messages', days: 1 }]
+  if (item.type === 'journal')
+    return [
+      { by: 'Claude', what: 'Plan for Teams in Ship', where: 'Ship · Teams stage', days: 3 },
+      { by: 'Leaf’s review loop', what: 'Checked Universal Navigation against it', where: 'Leaf · Estiva HQ', days: 6 },
+    ]
+  if (item.type === 'risk') return [{ by: 'Claude', what: 'Friday summary', where: 'Peek · Friday Meetings', days: 0 }]
+  return [
+    { by: 'Claude', what: 'Friday summary', where: 'Peek · Friday Meetings', days: 1 },
+    { by: 'Ship’s triage loop', what: 'Filed “Sidebar folders collapse” under it', where: 'Ship · Bugs', days: 4 },
+  ]
+}
+const ago = (days: number) => (days === 0 ? 'today' : `${days}d ago`)
+
+/**
+ * Proposed items fade (Miky, 19 Nov, as Linear archives what nobody touches): one nobody used or added for this long is
+ * archived, out of every list and of what agents read, and anyone can restore it. Accepted items never fade; a person
+ * or a dreaming loop marks them Outdated.
+ */
+export const FADE_DAYS = 30
+const daysSince = (day: string) => Math.floor((Date.parse('2026-11-19') - Date.parse(day)) / 86_400_000)
+const fadesIn = (item: Item) => FADE_DAYS - Math.min(daysSince(item.day), ...usesOf(item).map((u) => u.days))
+
+/** A Proposed item's fading: how long it has left, or, once archived, that it was and a way back. */
+function Fading({ item }: { item: Item }) {
+  const [restored, setRestored] = useState(false)
+  const left = restored ? FADE_DAYS : fadesIn(item)
+  if (left > 0)
+    return (
+      <MetaText tone="muted">
+        <IconHourglass size={12} stroke={1.5} className="mr-1 inline" />
+        Fades in {left} days unless used or added
+      </MetaText>
+    )
+  return (
+    <Card fill="inset" className="flex items-center justify-between gap-3 px-3 py-2">
+      <span className="flex min-w-0 flex-col">
+        <span className="text-body-2 text-text-primary">
+          <IconArchive size={14} stroke={1.5} className="mr-1 inline" />
+          Archived {-left} days ago
+        </span>
+        <span className="text-caption text-text-muted">{`Nobody used or added it in ${FADE_DAYS} days, so agents no longer read it.`}</span>
+      </span>
+      <Button variant="outlined" size="small" onClick={() => setRestored(true)}>
+        Restore
+      </Button>
+    </Card>
+  )
+}
+
+/** The item's receipts, under its content: every use, each a link to where it happened. */
+export function ItemUses({ item }: { item: Item }) {
+  const uses = usesOf(item)
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-caption font-medium text-text-primary">Used{uses.length ? ` · ${uses.length}` : ''}</span>
+      {uses.length ? (
+        uses.map((u) => (
+          <span key={u.what} className="flex min-w-0 flex-col">
+            <Link href="#" variant="quiet">
+              {u.what}
+            </Link>
+            <MetaText tone="muted">
+              {u.by} · {u.where} · {ago(u.days)}
+            </MetaText>
+          </span>
+        ))
+      ) : (
+        <MetaText tone="muted">Not used yet</MetaText>
+      )}
+    </div>
+  )
+}
 
 /** What the detail is, as the list labels it: the word or category with its icon, and a risk's severity icon before it. */
 export function ItemIdentity({ item }: { item: Item }) {
@@ -79,6 +162,7 @@ export function ItemFields({ item, me = 'miky' }: { item: Item; me?: string }) {
         </span>
       </div>
       {waitingOn && <MetaText tone="muted">Waiting for {waitingOn} to add it</MetaText>}
+      {status === 'proposed' && <Fading item={item} />}
     </div>
   )
 }
@@ -171,6 +255,7 @@ export function ItemContent({ item, me = 'miky', words = true, onDecide, decidin
       ) : item.decision ? null : (
         <SourceAsMarked source={item.source} />
       )}
+      <ItemUses item={item} />
     </div>
   )
 }
