@@ -16,7 +16,8 @@ import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { formatActive, formatDateLabel, formatTimestamp } from '@/api'
 import { MarkAsRows, MarkedNotice, drawsLine, wordIcon, wordTone, type MarkWord } from './MarkAs'
-import { MIKY, TEAM, type Person as Who } from './fixtures'
+import { MIKY, TEAM, type Item, type Person as Who } from './fixtures'
+import { ItemBeside, itemOf } from './ItemBeside'
 import { useTypedMark } from './TypedMark'
 import { cn } from '@/lib/utils'
 import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from './messages'
@@ -25,25 +26,32 @@ import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from 
  * Hands Peek's message card its Mark as… rows and its line. `privateRoom` is a place whose readers differ from any
  * team's (a DM): no Mark row at all. Marking is at once, with a notice; Unmark takes the line away.
  */
-function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice, onOpen, children }: { messages: StoryMessage[]; privateRoom: boolean; me: Who; about?: string; notice?: MarkWord; onOpen?: (id: string) => void; children: ReactNode }) {
+function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice, onOpen, onOpenItem, children }: { messages: StoryMessage[]; privateRoom: boolean; me: Who; about?: string; notice?: MarkWord; onOpen?: (id: string) => void; onOpenItem?: (mark: StoryMark, message: StoryMessage) => void; children: ReactNode }) {
   const [marks, setMarks] = useState<Record<string, StoryMark | undefined>>(() => Object.fromEntries(messages.map((m) => [m.id, m.mark])))
   const [notice, setNotice] = useState<MarkWord | undefined>(startNotice)
+  const [last, setLast] = useState<string>()
   const mark = (id: string, text: string, word: MarkWord) => {
     // The title from the message's first line; filed in the message's team, about its topic's project (Decided, kickoff).
     const title = text.split('\n')[0].split(/(?<=[.!?])\s/)[0].slice(0, 80)
     setMarks((all) => ({ ...all, [id]: marked(word, title, me) }))
     setNotice(word)
+    setLast(id)
+  }
+  const openItem = (id: string | undefined) => {
+    const m = id ? marks[id] : undefined
+    const message = messages.find((x) => x.id === id)
+    if (m && message) onOpenItem?.(m, message)
   }
   const value = {
     menu: (id: string, text: string) => (
-      <MarkAsRows mark={marks[id]} refused={privateRoom} onMark={(word) => mark(id, text, word)} onUnmark={() => setMarks((all) => ({ ...all, [id]: undefined }))} />
+      <MarkAsRows mark={marks[id]} refused={privateRoom} onMark={(word) => mark(id, text, word)} onOpen={() => openItem(id)} onUnmark={() => setMarks((all) => ({ ...all, [id]: undefined }))} />
     ),
     wrap: (id: string, card: ReactNode) => {
       const m = marks[id]
       const replies = messages.find((x) => x.id === id)?.replies
       // The label sits beside the time, as Resolved does (Miky, 16 Nov), in place of a line down the left.
       return (
-        <InHeader label={drawsLine(m) && m ? <MarkLabel mark={m} me={me} /> : null}>
+        <InHeader label={drawsLine(m) && m ? <MarkLabel mark={m} me={me} onOpen={onOpenItem && (() => openItem(id))} /> : null}>
           {card}
           {replies?.some((r) => drawsLine(r.mark)) && <ThreadTimeline replies={replies} me={me} onOpen={() => onOpen?.(id)} />}
         </InHeader>
@@ -53,7 +61,7 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
   return (
     <ConceptMessage.Provider value={value}>
       {children}
-      {notice && <MarkedNotice word={notice} team={TEAM} about={about} onClose={() => setNotice(undefined)} />}
+      {notice && <MarkedNotice word={notice} team={TEAM} about={about} onOpen={() => openItem(last)} onClose={() => setNotice(undefined)} />}
     </ConceptMessage.Provider>
   )
 }
@@ -62,14 +70,24 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
  * A mark's label beside a message's time: its type's icon and word in its colour, the way the kit card draws
  * Resolved there (Miky, 16 Nov; and Peek's HighlightPill, removed 2 Nov, sat after the time). Hover names it.
  */
-function MarkLabel({ mark, me }: { mark: StoryMark; me: Who }) {
+function MarkLabel({ mark, me, onOpen }: { mark: StoryMark; me: Who; onOpen?: () => void }) {
+  // The word's own icon and colour: a Question is orange, not a Risk's red (Miky, 18 Nov).
+  const label = (
+    <span className="flex items-center gap-1 text-caption" style={wordTone(mark.word)}>
+      {wordIcon(mark.word, 14)}
+      {mark.word}
+    </span>
+  )
   return (
     <WithTooltip label={`${mark.word} · ${mark.title} · marked by ${mark.by.key === me.key ? 'you' : mark.by.name}`} wrapperClassName="flex shrink-0">
-      {/* The word's own icon and colour: a Question is orange, not a Risk's red (Miky, 18 Nov). */}
-      <span className="flex items-center gap-1 text-caption" style={wordTone(mark.word)}>
-        {wordIcon(mark.word, 14)}
-        {mark.word}
-      </span>
+      {onOpen ? (
+        // A press opens the item beside the topic (Miky, 19 Nov), and not the message's thread under it.
+        <Card fill="none" hover="fill" quietUntilHover className="-mx-1 px-1" onClick={(e) => (e.stopPropagation(), onOpen())}>
+          {label}
+        </Card>
+      ) : (
+        label
+      )}
     </WithTooltip>
   )
 }
@@ -143,7 +161,7 @@ function ThreadTimeline({ replies, me, onOpen }: { replies: StoryMessage[]; me: 
 }
 
 /** A message's whole thread in the right column, as Peek's ThreadPanel draws it: the message pinned on top, then every reply. */
-function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who; onClose: () => void }) {
+function WholeThread({ message, me, onClose, onOpenItem }: { message: StoryMessage; me: Who; onClose: () => void; onOpenItem?: (mark: StoryMark, reply: StoryMessage) => void }) {
   return (
     <Thread
       title="Thread"
@@ -153,7 +171,7 @@ function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who;
       box={<ConversationBox kind="reply" onSend={async () => ({ accepted: true })} contextLabel={`Reply to ${message.author.name}`} />}
     >
       {message.replies?.map((r) => (
-        <InHeader key={r.id} label={drawsLine(r.mark) && r.mark ? <MarkLabel mark={r.mark} me={me} /> : null}>
+        <InHeader key={r.id} label={drawsLine(r.mark) && r.mark ? <MarkLabel mark={r.mark} me={me} onOpen={onOpenItem && (() => onOpenItem(r.mark!, r))} /> : null}>
           <ReplyCard messageId={r.id} authorName={r.author.name} timestamp={formatTimestamp(NOW - r.ago, NOW)} createdAtMs={NOW - r.ago} body={r.text} canEditAndDelete={r.author.key === me.key} />
         </InHeader>
       ))}
@@ -162,7 +180,7 @@ function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who;
 }
 
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
-export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, typedStart }: {
+export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, openItem, typedStart }: {
   title: string
   /** The message box starts already marked, as after typing a symbol and Enter. */
   typedStart?: MarkWord
@@ -177,13 +195,21 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
   notice?: MarkWord
   /** Start with this message's thread open in the right column. */
   openThread?: string
+  /** Start with this message's item open in the right column, as after a press on its label. */
+  openItem?: string
 }) {
   const [open, setOpen] = useState<string | undefined>(openThread)
+  // The item a label opened, in the thread's column; `from` is the thread it was opened from, which ← brings back.
+  const [item, setItem] = useState<{ item: Item; from?: string } | undefined>(() => {
+    const m = messages.find((x) => x.id === openItem)
+    return m?.mark ? { item: itemOf(m.mark, m, title) } : undefined
+  })
+  const showItem = (mark: StoryMark, message: StoryMessage, from?: string) => (setItem({ item: itemOf(mark, message, title), from }), setOpen(undefined))
   const items = messages.map((m) => ({
     id: m.id,
     day: formatDateLabel(NOW - m.ago, NOW),
     // The whole thread, every reply, each marked one wearing its label beside its time as in the feed.
-    thread: m.replies ? () => <WholeThread message={m} me={me} onClose={() => setOpen(undefined)} /> : undefined,
+    thread: m.replies ? () => <WholeThread message={m} me={me} onClose={() => setOpen(undefined)} onOpenItem={(mark, r) => showItem(mark, r, m.id)} /> : undefined,
     card: (
       <ConversationCard
         messageId={m.id}
@@ -200,11 +226,12 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
     ),
   }))
   return (
-    <MarkingProvider messages={messages} privateRoom={privateRoom} me={me} about={about} notice={notice} onOpen={(id) => setOpen((o) => (o === id ? undefined : id))}>
+    <MarkingProvider messages={messages} privateRoom={privateRoom} me={me} about={about} notice={notice} onOpen={(id) => (setItem(undefined), setOpen((o) => (o === id ? undefined : id)))} onOpenItem={(mark, m) => showItem(mark, m)}>
       <ConversationLayout
         threads="beside"
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(id) => (setItem(undefined), setOpen(id))}
+        aside={item && <ItemBeside item={item.item} onBack={item.from ? () => (setOpen(item.from), setItem(undefined)) : undefined} onClose={() => setItem(undefined)} />}
         title={title}
         header={<PageHeader title={title} leading={<TopicState type={dm ? 'DM' : 'topic'} status={dm ? 'default' : 'unresolved'} />} />}
         items={items}

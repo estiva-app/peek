@@ -105,6 +105,19 @@ export const TopicWithAnInsight: Story = {
 }
 
 /** Miky looks at: the same message as Katerina sees it, signed in as her; resting on the line reads "Insight · … · marked by Miky". */
+/**
+ * Its label pressed (Miky, 19 Nov: option A): the Insight opens in the column a thread opens in, as in Leaf and Ship.
+ * Its fields, its source, then its own conversation and box: the talk that shapes it, apart from any thread. ✕ closes.
+ * A label on a reply inside an open thread does the same, with ← back to that thread (ThreadBubblesUpOpen).
+ */
+export const LabelOpensItem: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation title="Universal Navigation" about={PROJECT} messages={universal({ m2: BELONGS_INSIGHT })} openItem="m2" />
+    </TopicFrame>
+  ),
+}
+
 export const TopicWithAnInsightAsKaterina: Story = {
   render: () => (
     <TopicFrame>
