@@ -36,6 +36,14 @@ export const isUnsorted = (word: MarkWord) => word === 'Highlight'
  * menu shows it beside its word, so the shortcut is learned by using the menu.
  */
 export const SYMBOL: Record<MarkWord, string> = { Highlight: '!', Insight: '*', Question: '?', 'To-do': '[]', Decision: '=', Update: ':', Concern: '~', Blocker: '!!' }
+/** The key that opens Mark as at the caret (a placeholder until the shortcut strategy), as this computer writes it. */
+export const MARK_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ .' : 'Ctrl .'
+/**
+ * The Mark as row shows MARK_KEY before its chevron, plain and muted as Linear's "Status  S ▸" (Miky, 19 Nov: visible,
+ * so people learn it). The kit's MenuSub takes no shortcut yet, so the concept draws it with CSS on the row that holds
+ * the marker below; the build adds `shortcut` to MenuSub.
+ */
+const MARK_ROW_CSS = `button:has(> * [data-mark-as-row]),button:has([data-mark-as-row]){position:relative}button:has([data-mark-as-row])>span:last-child{order:3}button:has([data-mark-as-row])::after{content:"${MARK_KEY}";order:2;font-size:12px;line-height:16px;color:var(--text-muted);white-space:nowrap}`
 /** The symbol at a row's right edge as plain muted text, no key chip (Miky, 19 Nov: subtle, as Linear's menus). */
 export const symbolHint = (word: MarkWord) => <MetaText tone="muted">{SYMBOL[word]}</MetaText>
 
@@ -121,7 +129,15 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   if (refused) return null
   // Mark as ▸ Highlight first, then the seven words; on a Highlight, Sort as ▸ the seven words.
   const words = (label: 'Mark as' | 'Sort as') => (
-    <MenuSub label={label} leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
+    <MenuSub
+      label={label}
+      leading={
+        <span className="flex" data-mark-as-row={label === 'Mark as' ? '' : undefined}>
+          {label === 'Mark as' && <style>{MARK_ROW_CSS}</style>}
+          <IconBulb size={16} stroke={1.5} className="text-text-secondary" />
+        </span>
+      }
+    >
       {label === 'Mark as' && <MenuItem label="Highlight" trailing={symbolHint('Highlight')} leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
       {label === 'Mark as' && <MenuSeparator />}
       {WORDS.map((word) => (

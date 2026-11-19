@@ -117,7 +117,11 @@ export function useTypedMark(
   }, [picker])
 
   if (!picker) return null
+  // The symbol at the row's right edge, as every Mark as menu has it (Miky, 19 Nov); the kit's picker rows take an
+  // `aside` beside the label only, so the concept pushes it right; the build gives SuggestionMenu's row a `trailing`.
   return (
+    <>
+    <style>{`[aria-label="Mark as"] .items-baseline>span:last-child{margin-left:auto}`}</style>
     <SuggestionMenu<MarkWord>
       rect={picker.rect}
       editorElement={root.current}
@@ -130,5 +134,6 @@ export function useTypedMark(
       onSelect={(w) => (setPicker(undefined), mark.current(w, picker.el))}
       handle={handle}
     />
+    </>
   )
 }

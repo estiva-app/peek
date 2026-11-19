@@ -224,20 +224,22 @@ function TypedBox({ contextLabel, start }: { contextLabel: string; start?: MarkW
   const box = useRef<HTMLDivElement>(null)
   const chip = useRef<HTMLSpanElement>(null)
   const [word, setWord] = useState<MarkWord | undefined>(start)
-  const [at, setAt] = useState<{ top: number; left: number; indent: number }>()
+  const [at, setAt] = useState<{ top: number; left: number; room: number }>()
   const has = useRef(word)
   has.current = word
   const picker = useTypedMark(box, { block: '.ProseMirror > p', firstOnly: true, onMark: (w) => setWord(w), onUnmark: () => (has.current ? (setWord(undefined), true) : false) })
   useLayoutEffect(() => {
-    const p = box.current?.querySelector('.ProseMirror > p')
+    const p = box.current?.querySelector('.ProseMirror')
     if (!word || !p || !box.current) return setAt(undefined)
     const b = box.current.getBoundingClientRect()
     const r = p.getBoundingClientRect()
-    setAt({ top: r.top - b.top, left: r.left - b.left, indent: (chip.current?.offsetWidth ?? 0) + 6 })
+    setAt({ top: r.top - b.top, left: r.left - b.left, room: (chip.current?.offsetHeight ?? 20) + 6 })
   }, [word])
+  // The label is its own row, a heading over the message, and the text (or the placeholder) starts on the line below
+  // (Miky, 19 Nov): a sent message shows the word in its header, never inside its text, so the box matches that.
   return (
     <div ref={box} className="relative" data-typed-box>
-      {at && <style>{`[data-typed-box] .ProseMirror > p:first-child{text-indent:${at.indent}px}`}</style>}
+      {at && <style>{`[data-typed-box] .ProseMirror{padding-top:${at.room}px}[data-typed-box] [data-composer-editor] > .pointer-events-none{top:${at.room}px}`}</style>}
       <ConversationBox onSend={async () => (setWord(undefined), { accepted: true })} contextLabel={contextLabel} />
       {word && (
         <span ref={chip} className={cn(INLINE_CHIP_CLASSES, 'absolute font-medium')} style={{ top: at?.top ?? 0, left: at?.left ?? 0, ...wordTone(word) }}>
