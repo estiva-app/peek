@@ -11,7 +11,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconHighlight, IconNotebook, IconSquareCheck, IconX } from '@tabler/icons-react'
-import { MenuItem, MenuSeparator, MenuSub, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
+import { MenuItem, MenuSeparator, MenuSub, MetaText, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 /**
  * TRIAL (Miky, 19 Nov, to judge on this prototype; no record yet): a fourth type, To-do (a light task anyone marks, made
@@ -36,6 +36,8 @@ export const isUnsorted = (word: MarkWord) => word === 'Highlight'
  * menu shows it beside its word, so the shortcut is learned by using the menu.
  */
 export const SYMBOL: Record<MarkWord, string> = { Highlight: '!', Insight: '*', Question: '?', 'To-do': '[]', Decision: '=', Update: ':', Concern: '~', Blocker: '!!' }
+/** The symbol at a row's right edge as plain muted text, no key chip (Miky, 19 Nov: subtle, as Linear's menus). */
+export const symbolHint = (word: MarkWord) => <MetaText tone="muted">{SYMBOL[word]}</MetaText>
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
   insight: { label: 'Insight', plural: 'Insights', tab: 'Insights', line: 'border-warning-default', text: 'text-warning-default', icon: (s = 16) => <IconBulb size={s} stroke={1.5} /> },
@@ -120,10 +122,10 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   // Mark as ▸ Highlight first, then the seven words; on a Highlight, Sort as ▸ the seven words.
   const words = (label: 'Mark as' | 'Sort as') => (
     <MenuSub label={label} leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
-      {label === 'Mark as' && <MenuItem label="Highlight" shortcut={SYMBOL.Highlight} leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
+      {label === 'Mark as' && <MenuItem label="Highlight" trailing={symbolHint('Highlight')} leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
       {label === 'Mark as' && <MenuSeparator />}
       {WORDS.map((word) => (
-        <MenuItem key={word} label={word} shortcut={SYMBOL[word]} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
+        <MenuItem key={word} label={word} trailing={symbolHint(word)} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
     </MenuSub>
   )

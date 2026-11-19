@@ -207,6 +207,19 @@ export const HighlightAndToDo: Story = {
   ),
 }
 
+/**
+ * Trial (Miky, 19 Nov): mark as you write. In the box, type `?` alone on the first line and press Enter: the line goes
+ * and Question sits at the message's start. Or press Ctrl/⌘ + . anywhere in the box and type a symbol (`!` `*` `?`
+ * `[]` `=` `:` `~` `!!`) or pick a row. This one starts already marked.
+ */
+export const MarkAsYouWrite: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation title="Universal Navigation" about={PROJECT} typedStart="Question" messages={universal({ m2: BELONGS_INSIGHT })} />
+    </TopicFrame>
+  ),
+}
+
 /** Miky looks at: the moment he highlights a message without a word: where it went, and that it waits to be sorted. */
 export const JustHighlighted: Story = {
   render: () => (

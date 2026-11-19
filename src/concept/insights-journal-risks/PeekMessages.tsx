@@ -6,7 +6,7 @@
  */
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, ConversationLayout, EmptyState, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
+import { Card, ConversationLayout, EmptyState, INLINE_CHIP_CLASSES, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
 import { ConversationCard, ConceptMessage } from '@/components/ConversationCard'
 import { ReplyCard } from '@/components/ReplyCard'
 import { TopicState } from '@/components/ui/TopicState'
@@ -17,6 +17,8 @@ import { useRailClosed } from '@/layouts/railClosed'
 import { formatActive, formatDateLabel, formatTimestamp } from '@/api'
 import { MarkAsRows, MarkedNotice, drawsLine, wordIcon, wordTone, type MarkWord } from './MarkAs'
 import { MIKY, TEAM, type Person as Who } from './fixtures'
+import { useTypedMark } from './TypedMark'
+import { cn } from '@/lib/utils'
 import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from './messages'
 
 /**
@@ -160,8 +162,10 @@ function WholeThread({ message, me, onClose }: { message: StoryMessage; me: Who;
 }
 
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
-export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread }: {
+export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, typedStart }: {
   title: string
+  /** The message box starts already marked, as after typing a symbol and Enter. */
+  typedStart?: MarkWord
   messages: StoryMessage[]
   /** Who is signed in: their own messages offer Edit and Delete. */
   me?: Who
@@ -204,10 +208,43 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
         title={title}
         header={<PageHeader title={title} leading={<TopicState type={dm ? 'DM' : 'topic'} status={dm ? 'default' : 'unresolved'} />} />}
         items={items}
-        box={<ConversationBox onSend={async () => ({ accepted: true })} contextLabel={title} />}
+        box={<TypedBox contextLabel={title} start={typedStart} />}
         empty={<EmptyState message="No messages yet" />}
       />
     </MarkingProvider>
+  )
+}
+
+/**
+ * The real message box with marking as you write (trial, Miky 19 Nov): `?` alone on the first line and Enter, or
+ * Ctrl/⌘ + . and a symbol, puts the word's label at the message's start, where Peek's box already draws a highlight
+ * tag (`extensions/highlight.tsx`, dormant since 2 Nov); the build revives that tag with the eight words.
+ */
+function TypedBox({ contextLabel, start }: { contextLabel: string; start?: MarkWord }) {
+  const box = useRef<HTMLDivElement>(null)
+  const chip = useRef<HTMLSpanElement>(null)
+  const [word, setWord] = useState<MarkWord | undefined>(start)
+  const [at, setAt] = useState<{ top: number; left: number; indent: number }>()
+  const picker = useTypedMark(box, { block: '.ProseMirror > p', firstOnly: true, onMark: (w) => setWord(w) })
+  useLayoutEffect(() => {
+    const p = box.current?.querySelector('.ProseMirror > p')
+    if (!word || !p || !box.current) return setAt(undefined)
+    const b = box.current.getBoundingClientRect()
+    const r = p.getBoundingClientRect()
+    setAt({ top: r.top - b.top, left: r.left - b.left, indent: (chip.current?.offsetWidth ?? 0) + 6 })
+  }, [word])
+  return (
+    <div ref={box} className="relative" data-typed-box>
+      {at && <style>{`[data-typed-box] .ProseMirror > p:first-child{text-indent:${at.indent}px}`}</style>}
+      <ConversationBox onSend={async () => (setWord(undefined), { accepted: true })} contextLabel={contextLabel} />
+      {word && (
+        <span ref={chip} className={cn(INLINE_CHIP_CLASSES, 'absolute font-medium')} style={{ top: at?.top ?? 0, left: at?.left ?? 0, ...wordTone(word) }}>
+          {wordIcon(word, 14)}
+          {word}
+        </span>
+      )}
+      {picker}
+    </div>
   )
 }
 
