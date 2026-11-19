@@ -10,21 +10,30 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconNotebook, IconX } from '@tabler/icons-react'
-import { MenuItem, MenuSub, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
+import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconHighlight, IconNotebook, IconSquareCheck, IconX } from '@tabler/icons-react'
+import { MenuItem, MenuSeparator, MenuSub, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
-export type ItemType = 'insight' | 'journal' | 'risk'
-/** The six words a person picks; each makes one of the three types (Blocker added for Risks, Miky, 16 Nov). */
-export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker'
+/**
+ * TRIAL (Miky, 19 Nov, to judge on this prototype; no record yet): a fourth type, To-do (a light task anyone marks, made
+ * formal later as an issue in Ship or a task in whichever app owns that work), and Highlight, a mark not sorted yet:
+ * it waits under To sort until a person (or a suggestion) gives it one of the seven words.
+ */
+export type ItemType = 'insight' | 'journal' | 'risk' | 'todo' | 'highlight'
+/** The seven words a person picks, each making one type (Blocker added for Risks, Miky, 16 Nov; To-do, 19 Nov), and Highlight, unsorted. */
+export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question' | 'Blocker' | 'To-do' | 'Highlight'
+export type SortedWord = Exclude<MarkWord, 'Highlight'>
 
-export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk' }
-/** Mark as…'s order, in the colours' three groups (Miky, 18 Nov): what sparks thinking, what happened, what to handle. */
-export const WORDS: MarkWord[] = ['Insight', 'Question', 'Decision', 'Update', 'Concern', 'Blocker']
+export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk', 'To-do': 'todo', Highlight: 'highlight' }
+/** Mark as…'s order, in the colours' groups (Miky, 18 Nov): what sparks thinking, what happened, what to handle, what to do. Highlight sits apart, below. */
+export const WORDS: SortedWord[] = ['Insight', 'Question', 'Decision', 'Update', 'Concern', 'Blocker', 'To-do']
+export const isUnsorted = (word: MarkWord) => word === 'Highlight'
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
   insight: { label: 'Insight', plural: 'Insights', tab: 'Insights', line: 'border-warning-default', text: 'text-warning-default', icon: (s = 16) => <IconBulb size={s} stroke={1.5} /> },
   journal: { label: 'Journal entry', plural: 'Journal entries', tab: 'Journal', line: 'border-info-default', text: 'text-info-default', icon: (s = 16) => <IconNotebook size={s} stroke={1.5} /> },
   risk: { label: 'Risk', plural: 'Risks', tab: 'Risks & questions', line: 'border-error-default', text: 'text-error-default', icon: (s = 16) => <IconAlertTriangle size={s} stroke={1.5} /> },
+  todo: { label: 'To-do', plural: 'To-dos', tab: 'To-dos', line: 'border-success-default', text: 'text-success-default', icon: (s = 16) => <IconSquareCheck size={s} stroke={1.5} /> },
+  highlight: { label: 'Highlight', plural: 'Highlights', tab: 'To sort', line: 'border-border-strong', text: 'text-text-secondary', icon: (s = 16) => <IconHighlight size={s} stroke={1.5} /> },
 }
 
 /**
@@ -32,7 +41,7 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
  * (Insight, Question), blue for what has happened (Decision, Update), red for a risk to handle now (Concern, Blocker).
  * A Question is a Risk & question in its list but amber, not its type's red: red reads as a problem.
  */
-const TYPE_COLOUR: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)' }
+const TYPE_COLOUR: Record<ItemType, string> = { insight: 'var(--warning-default)', journal: 'var(--info-default)', risk: 'var(--error-default)', todo: 'var(--success-default)', highlight: 'var(--text-secondary)' }
 export const QUESTION_COLOUR = TYPE_COLOUR.insight
 export const wordColour = (word: MarkWord): string => (word === 'Question' ? QUESTION_COLOUR : TYPE_COLOUR[TYPE_OF[word]])
 /**
@@ -46,7 +55,7 @@ export const wordIcon = (word: MarkWord, size = 16): ReactNode =>
   word === 'Question' ? <IconHelpCircle size={size} stroke={1.5} /> : word === 'Blocker' ? <IconBarrierBlock size={size} stroke={1.5} /> : TYPE_META[TYPE_OF[word]].icon(size)
 
 /** Each type's own statuses on the shared stages (record every-app-relies-on-an-items-stage…): Rejected from Proposed for all three. */
-export type Status = 'proposed' | 'accepted' | 'open' | 'outdated' | 'superseded' | 'resolved' | 'rejected'
+export type Status = 'proposed' | 'accepted' | 'open' | 'outdated' | 'superseded' | 'resolved' | 'rejected' | 'done' | 'dropped'
 export const STATUSES: Record<ItemType, PickerOption[]> = {
   insight: [
     { value: 'proposed', label: 'Proposed', colour: 'neutral' },
@@ -64,6 +73,19 @@ export const STATUSES: Record<ItemType, PickerOption[]> = {
     { value: 'proposed', label: 'Proposed', colour: 'neutral' },
     { value: 'open', label: 'Open', colour: 'blue' },
     { value: 'resolved', label: 'Resolved', colour: 'green' },
+    { value: 'rejected', label: 'Rejected', colour: 'muted' },
+  ],
+  // A To-do ends Done (by hand, or when the issue or task made from it is done) or Dropped (stage words reuse done and dropped).
+  todo: [
+    { value: 'proposed', label: 'Proposed', colour: 'neutral' },
+    { value: 'open', label: 'Open', colour: 'blue' },
+    { value: 'done', label: 'Done', colour: 'green' },
+    { value: 'dropped', label: 'Dropped', colour: 'muted' },
+    { value: 'rejected', label: 'Rejected', colour: 'muted' },
+  ],
+  // A Highlight has one live stage, To sort; sorting gives it a word and that type's statuses, from Proposed.
+  highlight: [
+    { value: 'proposed', label: 'To sort', colour: 'neutral' },
     { value: 'rejected', label: 'Rejected', colour: 'muted' },
   ],
 }
@@ -86,20 +108,25 @@ export const drawsLine = (mark?: Mark) => !!mark && mark.status !== 'rejected'
  */
 export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: { mark?: Mark; onMark?: (word: MarkWord) => void; onOpen?: () => void; onUnmark?: () => void; refused?: boolean }) {
   if (refused) return null
+  // Mark as ▸ the seven words, and Highlight apart below them; on a Highlight, Sort as ▸ the seven words.
+  const words = (label: 'Mark as' | 'Sort as') => (
+    <MenuSub label={label} leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
+      {WORDS.map((word) => (
+        <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
+      ))}
+      {label === 'Mark as' && <MenuSeparator />}
+      {label === 'Mark as' && <MenuItem label="Highlight" aside="Sort later" leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
+    </MenuSub>
+  )
   if (drawsLine(mark) && mark)
     return (
       <>
+        {isUnsorted(mark.word) && words('Sort as')}
         <MenuItem label={`Open ${mark.word}`} leading={<span style={wordTone(mark.word)}>{wordIcon(mark.word)}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
         <MenuItem label="Unmark" leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />} onClick={onUnmark} />
       </>
     )
-  return (
-    <MenuSub label="Mark as" leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
-      {WORDS.map((word) => (
-        <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
-      ))}
-    </MenuSub>
-  )
+  return words('Mark as')
 }
 
 /**
@@ -109,7 +136,7 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
 export function MarkedNotice({ word, team, about, onOpen, onClose }: { word: MarkWord; team: string; about?: string; onOpen?: () => void; onClose?: () => void }) {
   return (
     <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <Toast label={`Marked as ${word} in ${about ?? team}. Its title is kept; change it on its page.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
+      <Toast label={isUnsorted(word) ? `Highlighted in ${about ?? team}. Sort it later from its menu or the To sort list.` : `Marked as ${word} in ${about ?? team}. Its title is kept; change it on its page.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
     </div>
   )
 }

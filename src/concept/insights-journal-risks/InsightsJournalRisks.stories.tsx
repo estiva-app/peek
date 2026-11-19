@@ -190,6 +190,32 @@ export const EveryTypeOnce: Story = {
   ),
 }
 
+/**
+ * Trial (Miky, 19 Nov): one message highlighted, not sorted yet (grey; its ⋯ offers Sort as ▸ the seven words), and one
+ * marked as a To-do (green), which Ship then lists under the project's Scope to decide. Mark as ▸ on any other message
+ * lists the seven words with Highlight apart below them.
+ */
+export const HighlightAndToDo: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation
+        title="Universal Navigation"
+        about={PROJECT}
+        messages={universal({ m3: marked('Highlight', 'Initiatives for cross-app work, Topics for team rooms', MIKY), m5: marked('To-do', 'Think through what is new in Ship and Leaf before building it', KATERINA, 'open') })}
+      />
+    </TopicFrame>
+  ),
+}
+
+/** Miky looks at: the moment he highlights a message without a word: where it went, and that it waits to be sorted. */
+export const JustHighlighted: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation title="Universal Navigation" about={PROJECT} notice="Highlight" messages={universal({ m3: marked('Highlight', 'Initiatives for cross-app work, Topics for team rooms', MIKY) })} />
+    </TopicFrame>
+  ),
+}
+
 /** Miky looks at: the notice the moment he marks a message (here as a Question): where it went, and Open. */
 export const JustMarked: Story = {
   render: () => (
