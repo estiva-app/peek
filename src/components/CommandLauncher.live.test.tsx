@@ -352,7 +352,7 @@ describe('the created object leaves a trace in the thread (PEE-2)', () => {
 
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(insertReference).toHaveBeenCalledWith(addrToNaddr(CREATED, []))
-    expect(screen.getByRole('alert')).toHaveTextContent('Created, but its text was not saved. Open it and add the text again.')
+    expect(screen.queryByRole('alert')?.textContent).toBe('Created, but its text was not saved. Open it and add the text again.')
   })
 
   it('does not report a create as failed when only the encode broke', async () => {
