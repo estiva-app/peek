@@ -45,7 +45,8 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
     return () => clearTimeout(t)
   }, [offers])
   const mark = (id: string, text: string, word: MarkWord) => {
-    // The title from the message's first line; filed in the message's team, about its topic's project (Decided, kickoff).
+    // The title starts from the message's first line and is edited in the notice; filed in the message's team, about
+    // its topic's project (Decided, kickoff).
     setMarks((all) => ({ ...all, [id]: marked(word, titleOf(text), me) }))
     setNotice(word)
     setLast(id)
@@ -85,7 +86,17 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
   return (
     <ConceptMessage.Provider value={value}>
       {children}
-      {notice && <MarkedNotice word={notice} team={TEAM} about={about} onOpen={() => openItem(last)} onClose={() => setNotice(undefined)} />}
+      {notice && (
+        <MarkedNotice
+          word={notice}
+          team={TEAM}
+          about={about}
+          title={last ? marks[last]?.title : undefined}
+          onTitle={(title) => last && setMarks((all) => (all[last] ? { ...all, [last]: { ...all[last], title } } : all))}
+          onOpen={() => openItem(last)}
+          onClose={() => setNotice(undefined)}
+        />
+      )}
       {undoable && autoMarked?.suggested && (
         // The sure suggestion that marked a sent message says so once, with Undo: a delete, so nothing is left behind.
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">

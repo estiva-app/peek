@@ -4,14 +4,14 @@
  * the shared conversation menu and block menu in @estiva-app/ui that the build would add.
  *
  * Decided at kickoff (Miky, 16 Nov): Mark as… is one submenu of five words and marks at once, with the source's
- * team, its issue or project, and a title from its first line; a notice offers Open. A marked block or message
+ * team, its issue or project, and a title started from its first line, edited in the notice, which offers Open. A marked block or message
  * has a thin line in its type's colour; "changed since your last visit" a neutral grey one.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconHighlight, IconNotebook, IconSquareCheck, IconTrash, IconX } from '@tabler/icons-react'
-import { MenuItem, MenuSeparator, MenuSub, MetaText, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
+import { Button, Card, EditableText, IconButton, MenuItem, MenuSeparator, MenuSub, MetaText, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 /**
  * TRIAL (Miky, 19 Nov, to judge on this prototype; no record yet): a fourth type, To-do (a light task anyone marks, made
@@ -160,13 +160,36 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
 }
 
 /**
- * The notice after Mark as…: it says where it went and offers Open; the item's title is taken from the source's
- * first line and is the one thing the item keeps (record #448), so the notice says so.
+ * The notice after Mark as…: it says where it went, offers Open, and holds the title, started from the source's
+ * words and editable right there, with the hint that the title is the one thing the item keeps (why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-item-shows-its-source-as-marked-and-the-relay-refuses-one-its-readers-cannot-read.md).
+ * Marking stays at once (kickoff, 16 Nov): the title reads as text and a click edits it, so marking while writing
+ * keeps the caret in the page and a closing menu cannot steal the field's focus.
  */
-export function MarkedNotice({ word, team, about, onOpen, onClose }: { word: MarkWord; team: string; about?: string; onOpen?: () => void; onClose?: () => void }) {
+export function MarkedNotice({ word, team, about, title, onTitle, onOpen, onClose }: { word: MarkWord; team: string; about?: string; title?: string; onTitle?: (title: string) => void; onOpen?: () => void; onClose?: () => void }) {
+  const where = about ?? team
+  if (title === undefined)
+    return (
+      <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+        <Toast label={isUnsorted(word) ? `Highlighted in ${where}.` : `Marked as ${word} in ${where}.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
+      </div>
+    )
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <Toast label={isUnsorted(word) ? `Highlighted in ${about ?? team}.` :`Marked as ${word} in ${about ?? team}. Its title is kept; change it on its page.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
+    <div className="fixed bottom-6 left-1/2 z-50 w-[28rem] -translate-x-1/2">
+      <Card>
+        <div className="flex flex-col gap-2 p-3">
+          <div className="flex items-center gap-2">
+            <span style={wordTone(word)}>{wordIcon(word)}</span>
+            <MetaText>{isUnsorted(word) ? `Highlighted in ${where}` : `Marked as ${word} in ${where}`}</MetaText>
+            <span className="ml-auto flex items-center gap-1">
+              <Button variant="muted" size="small" onClick={() => (onOpen?.(), onClose?.())}>Open</Button>
+              <IconButton tooltip="Close" onClick={onClose}><IconX size={16} /></IconButton>
+            </span>
+          </div>
+          <EditableText label="Title" value={title} placeholder="Title" onCommit={(t) => (onTitle?.(t.trim() || title), true)} />
+          <MetaText tone="muted">The title is kept in the item. The rest stays with the source.</MetaText>
+        </div>
+      </Card>
     </div>
   )
 }
