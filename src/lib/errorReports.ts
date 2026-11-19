@@ -18,9 +18,9 @@ import { reportDrawnFailuresTo, reportRefusalsTo } from '@/lib/failureReports'
 /**
  * Peek's routes as patterns, most specific first: `/:word/:ref` would match
  * `/app/dms` too. Estiva ID keeps the same list and sends anything else as
- * `<unknown>`; a new route is added in both.
+ * `<unknown>`; a new route is added in both. Page-open timings name the same.
  */
-const SCREENS = [
+export const SCREENS = [
   '/',
   '/app',
   '/app/desk',

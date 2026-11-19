@@ -26,6 +26,7 @@ import { relayLog } from './nostr/liveTopics'
 import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
 import { fieldsOptIn, issueFieldsOptIn } from './nostr/projectFields'
 import { CrashOnPurpose, ScreenSteps, startErrorReports } from './lib/errorReports'
+import { startPageTimings } from './lib/pageTimings'
 
 // This tab's `?fields=on|off` (ALO-6) and `?issueFields=on|off` (ISS-6), taken before sign-in can move the address.
 fieldsOptIn(window.location.search)
@@ -37,6 +38,8 @@ setSocketReader(createAppSocketReader(relayLog))
 installSocketReadsDiagnostic()
 // A crash anywhere in Peek is reported to Estiva ID, built from a fixed list (PROD-2).
 startErrorReports()
+// How long each page took to open until the live page was there, the saved picture apart (72036dd4).
+startPageTimings()
 // The copy on the device Desk draws from (PEE-2), read while React renders.
 warmDeviceCopy(RELAY_URL, storedToken()?.pubkey)
 // The next comment box's editor, built while the page is idle (4ef41d41), with the box's own extensions and chip.

@@ -68,8 +68,19 @@ const client = createEstivaId({
   clientId: CLIENT_ID,
   redirectUri: () => `${window.location.origin}${CALLBACK_PATH}`,
   keyPrefix: KEY_PREFIX,
-  navigate: (url) => window.location.assign(url),
+  navigate: (url) => {
+    for (const leave of leavingListeners) leave()
+    window.location.assign(url)
+  },
 })
+
+const leavingListeners = new Set<() => void>()
+
+/** Calls back just before this tab leaves for Estiva ID to sign in: the page-open timer carries its open across. */
+export function onLeavingForSignIn(listener: () => void): () => void {
+  leavingListeners.add(listener)
+  return () => leavingListeners.delete(listener)
+}
 
 /**
  * A tab signed in before PEE-3 holds its session in `sessionStorage`. Moved
