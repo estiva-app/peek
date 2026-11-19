@@ -35,6 +35,8 @@
           var cover = document.createElement('div')
           cover.id = 'peek-picture'
           cover.setAttribute('aria-hidden', 'true')
+          // A stand-in while the live page loads: the page-open timer and the speed kit wait until it goes.
+          cover.setAttribute('aria-busy', 'true')
           cover.style.cssText = 'position:fixed;inset:0;z-index:2147483647;overflow:hidden;isolation:isolate;background:var(--bg-base)'
           var content = document.createElement('div')
           content.inert = true

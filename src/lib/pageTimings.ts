@@ -17,12 +17,21 @@ import { browserPage, createPageTimer } from '@estiva-app/platform'
 import { ESTIVA_ID_ORIGIN, currentEstivaToken, onLeavingForSignIn } from '@/auth/estivaId'
 import { SCREENS, screenOf } from './errorReports'
 
+/** The file Desk shows beside its lists (`?open=`, which only Desk reads); empty when none. */
+const openFile = () => new URLSearchParams(window.location.search).get('open') ?? ''
+
+/**
+ * A file open in Desk's pane is named as the same file opened at its own
+ * address, `/:word/:ref`: it is the same screen, a file, beside Desk's lists.
+ */
+const screen = () => (openFile() ? '/:word/:ref' : screenOf(window.location.pathname))
+
 export const pageTimer = createPageTimer({
   endpoint: `${ESTIVA_ID_ORIGIN}/timing`,
   // The commit this bundle was built from (vite.config.ts), as crash reports say it.
   release: String(import.meta.env.VITE_PEEK_RELEASE ?? 'unknown'),
   token: currentEstivaToken,
-  screen: () => screenOf(window.location.pathname),
+  screen,
   screens: SCREENS,
   page: browserPage(window),
   // Set by index.html's inline script when it drew the saved Desk or Topics (pagePicture.ts).
@@ -33,22 +42,26 @@ export const pageTimer = createPageTimer({
  * Calls back each time a person opens another page inside Peek: a link, a
  * `navigate()`, Back or Forward to another path. React Router writes the
  * address through `history.pushState` before it draws the new page, so the
- * open starts there, as Ship's own router starts it. A redirect in place
- * (`replaceState`) or a change of query alone is not an open.
+ * open starts there, as Ship's own router starts it. So does a file opened in
+ * Desk's pane (`?open=` gains another file), the way a conversation is most
+ * often opened. A redirect in place (`replaceState`), closing the pane or any
+ * other change of query is not an open.
  */
 function onOpen(listener: () => void): () => void {
-  let openPath = window.location.pathname
+  const where = () => ({ path: window.location.pathname, file: openFile() })
+  let at = where()
+  const moved = () => {
+    const now = where()
+    if (now.path !== at.path || (now.file !== '' && now.file !== at.file)) listener()
+    at = now
+  }
   const push = window.history.pushState
   window.history.pushState = function (this: History, ...args: Parameters<History['pushState']>) {
-    const before = window.location.pathname
+    at = where()
     push.apply(this, args)
-    if (window.location.pathname !== before) listener()
-    openPath = window.location.pathname
+    moved()
   }
-  const popped = () => {
-    if (window.location.pathname !== openPath) listener()
-    openPath = window.location.pathname
-  }
+  const popped = () => moved()
   window.addEventListener('popstate', popped)
   return () => {
     window.history.pushState = push
