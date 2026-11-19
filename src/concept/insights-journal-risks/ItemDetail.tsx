@@ -48,6 +48,29 @@ export const FADE_DAYS = 30
 const daysSince = (day: string) => Math.floor((Date.parse('2026-11-19') - Date.parse(day)) / 86_400_000)
 const fadesIn = (item: Item) => FADE_DAYS - Math.min(daysSince(item.day), ...usesOf(item).map((u) => u.days))
 
+/**
+ * A loop's change to the item (Miky, 19 Nov: a loop may change an Accepted item, and someone is told to review it):
+ * who changed it, what and why, with Undo. Whoever added the item gets an Activity line that opens it here.
+ */
+function LoopChange({ change }: { change: NonNullable<Item['changed']> }) {
+  const [undone, setUndone] = useState(false)
+  if (undone) return <MetaText tone="muted">Undone: it is back as it was.</MetaText>
+  return (
+    <Card fill="inset" className="flex items-center justify-between gap-3 px-3 py-2">
+      <span className="flex min-w-0 flex-col">
+        <span className="text-body-2 text-text-primary">
+          <IconSparkles size={14} stroke={1.5} className="mr-1 inline" />
+          {change.by} {change.what}
+        </span>
+        <span className="text-caption text-text-muted">{`${change.why} · ${change.ago}`}</span>
+      </span>
+      <Button variant="outlined" size="small" onClick={() => setUndone(true)}>
+        Undo
+      </Button>
+    </Card>
+  )
+}
+
 /** A Proposed item's fading: how long it has left, or, once archived, that it was and a way back. */
 function Fading({ item }: { item: Item }) {
   const [restored, setRestored] = useState(false)
@@ -160,7 +183,17 @@ export function ItemFields({ item, me = 'miky' }: { item: Item; me?: string }) {
             {item.acceptedBy && status !== 'proposed' ? ` · added by ${item.acceptedBy.name}` : ''}
           </MetaText>
         </span>
+        {/* Why the AI marked it, in its own words: the black box opened (Miky, 19 Nov). */}
+        {item.why && (
+          <span className="min-w-0">
+            <MetaText tone="muted">
+              <IconSparkles size={12} stroke={1.5} className="mr-1 inline" />
+              {item.why}
+            </MetaText>
+          </span>
+        )}
       </div>
+      {item.changed && <LoopChange change={item.changed} />}
       {waitingOn && <MetaText tone="muted">Waiting for {waitingOn} to add it</MetaText>}
       {status === 'proposed' && <Fading item={item} />}
     </div>

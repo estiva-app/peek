@@ -13,13 +13,16 @@ import { ConversationBox } from '@/components/ui/ConversationBox'
 import { ItemContent, ItemFields, ItemIdentity, fromTool } from './ItemDetail'
 import { CLAUDE, ITEMS, KATERINA, MIKY, PROJECT, TEAM, type Item, type Person } from './fixtures'
 import type { StoryMark } from './messages'
+import { whyFor } from './TypedMark'
 
 /** The item a message's mark opens: the fixture of that title, else one made from the mark as Mark as… makes it. */
 export function itemOf(mark: StoryMark, message: { text: string; author: Person }, place: string): Item {
   const known = ITEMS.find((i) => i.title === mark.title)
   // Opened from this message, its source is this message, whatever the fixture says.
   const source = { app: 'Peek' as const, what: 'message' as const, place, author: message.author, quote: message.text }
-  if (known) return { ...known, source }
+  // Marked by an agent or a loop: the item says why, in the words the guess turned on (Miky, 19 Nov).
+  const why = mark.by.bot ? whyFor(message.text) : undefined
+  if (known) return { ...known, source, why }
   return {
     id: `peek-${mark.title}`,
     type: mark.type,
@@ -31,6 +34,7 @@ export function itemOf(mark: StoryMark, message: { text: string; author: Person 
     team: TEAM,
     about: { kind: 'project', title: PROJECT },
     markedBy: mark.by,
+    why,
     source,
   }
 }

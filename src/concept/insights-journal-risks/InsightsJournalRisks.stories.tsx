@@ -12,7 +12,7 @@ import { PeekFrame } from '@/layouts/PeekFrame'
 import { Conversation, DeciderTopicsColumn, TopicFrame } from './PeekMessages'
 import { ItemBeside, itemOf } from './ItemBeside'
 import { DAY, HOUR, marked, type StoryMessage } from './messages'
-import { CLAUDE, KATERINA, MIKY, PROJECT } from './fixtures'
+import { CLAUDE, ITEMS, KATERINA, MIKY, PROJECT } from './fixtures'
 
 const noop = () => {}
 
@@ -143,6 +143,36 @@ export const SuggestedAfterSend: Story = {
  * shows nothing where it was; Miky, its marker, is told in his Topics column, and the line opens it, read only, with
  * who deleted it and why. Nobody else sees it, and agents no longer read it.
  */
+/** Claude marks Miky's message after he sent it: Activity tells him, and the item says why (Miky, 19 Nov). */
+const worried: StoryMessage = { id: 'm9', author: MIKY, ago: 0.3 * HOUR, text: 'I’m worried that moving Folders out of the sidebar might break old links people saved.' }
+const WORRIED_CONCERN = marked('Concern', 'Moving Folders out of the sidebar might break saved links', CLAUDE)
+export const LoopMarkedYourMessage: Story = {
+  render: () => (
+    <PeekFrame
+      leftPanel={<DeciderTopicsColumn title={WORRIED_CONCERN.title} ago={HOUR / 6} by={CLAUDE} verb="marked yours as a Concern" />}
+      rightPanel={<Conversation title="Universal Navigation" about={PROJECT} messages={[...universal(), { ...worried, mark: WORRIED_CONCERN }]} openItem="m9" />}
+    />
+  ),
+}
+
+/** A dreaming loop changed Miky's Accepted Insight: Activity tells him, and the item shows the change with Undo (Miky, 19 Nov). */
+const DREAMING = { key: 'dreaming', name: 'The dreaming loop', bot: true }
+const SEARCH = ITEMS.find((i) => i.id === 'i4')!
+export const LoopChangedYourItem: Story = {
+  render: () => (
+    <PeekFrame
+      leftPanel={<DeciderTopicsColumn title={SEARCH.title} ago={2 * HOUR} by={DREAMING} verb="changed your Insight" />}
+      rightPanel={
+        <div className="flex min-h-0 flex-1 justify-end">
+          <div className="flex w-96 border-l border-border-default">
+            <ItemBeside item={{ ...SEARCH, changed: { by: 'The dreaming loop', what: 'merged “Search finds only word starts” into it', why: 'Both say how search matches words', ago: '2h ago' } }} onClose={() => undefined} />
+          </div>
+        </div>
+      }
+    />
+  ),
+}
+
 /**
  * A Proposed highlight nobody used or added for 30 days (Miky, 19 Nov, as Linear archives what nobody touches): out of
  * every list and of what agents read. Anyone who opens it, from search or the list's archived view, can restore it.

@@ -81,6 +81,10 @@ export interface Item {
   /** A Journal entry's decider. */
   decidedBy?: Person
   acceptedBy?: Person
+  /** Why the AI marked it (Miky, 19 Nov: people see why things happen): the words that read as its type. */
+  why?: string
+  /** A loop's change to it, told to whoever added it, who can review and undo it (Miky, 19 Nov). */
+  changed?: { by: string; what: string; why: string; ago: string }
   source?: Source
   /** New since your last visit. */
   isNew?: boolean

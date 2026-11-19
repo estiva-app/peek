@@ -29,6 +29,12 @@ const CUES: [RegExp, MarkWord, number][] = [
   [/\?\s*$/, 'Question', 0.66],
   [/\b(sidebar|navigation|folders?)\b/i, 'Insight', 0.55],
 ]
+/** The words a guess turned on, so the item says why it was marked (Miky, 19 Nov: people see why the AI did it). */
+export function whyFor(text: string): string | undefined {
+  const hit = CUES.find(([re]) => re.test(text))
+  const words = hit && text.match(hit[0])?.[0]
+  return hit && words ? `“${words}” reads as ${/^[AEIOU]/.test(hit[1]) ? 'an' : 'a'} ${hit[1]}` : undefined
+}
 export function suggestFor(text: string): { word: MarkWord; confidence: number } | undefined {
   const t = text.trim()
   if (t.length < 12) return undefined
