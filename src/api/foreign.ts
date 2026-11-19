@@ -893,7 +893,7 @@ export function useForeignObjects() {
       contentFormat?: string
       /** The declaring manifest, for another app's action on this object (MAN-8). */
       declaredBy?: string
-    }): Promise<ActResult & { created?: string; incomplete?: string }> => {
+    }): Promise<ActResult & { created?: string; incomplete?: string; textNotSaved?: true }> => {
       const v = viewer()
       if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }
       return applyActionAsViewer(args, v.relayUrl, v.token)

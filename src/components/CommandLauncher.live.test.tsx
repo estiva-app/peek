@@ -13,7 +13,7 @@
  * person sees.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
@@ -343,6 +343,16 @@ describe('the created object leaves a trace in the thread (PEE-2)', () => {
 
     expect(await screen.findByText(/could not be placed/i)).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('closes with the issue in the thread when its text was not saved, so a second Create files no second issue (ISS-6)', async () => {
+    applyAction.mockResolvedValueOnce({ ok: true as const, created: CREATED, textNotSaved: true } as never)
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false } })
+    await createIssue()
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(insertReference).toHaveBeenCalledWith(addrToNaddr(CREATED, []))
+    expect(screen.queryByRole('alert')?.textContent).toBe('Created, but its text was not saved. Open it and add the text again.')
   })
 
   it('does not report a create as failed when only the encode broke', async () => {
