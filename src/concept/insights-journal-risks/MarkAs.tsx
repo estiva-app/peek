@@ -31,6 +31,11 @@ export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decisio
  */
 export const WORDS: SortedWord[] = ['Insight', 'Question', 'To-do', 'Decision', 'Update', 'Concern', 'Blocker']
 export const isUnsorted = (word: MarkWord) => word === 'Highlight'
+/**
+ * What a person types alone on a message's or block's first line to mark it as they write (trial, Miky 19 Nov). Each
+ * menu shows it beside its word, so the shortcut is learned by using the menu.
+ */
+export const SYMBOL: Record<MarkWord, string> = { Highlight: '!', Insight: '*', Question: '?', 'To-do': '[]', Decision: '=', Update: ':', Concern: '~', Blocker: '!!' }
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
   insight: { label: 'Insight', plural: 'Insights', tab: 'Insights', line: 'border-warning-default', text: 'text-warning-default', icon: (s = 16) => <IconBulb size={s} stroke={1.5} /> },
@@ -115,10 +120,10 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
   // Mark as ▸ Highlight first, then the seven words; on a Highlight, Sort as ▸ the seven words.
   const words = (label: 'Mark as' | 'Sort as') => (
     <MenuSub label={label} leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
-      {label === 'Mark as' && <MenuItem label="Highlight" leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
+      {label === 'Mark as' && <MenuItem label="Highlight" shortcut={SYMBOL.Highlight} leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
       {label === 'Mark as' && <MenuSeparator />}
       {WORDS.map((word) => (
-        <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
+        <MenuItem key={word} label={word} shortcut={SYMBOL[word]} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
     </MenuSub>
   )
