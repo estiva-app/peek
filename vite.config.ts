@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { execSync } from 'node:child_process'
@@ -16,6 +17,27 @@ function release(): string {
   }
 }
 
+const RELEASE = release()
+
+/**
+ * `/version.json` names the commit this bundle is built from, so a check after
+ * a deploy (`/land`, the smoke test) knows it is looking at the new build and
+ * not the old one. deploy/nginx.conf serves it uncached.
+ */
+function versionFile(): Plugin {
+  return {
+    name: 'version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: `${JSON.stringify({ app: 'peek', commit: RELEASE })}\n`,
+      })
+    },
+  }
+}
+
 /**
  * `react` is deduped because @estiva-app/ui declares it a peer: two copies in
  * one tree is the "invalid hook call" crash, and it appears at runtime rather
@@ -28,9 +50,9 @@ function release(): string {
  */
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionFile()],
   define: {
-    'import.meta.env.VITE_PEEK_RELEASE': JSON.stringify(release()),
+    'import.meta.env.VITE_PEEK_RELEASE': JSON.stringify(RELEASE),
   },
   /**
    * Source maps are served beside the bundle so Sentry can turn a report's
