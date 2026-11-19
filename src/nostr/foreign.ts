@@ -119,13 +119,18 @@ import {
   openFile,
   prevOf,
   writeChange,
+  createFile,
   isSwitchRefusal,
   type WriteChangeArgs,
   TEXT_FIELD,
 } from '@estiva-app/interop'
 import {
+  fieldsFor,
   forgetProjectFields,
   inOrderTypes,
+  ISSUE_KIND,
+  issueFields,
+  isSwitchedKind,
   listReadOffered,
   listReadOption,
   projectFields,
@@ -586,12 +591,14 @@ export async function resolveObjectFromCopy(
 export async function searchFileReferencesAsViewer(text: string, relayUrl: string, token: StoredToken): Promise<ReferenceCandidate[]> {
   /*
     Projects, once switched, are read by the list read and found by a word in their current fields, as Ship's and
-    Leaf's `[` find them (ALO-6); a deleted one is in no answer.
+    Leaf's `[` find them (ALO-6); a deleted one is in no answer. Issues the same, once theirs is switched (ISS-6).
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-finds-a-file-by-the-words-of-its-current-fields.md
   */
-  const fields = await projectFields()
-  const byFields = fields?.search
-    ? { kinds: [PROJECT_KIND], query: (filters: Record<string, unknown>[]) => queryRelayWithMatches(relayUrl, filters, token.accessToken, token.pubkey) }
+  const [projects, issues] = await Promise.all([projectFields(), issueFields()])
+  const fields = projects ?? issues
+  const searched = [...(projects?.search ? [PROJECT_KIND] : []), ...(issues?.search ? [ISSUE_KIND] : [])]
+  const byFields = searched.length
+    ? { kinds: searched, query: (filters: Record<string, unknown>[]) => queryRelayWithMatches(relayUrl, filters, token.accessToken, token.pubkey) }
     : undefined
   const inOrder = fields ? await inOrderOption() : {}
   return searchFileReferences(text, viewerQuery(relayUrl, token), {
@@ -1328,12 +1335,17 @@ export async function resolveFolderContentsAsViewer(
 }
 
 /**
- * Every deleted project the viewer can see, newest deleted first, each with its team, who deleted it and when (SPEC
- * §6.5, ALO-6; Miky, 6 Nov): Archive's Deleted tab, one list across teams. Projects are stored workspace-wide (§3.1),
- * so two reads find them all, whatever the number of teams: every project's first record, and the relay's list read,
- * which leaves a deleted one out (§6.13). Only the projects the second misses are read whole, and kept when their
- * `deleted` folds to set — a project whose changes this reader cannot read is missed too, and is not deleted.
+ * Every deleted project and issue the viewer can see, newest deleted first, each with its team, who deleted it and
+ * when (SPEC §6.5, ALO-6, ISS-6; Miky, 6 Nov): Archive's Deleted tab, one list across teams. Both are stored
+ * workspace-wide (§3.1), so two reads find them all, whatever the number of teams: every first record, and the relay's
+ * list read, which leaves a deleted one out (§6.13). Only the files the second misses are read whole, and kept when
+ * their `deleted` folds to set — a file whose changes this reader cannot read is missed too, and is not deleted.
  * Measured on production, 6 Nov, as QA-1: 160 projects, 214 KB + 403 KB, then 22 read whole for 147 KB; ~3 s.
+ *
+ * Issues, many times more, are found as Ship finds them (SPEC §6.5, "Finding a team's deleted files"): the times read
+ * of issues, page by page, then only the issues a row says had their `deleted` field changed are read whole. Their
+ * list read would cost every issue's current changes, about 5 MB as Miky on 19 Nov (ISS-6). Where the relay has no
+ * times read, no issue is listed here.
  *
  * `null` where the relay has no list read: there, finding them means reading every project's whole history.
  *
@@ -1343,14 +1355,15 @@ export async function resolveFolderContentsAsViewer(
 export async function deletedProjectsAsViewer(relayUrl: string, token: StoredToken): Promise<ForeignObject[] | null> {
   if (!(await listReadOffered())) return null
   const query = folderLoadAsViewer(relayUrl, token, 'relay')
-  const [roots, listed] = await Promise.all([
+  const [roots, listed, issues] = await Promise.all([
     query([{ kinds: [PROJECT_KIND] }]),
     query([{ fields: 'newest', kinds: [PROJECT_KIND] }]),
+    deletedIssueCandidates(relayUrl, token),
   ])
   const addressOf = (e: { kind: number; pubkey: string; tags: string[][] }) =>
     `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1] ?? ''}`
   const live = new Set(listed.filter((e) => e.kind === PROJECT_KIND).map(addressOf))
-  const missed = [...new Set(roots.filter((e) => e.kind === PROJECT_KIND).map(addressOf))].filter((address) => !live.has(address))
+  const missed = [...new Set(roots.filter((e) => e.kind === PROJECT_KIND).map(addressOf)), ...issues].filter((address) => !live.has(address))
   if (!missed.length) return []
   const objects = await resolveForeignObjects(missed, query, cachedPeople(query), manifests)
   return missed
@@ -1359,6 +1372,28 @@ export async function deletedProjectsAsViewer(relayUrl: string, token: StoredTok
       return object && !object.unreachable && object.deleted ? [object] : []
     })
     .sort((a, b) => b.deleted!.at - a.deleted!.at)
+}
+
+/** A page of the times read: the relay answers at most this many rows, and the next page starts at the oldest one. */
+const TIMES_PAGE = 500
+
+/**
+ * The addresses of the issues whose `deleted` field anyone ever changed, from the times read of every issue the viewer
+ * can read, page by page until its cursor stops (SPEC §6.5, §6.13), as Ship's `deletedIssueEvents` finds them. A
+ * restored issue is among them: reading it whole says it is not deleted. Empty where the relay has no times read.
+ */
+async function deletedIssueCandidates(relayUrl: string, token: StoredToken): Promise<string[]> {
+  if (!(await timesOffered())) return []
+  const named = new Set<string>()
+  let until: number | undefined
+  for (;;) {
+    const page = await queryRelayTimes(relayUrl, [{ fields: 'times', kinds: [ISSUE_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }], token.accessToken, token.pubkey)
+    for (const row of page) if (row.changes.some((change) => change.fields.includes(DELETED_FIELD))) named.add(row.a)
+    const oldest = Math.min(...page.map((row) => row.created_at))
+    if (page.length === 0 || oldest === until) break
+    until = oldest
+  }
+  return [...named]
 }
 
 /**
@@ -2046,7 +2081,8 @@ export async function applyActionAsViewer(
   */
   const changedField =
     declared?.emits.field && declared.emits.kind !== KIND.DELETION && typeof args.value === 'string' ? declared.emits.field : undefined
-  const fields = changedField && pointer.kind === PROJECT_KIND ? await projectFields() : undefined
+  // Projects' switch or issues', each on its own (ISS-6): a status, assign, rename or move lands after the current change.
+  const fields = changedField ? await fieldsFor(pointer.kind) : undefined
   const open = async (field: string) =>
     openFile(query, { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }, { text: field === TEXT_FIELD && !!fields?.text })
   const opened = fields && changedField ? await open(changedField).catch(() => undefined) : undefined
@@ -2180,7 +2216,7 @@ export async function applyActionAsViewer(
           (file) => (file && !file.unreachable ? prevOf(file, changedField) : undefined),
           () => undefined,
         )))
-    if (!prev) return fail('That project could not be read just now, so nothing was changed. Reload and try again.')
+    if (!prev) return fail('It could not be read just now, so nothing was changed. Reload and try again.')
     const written = await writeChange({
       field: changedField,
       value,
@@ -2205,6 +2241,53 @@ export async function applyActionAsViewer(
     return fail(isSwitchRefusal(written.refused) ? NOT_SAVED_RELOAD : written.refused)
   }
 
+  /*
+    A new issue, once issues are switched (ISS-6, SPEC §6.1): its first record carries no text, and the text it was
+    filed with is its first change, after the record — interop's `createFile`. A text that did not land leaves the
+    issue made and says so, never "created" with its words lost.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-new-files-text-is-its-first-change.md
+  */
+  if (declared?.emits.kind === ISSUE_KIND && typeof value !== 'string' && newId && (await issueFields())) {
+    const { [TEXT_FIELD]: text = '', ...rest } = value
+    const first = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })
+    if (typeof first === 'string') return fail(first)
+    const issue = { kind: ISSUE_KIND, pubkey: token.pubkey, d: newId }
+    const textAction = resolved.manifest.actions?.find(
+      (candidate) =>
+        candidate.emits.field === TEXT_FIELD &&
+        candidate.emits.kind !== KIND.DELETION &&
+        [candidate.appliesTo].flat().includes(String(ISSUE_KIND)),
+    )
+    if (text && !textAction) return fail('Its app offers no way to write an issue’s text, so nothing was created.')
+    const made = await createFile({
+      root: transform ? transform(first[0]) : first[0],
+      ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
+      inOrder,
+      build: (input) => {
+        const one = buildActionEvents({
+          ...common,
+          kind: ISSUE_KIND,
+          address: `${ISSUE_KIND}:${token.pubkey}:${newId}`,
+          objectAuthor: token.pubkey,
+          actionId: textAction!.id,
+          newId: undefined,
+          value: input.value,
+          contentFormat: input.format,
+          prev: input.prev,
+          createdAtMs: input.createdAtMs,
+        })
+        return typeof one === 'string' ? one : one[0]
+      },
+      sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
+      publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
+      query,
+      current: async (field) => (await openFile(query, issue, { text: field === TEXT_FIELD }).catch(() => undefined))?.fields[field]?.event,
+    })
+    if (made.ok) return { ok: true, id: made.root.id, created: made.address }
+    if (!made.created) return fail(made.refused)
+    return fail('The issue was made, but its text was not saved. Open it and add the text again.')
+  }
+
   const built = buildActionEvents({ ...common, value, contentFormat: args.contentFormat, createdAtMs: Date.now() })
   if (typeof built === 'string') return fail(built)
   const [action, ...commands] = built
@@ -2223,10 +2306,10 @@ export async function applyActionAsViewer(
       merged, never written over. A second refusal, or a relay still not switched, asks for a reload in Peek's words.
       why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
     */
-    const switching = !!changedField && pointer.kind === PROJECT_KIND && isSwitchRefusal(result.reason)
+    const switching = !!changedField && isSwitchedKind(pointer.kind) && isSwitchRefusal(result.reason)
     if (switching && !afterSwitch && (changedField !== TEXT_FIELD || args.base)) {
       forgetProjectFields()
-      if (await projectFields()) return applyActionAsViewer(args, relayUrl, token, transform, true)
+      if (await fieldsFor(pointer.kind)) return applyActionAsViewer(args, relayUrl, token, transform, true)
     }
     return fail(switching ? NOT_SAVED_RELOAD : (result.reason ?? 'The relay rejected the change.'))
   }

@@ -1,8 +1,20 @@
-import { FILE_KINDS, fieldsOptedIn, projectFieldsOf, relayFileReadsOf, type ProjectFields, type RelayFileReads } from '@estiva-app/protocol'
+import {
+  FILE_KINDS,
+  ISSUE_TYPE,
+  fieldsOptedIn,
+  fileFieldsOf,
+  projectFieldsOf,
+  relayFileReadsOf,
+  typeFieldsOptedIn,
+  type ProjectFields,
+  type RelayFileReads,
+} from '@estiva-app/protocol'
 import { forgetRelayInfo, relayInfo } from './relayInfo'
 
 /** The kind a project is written as: the type the switch names, protocol's `PROJECT_TYPE` (TYPES.md). */
 export const PROJECT_KIND = 30850
+/** The kind an issue is written as: protocol's `ISSUE_TYPE`, switched on its own (ISS-6). */
+export const ISSUE_KIND = 30851
 
 const OPT_IN_KEY = 'peek.projectFields'
 
@@ -23,9 +35,19 @@ export function fieldsOptIn(search = ''): boolean {
   return fieldsOptedIn(search, tabStorage(), OPT_IN_KEY)
 }
 
+/**
+ * This tab's opt-in to reading and writing issues by their fields (ISS-6): `?issueFields=on|off`, kept for the tab,
+ * as Ship's and Leaf's. Issues are switched on their own, never because projects are.
+ */
+export function issueFieldsOptIn(search = ''): boolean {
+  return typeFieldsOptedIn(ISSUE_TYPE, search, tabStorage())
+}
+
 /** What the switch reads off NIP-11: on or off, and the types the relay keeps in order. */
 interface Switch {
   fields: ProjectFields | undefined
+  /** Issues' own switch (ISS-6): on where the relay keeps issues in order, or this tab opted in. */
+  issues: ProjectFields | undefined
   inOrder: readonly string[]
   /** The relay answers the list read (NIP-11 `file_list.newest`), switched or not. */
   list: boolean
@@ -35,7 +57,7 @@ interface Switch {
   times: boolean
 }
 
-const OFF: Switch = { fields: undefined, inOrder: [], list: false, text: false, times: false }
+const OFF: Switch = { fields: undefined, issues: undefined, inOrder: [], list: false, text: false, times: false }
 
 let held: Promise<Switch> | undefined
 
@@ -50,7 +72,14 @@ function relaySwitch(): Promise<Switch> {
           return OFF
         }
         const reads: RelayFileReads = relayFileReadsOf(info)
-        return { fields: projectFieldsOf(reads, fieldsOptIn()), inOrder: reads.inOrder, list: reads.list, text: reads.text, times: reads.times }
+        return {
+          fields: projectFieldsOf(reads, fieldsOptIn()),
+          issues: fileFieldsOf(reads, ISSUE_TYPE, issueFieldsOptIn()),
+          inOrder: reads.inOrder,
+          list: reads.list,
+          text: reads.text,
+          times: reads.times,
+        }
       },
       () => {
         held = undefined
@@ -82,14 +111,32 @@ export async function inOrderTypes(): Promise<readonly string[]> {
   return (await relaySwitch()).inOrder
 }
 
-/** Whether `address` names a project: the one kind the switch covers. */
+/** Whether issues are read and written by their fields in this tab (ISS-6); undefined is off. */
+export async function issueFields(): Promise<ProjectFields | undefined> {
+  return (await relaySwitch()).issues
+}
+
+/** The switch of `kind`: projects' or issues', each on its own; undefined for any other kind, or off. */
+export async function fieldsFor(kind: number | undefined): Promise<ProjectFields | undefined> {
+  if (kind === PROJECT_KIND) return projectFields()
+  if (kind === ISSUE_KIND) return issueFields()
+  return undefined
+}
+
+/** Whether `kind` has a switch of its own: a project or an issue. */
+export function isSwitchedKind(kind: number | undefined): boolean {
+  return kind === PROJECT_KIND || kind === ISSUE_KIND
+}
+
+/** Whether `address` names a project. */
 export function isProject(address: string | undefined): boolean {
   return !!address && address.startsWith(`${PROJECT_KIND}:`)
 }
 
-/** Whether `address` is a project read and written by its fields in this tab. */
+/** Whether `address` is a project or an issue read and written by its fields in this tab. */
 export async function byFields(address: string | undefined): Promise<boolean> {
-  return isProject(address) && !!(await projectFields())
+  const kind = address ? Number(address.split(':')[0]) : undefined
+  return !!(await fieldsFor(kind))
 }
 
 /**

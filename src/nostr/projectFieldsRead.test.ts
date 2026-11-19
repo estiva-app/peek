@@ -5,14 +5,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { queryRelay, queryRelayWithMatches, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
+const { queryRelay, queryRelayTimes, queryRelayWithMatches, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
+  queryRelayTimes: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
   queryRelayWithMatches: vi.fn<(...args: unknown[]) => Promise<{ events: unknown[]; matches: unknown[] }>>(async () => ({ events: [], matches: [] })),
   publishSigned: vi.fn(async () => ({ ok: true })),
   signViaEstivaId: vi.fn(async (event: unknown) => event),
 }))
 
-vi.mock('./bridge', () => ({ queryRelay, queryRelayWithMatches, publishSigned, signViaEstivaId }))
+vi.mock('./bridge', () => ({ queryRelay, queryRelayTimes, queryRelayWithMatches, publishSigned, signViaEstivaId }))
 // A build with a relay, so the switch asks it; tests have none by default.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
@@ -62,11 +63,11 @@ const event = (kind: number, tags: string[][], pubkey = AUTHOR) => ({
   content: '',
 })
 const manifest = {
-  ...event(31990, [['d', 'estiva-ship'], ['k', '30850']]),
+  ...event(31990, [['d', 'estiva-ship'], ['k', '30850'], ['k', '30851']]),
   content: JSON.stringify({
     name: 'Estiva Ship',
     records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
-    projections: { 30850: { widget: 'card', slots: { title: { tag: 'name' } } } },
+    projections: { 30850: { widget: 'card', slots: { title: { tag: 'name' } } }, 30851: { widget: 'card', slots: { title: { tag: 'title' } } } },
     actions: [],
   }),
 }
@@ -206,6 +207,50 @@ describe('a deleted project, whichever way the switch is', () => {
       [B, FOLDER, AUTHOR, deleting.created_at],
       [C, SECOND, OTHER, deletingC.created_at],
     ])
+  })
+
+  it('lists a deleted issue beside the deleted projects, found by the times read and never by every issue’s changes (ISS-6)', async () => {
+    const info = { file_list: { newest: true, text: true, times: true } }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
+    const issueAt = (d: string) => `30851:${AUTHOR}:6f1c2b3a-0000-4000-8000-0000000${d}`
+    const [GONE, RESTORED, OPEN] = [issueAt('0dddd'), issueAt('0eeee'), issueAt('0ffff')]
+    const issue = (address: string, title: string) => event(30851, [['d', address.split(':')[2]], ['title', title], ['h', FOLDER]])
+    const set = (address: string, field: string, value: string, at: number) => ({
+      ...event(1851, [['a', address], ['O', address.split(':')[2]], ['field', field], ['value', value], ['h', FOLDER]]),
+      created_at: at,
+    })
+    const deletingIssue = set(GONE, 'deleted', 'true', deleting.created_at + 60)
+    const issues = [
+      issue(GONE, 'Broken link'),
+      deletingIssue,
+      issue(RESTORED, 'Back again'),
+      set(RESTORED, 'deleted', 'true', deleting.created_at + 10),
+      set(RESTORED, 'deleted', '', deleting.created_at + 20),
+      issue(OPEN, 'Still open'),
+      set(OPEN, 'status', 'done', deleting.created_at + 30),
+    ]
+    const world = [...withDeleted, ...issues]
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(world, filters))
+    // The times read: each issue's changes by id and the fields each set, never their values.
+    queryRelayTimes.mockImplementation(async () =>
+      issues
+        .filter((e) => e.kind === 30851)
+        .map((root) => {
+          const a = `30851:${AUTHOR}:${root.tags.find((t) => t[0] === 'd')![1]}`
+          const changes = issues.filter((e) => e.kind === 1851 && e.tags.some((t) => t[0] === 'a' && t[1] === a))
+          return { a, created_at: root.created_at, h: FOLDER, changes: changes.map((c) => ({ id: c.id, created_at: c.created_at, fields: [c.tags.find((t) => t[0] === 'field')![1]] })) }
+        }),
+    )
+    const deleted = await deletedProjectsAsViewer('https://relay.test', token)
+
+    expect(deleted?.map((file) => [file.address, file.kind, file.deleted?.by])).toEqual([
+      [GONE, 30851, AUTHOR],
+      [B, 30850, AUTHOR],
+    ])
+    // Issues are asked of the relay by the times read, and only the ones it names read whole: no issue's list read.
+    const asked = queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
+    expect(asked.some((f) => f.fields === 'newest' && (f.kinds as number[] | undefined)?.includes(30851))).toBe(false)
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500 }])
   })
 
   it('is not on the Deleted tab once restored', async () => {
