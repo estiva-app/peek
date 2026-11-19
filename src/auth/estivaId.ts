@@ -69,7 +69,11 @@ const client = createEstivaId({
   redirectUri: () => `${window.location.origin}${CALLBACK_PATH}`,
   keyPrefix: KEY_PREFIX,
   navigate: (url) => {
-    for (const leave of leavingListeners) leave()
+    // Nothing a listener does may keep the tab from signing in.
+    for (const leave of leavingListeners)
+      try {
+        leave()
+      } catch {}
     window.location.assign(url)
   },
 })
