@@ -4,10 +4,10 @@
  * line, handed in through `ConceptMessage` — the one concept-only hook in `ConversationCard.tsx`. Draws only what a
  * person sees; nothing here reads or writes the relay. Never merged.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { IconX } from '@tabler/icons-react'
-import { Card, ConversationLayout, EmptyState, IconButton, INLINE_CHIP_CLASSES, ListColumn, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
+import { IconSparkles, IconX } from '@tabler/icons-react'
+import { Card, ConversationLayout, EmptyState, IconButton, INLINE_CHIP_CLASSES, ListColumn, Toast, MetaText, NavItem, NavTree, PageHeader, Person, Thread, WithTooltip } from '@estiva-app/ui'
 import { ConversationCard, ConceptMessage } from '@/components/ConversationCard'
 import { ReplyCard } from '@/components/ReplyCard'
 import { TopicState } from '@/components/ui/TopicState'
@@ -19,7 +19,7 @@ import { formatActive, formatDateLabel, formatTimestamp } from '@/api'
 import { MarkAsRows, MarkedNotice, drawsLine, wordIcon, wordTone, type MarkWord } from './MarkAs'
 import { MIKY, TEAM, type Item, type Person as Who } from './fixtures'
 import { ItemBeside, itemOf } from './ItemBeside'
-import { useTypedMark } from './TypedMark'
+import { SURE, suggestFor, useTypedMark } from './TypedMark'
 import { cn } from '@/lib/utils'
 import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from './messages'
 
@@ -28,13 +28,25 @@ import { NOW, TOPICS, marked, titleOf, type StoryMark, type StoryMessage } from 
  * team's (a DM): no Mark row at all. Marking is at once, with a notice; Unmark takes the line away.
  */
 function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice, onOpen, onOpenItem, children }: { messages: StoryMessage[]; privateRoom: boolean; me: Who; about?: string; notice?: MarkWord; onOpen?: (id: string) => void; onOpenItem?: (mark: StoryMark, message: StoryMessage) => void; children: ReactNode }) {
-  const [marks, setMarks] = useState<Record<string, StoryMark | undefined>>(() => Object.fromEntries(messages.map((m) => [m.id, m.mark])))
+  // A sure suggestion that arrived after sending marks the message at once; an unsure one is only offered under it.
+  const titleOf = (text: string) => text.split('\n')[0].split(/(?<=[.!?])\s/)[0].slice(0, 80)
+  const [marks, setMarks] = useState<Record<string, StoryMark | undefined>>(() =>
+    Object.fromEntries(messages.map((m) => [m.id, m.mark ?? (m.suggested?.sure ? marked(m.suggested.word, titleOf(m.text), me) : undefined)])),
+  )
   const [notice, setNotice] = useState<MarkWord | undefined>(startNotice)
   const [last, setLast] = useState<string>()
+  const autoMarked = messages.find((m) => m.suggested?.sure)
+  const [undoable, setUndoable] = useState(autoMarked?.id)
+  const [offers, setOffers] = useState(() => Object.fromEntries(messages.filter((m) => m.suggested && !m.suggested.sure).map((m) => [m.id, m.suggested!.word])))
+  // An offer nobody takes fades (here after 12 s); nothing was marked, so nothing is left behind.
+  useEffect(() => {
+    if (!Object.keys(offers).length) return
+    const t = setTimeout(() => setOffers({}), 12_000)
+    return () => clearTimeout(t)
+  }, [offers])
   const mark = (id: string, text: string, word: MarkWord) => {
     // The title from the message's first line; filed in the message's team, about its topic's project (Decided, kickoff).
-    const title = text.split('\n')[0].split(/(?<=[.!?])\s/)[0].slice(0, 80)
-    setMarks((all) => ({ ...all, [id]: marked(word, title, me) }))
+    setMarks((all) => ({ ...all, [id]: marked(word, titleOf(text), me) }))
     setNotice(word)
     setLast(id)
   }
@@ -54,6 +66,17 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
       return (
         <InHeader label={drawsLine(m) && m ? <MarkLabel mark={m} me={me} onOpen={onOpenItem && (() => openItem(id))} /> : null}>
           {card}
+          {offers[id] && !m && (
+            <span className="ml-[44px] flex text-caption text-text-muted">
+              <Card fill="none" hover="fill" quietUntilHover className="flex items-center gap-1 px-1" onClick={() => (mark(id, messages.find((x) => x.id === id)?.text ?? '', offers[id]), setOffers({}))}>
+                <IconSparkles size={14} stroke={1.5} />
+                <span style={wordTone(offers[id])} className="flex opacity-70">
+                  {wordIcon(offers[id], 14)}
+                </span>
+                {offers[id]}?
+              </Card>
+            </span>
+          )}
           {replies?.some((r) => drawsLine(r.mark)) && <ThreadTimeline replies={replies} me={me} onOpen={() => onOpen?.(id)} />}
         </InHeader>
       )
@@ -63,6 +86,17 @@ function MarkingProvider({ messages, privateRoom, me, about, notice: startNotice
     <ConceptMessage.Provider value={value}>
       {children}
       {notice && <MarkedNotice word={notice} team={TEAM} about={about} onOpen={() => openItem(last)} onClose={() => setNotice(undefined)} />}
+      {undoable && autoMarked?.suggested && (
+        // The sure suggestion that marked a sent message says so once, with Undo: a delete, so nothing is left behind.
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <Toast
+            label={`Suggested: marked as ${autoMarked.suggested.word}.`}
+            type="success"
+            actionLabel="Undo"
+            onAction={() => (setMarks((all) => ({ ...all, [undoable]: undefined })), setUndoable(undefined))}
+          />
+        </div>
+      )}
     </ConceptMessage.Provider>
   )
 }
@@ -181,7 +215,7 @@ function WholeThread({ message, me, onClose, onOpenItem }: { message: StoryMessa
 }
 
 /** A topic's or a DM's conversation as Peek's file page draws it: the kit's ConversationLayout, two columns, under the page's bar. */
-export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, openItem, typedStart, typedAbove }: {
+export function Conversation({ title, messages, me = MIKY, privateRoom = false, about, dm = false, notice, openThread, openItem, typedStart, typedAbove, deleted }: {
   title: string
   /** The message box starts already marked, as after typing a symbol and Enter. */
   typedStart?: MarkWord
@@ -200,10 +234,16 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
   openThread?: string
   /** Start with this message's item open in the right column, as after a press on its label. */
   openItem?: string
+  /** Start with a deleted highlight open, as its Activity line opens it for its marker and its message's author. */
+  deleted?: { message: string; mark: StoryMark; by: Who; reason?: string }
 }) {
   const [open, setOpen] = useState<string | undefined>(openThread)
   // The item a label opened, in the thread's column; `from` is the thread it was opened from, which ← brings back.
-  const [item, setItem] = useState<{ item: Item; from?: string } | undefined>(() => {
+  const [item, setItem] = useState<{ item: Item; from?: string; deleted?: { by: Who; reason?: string } } | undefined>(() => {
+    if (deleted) {
+      const m = messages.find((x) => x.id === deleted.message)
+      return m && { item: itemOf(deleted.mark, m, title), deleted }
+    }
     const m = messages.find((x) => x.id === openItem)
     return m?.mark ? { item: itemOf(m.mark, m, title) } : undefined
   })
@@ -234,7 +274,7 @@ export function Conversation({ title, messages, me = MIKY, privateRoom = false, 
         threads="beside"
         open={open}
         onOpenChange={(id) => (setItem(undefined), setOpen(id))}
-        aside={item && <ItemBeside item={item.item} onBack={item.from ? () => (setOpen(item.from), setItem(undefined)) : undefined} onClose={() => setItem(undefined)} />}
+        aside={item && <ItemBeside item={item.item} deleted={item.deleted} onBack={item.from ? () => (setOpen(item.from), setItem(undefined)) : undefined} onClose={() => setItem(undefined)} />}
         title={title}
         header={<PageHeader title={title} leading={<TopicState type={dm ? 'DM' : 'topic'} status={dm ? 'default' : 'unresolved'} />} />}
         items={items}
@@ -265,29 +305,62 @@ function TypedBox({ contextLabel, start, above = false }: { contextLabel: string
     const r = p.getBoundingClientRect()
     setAt({ top: r.top - b.top, left: r.left - b.left, room: (chip.current?.offsetHeight ?? 20) + 6 })
   }, [word, above])
-  if (above)
+  // The model's guess while you write (Miky, 19 Nov), read when you pause; a ✕ on it keeps that word away for this draft.
+  const [guess, setGuess] = useState<{ word: MarkWord; confidence: number }>()
+  const [dropped, setDropped] = useState<MarkWord>()
+  useEffect(() => {
+    const r = box.current
+    if (!above || !r) return
+    let t: ReturnType<typeof setTimeout>
+    const read = () => (clearTimeout(t), (t = setTimeout(() => setGuess(suggestFor(r.querySelector('.ProseMirror')?.textContent ?? '')), 600)))
+    r.addEventListener('input', read)
+    return () => (r.removeEventListener('input', read), clearTimeout(t))
+  }, [above])
+  if (above) {
     // The second trial (Miky, 19 Nov): the mark is a property on top of the message, so its heading sits above the
     // box, outside it, and the box's border takes the word's colour. Marking halfway through a message moves no text.
+    const offered = !word && guess && guess.word !== dropped ? guess : undefined
+    const sure = offered && offered.confidence >= SURE
+    const shown = word ?? (sure ? offered.word : undefined)
     return (
       <div ref={box} className="flex flex-col gap-1" data-typed-box>
-        {word && (
+        {shown && (
           <>
-            <style>{`[data-typed-box] .border-border-field{border-color:${wordTone(word, 'borderColor').borderColor} !important}`}</style>
+            <style>{`[data-typed-box] .border-border-field{border-color:${wordTone(shown, 'borderColor').borderColor} !important}`}</style>
             <span className="flex items-center gap-1 px-1">
-              <span className="flex items-center gap-1 text-caption font-medium" style={wordTone(word)}>
-                {wordIcon(word, 14)}
-                {word}
+              <span className="flex items-center gap-1 text-caption font-medium" style={wordTone(shown)}>
+                {wordIcon(shown, 14)}
+                {shown}
               </span>
-              <IconButton variant="muted" tooltip="Remove the mark" aria-label="Remove the mark" onClick={() => setWord(undefined)}>
+              {/* A sure guess marks by default; the sparkle says it was suggested, and ✕ drops it before anything is sent. */}
+              {!word && (
+                <WithTooltip label="Suggested from what you wrote" wrapperClassName="flex">
+                  <IconSparkles size={14} stroke={1.5} className="text-text-muted" />
+                </WithTooltip>
+              )}
+              <IconButton variant="muted" tooltip="Remove the mark" aria-label="Remove the mark" onClick={() => (word ? setWord(undefined) : setDropped(shown))}>
                 <IconX size={14} stroke={1.5} />
               </IconButton>
             </span>
           </>
         )}
-        <ConversationBox onSend={async () => (setWord(undefined), { accepted: true })} contextLabel={contextLabel} />
+        {offered && !sure && (
+          // An unsure guess is only offered: one press marks it; ignored, the message goes unmarked.
+          <span className="flex px-1 text-caption text-text-muted">
+            <Card fill="none" hover="fill" quietUntilHover className="-mx-1 flex items-center gap-1 px-1" onClick={() => setWord(offered.word)}>
+              <IconSparkles size={14} stroke={1.5} />
+              <span style={wordTone(offered.word)} className="flex opacity-70">
+                {wordIcon(offered.word, 14)}
+              </span>
+              {offered.word}?
+            </Card>
+          </span>
+        )}
+        <ConversationBox onSend={async () => (setWord(undefined), setGuess(undefined), setDropped(undefined), { accepted: true })} contextLabel={contextLabel} />
         {picker}
       </div>
     )
+  }
   // The label is its own row, a heading over the message, and the text (or the placeholder) starts on the line below
   // (Miky, 19 Nov): a sent message shows the word in its header, never inside its text, so the box matches that.
   return (
@@ -316,14 +389,14 @@ export function TopicFrame({ selected = 0, children }: { selected?: number; chil
  * did, when; then where and the words — with the new verb "wrote a decision in your name". The whole line opens the
  * Journal entry, as every line in that card opens what it names.
  */
-function DeciderLine({ by, title, place, at }: { by: Who; title: string; place: string; at: number }) {
+function DeciderLine({ by, title, place, at, verb = 'wrote a decision in your name' }: { by: Who; title: string; place: string; at: number; verb?: string }) {
   return (
     <Card href="#" fill="none" quietUntilHover hover="fill" className="flex min-w-0 flex-col gap-0.5 p-2" data-decider-line>
       <div className="flex min-w-0 items-center gap-1.5 text-caption text-text-secondary">
         <span className="flex min-w-0 shrink-0 text-h5 leading-tight text-text-primary">
           <Person size={16} name={by.name} />
         </span>
-        <span className="truncate">wrote a decision in your name</span>
+        <span className="truncate">{verb}</span>
         <MetaText size="chip" className="ml-auto shrink-0">
           {formatActive(at)}
         </MetaText>
@@ -338,7 +411,7 @@ function DeciderLine({ by, title, place, at }: { by: Who; title: string; place: 
 }
 
 /** The Topics column as Katerina sees it after Miky wrote a decision in her name: its row lit, its card holding the line. */
-export function DeciderTopicsColumn({ title, ago }: { title: string; ago: number }) {
+export function DeciderTopicsColumn({ title, ago, by = MIKY, verb }: { title: string; ago: number; by?: Who; verb?: string }) {
   const railClosed = useRailClosed()
   const [lit, open, ...rest] = TOPICS
   return (
@@ -349,7 +422,7 @@ export function DeciderTopicsColumn({ title, ago }: { title: string; ago: number
           label={titleOf(lit)}
           unread
           icon={<TopicState type="topic" status="unresolved" iconClassName="text-text-primary" />}
-          preview={<DeciderLine by={MIKY} title={title} place={titleOf(lit)} at={NOW - ago} />}
+          preview={<DeciderLine by={by} title={title} place={titleOf(lit)} at={NOW - ago} verb={verb} />}
         />
         <NavItem href="#" label={titleOf(open)} active icon={<TopicState type="topic" status="unresolved" iconClassName="text-text-primary" />} />
         {rest.map((t) => (

@@ -16,6 +16,8 @@ export interface StoryMessage {
   text: string
   /** What it is marked as, and by whom: its label beside the time names them on hover. */
   mark?: StoryMark
+  /** Sent before the model answered (Miky, 19 Nov): its suggestion arrives on the sent message, sure or only offered. */
+  suggested?: { word: MarkWord; sure: boolean }
   /** Its thread's replies, oldest first: the marked ones bubble up under it in the topic's feed. */
   replies?: StoryMessage[]
 }

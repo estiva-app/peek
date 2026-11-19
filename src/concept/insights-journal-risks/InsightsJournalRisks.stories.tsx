@@ -118,6 +118,46 @@ export const LabelOpensItem: Story = {
   ),
 }
 
+/**
+ * Sent before the model answered (Miky, 19 Nov: suggesting never blocks sending). Its answer lands on the sent message:
+ * sure about Miky's last one, so it is marked as a Concern at once with Undo (a delete, nothing left behind); unsure
+ * about his earlier one, so "Decision?" is only offered under it, one press to mark, and it fades if ignored.
+ */
+export const SuggestedAfterSend: Story = {
+  render: () => (
+    <TopicFrame>
+      <Conversation
+        title="Universal Navigation"
+        about={PROJECT}
+        messages={universal({ m2: BELONGS_INSIGHT }).map((m) =>
+          m.id === whatIsNew.id ? { ...m, suggested: { word: 'Concern' as const, sure: true } } : m.id === names.id ? { ...m, suggested: { word: 'Decision' as const, sure: false } } : m,
+        )}
+      />
+    </TopicFrame>
+  ),
+}
+
+/**
+ * Katerina deleted the Insight Miky marked on her message (Miky, 19 Nov: anyone may delete a highlight). The topic
+ * shows nothing where it was; Miky, its marker, is told in his Topics column, and the line opens it, read only, with
+ * who deleted it and why. Nobody else sees it, and agents no longer read it.
+ */
+export const DeletedHighlightIsTold: Story = {
+  render: () => (
+    <PeekFrame
+      leftPanel={<DeciderTopicsColumn title={BELONGS_INSIGHT.title} ago={HOUR / 4} by={KATERINA} verb="deleted your Insight" />}
+      rightPanel={
+        <Conversation
+          title="Universal Navigation"
+          about={PROJECT}
+          messages={universal()}
+          deleted={{ message: belongs.id, mark: BELONGS_INSIGHT, by: KATERINA, reason: 'Not an insight, I was only venting.' }}
+        />
+      }
+    />
+  ),
+}
+
 export const TopicWithAnInsightAsKaterina: Story = {
   render: () => (
     <TopicFrame>

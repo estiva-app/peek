@@ -7,7 +7,7 @@
  * (record a-conversation-is-one-shared-thing-and-only-its-colours-are-the-apps).
  */
 import { IconArrowLeft, IconX } from '@tabler/icons-react'
-import { IconButton, MetaText, Panel, ScrollArea } from '@estiva-app/ui'
+import { Card, IconButton, MetaText, Panel, ScrollArea } from '@estiva-app/ui'
 import { ReplyCard } from '@/components/ReplyCard'
 import { ConversationBox } from '@/components/ui/ConversationBox'
 import { ItemContent, ItemFields, ItemIdentity, fromTool } from './ItemDetail'
@@ -45,8 +45,17 @@ const talkOn = (item: Item): { id: string; author: Person; ago: string; text: st
 }
 
 /** The item in the thread's column: ← back to the thread it was opened from, what it is, the item, then its talk. */
-export function ItemBeside({ item, onBack, onClose }: { item: Item; onBack?: () => void; onClose: () => void }) {
+export function ItemBeside({ item, deleted, onBack, onClose }: { item: Item; deleted?: { by: Person; reason?: string }; onBack?: () => void; onClose: () => void }) {
   const talk = talkOn(item)
+  // A deleted highlight (Miky, 19 Nov): gone from the thread and every list, and from what agents read; its marker and
+  // its message's author open it from Activity, read only, with who deleted it and why.
+  const note = deleted && (
+    <Card fill="none" attention="warning" className="flex flex-col gap-1 p-3">
+      <span className="text-body-2 text-text-primary">Deleted by {deleted.by.name} today</span>
+      {deleted.reason && <span className="text-body-2 text-text-secondary">“{deleted.reason}”</span>}
+      <span className="text-caption text-text-muted">{`Nobody else sees it any more, and agents no longer read it. Only you and ${deleted.by.name} can open it.`}</span>
+    </Card>
+  )
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Panel
@@ -68,8 +77,9 @@ export function ItemBeside({ item, onBack, onClose }: { item: Item; onBack?: () 
       >
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-3 px-4 pb-4">
+            {note}
             <span className="text-h3 text-text-primary">{item.title}</span>
-            <ItemFields key={item.id} item={item} />
+            {!deleted && <ItemFields key={item.id} item={item} />}
             <ItemContent key={`${item.id}-${item.status}`} item={item} />
           </div>
           <div className="flex flex-col gap-1 border-t border-border-default px-2 py-3">
@@ -82,9 +92,11 @@ export function ItemBeside({ item, onBack, onClose }: { item: Item; onBack?: () 
             )}
           </div>
         </ScrollArea>
-        <div className="px-4 pb-4">
-          <ConversationBox kind="reply" onSend={async () => ({ accepted: true })} contextLabel={`Comment on this ${item.word}`} />
-        </div>
+        {!deleted && (
+          <div className="px-4 pb-4">
+            <ConversationBox kind="reply" onSend={async () => ({ accepted: true })} contextLabel={`Comment on this ${item.word}`} />
+          </div>
+        )}
       </Panel>
     </div>
   )

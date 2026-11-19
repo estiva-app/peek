@@ -12,7 +12,31 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import { SuggestionMenu, type SuggestionMenuHandle } from '@estiva-app/ui'
 import { SYMBOL, WORDS, wordIcon, wordTone, type MarkWord } from './MarkAs'
 
-const BY_SYMBOL: Record<string, MarkWord> = Object.fromEntries(Object.entries(SYMBOL).map(([w, s]) => [s, w as MarkWord]))
+/**
+ * The suggestion a model would make (Miky, 19 Nov: Gemini's Decisions API, whose answer carries a calibrated
+ * probability for every word). The concept fakes it with a few phrases; `sure` is the top word's confidence at or above
+ * the threshold, which marks by default (✕ undoes it); below it, the word is only offered, and fades if ignored. Real
+ * thresholds come from our own traffic, and a deleted suggestion is the example that tunes them.
+ */
+export const SURE = 0.85
+const CUES: [RegExp, MarkWord, number][] = [
+  [/\b(blocked|blocks us|can[’']t .* until|waiting on)\b/i, 'Blocker', 0.93],
+  [/\b(let[’']s go with|we decided|decided to|we[’']ll go with)\b/i, 'Decision', 0.92],
+  [/\b(worried|risk|might break|afraid|concern)\b/i, 'Concern', 0.9],
+  [/\b(shipped|is live|now opens|is done)\b/i, 'Update', 0.88],
+  [/\b(turns out|noticed|learned|users? (keep|can[’']t))\b/i, 'Insight', 0.87],
+  [/\b(I[’']ll|todo|to-do|need to|remember to)\b/i, 'To-do', 0.7],
+  [/\?\s*$/, 'Question', 0.66],
+  [/\b(sidebar|navigation|folders?)\b/i, 'Insight', 0.55],
+]
+export function suggestFor(text: string): { word: MarkWord; confidence: number } | undefined {
+  const t = text.trim()
+  if (t.length < 12) return undefined
+  const hit = CUES.find(([re]) => re.test(t))
+  return hit && { word: hit[1], confidence: hit[2] }
+}
+
+const BY_SYMBOL: Record<string, MarkWord> =Object.fromEntries(Object.entries(SYMBOL).map(([w, s]) => [s, w as MarkWord]))
 
 /** The text block the caret is in, inside `root`. */
 function blockAtCaret(root: HTMLElement, selector: string): HTMLElement | null {

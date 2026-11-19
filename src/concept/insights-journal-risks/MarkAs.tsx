@@ -10,13 +10,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconHighlight, IconNotebook, IconSquareCheck, IconX } from '@tabler/icons-react'
+import { IconAlertTriangle, IconBarrierBlock, IconBulb, IconExternalLink, IconHelpCircle, IconHighlight, IconNotebook, IconSquareCheck, IconTrash, IconX } from '@tabler/icons-react'
 import { MenuItem, MenuSeparator, MenuSub, MetaText, Toast, Tooltip, WithTooltip, type PickerOption } from '@estiva-app/ui'
 
 /**
  * TRIAL (Miky, 19 Nov, to judge on this prototype; no record yet): a fourth type, To-do (a light task anyone marks, made
  * formal later as an issue in Ship or a task in whichever app owns that work), and Highlight, a mark not sorted yet:
- * it waits under To sort until a person (or a suggestion) gives it one of the seven words.
+ * it stays a Highlight until a person, a suggestion or a loop gives it one of the seven words. Nobody has to: sorting
+ * is not a chore (Miky, 19 Nov).
  */
 export type ItemType = 'insight' | 'journal' | 'risk' | 'todo' | 'highlight'
 /** The seven words a person picks, each making one type (Blocker added for Risks, Miky, 16 Nov; To-do, 19 Nov), and Highlight, unsorted. */
@@ -52,7 +53,7 @@ export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: s
   journal: { label: 'Journal entry', plural: 'Journal entries', tab: 'Journal', line: 'border-info-default', text: 'text-info-default', icon: (s = 16) => <IconNotebook size={s} stroke={1.5} /> },
   risk: { label: 'Risk', plural: 'Risks', tab: 'Risks & questions', line: 'border-error-default', text: 'text-error-default', icon: (s = 16) => <IconAlertTriangle size={s} stroke={1.5} /> },
   todo: { label: 'To-do', plural: 'To-dos', tab: 'To-dos', line: 'border-success-default', text: 'text-success-default', icon: (s = 16) => <IconSquareCheck size={s} stroke={1.5} /> },
-  highlight: { label: 'Highlight', plural: 'Highlights', tab: 'To sort', line: 'border-border-strong', text: 'text-text-secondary', icon: (s = 16) => <IconHighlight size={s} stroke={1.5} /> },
+  highlight: { label: 'Highlight', plural: 'Highlights', tab: 'Highlights', line: 'border-border-strong', text: 'text-text-secondary', icon: (s = 16) => <IconHighlight size={s} stroke={1.5} /> },
 }
 
 /**
@@ -102,9 +103,9 @@ export const STATUSES: Record<ItemType, PickerOption[]> = {
     { value: 'dropped', label: 'Dropped', colour: 'muted' },
     { value: 'rejected', label: 'Rejected', colour: 'muted' },
   ],
-  // A Highlight has one live stage, To sort; sorting gives it a word and that type's statuses, from Proposed.
+  // A Highlight has one live stage; a word, when someone or a loop gives one, brings that type's statuses, from Proposed.
   highlight: [
-    { value: 'proposed', label: 'To sort', colour: 'neutral' },
+    { value: 'proposed', label: 'Proposed', colour: 'neutral' },
     { value: 'rejected', label: 'Rejected', colour: 'muted' },
   ],
 }
@@ -122,7 +123,8 @@ export interface Mark {
 export const drawsLine = (mark?: Mark) => !!mark && mark.status !== 'rejected'
 
 /**
- * The menu rows: on an unmarked source, Mark as ▸ the five words; on a marked one, Open and Unmark.
+ * The menu rows: on an unmarked source, Mark as ▸ Highlight and the seven words; on a marked one, Open and Delete
+ * highlight (Miky, 19 Nov: anyone may delete one; it narrows to its marker and its source's author, who are told).
  * `refused` is a source whose readers differ from any team's (a DM, a private team): no row at all, never a refusal after.
  */
 export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: { mark?: Mark; onMark?: (word: MarkWord) => void; onOpen?: () => void; onUnmark?: () => void; refused?: boolean }) {
@@ -150,7 +152,8 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
       <>
         {isUnsorted(mark.word) && words('Sort as')}
         <MenuItem label={`Open ${mark.word}`} leading={<span style={wordTone(mark.word)}>{wordIcon(mark.word)}</span>} trailing={<IconExternalLink size={14} stroke={1.5} className="text-text-secondary" />} onClick={onOpen} />
-        <MenuItem label="Unmark" leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />} onClick={onUnmark} />
+        {/* Anyone may delete a highlight, and it leaves no trace where it was (Miky, 19 Nov): the one word for taking a mark off. */}
+        <MenuItem label="Delete highlight" destructive leading={<IconTrash size={16} stroke={1.5} />} onClick={onUnmark} />
       </>
     )
   return words('Mark as')
@@ -163,7 +166,7 @@ export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: 
 export function MarkedNotice({ word, team, about, onOpen, onClose }: { word: MarkWord; team: string; about?: string; onOpen?: () => void; onClose?: () => void }) {
   return (
     <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <Toast label={isUnsorted(word) ? `Highlighted in ${about ?? team}. Sort it later from its menu or the To sort list.` : `Marked as ${word} in ${about ?? team}. Its title is kept; change it on its page.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
+      <Toast label={isUnsorted(word) ? `Highlighted in ${about ?? team}.` :`Marked as ${word} in ${about ?? team}. Its title is kept; change it on its page.`} type="success" actionLabel="Open" onAction={() => (onOpen?.(), onClose?.())} />
     </div>
   )
 }
