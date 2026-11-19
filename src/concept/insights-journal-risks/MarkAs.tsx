@@ -24,8 +24,12 @@ export type MarkWord = 'Insight' | 'Decision' | 'Update' | 'Concern' | 'Question
 export type SortedWord = Exclude<MarkWord, 'Highlight'>
 
 export const TYPE_OF: Record<MarkWord, ItemType> = { Insight: 'insight', Decision: 'journal', Update: 'journal', Concern: 'risk', Question: 'risk', Blocker: 'risk', 'To-do': 'todo', Highlight: 'highlight' }
-/** Mark as…'s order, in the colours' groups (Miky, 18 Nov): what sparks thinking, what happened, what to handle, what to do. Highlight sits apart, below. */
-export const WORDS: SortedWord[] = ['Insight', 'Question', 'Decision', 'Update', 'Concern', 'Blocker', 'To-do']
+/**
+ * Mark as…'s order, in the colours' groups (Miky, 18 Nov): what sparks thinking, what to do, what happened, what to
+ * handle. Highlight heads the menu, apart from the seven (Miky, 19 Nov: first, as its heading; To-do below Insight and
+ * Question, never last).
+ */
+export const WORDS: SortedWord[] = ['Insight', 'Question', 'To-do', 'Decision', 'Update', 'Concern', 'Blocker']
 export const isUnsorted = (word: MarkWord) => word === 'Highlight'
 
 export const TYPE_META: Record<ItemType, { label: string; plural: string; tab: string; line: string; text: string; icon: (size?: number) => ReactNode }> = {
@@ -108,14 +112,14 @@ export const drawsLine = (mark?: Mark) => !!mark && mark.status !== 'rejected'
  */
 export function MarkAsRows({ mark, onMark, onOpen, onUnmark, refused = false }: { mark?: Mark; onMark?: (word: MarkWord) => void; onOpen?: () => void; onUnmark?: () => void; refused?: boolean }) {
   if (refused) return null
-  // Mark as ▸ the seven words, and Highlight apart below them; on a Highlight, Sort as ▸ the seven words.
+  // Mark as ▸ Highlight first, then the seven words; on a Highlight, Sort as ▸ the seven words.
   const words = (label: 'Mark as' | 'Sort as') => (
     <MenuSub label={label} leading={<IconBulb size={16} stroke={1.5} className="text-text-secondary" />}>
+      {label === 'Mark as' && <MenuItem label="Highlight" leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
+      {label === 'Mark as' && <MenuSeparator />}
       {WORDS.map((word) => (
         <MenuItem key={word} label={word} leading={<span style={wordTone(word)}>{wordIcon(word)}</span>} onClick={() => onMark?.(word)} />
       ))}
-      {label === 'Mark as' && <MenuSeparator />}
-      {label === 'Mark as' && <MenuItem label="Highlight" aside="Sort later" leading={<span style={wordTone('Highlight')}>{wordIcon('Highlight')}</span>} onClick={() => onMark?.('Highlight')} />}
     </MenuSub>
   )
   if (drawsLine(mark) && mark)
