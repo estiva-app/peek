@@ -67,6 +67,7 @@ beforeEach(() => {
     }),
   )
   window.history.replaceState({}, '', '/app/desk')
+  document.head.replaceChildren()
   document.body.replaceChildren()
 })
 
