@@ -23,6 +23,7 @@ import type { ReadLane } from '@estiva-app/platform'
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
 import { DELETED_FIELD } from '@/lib/fileControls'
+import { listsFile } from '@/lib/listing'
 import { isStartConversation, type CreatableKindRead } from '@/lib/liveAction'
 import { BLOCK_ANCHOR_TAG, KIND, parseProfile, QUOTE_TAG, type SignedEvent } from '@estiva-app/protocol'
 
@@ -1213,7 +1214,7 @@ export async function moveFileAsViewer(
   const lists = (folder: FolderRef) => {
     const listing = listings.get(folder.id) ?? []
     return (
-      (!!file.address && !!folder.addresses?.includes(file.address)) ||
+      (!!file.address && listsFile(folder, file.address)) ||
       listing.some((listed) => listed.ref === file.ref || (!!file.address && listed.address === file.address)) ||
       listedBeneath(listing, file).length > 0
     )

@@ -38,6 +38,7 @@ import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStrea
 import type { ChannelStore } from '@/platform/channelStore'
 import { placeStreams, teamHasMemberStream, unlistedFiles } from './teamUnread'
 import { loadFileParentsAhead } from './useFileParents'
+import { idOfAddress } from '@/lib/listing'
 import { useRelayViewer } from './foreign'
 import { useDeskItems, useScreenerItems } from './desk'
 import { useStarred } from './internal/starred'
@@ -161,8 +162,9 @@ async function foldersTopicsOpens(
     const events = store.events(folder.id)
     if (events) held[folder.id] = streamMessagesByFolder(events, [folder.id], at.token.pubkey)[folder.id] ?? []
   }
-  const listed = new Set(folders.flatMap((folder) => (folder.hasState ? (folder.addresses ?? []) : [])))
-  const joinedUnlisted = membership.memberFiles.filter((address) => !listed.has(address))
+  // A list names a file by its address or by its id (SHI-64).
+  const listed = new Set(folders.flatMap((folder) => (folder.hasState ? [...(folder.addresses ?? []), ...(folder.ids ?? [])] : [])))
+  const joinedUnlisted = membership.memberFiles.filter((address) => !listed.has(address) && !listed.has(idOfAddress(address) ?? address))
   const parents = Object.fromEntries(await loadFileParentsAhead([...unlistedFiles(held, folders), ...joinedUnlisted], at))
   const placed = placeStreams(held, folders, parents)
   const holdsJoined = new Set(joinedUnlisted.map((address) => parents[address]).filter((parent): parent is string => !!parent))
@@ -170,6 +172,7 @@ async function foldersTopicsOpens(
   for (const folder of folders) {
     if (teamHasMemberStream(placed.streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
     if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || membership.isMember(address))) mine.add(folder.id)
+    if (folder.hasState && folder.ids?.length && [...holdsJoined, ...membership.memberFiles].some((address) => folder.ids!.includes(idOfAddress(address) ?? ''))) mine.add(folder.id)
   }
   for (const folder of folders) if (mine.has(folder.id)) for (const container of folder.listedIn ?? []) mine.add(container)
   return folders.filter((folder) => mine.has(folder.id))

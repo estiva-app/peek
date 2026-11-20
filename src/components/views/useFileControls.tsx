@@ -12,6 +12,7 @@ import { fileControlsOf } from '@/lib/fileControls'
 import { copyFileLink } from '@/lib/objectUrl'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
 import { currentFolderOf, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
+import { listsFile } from '@/lib/listing'
 import { useToast } from '@/lib/toast'
 
 
@@ -28,6 +29,8 @@ const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 const placeOf = (target: MoveTarget): MovePlace => ({ id: target.file?.address ?? '', path: target.path })
 
 /** A topic: the one kind a team marks as a space (§3.3). */
+/** What a team lists by id, for a move's source (SHI-64); nothing when it lists none. */
+const idsOf = (folder: FolderSummary | undefined) => (folder?.ids?.length ? { ids: folder.ids } : {})
 const isTopic = (file: ForeignObject) => Number(file.address?.split(':')[0]) === KIND_BARE_FILE
 
 interface MoveState {
@@ -59,10 +62,16 @@ function moveStateOf(
     file: here,
     from: team,
     sources: [
-      { id: team, name: contents.name ?? 'Untitled team', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
+      {
+        id: team,
+        name: contents.name ?? 'Untitled team',
+        hasState: contents.hasState,
+        addresses: folders.find((folder) => folder.id === team)?.addresses ?? [],
+        ...idsOf(folders.find((folder) => folder.id === team)),
+      },
       ...folders
-        .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
-        .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled team', hasState: true, addresses: folder.addresses ?? [] })),
+        .filter((folder) => folder.id !== team && folder.hasState && !!file.address && listsFile(folder, file.address))
+        .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled team', hasState: true, addresses: folder.addresses ?? [], ...idsOf(folder) })),
     ],
     teams: topLevelFolders(folders),
     nests,

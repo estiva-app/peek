@@ -79,6 +79,16 @@ describe('placeStreams — a moved file is judged where its Folder lists it', ()
     expect(placed[A]).toEqual([])
   })
 
+  /* SHI-64: a move writes the file's id once the relay keeps it in order, so the team it went to lists only the id. */
+  it('puts the talk in the team the project moved to when that team lists it by its id', () => {
+    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }, [
+      folder(A, true, []),
+      { ...folder(B, true, []), ids: ['project'] },
+    ])
+    expect(placed[B].map((message) => message.id)).toEqual(['c'])
+    expect(placed[A]).toEqual([])
+  })
+
   it('keeps a file its own Folder still lists', () => {
     const held = { [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }
     const placed = place(held, [folder(A, true, [PROJECT]), folder(B, true, [])])

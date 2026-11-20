@@ -1,6 +1,7 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { fileContext } from '@estiva-app/conversation'
+import { idOfAddress } from '@/lib/listing'
 
 /**
  * Each Folder's messages, with a moved file's talk handed to the Folder it
@@ -45,9 +46,10 @@ export function placeStreams(
   const { lists, listedBy } = statesOf(folders)
   // The listed file a file lives as: itself, else its parent — or none.
   const placeOf = (address: string): string | undefined => {
-    if (listedBy.has(address)) return address
+    const own = listedKey(listedBy, address)
+    if (own !== undefined) return own
     const parent = parents[address]
-    return parent && listedBy.has(parent) ? parent : undefined
+    return parent ? listedKey(listedBy, parent) : undefined
   }
   const placed: Record<string, StreamMessage[]> = {}
   const handed: Record<string, string[]> = {}
@@ -100,7 +102,7 @@ export function unlistedFiles(
     if (!lists.has(id)) continue
     for (const message of messages) {
       for (const address of message.about) {
-        if (fileContext(address) !== undefined && !listedBy.has(address)) out.add(address)
+        if (fileContext(address) !== undefined && listedKey(listedBy, address) === undefined) out.add(address)
       }
     }
   }
@@ -116,14 +118,23 @@ function statesOf(folders: readonly FolderSummary[]): {
   const listedBy = new Map<string, string[]>()
   for (const folder of folders) {
     if (!folder.hasState) continue
-    lists.set(folder.id, new Set(folder.addresses))
-    for (const address of folder.addresses ?? []) {
-      const containers = listedBy.get(address) ?? []
+    // A list names a file by its address or by its id (SHI-64); both are keys, which `listedKey` reads.
+    const entries = [...(folder.addresses ?? []), ...(folder.ids ?? [])]
+    lists.set(folder.id, new Set(entries))
+    for (const entry of entries) {
+      const containers = listedBy.get(entry) ?? []
       if (!containers.includes(folder.id)) containers.push(folder.id)
-      listedBy.set(address, containers)
+      listedBy.set(entry, containers)
     }
   }
   return { lists, listedBy }
+}
+
+/** The key a file is listed under in {@link statesOf}: its address, else its id — or none when no list names it. */
+function listedKey(listedBy: ReadonlyMap<string, unknown>, address: string): string | undefined {
+  if (listedBy.has(address)) return address
+  const id = idOfAddress(address)
+  return id !== undefined && listedBy.has(id) ? id : undefined
 }
 
 /**
