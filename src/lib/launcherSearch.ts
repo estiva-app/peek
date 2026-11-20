@@ -57,6 +57,19 @@ export function launcherMatch(text: string, query: string): boolean {
 }
 
 /**
+ * Whether what was typed has stopped being a search: up to two words is a
+ * search, from the third it is a prompt (Miky, on the prototype, 5 November
+ * 2026). A quote or a leading minus is search syntax, so those words stay a
+ * search however many there are.
+ */
+// why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-matches-every-word-as-a-word-start.md
+export function isPrompt(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length < 3) return false
+  return !words.some((word) => word.includes('"') || (word.startsWith('-') && word.length > 1))
+}
+
+/**
  * People by name **or role**, because "designer" is a thing somebody looks for
  * and a role is the only place it is written down.
  */

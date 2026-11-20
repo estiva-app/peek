@@ -115,16 +115,18 @@ describe('drafting is offered as its own row (INT-4)', () => {
     open()
     await enter(input(),'offer to take a look tomorrow')
 
+    // Since a77dd5e3 Enter is the ask, and Draft is one of the rows a sentence suggests.
     expect(await draftRow()).toBeInTheDocument()
-    expect(screen.getByText(/^Ask: “/)).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Suggested' })).toContainElement(await draftRow())
   })
 
   it('is absent with no composer, because a draft would have nowhere to go', async () => {
     open({ conversation: { references: [], messages: [reply('the build broke on main')] } })
     await enter(input(),'offer to take a look tomorrow')
 
-    // Ask still stands: reading a conversation needs no composer.
-    expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
+    // Asking still stands: reading a conversation needs no composer.
+    await userEvent.type(input(), '{Enter}')
+    expect(await screen.findByTestId('answer')).toBeInTheDocument()
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
 
@@ -149,7 +151,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
     // The same rule INT-2 keeps, restated because a second row is a second
     // chance to get it wrong.
     open()
-    await enter(input(),'zzqxvwmkjjbtplfd')
+    await enter(input(),'zzqxvwmkjjbtplfd qqxzv wwvkq')
 
     expect(await draftRow()).toBeInTheDocument()
     expect(promptForText).not.toHaveBeenCalled()
@@ -252,7 +254,7 @@ describe('the draft is the person\'s to send (INT-4)', () => {
     // Ask in). What separates them is what the panel then offers.
     open()
     await enter(input(),'what did we decide')
-    await userEvent.click(await screen.findByText(/^Ask: “/))
+    await userEvent.type(input(), '{Enter}')
 
     expect(await screen.findByRole('group', { name: /^Sources?$/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Put it in the composer/i })).not.toBeInTheDocument()

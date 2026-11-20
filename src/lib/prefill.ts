@@ -152,14 +152,27 @@ export function threadContext(messages: readonly string[], limit = THREAD_CONTEX
  * what the owning app calls the thing, and inventing a better sentence here
  * would be Peek deciding what another app's action means.
  */
-export function prefillInstruction(actionLabel: string, conversation: string): string {
+export function prefillInstruction(actionLabel: string, conversation: string | null, sentence?: string): string {
+  // What the person wrote in the launcher before picking the action: it says what they want made, so it comes first.
+  const asked = sentence?.trim()
+  if (!asked) {
+    return [
+      `A team is having this conversation:`,
+      '',
+      conversation ?? '',
+      '',
+      `Fill in the fields for "${actionLabel}" from that conversation.`,
+      `Use only what the conversation says. Where it does not say, leave the field empty.`,
+    ].join('\n')
+  }
   return [
-    `A team is having this conversation:`,
+    `Someone wrote this request:`,
     '',
-    conversation,
+    asked,
     '',
-    `Fill in the fields for "${actionLabel}" from that conversation.`,
-    `Use only what the conversation says. Where it does not say, leave the field empty.`,
+    ...(conversation ? [`They wrote it while their team was having this conversation:`, '', conversation, ''] : []),
+    `Fill in the fields for "${actionLabel}" from the request${conversation ? ', and from the conversation where the request does not say' : ''}.`,
+    `Use only what ${conversation ? 'they say' : 'the request says'}. Where nothing says, leave the field empty.`,
   ].join('\n')
 }
 

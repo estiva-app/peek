@@ -129,6 +129,20 @@ describe('prefillInstruction', () => {
 
   it('tells the model to leave a field empty rather than invent one', () => {
     expect(prefillInstruction('Add issue', 'x')).toMatch(/leave the field empty/i)
+    expect(prefillInstruction('Add issue', null, 'file the billing bug')).toMatch(/leave the field empty/i)
+  })
+
+  it('puts the sentence the action was picked under before the conversation (a77dd5e3)', () => {
+    const instruction = prefillInstruction('Create project', 'we talked about the budget', 'create a project for the website launch')
+    expect(instruction).toContain('create a project for the website launch')
+    expect(instruction).toContain('we talked about the budget')
+    expect(instruction.indexOf('website launch')).toBeLessThan(instruction.indexOf('the budget'))
+  })
+
+  it('fills from the sentence alone where no conversation is open', () => {
+    const instruction = prefillInstruction('Create project', null, 'create a project for the website launch')
+    expect(instruction).toContain('create a project for the website launch')
+    expect(instruction).not.toMatch(/conversation/i)
   })
 })
 

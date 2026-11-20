@@ -102,15 +102,21 @@ beforeEach(() => {
 })
 
 describe('the first level, by what was typed', () => {
-  it('puts Ask, Draft and Make first for a sentence, and last for a word (C2)', async () => {
+  it('lists results with no Ask group for one word or two, and the suggested actions in their place from the third (a77dd5e3)', async () => {
     open(inThread)
     await enter(field(),'designer')
-    await waitFor(() => expect(groupNames().at(-1)).toBe('Ask'))
-    expect(groupNames()[0]).toBe('People')
+    await waitFor(() => expect(groupNames()[0]).toBe('People'))
+    expect(groupNames()).not.toContain('Ask')
 
     await userEvent.clear(field())
     await enter(field(),'product designer')
-    await waitFor(() => expect(groupNames()[0]).toBe('Ask'))
+    await waitFor(() => expect(groupNames()[0]).toBe('People'))
+    expect(groupNames()).not.toContain('Ask')
+
+    await userEvent.clear(field())
+    await enter(field(),'product designer alice')
+    await waitFor(() => expect(groupNames()).toContain('Suggested'))
+    expect(groupNames()).not.toContain('People')
   })
 
   it('puts an app whose name starts with the text first (R6)', async () => {

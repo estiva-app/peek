@@ -13,7 +13,8 @@
  * person sees.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { enter } from '@/test-enter'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
@@ -240,6 +241,52 @@ describe('a description Ship declares as a block document (MAN-1, RIC-13)', () =
     const document = parseBlockDocument(value.description!)
     expect(document.content).toHaveLength(1)
     expect(document.content[0]).toMatchObject({ type: 'paragraph', content: [{ type: 'text', text: 'The total is wrong' }] })
+  })
+})
+
+describe('a sentence suggests what the apps declare (a77dd5e3)', () => {
+  beforeEach(() => {
+    applyAction.mockClear()
+  })
+  const field = () => document.querySelector<HTMLTextAreaElement>('[data-command-palette-field]')!
+  /** Ship's row among the suggested ones: this file's fake manifest read answers the same for every app, so Peek's own section lists the action too. */
+  const shipRow = async () => {
+    const suggested = await screen.findByRole('group', { name: 'Suggested' })
+    const rows = await within(suggested).findAllByRole('option', { name: /Add issue/ })
+    return rows.find((row) => row.textContent?.includes('Ship'))!
+  }
+
+  it('lists a declared action as a row under the prompt, with its app, and Enter does not open it', async () => {
+    open({}, vi.fn(), '')
+    await enter(field(), 'file the billing bug')
+
+    expect(await shipRow()).toBeInTheDocument()
+    // No row is lit, so Enter belongs to the sentence: no form opens.
+    await userEvent.type(field(), '{Enter}')
+    expect(screen.queryByRole('button', { name: 'Add issue' })).not.toBeInTheDocument()
+  })
+
+  it('opens the same form the app’s own level opens, and files what it collects', async () => {
+    open({}, vi.fn(), '')
+    await enter(field(), 'file the billing bug')
+    await userEvent.click(await shipRow())
+
+    await userEvent.type(screen.getByRole('textbox'), 'Billing entry')
+    await userEvent.click(screen.getByLabelText('Project'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Projection layer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledTimes(1))
+    expect(applyAction.mock.calls[0][0]).toMatchObject({ actionId: 'add-issue', value: { title: 'Billing entry' } })
+  })
+
+  it('reaches a suggested row with the arrow, and Enter then opens its form', async () => {
+    open({}, vi.fn(), '')
+    await enter(field(), 'file the billing bug')
+    await shipRow()
+
+    await userEvent.type(field(), '{ArrowDown}{Enter}')
+    expect(await screen.findByRole('button', { name: 'Add issue' })).toBeInTheDocument()
   })
 })
 

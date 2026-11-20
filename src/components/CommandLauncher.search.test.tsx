@@ -13,7 +13,7 @@
  * injected.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { enter } from '@/test-enter'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { MessageSearchState } from '@/lib/launcherSearch'
@@ -212,6 +212,32 @@ describe('Cmd+K finds a file by its title, with its summary (SUM-7)', () => {
     expect(optionNamed('Ledger archive').textContent).toContain('Finance')
     expect(optionNamed('Ledger notes').textContent).not.toContain('Finance')
     expect(optionNamed('Ledger notes').textContent).not.toContain(SUMMARY)
+  })
+
+  it('keeps up to three files under a prompt, and only those whose title holds every word (a77dd5e3)', async () => {
+    // A name of three words still finds its file; a file that only mentions the words in its summary is not an answer to a sentence.
+    fileSearch.mockReturnValue({
+      state: { kind: 'done', count: 5 },
+      hits: [
+        fileHit('a', 30851, 'Ledger reconciliation plan', 'Finance'),
+        fileHit('b', 30851, 'Ledger reconciliation plan B', 'Finance'),
+        fileHit('s', 30842, 'Quarter close', '', 'The ledger reconciliation plan is in here.'),
+        fileHit('c', 30842, 'Ledger reconciliation plan notes', ''),
+        fileHit('d', 30842, 'Old ledger reconciliation plan', ''),
+      ],
+    })
+    open()
+    await type('ledger reconciliation plan')
+
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Files' })).toBeInTheDocument())
+    const listed = within(screen.getByRole('group', { name: 'Files' })).getAllByRole('option').map((o) => o.textContent)
+    expect(listed).toHaveLength(3)
+    expect(listed[0]).toContain('Ledger reconciliation plan')
+    expect(listed.join(' ')).not.toContain('Quarter close')
+    expect(listed.join(' ')).not.toContain('Old ledger')
+
+    fireEvent.click(optionNamed('Ledger reconciliation plan'))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(`30851:${AUTHOR}:a`))
   })
 
   it('opens the file a hit names', async () => {
