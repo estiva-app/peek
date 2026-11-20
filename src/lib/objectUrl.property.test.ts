@@ -124,7 +124,8 @@ describe('a link Peek copies for a file', () => {
     rememberRouteWords(routeWordsOf(PATTERNS))
     fc.assert(
       fc.property(addressArb, addressArb, titleArb, (one, other, title) => {
-        fc.pre(one.address.toLowerCase() !== other.address.toLowerCase() && !one.d.toLowerCase().endsWith(other.d.toLowerCase()))
+        const [a, b] = [one.d.toLowerCase(), other.d.toLowerCase()]
+        fc.pre(one.address.toLowerCase() !== other.address.toLowerCase() && !a.endsWith(b) && !b.endsWith(a))
         const route = fileRouteFromPath(filePath(one.address, title))
         expect(refNamesFile(route!.ref, other.address)).toBe(false)
       }),
