@@ -36,6 +36,9 @@ const settings = {
   seed: process.env.FC_SEED ? Number(process.env.FC_SEED) : 20_261_120,
   numRuns: process.env.FC_RUNS ? Number(process.env.FC_RUNS) : 1000,
 }
+if (!Number.isSafeInteger(settings.seed) || !Number.isSafeInteger(settings.numRuns) || settings.numRuns < 1) {
+  throw new Error(`FC_SEED and FC_RUNS must be whole numbers: ${process.env.FC_SEED} ${process.env.FC_RUNS}`)
+}
 
 /** The shapes Peek, Ship and Leaf publish (each repo's `scripts/publish-manifest.ts`). */
 const MANIFESTS = [
