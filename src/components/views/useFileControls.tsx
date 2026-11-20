@@ -57,6 +57,7 @@ function moveStateOf(
 ): MoveState {
   const here = contents.files.find((candidate) => candidate.ref === file.ref) ?? file
   const nests = !!fileControlsOf(here).move
+  const listing = folders.find((folder) => folder.id === team)
   return {
     kind: 'move',
     file: here,
@@ -66,8 +67,8 @@ function moveStateOf(
         id: team,
         name: contents.name ?? 'Untitled team',
         hasState: contents.hasState,
-        addresses: folders.find((folder) => folder.id === team)?.addresses ?? [],
-        ...idsOf(folders.find((folder) => folder.id === team)),
+        addresses: listing?.addresses ?? [],
+        ...idsOf(listing),
       },
       ...folders
         .filter((folder) => folder.id !== team && folder.hasState && !!file.address && listsFile(folder, file.address))

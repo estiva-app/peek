@@ -168,11 +168,13 @@ async function foldersTopicsOpens(
   const parents = Object.fromEntries(await loadFileParentsAhead([...unlistedFiles(held, folders), ...joinedUnlisted], at))
   const placed = placeStreams(held, folders, parents)
   const holdsJoined = new Set(joinedUnlisted.map((address) => parents[address]).filter((parent): parent is string => !!parent))
+  // The same files by id, for a list that names them so.
+  const heldIds = new Set([...holdsJoined, ...membership.memberFiles].map(idOfAddress).filter((id): id is string => id !== undefined))
   const mine = new Set<string>()
   for (const folder of folders) {
     if (teamHasMemberStream(placed.streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
     if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || membership.isMember(address))) mine.add(folder.id)
-    if (folder.hasState && folder.ids?.length && [...holdsJoined, ...membership.memberFiles].some((address) => folder.ids!.includes(idOfAddress(address) ?? ''))) mine.add(folder.id)
+    if (folder.hasState && folder.ids?.some((id) => heldIds.has(id))) mine.add(folder.id)
   }
   for (const folder of folders) if (mine.has(folder.id)) for (const container of folder.listedIn ?? []) mine.add(container)
   return folders.filter((folder) => mine.has(folder.id))

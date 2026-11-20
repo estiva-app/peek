@@ -89,6 +89,12 @@ describe('placeStreams — a moved file is judged where its Folder lists it', ()
     expect(placed[A]).toEqual([])
   })
 
+  it('keeps the talk in a team that lists the project by its id while another lists it by its address', () => {
+    const held = { [A]: [], [B]: [said('c', NOW - 10, [PROJECT])] }
+    const placed = place(held, [folder(A, true, [PROJECT]), { ...folder(B, true, []), ids: ['project'] }])
+    expect(placed[B].map((message) => message.id)).toEqual(['c'])
+  })
+
   it('keeps a file its own Folder still lists', () => {
     const held = { [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }
     const placed = place(held, [folder(A, true, [PROJECT]), folder(B, true, [])])

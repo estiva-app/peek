@@ -46,10 +46,9 @@ export function placeStreams(
   const { lists, listedBy } = statesOf(folders)
   // The listed file a file lives as: itself, else its parent — or none.
   const placeOf = (address: string): string | undefined => {
-    const own = listedKey(listedBy, address)
-    if (own !== undefined) return own
+    if (containersOf(listedBy, address).length > 0) return address
     const parent = parents[address]
-    return parent ? listedKey(listedBy, parent) : undefined
+    return parent && containersOf(listedBy, parent).length > 0 ? parent : undefined
   }
   const placed: Record<string, StreamMessage[]> = {}
   const handed: Record<string, string[]> = {}
@@ -63,7 +62,7 @@ export function placeStreams(
       if (state) {
         for (const address of files) {
           const place = placeOf(address)
-          if (place !== undefined && !state.has(place)) moved.set(address, place)
+          if (place !== undefined && !listsIn(state, place)) moved.set(address, place)
         }
       }
       if (moved.size === 0) {
@@ -74,7 +73,7 @@ export function placeStreams(
       if (stayed.length > 0) placed[id].push({ ...message, about: stayed })
       const into = new Map<string, string[]>()
       for (const [address, place] of moved) {
-        for (const container of listedBy.get(place)!) into.set(container, [...(into.get(container) ?? []), address])
+        for (const container of containersOf(listedBy, place)) into.set(container, [...(into.get(container) ?? []), address])
       }
       for (const [container, about] of into) {
         placed[container]?.push({ ...message, about })
@@ -102,7 +101,7 @@ export function unlistedFiles(
     if (!lists.has(id)) continue
     for (const message of messages) {
       for (const address of message.about) {
-        if (fileContext(address) !== undefined && listedKey(listedBy, address) === undefined) out.add(address)
+        if (fileContext(address) !== undefined && containersOf(listedBy, address).length === 0) out.add(address)
       }
     }
   }
@@ -118,7 +117,7 @@ function statesOf(folders: readonly FolderSummary[]): {
   const listedBy = new Map<string, string[]>()
   for (const folder of folders) {
     if (!folder.hasState) continue
-    // A list names a file by its address or by its id (SHI-64); both are keys, which `listedKey` reads.
+    // A list names a file by its address or by its id (SHI-64); both are keys, read through `containersOf` and `listsIn`.
     const entries = [...(folder.addresses ?? []), ...(folder.ids ?? [])]
     lists.set(folder.id, new Set(entries))
     for (const entry of entries) {
@@ -130,11 +129,17 @@ function statesOf(folders: readonly FolderSummary[]): {
   return { lists, listedBy }
 }
 
-/** The key a file is listed under in {@link statesOf}: its address, else its id — or none when no list names it. */
-function listedKey(listedBy: ReadonlyMap<string, unknown>, address: string): string | undefined {
-  if (listedBy.has(address)) return address
+/** Every Folder with state that lists the file, by its address or by its id: one may name it one way and another the other. */
+function containersOf(listedBy: ReadonlyMap<string, readonly string[]>, address: string): string[] {
   const id = idOfAddress(address)
-  return id !== undefined && listedBy.has(id) ? id : undefined
+  const all = [...(listedBy.get(address) ?? []), ...(id !== undefined ? (listedBy.get(id) ?? []) : [])]
+  return [...new Set(all)]
+}
+
+/** Whether one Folder's listing ({@link statesOf}'s `lists`) names the file, by its address or by its id. */
+function listsIn(state: ReadonlySet<string>, address: string): boolean {
+  const id = idOfAddress(address)
+  return state.has(address) || (id !== undefined && state.has(id))
 }
 
 /**
