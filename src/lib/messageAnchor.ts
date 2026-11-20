@@ -21,6 +21,14 @@ const WAIT_MS = 3000
 const POLL_MS = 50
 
 /**
+ * The page these waits poll is gone: the tab closed under a pending attempt,
+ * or a test's page was torn down while one waited (DeskPage.test threw
+ * "document is not defined" from a 10 s wait, peek#677's CI). Gives up, as at
+ * the deadline.
+ */
+const pageGone = () => typeof document === 'undefined'
+
+/**
  * Show a message known only by its relay event, once its conversation has
  * opened — a reply found by the launcher's message search (R13, UIG-29).
  *
@@ -32,6 +40,10 @@ export function scrollToEventWhenReady(eventId: string, waitMs = WAIT_MS): Promi
   return new Promise((resolve) => {
     const deadline = Date.now() + waitMs
     const attempt = () => {
+      if (pageGone()) {
+        resolve(false)
+        return
+      }
       const message = findMessageByEventId(eventId)
       if (message && showInConversation(message.id)) {
         resolve(true)
@@ -61,6 +73,10 @@ export function showConversationItemWhenDrawn(id: string, waitMs = ARRIVAL_WAIT_
   return new Promise((resolve) => {
     const deadline = Date.now() + waitMs
     const attempt = () => {
+      if (pageGone()) {
+        resolve(false)
+        return
+      }
       // A conversation's item (the kit's), or a comment on another app's file (Peek's CommentRow).
       const item = document.querySelector(`[data-conversation-item="${CSS.escape(id)}"], [data-comment="${CSS.escape(id)}"]`)
       if (item) {
