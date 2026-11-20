@@ -1,4 +1,5 @@
 import { nestingOf, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { listsFile } from './listing'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
@@ -35,8 +36,7 @@ export function currentFolderOf(
   // would leave it where it was.
   const listing = (address: string | undefined) =>
     address
-      ? (teams.find((team) => team.addresses?.includes(address)) ??
-          folders.find((folder) => folder.hasState && folder.addresses?.includes(address)))?.id
+      ? (teams.find((team) => listsFile(team, address)) ?? folders.find((folder) => folder.hasState && listsFile(folder, address)))?.id
       : undefined
   const own = folders.find((folder) => folder.id === file.folder)
   return (

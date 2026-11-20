@@ -36,6 +36,12 @@ describe('currentFolderOf (FOL-45)', () => {
     expect(currentFolderOf(topic, folders, after)).toBe('steer')
   })
 
+  /* SHI-64: a move writes the file's id once the relay keeps it in order, so the team it went to lists only the id. */
+  it('is the team whose state lists the file by its id, not the team its `h` is in', () => {
+    const after = [{ ...hq, addresses: [] }, { ...steer, ids: ['topic'] }]
+    expect(currentFolderOf(topic, folders, after)).toBe('steer')
+  })
+
   it('is a nested Folder that lists it, not the team that Folder is in', () => {
     const nested = { id: 'nested', hasState: true, listedIn: ['hq'], addresses: [`30840:${PK}:deep`] } as FolderSummary
     const deep = file(30840, 'deep', { folder: 'nested' })

@@ -38,6 +38,7 @@ import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStrea
 import type { ChannelStore } from '@/platform/channelStore'
 import { placeStreams, teamHasMemberStream, unlistedFiles } from './teamUnread'
 import { loadFileParentsAhead } from './useFileParents'
+import { idOfAddress } from '@/lib/listing'
 import { useRelayViewer } from './foreign'
 import { useDeskItems, useScreenerItems } from './desk'
 import { useStarred } from './internal/starred'
@@ -161,15 +162,33 @@ async function foldersTopicsOpens(
     const events = store.events(folder.id)
     if (events) held[folder.id] = streamMessagesByFolder(events, [folder.id], at.token.pubkey)[folder.id] ?? []
   }
-  const listed = new Set(folders.flatMap((folder) => (folder.hasState ? (folder.addresses ?? []) : [])))
-  const joinedUnlisted = membership.memberFiles.filter((address) => !listed.has(address))
+  // A list names a file by its address or by its id (SHI-64).
+  const listed = new Set(folders.flatMap((folder) => (folder.hasState ? [...(folder.addresses ?? []), ...(folder.ids ?? [])] : [])))
+  const joinedUnlisted = membership.memberFiles.filter((address) => !listed.has(address) && !listed.has(idOfAddress(address) ?? address))
   const parents = Object.fromEntries(await loadFileParentsAhead([...unlistedFiles(held, folders), ...joinedUnlisted], at))
   const placed = placeStreams(held, folders, parents)
   const holdsJoined = new Set(joinedUnlisted.map((address) => parents[address]).filter((parent): parent is string => !!parent))
+  return mineOf(folders, placed.streams, holdsJoined, membership)
+}
+
+/**
+ * Of `folders`, the person's own: one whose streams hold talk in a file they are a member of, or whose state lists
+ * such a file, or a parent that holds one (`holdsJoined`), by its address or by its id (a moved file, SHI-64), and
+ * every Folder that lists one of those.
+ */
+export function mineOf(
+  folders: readonly FolderSummary[],
+  streams: Readonly<Record<string, StreamMessage[]>>,
+  holdsJoined: ReadonlySet<string>,
+  membership: { isMember: (address: string) => boolean; memberFiles: readonly string[] },
+): FolderSummary[] {
+  // The same files by id, for a list that names them so.
+  const heldIds = new Set([...holdsJoined, ...membership.memberFiles].map(idOfAddress).filter((id): id is string => id !== undefined))
   const mine = new Set<string>()
   for (const folder of folders) {
-    if (teamHasMemberStream(placed.streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
+    if (teamHasMemberStream(streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
     if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || membership.isMember(address))) mine.add(folder.id)
+    if (folder.hasState && folder.ids?.some((id) => heldIds.has(id))) mine.add(folder.id)
   }
   for (const folder of folders) if (mine.has(folder.id)) for (const container of folder.listedIn ?? []) mine.add(container)
   return folders.filter((folder) => mine.has(folder.id))
