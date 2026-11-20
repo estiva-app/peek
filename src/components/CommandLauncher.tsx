@@ -13,7 +13,7 @@ import { fileEmptyState, isPrompt, launcherMatch, matchPeople, messageEmptyState
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
-import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
+import { canPrefill, downloadModel, hasPromptApi, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { probeable } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
@@ -464,7 +464,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     if (!hasThread) return setCannotAsk('Open a conversation to ask about it.')
     if (modelDownloadable) return setCannotAsk('Download the on-device model below to ask.')
     // Not yet answered (the first moments after opening) is not a no: the ask is tried, and says so if nothing comes back.
-    if (availability !== null && !modelReady) return setCannotAsk('Asking needs Chrome’s on-device model.')
+    // A browser with no Prompt API answers 'unavailable' too, which counts as ready above; it is asked here outright.
+    if (!hasPromptApi() || (availability !== null && !modelReady)) return setCannotAsk('Asking needs Chrome’s on-device model.')
     setCannotAsk(null)
     setRequest({ intent: 'ask', text })
   }
@@ -1148,6 +1149,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   const modKey = isApplePlatform() ? 'Cmd' : 'Ctrl'
   const where = whereFrom(context)
+  /*
+    The conversation a sentence typed here would be asked about, named above
+    the field from the moment the box opens: a name that arrived with the third
+    word would push the line being typed down. The footer's "In …" says the
+    same thing, so it steps aside while the name is above the field.
+  */
+  const about = hasThread ? context.composer?.label : undefined
 
   const content = (() => {
     if (level.kind === 'form' && formDraft) {
@@ -1238,7 +1246,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           placeholder={placeholder}
           groups={groups}
           pending={pending}
-          prompt={{ onSubmit: ask, submitWord: 'ask', about: hasThread ? context.composer?.label : undefined }}
+          about={about}
+          prompt={{ onSubmit: ask, submitWord: 'ask' }}
         >
           {body}
         </CommandPaletteSearch>
@@ -1255,12 +1264,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         pending={pending}
         notes={notes}
         empty={empty}
+        about={about}
       />
     )
   })()
 
   return (
-    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={where} modKey={modKey}>
+    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={level.kind === 'first' && about ? undefined : where} modKey={modKey}>
       {content}
     </CommandPalette>
   )

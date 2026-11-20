@@ -40,7 +40,7 @@ const { canPrefill, prefillAvailability, promptForText, insertTextIntoActiveComp
 }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, prefillAvailability, promptForText }
+  return { ...actual, canPrefill, prefillAvailability, promptForText, hasPromptApi: () => true }
 })
 vi.mock('@/lib/composerRegistry', async () => {
   const actual = await vi.importActual<typeof import('@/lib/composerRegistry')>('@/lib/composerRegistry')

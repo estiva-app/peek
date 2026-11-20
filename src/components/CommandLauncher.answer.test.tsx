@@ -31,7 +31,7 @@ const { canPrefill, promptForText, showInConversation, showInConversationWhenDra
 vi.mock('@/lib/threadOpener', () => ({ openConversation }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, promptForText }
+  return { ...actual, canPrefill, promptForText, hasPromptApi: () => true }
 })
 // Showing a message is the kit's (C3), and its own tests hold what it does on the page; here, which message the launcher asks for.
 vi.mock('@estiva-app/ui', async () => ({ ...(await vi.importActual<Record<string, unknown>>('@estiva-app/ui')), showInConversation, showInConversationWhenDrawn }))

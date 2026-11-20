@@ -24,8 +24,9 @@ import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
-const { canPrefill, prefillAvailability, downloadModel, promptForText } = vi.hoisted(() => ({
+const { canPrefill, hasPromptApi, prefillAvailability, downloadModel, promptForText } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
+  hasPromptApi: vi.fn(() => true),
   downloadModel: vi.fn(async () => true),
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(async () => 'It broke after the bump [1].'),
   // The raw answer, because 'downloadable' earns an offer where 'unanswered' earns one line.
@@ -33,7 +34,7 @@ const { canPrefill, prefillAvailability, downloadModel, promptForText } = vi.hoi
 }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, prefillAvailability, downloadModel, promptForText }
+  return { ...actual, canPrefill, hasPromptApi, prefillAvailability, downloadModel, promptForText }
 })
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -74,6 +75,7 @@ const footer = () => document.querySelector('[role="dialog"]')?.textContent ?? '
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
+  hasPromptApi.mockReturnValue(true)
   prefillAvailability.mockResolvedValue('available')
   downloadModel.mockReset()
   downloadModel.mockResolvedValue(true)
@@ -88,6 +90,13 @@ describe('up to two words the field is a search', () => {
     expect(screen.queryByText(/Ask about this conversation/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Draft a reply/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Suggest what to make/)).not.toBeInTheDocument()
+  })
+
+  it('names the conversation once, above the field, from the moment the box opens', async () => {
+    // A name arriving with the third word would push the typed line down; the footer's "In …" would say it twice.
+    open()
+    expect(await screen.findByText('Apps')).toBeInTheDocument()
+    expect(screen.getAllByText(/Build failures/)).toHaveLength(1)
   })
 
   it('lists what two words find, on one line, with no Ask row beside it', async () => {
@@ -167,6 +176,19 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
 
   it('says asking needs the on-device model, in a browser that has none', async () => {
     prefillAvailability.mockResolvedValue('unanswered')
+    open()
+    await enter(input(), 'what did we decide')
+    await waitFor(() => expect(input().rows).toBe(3))
+    await userEvent.type(input(), '{Enter}')
+
+    expect(await screen.findByText('Asking needs Chrome’s on-device model.')).toBeInTheDocument()
+    expect(promptForText).not.toHaveBeenCalled()
+  })
+
+  it('says so too in a browser with no Prompt API, which reports the same as a Chrome that can answer', async () => {
+    // Firefox, Safari, a phone: `prefillAvailability` answers 'unavailable' there, as a working Chrome sometimes does.
+    hasPromptApi.mockReturnValue(false)
+    prefillAvailability.mockResolvedValue('unavailable')
     open()
     await enter(input(), 'what did we decide')
     await waitFor(() => expect(input().rows).toBe(3))
