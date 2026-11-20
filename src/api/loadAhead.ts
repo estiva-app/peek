@@ -168,11 +168,25 @@ async function foldersTopicsOpens(
   const parents = Object.fromEntries(await loadFileParentsAhead([...unlistedFiles(held, folders), ...joinedUnlisted], at))
   const placed = placeStreams(held, folders, parents)
   const holdsJoined = new Set(joinedUnlisted.map((address) => parents[address]).filter((parent): parent is string => !!parent))
+  return mineOf(folders, placed.streams, holdsJoined, membership)
+}
+
+/**
+ * Of `folders`, the person's own: one whose streams hold talk in a file they are a member of, or whose state lists
+ * such a file, or a parent that holds one (`holdsJoined`), by its address or by its id (a moved file, SHI-64), and
+ * every Folder that lists one of those.
+ */
+export function mineOf(
+  folders: readonly FolderSummary[],
+  streams: Readonly<Record<string, StreamMessage[]>>,
+  holdsJoined: ReadonlySet<string>,
+  membership: { isMember: (address: string) => boolean; memberFiles: readonly string[] },
+): FolderSummary[] {
   // The same files by id, for a list that names them so.
   const heldIds = new Set([...holdsJoined, ...membership.memberFiles].map(idOfAddress).filter((id): id is string => id !== undefined))
   const mine = new Set<string>()
   for (const folder of folders) {
-    if (teamHasMemberStream(placed.streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
+    if (teamHasMemberStream(streams[folder.id] ?? [], membership.isMember)) mine.add(folder.id)
     if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || membership.isMember(address))) mine.add(folder.id)
     if (folder.hasState && folder.ids?.some((id) => heldIds.has(id))) mine.add(folder.id)
   }
