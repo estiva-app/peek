@@ -100,9 +100,10 @@ export function identifierFromRef(ref: string): string | null {
  * The `d` is deliberately unconstrained: RFC 0.4 §4.3 says a uuid, Ship writes
  * one, and an app nobody has written may not. What makes this unambiguous
  * against the `<slug>-<uuid>` refs beside it is the two colons, which a slug
- * cannot contain.
+ * cannot contain. The `d` is any text, a line break included (`s`): without
+ * it a `d` holding one got a link that opened nothing (TES-4).
  */
-const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/i
+const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/is
 
 /**
  * The address a `/topic/<ref>` path names, or `null` when it carries a bare
