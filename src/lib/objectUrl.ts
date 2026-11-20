@@ -100,9 +100,10 @@ export function identifierFromRef(ref: string): string | null {
  * The `d` is deliberately unconstrained: RFC 0.4 §4.3 says a uuid, Ship writes
  * one, and an app nobody has written may not. What makes this unambiguous
  * against the `<slug>-<uuid>` refs beside it is the two colons, which a slug
- * cannot contain.
+ * cannot contain. The `d` is any text, a line break included (`s`): without
+ * it a `d` holding one got a link that opened nothing (TES-4).
  */
-const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/i
+const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/is
 
 /**
  * The address a `/topic/<ref>` path names, or `null` when it carries a bare
@@ -314,12 +315,23 @@ export function filePath(address: string, title?: string): string {
  * any word that is not one of Peek's own pages (`PEEK_ROOT_PATHS`). What the
  * launcher reads to know which file is open, since FOL-39 put every file at
  * the root and everything else under `/app/`.
+ *
+ * The ref comes back decoded, as the router hands it to `FilePage`: a
+ * pathname keeps the long form's escapes (`/topic/<kind>:<pubkey>:team%3A…`),
+ * and read raw it named another file than the page had open (TES-4). A
+ * malformed escape stays as written, as the router leaves it.
  */
 export function fileRouteFromPath(pathname: string): { word: string; ref: string } | null {
   const segments = pathname.split('/').filter(Boolean)
   if (segments.length !== 2) return null
-  const [word, ref] = segments
+  const [word, raw] = segments
   if (!WORD_RE.test(word) || PEEK_ROOT_PATHS.includes(word.toLowerCase())) return null
+  let ref = raw
+  try {
+    ref = decodeURIComponent(raw)
+  } catch {
+    // Kept as written; see above.
+  }
   return { word: word.toLowerCase(), ref }
 }
 
