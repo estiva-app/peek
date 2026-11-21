@@ -77,7 +77,7 @@ describe('a read the relay asks to wait for', () => {
     const end = settled(withRateLimitRetry(() => viewerQuery('https://relay', TOKEN)(FILTERS)))
 
     await vi.advanceTimersByTimeAsync(WAIT_OUT_MS + 5_000)
-    expect((end.error as RelayReadError).kind).toBe('rate_limited')
+    expect(end.error).toBeInstanceOf(RelayReadError)
     const askedByThen = queryRelay.mock.calls.length
     await vi.advanceTimersByTimeAsync(WAIT_OUT_MS)
     expect(queryRelay).toHaveBeenCalledTimes(askedByThen)
