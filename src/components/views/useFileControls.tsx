@@ -640,14 +640,17 @@ export function useFileControls({
 
   const dialogs = dialog ? (
     dialog.kind === 'confirm' ? (
-      <ConfirmDelete
-        restorable={restorable}
-        onArchiveInstead={
-          fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
-        }
-        onConfirm={() => void runDelete(dialog.file)}
-        onClose={() => setDialog(null)}
-      />
+      // Asked once it is known whether the delete can be undone: its words never change in front of the person.
+      restorable === undefined ? null : (
+        <ConfirmDelete
+          restorable={restorable}
+          onArchiveInstead={
+            fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
+          }
+          onConfirm={() => void runDelete(dialog.file)}
+          onClose={() => setDialog(null)}
+        />
+      )
     ) : dialog.kind === 'archive' ? (
       <ArchiveDialog
         title={titleOf(dialog.file)}

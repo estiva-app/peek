@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
-import { fileControlsOf, hasFileControls } from './fileControls'
+import { fileControlsOf, hasFileControls, restoreActionOf } from './fileControls'
 
 /**
  * The gate behind a file's Rename and Delete (FOL-33): read off the manifest's
@@ -75,5 +75,21 @@ describe('fileControlsOf', () => {
 
   it('a manifest with no archive action offers no Archive', () => {
     expect(fileControlsOf(file({ kind: 30840, actions: [rename, remove] })).archive).toBeUndefined()
+  })
+})
+
+describe('restoreActionOf (ALL-5)', () => {
+  it('a deleted topic, whose Delete is declared with no field, is restored with that Delete', () => {
+    expect(restoreActionOf(file({ kind: 30840, actions: [rename, remove] }))?.id).toBe('delete')
+  })
+
+  it('a file whose Delete is a change of deleted is restored with it, even beside a confirm', () => {
+    const marks = { id: 'delete-project', label: 'Delete', control: 'toggle', field: 'deleted' }
+    expect(restoreActionOf(file({ kind: 30850, actions: [remove, marks] }))?.id).toBe('delete-project')
+  })
+
+  it('a file with no Delete, or no address to aim a change at, offers no Restore', () => {
+    expect(restoreActionOf(file({ kind: 30840, actions: [rename] }))).toBeUndefined()
+    expect(restoreActionOf(file({ kind: 30840, naddr: undefined, actions: [remove] }))).toBeUndefined()
   })
 })

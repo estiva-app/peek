@@ -8,7 +8,6 @@ import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
 
 vi.mock('@/api', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/api')>()), useWorkspaceDirectory: () => ({}) }))
-vi.mock('@/lib/reportFailure', () => ({ useReportFailure: () => {} }))
 
 import { DeletedProjects } from './DeletedProjects'
 

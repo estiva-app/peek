@@ -17,7 +17,7 @@ import { PageDot, type PageLine } from '@/components/PageListDot'
 import { useToast } from '@/lib/toast'
 import { archivedLineOf, kindNoun } from '@/lib/archiveWords'
 import { ClosedBox } from '@/components/ui/ConversationBox'
-import { canMove, fileControlsOf, hasFileControls } from '@/lib/fileControls'
+import { canMove, fileControlsOf, hasFileControls, restoreActionOf } from '@/lib/fileControls'
 import { copyFileLink, filePath } from '@/lib/objectUrl'
 import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
 import { formatDateLabel } from '@/api'
@@ -240,6 +240,8 @@ export function useFilePane(
     when, first, with Restore: its Delete action with the empty value. Ahead of an archive: a deleted file is not work.
   */
   const deleted = file?.deleted
+  // The same action the Deleted list's row restores with: a topic's or a page's Delete is declared with no field.
+  const restore = restoreActionOf(file)
   const notice =
     file && deleted ? (
       <DeletedNotice
@@ -247,9 +249,9 @@ export function useFilePane(
         by={people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'}
         when={formatDateLabel(deleted.at * 1000)}
         onRestore={
-          controls.delete?.field && file.naddr
+          restore && file.naddr
             ? () =>
-                restoreFile({ naddr: file.naddr!, actionId: controls.delete!.id }).then((result) => {
+                restoreFile({ naddr: file.naddr!, actionId: restore.id }).then((result) => {
                   if (!result.ok) showToast({ label: result.reason, type: 'error', failure: 'not-restored' })
                   return Promise.all([reloadConversation(), onListingChanged?.()])
                 })

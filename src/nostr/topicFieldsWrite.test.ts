@@ -18,7 +18,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 // A build with a relay, so the switch asks it; tests have none by default.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-import { deleteFileAsViewer, forgetUrlShapes, listsPrevAsViewer, renameFileAsViewer, restoreFileAsViewer, setTopicFileAsViewer } from './foreign'
+import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, listsPrevAsViewer, renameFileAsViewer, restoreFileAsViewer, setTopicFileAsViewer } from './foreign'
 import { documentFieldsOptIn, forgetProjectFields, topicFieldsOptIn } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -141,6 +141,15 @@ describe('A topic the relay keeps in order', () => {
     expect(wire()).toEqual([[1851, 'deleted', 'true', topic.id]])
   })
 
+  it('a Delete run with no value, as a card or the launcher runs a confirm, still deletes: never the empty value, which restores', async () => {
+    relayKeeps(['osnova.topic'])
+    queryRelay.mockImplementation(relayOver([topic, channel, state]))
+    const result = await applyActionAsViewer({ naddr: TOPIC, actionId: 'delete', value: '' }, 'https://relay.test', token)
+
+    expect(result.ok).toBe(true)
+    expect(wire()).toEqual([[1851, 'deleted', 'true', topic.id]])
+  })
+
   it('Restore sets deleted back to empty after the deleting change, read when the row holds none', async () => {
     relayKeeps(['osnova.topic'])
     const deleting = change('deleted', 'true')
@@ -226,6 +235,40 @@ describe('A topic where nothing keeps topics in order', () => {
     expect(sent().map((e) => e.kind)).toEqual([5, 1852, 1851])
     expect(tag(sent()[2]!, 'prev')).toBeUndefined()
     expect(await listsPrevAsViewer(TOPIC, FILE, 'https://relay.test', token)).toBeUndefined()
+  })
+
+  /*
+    A team the relay keeps in order, in a tab that did not opt in: the relay announces nothing for one team, so the
+    tab learns it from the refusal, and writes the change again the way the refusal asks.
+  */
+  it('a Delete the relay refuses as delete-by-field is written again as the deleted change, and nothing is taken off the team’s list', async () => {
+    relayKeeps([])
+    queryRelay.mockImplementation(relayOver([topic, channel, state]))
+    publishSigned.mockImplementation(async (...args: unknown[]) =>
+      (args[1] as { kind: number }).kind === 5 ? { ok: false, reason: 'invalid: delete-by-field: a topic is deleted by its deleted field' } : { ok: true },
+    )
+    const result = await deleteFileAsViewer({ naddr: TOPIC, actionId: 'delete', address: TOPIC, folder: FOLDER, hasState: true }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: true })
+    expect(wire()).toEqual([
+      [5, undefined, undefined, undefined],
+      [1851, 'deleted', 'true', topic.id],
+    ])
+  })
+
+  it('a Rename the relay refuses for naming no change it follows is written again after the topic’s first record', async () => {
+    relayKeeps([])
+    queryRelay.mockImplementation(relayOver([topic, channel, state]))
+    publishSigned.mockImplementation(async (...args: unknown[]) =>
+      (args[1] as { tags: string[][] }).tags.some((t) => t[0] === 'prev') ? { ok: true } : { ok: false, reason: 'invalid: requires-prev: a topic change names the change it follows in prev' },
+    )
+    const result = await renameFileAsViewer({ naddr: TOPIC, actionId: 'rename', title: 'Launch 2' }, 'https://relay.test', token)
+
+    expect(result.ok).toBe(true)
+    expect(wire()).toEqual([
+      [1851, 'title', 'Launch 2', undefined],
+      [1851, 'title', 'Launch 2', topic.id],
+    ])
   })
 
   it('Restore of a topic that reads as deleted is still the deleted change, never a kind:5', async () => {

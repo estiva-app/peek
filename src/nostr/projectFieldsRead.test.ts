@@ -25,7 +25,7 @@ import {
   resolveObjectsAsViewer,
   searchFileReferencesAsViewer,
 } from './foreign'
-import { forgetProjectFields } from './projectFields'
+import { forgetProjectFields, topicFieldsOptIn } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '9c69f247-0000-4000-8000-000000000000'
@@ -250,7 +250,7 @@ describe('a deleted project, whichever way the switch is', () => {
     // Issues are asked of the relay by the times read, and only the ones it names read whole: no issue's list read.
     const asked = queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
     expect(asked.some((f) => f.fields === 'newest' && (f.kinds as number[] | undefined)?.includes(30851))).toBe(false)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500 }])
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500 }])
   })
 
   it('lists an issue deleted before the newest 500 issues changed, from the times read’s next page (ISS-6)', async () => {
@@ -276,7 +276,7 @@ describe('a deleted project, whichever way the switch is', () => {
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     expect(deleted?.map((file) => file.address)).toContain(GONE)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500, until: newest }])
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500, until: newest }])
   })
 
   it('is not on the Deleted tab once restored', async () => {
@@ -292,6 +292,40 @@ describe('a deleted project, whichever way the switch is', () => {
     queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
 
     expect(await deletedProjectsAsViewer('https://relay.test', token)).toBeNull()
+  })
+
+  it('lists a deleted topic in a tab that keeps topics in order, and asks only for issues in one that does not (ALL-5)', async () => {
+    // As production: the list read and the times read, and no word of a type kept in order.
+    const info = { file_list: { newest: true, text: true, times: true } }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
+    const TOPIC =`30840:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000dddd`
+    const topic = event(30840, [['d', TOPIC.split(':')[2]], ['title', 'Launch'], ['h', FOLDER]])
+    const deletingTopic = event(1851, [['a', TOPIC], ['O', TOPIC.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]])
+    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, topic, deletingTopic], filters))
+    // The times read names the topic only when topics are asked for.
+    queryRelayTimes.mockImplementation(async (...args: unknown[]) =>
+      (args[1] as { kinds: number[] }[])[0].kinds.includes(30840)
+        ? [{ a: TOPIC, created_at: topic.created_at, h: FOLDER, changes: [{ id: deletingTopic.id, created_at: deletingTopic.created_at, fields: ['deleted'] }] }]
+        : [],
+    )
+    queryRelayTimes.mockClear()
+    const kept = new Map<string, string>()
+    vi.stubGlobal('window', {
+      sessionStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
+    })
+    try {
+      const before = await deletedProjectsAsViewer('https://relay.test', token)
+      topicFieldsOptIn('?topicFields=on')
+      forgetProjectFields()
+      const after = await deletedProjectsAsViewer('https://relay.test', token)
+
+      // The first tab's one page, then the opted-in tab's page and the page after it.
+      expect(queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds)).toEqual([[30851], [30851, 30840], [30851, 30840]])
+      expect(before?.map((file) => file.address)).not.toContain(TOPIC)
+      expect(after?.map((file) => [file.address, file.deleted?.by])).toContainEqual([TOPIC, AUTHOR])
+    } finally {
+      topicFieldsOptIn('?topicFields=off')
+    }
   })
 })
 

@@ -86,10 +86,13 @@ interface Switch {
 const OFF: Switch = { fields: undefined, issues: undefined, topics: undefined, documents: undefined, inOrder: [], list: false, text: false, times: false }
 
 let held: Promise<Switch> | undefined
+/** What `held` answered, for a caller that cannot wait a turn (a dialog's first words): undefined until it is in. */
+let answered: Switch | undefined
 
 function relaySwitch(): Promise<Switch> {
+  if (held) return held
   // Asked inside the promise, so a read that throws is off, as a refused one is; asked again on the next read.
-  held ??= Promise.resolve()
+  const asked = Promise.resolve()
     .then(relayInfo)
     .then(
       (info) => {
@@ -125,7 +128,12 @@ function relaySwitch(): Promise<Switch> {
         return OFF
       },
     )
-  return held
+  held = asked
+  // Kept only while it is the answer in use: a read that failed, or one forgotten since, leaves nothing behind.
+  void asked.then((answer) => {
+    if (held === asked) answered = answer
+  })
+  return asked
 }
 
 /**
@@ -196,6 +204,17 @@ export async function byFields(address: string | undefined): Promise<boolean> {
   return !!(await fieldsFor(kind))
 }
 
+/** {@link byFields} without the wait, for the first words of a dialog: undefined until the relay's answer is in. */
+export function byFieldsNow(address: string | undefined): boolean | undefined {
+  if (!answered) return undefined
+  const kind = address ? Number(address.split(':')[0]) : undefined
+  if (kind === PROJECT_KIND) return !!answered.fields
+  if (kind === ISSUE_KIND) return !!answered.issues
+  if (kind === TOPIC_KIND) return !!answered.topics
+  if (kind === DOCUMENT_KIND) return !!answered.documents
+  return false
+}
+
 /**
  * The kinds the open read opens, for interop's `openRead`: projects once switched, and every other file kind — topics,
  * documents, issues — as soon as the relay offers the open read (NIP-11 `file_list` newest and text), switched or
@@ -256,5 +275,6 @@ export async function timesOffered(): Promise<boolean> {
 /** Forget the relay's answer, so a test can switch it. */
 export function forgetProjectFields(): void {
   held = undefined
+  answered = undefined
   forgetRelayInfo()
 }

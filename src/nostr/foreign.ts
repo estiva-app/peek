@@ -124,6 +124,7 @@ import {
   writeChange,
   createFile,
   isSwitchRefusal,
+  refusalCode,
   type WriteChangeArgs,
   TEXT_FIELD,
 } from '@estiva-app/interop'
@@ -1409,6 +1410,9 @@ export async function resolveFolderContentsAsViewer(
  * list read would cost every issue's current changes, about 5 MB as Miky on 19 Nov (ISS-6). Where the relay has no
  * times read, no issue is listed here.
  *
+ * Topics and pages are found with the issues, in the same times read, in a tab that keeps them in order (ALL-5):
+ * only there is one deleted by its field. A tab that does not reads exactly what it read before.
+ *
  * `null` where the relay has no list read: there, finding them means reading every project's whole history.
  *
  * **Throws {@link RelayReadError} when a read failed.**
@@ -1420,7 +1424,7 @@ export async function deletedProjectsAsViewer(relayUrl: string, token: StoredTok
   const [roots, listed, issues] = await Promise.all([
     query([{ kinds: [PROJECT_KIND] }]),
     query([{ fields: 'newest', kinds: [PROJECT_KIND] }]),
-    deletedIssueCandidates(relayUrl, token),
+    deletedFileCandidates(relayUrl, token),
   ])
   const addressOf = (e: { kind: number; pubkey: string; tags: string[][] }) =>
     `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1] ?? ''}`
@@ -1443,16 +1447,21 @@ const TIMES_PAGE = 500
  * The addresses of the issues whose `deleted` field anyone ever changed, from the times read of every issue the viewer
  * can read, page by page until its cursor stops (SPEC §6.5, §6.13), as Ship's `deletedIssueEvents` finds them. A
  * restored issue is among them: reading it whole says it is not deleted. Empty where the relay has no times read.
+ *
+ * Topics and pages with them (ALL-5), each where this tab keeps its type in order: deleted by the same field, and
+ * found the same way. Left out otherwise, so the read grows with a workspace's topics and pages only where one of
+ * them can have been deleted by its field.
  */
-async function deletedIssueCandidates(relayUrl: string, token: StoredToken): Promise<string[]> {
+async function deletedFileCandidates(relayUrl: string, token: StoredToken): Promise<string[]> {
   if (!(await timesOffered())) return []
+  const [topics, documents] = await Promise.all([topicFields(), documentFields()])
+  const kinds = [ISSUE_KIND, ...(topics ? [TOPIC_KIND] : []), ...(documents ? [DOCUMENT_KIND] : [])]
   const named = new Set<string>()
   let until: number | undefined
   for (;;) {
-    // Topics and pages with them (ALL-5): deleted by the same field once kept in order, and found the same way.
     const page = await queryRelayTimes(
       relayUrl,
-      [{ fields: 'times', kinds: [ISSUE_KIND, TOPIC_KIND, DOCUMENT_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }],
+      [{ fields: 'times', kinds, limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }],
       token.accessToken,
       token.pubkey,
     )
@@ -2118,6 +2127,8 @@ export async function applyActionAsViewer(
     incomplete?: string
     /** A new issue was made and its text, the change after its first record, did not land (ISS-6). */
     textNotSaved?: true
+    /** A Delete declared as a `kind:5` was written as the file's `deleted` change (ALL-5): nothing is to be unlisted. */
+    marked?: true
   }
 > {
   let pointer
@@ -2155,7 +2166,9 @@ export async function applyActionAsViewer(
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
   */
   // A Restore is always that change: a file that reads as deleted was marked by it, whatever this tab is switched to.
-  const marks = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && (!!args.restores || !!(await fieldsFor(pointer.kind)))
+  // So is a Delete written again after the relay refused its `kind:5` (`afterSwitch`): the refusal says the type is kept.
+  const marks =
+    found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && (!!args.restores || afterSwitch || !!(await fieldsFor(pointer.kind)))
   const declared = found && marks ? { ...found, emits: { kind: KIND_CHANGE, field: DELETED_FIELD }, input: { type: 'string' as const } } : found
   const manifest =
     found && marks ? { ...resolved.manifest, actions: (resolved.manifest.actions ?? []).map((action) => (action === found ? declared! : action)) } : resolved.manifest
@@ -2170,8 +2183,9 @@ export async function applyActionAsViewer(
     declared?.emits.field && declared.emits.kind !== KIND.DELETION && typeof args.value === 'string' ? declared.emits.field : undefined
   // Projects' switch or issues', each on its own (ISS-6): a status, assign, rename or move lands after the current change.
   const fields = changedField ? await fieldsFor(pointer.kind) : undefined
-  // Written after the change it follows: where this tab is switched for the kind, and a Restore anywhere.
-  const inOrderWrite = !!fields || (marks && !!args.restores)
+  // Written after the change it follows: where this tab is switched for the kind, a Restore anywhere, and the one
+  // write again after the relay said the file is kept in order.
+  const inOrderWrite = !!fields || (marks && !!args.restores) || (afterSwitch && !!changedField)
   const open = async (field: string) =>
     openFile(query, { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }, { text: field === TEXT_FIELD && !!fields?.text })
   const opened = inOrderWrite && changedField ? await open(changedField).catch(() => undefined) : undefined
@@ -2211,7 +2225,11 @@ export async function applyActionAsViewer(
   const me = (v: string) => (v === '@me' ? token.pubkey : v)
   const value =
     typeof args.value === 'string'
-      ? me(args.value)
+      ? // A Delete read as the `deleted` change deletes whatever its caller passed: a confirm carries no value, and
+        // the empty one would be a restore. Only a Restore writes the empty value.
+        marks && !args.restores
+        ? 'true'
+        : me(args.value)
       : Object.fromEntries(Object.entries(args.value).map(([k, v]) => [k, me(v)]))
 
   /*
@@ -2323,7 +2341,7 @@ export async function applyActionAsViewer(
       query,
       current: async (field) => (await open(field))?.fields[field]?.event,
     })
-    if (written.ok) return { ok: true, id: written.id }
+    if (written.ok) return { ok: true, id: written.id, ...(marks ? { marked: true as const } : {}) }
     // Said of the field changed: a crossed title or status is not "this text".
     const what = changedField === TEXT_FIELD ? 'this text' : 'this'
     if (!('refused' in written)) return fail(`Someone changed ${what} at the same time. Reload and try again.`)
@@ -2397,10 +2415,20 @@ export async function applyActionAsViewer(
       why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
     */
     const switching = !!changedField && isSwitchedKind(pointer.kind) && isSwitchRefusal(result.reason)
-    if (switching && !afterSwitch && (changedField !== TEXT_FIELD || args.base)) {
+    /*
+      A topic or a page (ALL-5): the relay keeps them in order for one team and announces nothing, so a tab that did
+      not opt in learns it from this refusal alone. The change is written again once, after the change it follows;
+      a `kind:5` the relay refused as `delete-by-field` is written again as the file's `deleted` change.
+      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+    */
+    const unannounced = pointer.kind === TOPIC_KIND || pointer.kind === DOCUMENT_KIND
+    if (switching && !afterSwitch && unannounced && changedField !== TEXT_FIELD) return applyActionAsViewer(args, relayUrl, token, transform, true)
+    if (switching && !afterSwitch && !unannounced && (changedField !== TEXT_FIELD || args.base)) {
       forgetProjectFields()
       if (await fieldsFor(pointer.kind)) return applyActionAsViewer(args, relayUrl, token, transform, true)
     }
+    const byField = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && refusalCode(result.reason) === 'delete-by-field'
+    if (byField && !afterSwitch) return applyActionAsViewer(args, relayUrl, token, transform, true)
     return fail(switching ? NOT_SAVED_RELOAD : (result.reason ?? 'The relay rejected the change.'))
   }
 
@@ -2539,6 +2567,8 @@ export async function deleteFileAsViewer(
   }
   const deleted = await applyActionAsViewer({ naddr: args.naddr, actionId: args.actionId, value: '' }, relayUrl, token)
   if (!deleted.ok) return { ok: false, reason: deleted.reason ?? 'The relay refused to delete the topic.' }
+  // The relay keeps this file in order and refused the `kind:5`: it was marked deleted, and stays on its team's list.
+  if (deleted.marked) return { ok: true }
   /*
     A deletion its owner declared `listed` — Ship's `delete-project` (MAN-4) —
     has been unlisted already, from every Folder whose state names it rather
