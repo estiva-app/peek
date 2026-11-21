@@ -1,6 +1,9 @@
 import {
+  DOCUMENT_TYPE,
   FILE_KINDS,
   ISSUE_TYPE,
+  PROJECT_TYPE,
+  TOPIC_TYPE,
   fieldsOptedIn,
   fileFieldsOf,
   projectFieldsOf,
@@ -15,6 +18,10 @@ import { forgetRelayInfo, relayInfo } from './relayInfo'
 export const PROJECT_KIND = 30850
 /** The kind an issue is written as: protocol's `ISSUE_TYPE`, switched on its own (ISS-6). */
 export const ISSUE_KIND = 30851
+/** The kind a topic is written as: protocol's `TOPIC_TYPE`, switched with documents on the relay (ALL-5). */
+export const TOPIC_KIND = 30840
+/** The kind a page is written as: protocol's `DOCUMENT_TYPE` (ALL-5). */
+export const DOCUMENT_KIND = 30842
 
 const OPT_IN_KEY = 'peek.projectFields'
 
@@ -43,11 +50,30 @@ export function issueFieldsOptIn(search = ''): boolean {
   return typeFieldsOptedIn(ISSUE_TYPE, search, tabStorage())
 }
 
+/**
+ * This tab's opt-in to writing topics in order (ALL-5): `?topicFields=on|off`, kept for the tab, as Leaf's. The relay
+ * keeps topics and pages in order team by team before it does everywhere, and its NIP-11 names no single team, so a
+ * tab on such a team opts in.
+ */
+export function topicFieldsOptIn(search = ''): boolean {
+  return typeFieldsOptedIn(TOPIC_TYPE, search, tabStorage())
+}
+
+/** This tab's opt-in to writing pages in order (ALL-5): `?documentFields=on|off`, kept for the tab, as Leaf's. */
+export function documentFieldsOptIn(search = ''): boolean {
+  return typeFieldsOptedIn(DOCUMENT_TYPE, search, tabStorage())
+}
+
 /** What the switch reads off NIP-11: on or off, and the types the relay keeps in order. */
 interface Switch {
   fields: ProjectFields | undefined
   /** Issues' own switch (ISS-6): on where the relay keeps issues in order, or this tab opted in. */
   issues: ProjectFields | undefined
+  /** Topics' switch (ALL-5): on where the relay keeps topics in order, or this tab opted in. */
+  topics: ProjectFields | undefined
+  /** Pages' switch (ALL-5), the same. */
+  documents: ProjectFields | undefined
+  /** The types the relay announces it keeps in order, and each type this tab opted in to. */
   inOrder: readonly string[]
   /** The relay answers the list read (NIP-11 `file_list.newest`), switched or not. */
   list: boolean
@@ -57,7 +83,7 @@ interface Switch {
   times: boolean
 }
 
-const OFF: Switch = { fields: undefined, issues: undefined, inOrder: [], list: false, text: false, times: false }
+const OFF: Switch = { fields: undefined, issues: undefined, topics: undefined, documents: undefined, inOrder: [], list: false, text: false, times: false }
 
 let held: Promise<Switch> | undefined
 
@@ -72,10 +98,23 @@ function relaySwitch(): Promise<Switch> {
           return OFF
         }
         const reads: RelayFileReads = relayFileReadsOf(info)
+        const fields = projectFieldsOf(reads, fieldsOptIn())
+        const issues = fileFieldsOf(reads, ISSUE_TYPE, issueFieldsOptIn())
+        const topics = fileFieldsOf(reads, TOPIC_TYPE, topicFieldsOptIn())
+        const documents = fileFieldsOf(reads, DOCUMENT_TYPE, documentFieldsOptIn())
+        // A type this tab writes in order is named by its id and deleted by its field, announced or opted in to.
+        const switched = [
+          ...(fields ? [PROJECT_TYPE] : []),
+          ...(issues ? [ISSUE_TYPE] : []),
+          ...(topics ? [TOPIC_TYPE] : []),
+          ...(documents ? [DOCUMENT_TYPE] : []),
+        ]
         return {
-          fields: projectFieldsOf(reads, fieldsOptIn()),
-          issues: fileFieldsOf(reads, ISSUE_TYPE, issueFieldsOptIn()),
-          inOrder: reads.inOrder,
+          fields,
+          issues,
+          topics,
+          documents,
+          inOrder: [...new Set([...reads.inOrder, ...switched])],
           list: reads.list,
           text: reads.text,
           times: reads.times,
@@ -101,9 +140,10 @@ export async function projectFields(): Promise<ProjectFields | undefined> {
 }
 
 /**
- * The types the relay keeps in order (NIP-11 `files.requires_prev`), for interop's `inOrder`: a comment, a Folder
- * command or a reference to a file of one names it by its id as well. Read whether or not this tab is switched,
- * since the relay is what keeps them so.
+ * The types kept in order, for interop's `inOrder`: those the relay announces (NIP-11 `files.requires_prev`), whether
+ * or not this tab is switched, and each type this tab opted in to, since a relay that keeps a type in order for one
+ * team announces none (ALL-5). A comment, a Folder command or a reference to a file of one names it by its id as
+ * well, and a Delete declared as a `kind:5` marks the file deleted.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-named-by-its-id-in-a-capital-and-small-tag.md
  */
@@ -116,16 +156,33 @@ export async function issueFields(): Promise<ProjectFields | undefined> {
   return (await relaySwitch()).issues
 }
 
-/** The switch of `kind`: projects' or issues', each on its own; undefined for any other kind, or off. */
+/**
+ * Whether topics are written in order in this tab (ALL-5); undefined is off: a change names none it follows and a
+ * delete is the NIP-09 one, as before.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+ */
+export async function topicFields(): Promise<ProjectFields | undefined> {
+  return (await relaySwitch()).topics
+}
+
+/** Whether pages are written in order in this tab (ALL-5); undefined is off. */
+export async function documentFields(): Promise<ProjectFields | undefined> {
+  return (await relaySwitch()).documents
+}
+
+/** The switch of `kind`: a project's, an issue's, a topic's or a page's, each on its own; undefined for any other kind, or off. */
 export async function fieldsFor(kind: number | undefined): Promise<ProjectFields | undefined> {
   if (kind === PROJECT_KIND) return projectFields()
   if (kind === ISSUE_KIND) return issueFields()
+  if (kind === TOPIC_KIND) return topicFields()
+  if (kind === DOCUMENT_KIND) return documentFields()
   return undefined
 }
 
-/** Whether `kind` has a switch of its own: a project or an issue. */
+/** Whether `kind` has a switch of its own: a project, an issue, a topic or a page. */
 export function isSwitchedKind(kind: number | undefined): boolean {
-  return kind === PROJECT_KIND || kind === ISSUE_KIND
+  return kind === PROJECT_KIND || kind === ISSUE_KIND || kind === TOPIC_KIND || kind === DOCUMENT_KIND
 }
 
 /** Whether `address` names a project. */

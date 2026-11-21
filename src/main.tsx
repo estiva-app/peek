@@ -24,13 +24,16 @@ import { StartedTopicRefusals } from './components/StartedTopicRefusals'
 import { setSocketReader } from './nostr/bridge'
 import { relayLog } from './nostr/liveTopics'
 import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
-import { fieldsOptIn, issueFieldsOptIn } from './nostr/projectFields'
+import { documentFieldsOptIn, fieldsOptIn, issueFieldsOptIn, topicFieldsOptIn } from './nostr/projectFields'
 import { CrashOnPurpose, ScreenSteps, startErrorReports } from './lib/errorReports'
 import { startPageTimings } from './lib/pageTimings'
 
 // This tab's `?fields=on|off` (ALO-6) and `?issueFields=on|off` (ISS-6), taken before sign-in can move the address.
 fieldsOptIn(window.location.search)
 issueFieldsOptIn(window.location.search)
+// `?topicFields=on|off` and `?documentFields=on|off`, the same for topics and pages (ALL-5).
+topicFieldsOptIn(window.location.search)
+documentFieldsOptIn(window.location.search)
 
 // Reads go over the open connection, one round trip each (OPT-2). Here rather
 // than in `@/api`, which tests import, so a test keeps the HTTP path.

@@ -118,6 +118,8 @@ import {
   type LinkReader,
   type OwnPlace,
   openFile,
+  listsField,
+  prevsAfterSwitch,
   prevOf,
   writeChange,
   createFile,
@@ -136,6 +138,10 @@ import {
   listReadOption,
   projectFields,
   PROJECT_KIND,
+  DOCUMENT_KIND,
+  documentFields,
+  TOPIC_KIND,
+  topicFields,
   timesOffered,
   withOpenRead,
 } from './projectFields'
@@ -1012,7 +1018,17 @@ export async function topicFilesAsViewer(
  * them, so a file only others can see keeps its place.
  */
 export async function topicListAsViewer(topic: string, relayUrl: string, token: StoredToken): Promise<ListedFile[]> {
-  return topicList(viewerQuery(relayUrl, token), topic, await listReadOption())
+  return topicList(viewerQuery(relayUrl, token), topic, await topicListRead())
+}
+
+/**
+ * The list read for a topic's list, as soon as the relay offers it, switched or not (ALL-5): each entry's current
+ * change, never every change the topic ever had. Before, it waited on the projects' switch.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ */
+async function topicListRead(): Promise<{ listRead?: true }> {
+  return (await listReadOffered()) ? { listRead: true } : {}
 }
 
 /**
@@ -1039,6 +1055,19 @@ export async function arrangeTopicAsViewer(
     console.warn('[nostr] arranging a topic failed:', error)
     return { ok: false }
   }
+}
+
+/**
+ * The change Undo's listing follows, where topics are kept in order (ALL-5): the file's entry on the topic as the
+ * relay has it now, which is the Remove being undone. Undefined where they are not, and the listing names none;
+ * `null` when it could not be read, and nothing is put back.
+ */
+export async function listsPrevAsViewer(topic: string, file: string, relayUrl: string, token: StoredToken): Promise<string | undefined | null> {
+  if (!(await topicFields())) return undefined
+  const [kind, author, ...d] = topic.split(':')
+  const field = listsField(file)
+  const prevs = await prevsAfterSwitch(viewerQuery(relayUrl, token), { kind: Number(kind), pubkey: author!, d: d.join(':') }, [field]).catch(() => undefined)
+  return prevs?.[field] ?? null
 }
 
 /** Put one change on the relay as the viewer, signed: Undo's listing again before its move (TOPI-5). */
@@ -1079,7 +1108,7 @@ export async function topicAddressesAsViewer(relayUrl: string, token: StoredToke
  * **Throws {@link RelayReadError} when the read failed.**
  */
 export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, ActivityFile[]>> {
-  const lists = await topicLists(viewerQuery(relayUrl, token), topics)
+  const lists = await topicLists(viewerQuery(relayUrl, token), topics, await topicListRead())
   return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [{ address: entry.address, folder: entry.folder }] : []))]))
 }
 
@@ -1109,6 +1138,32 @@ export async function setTopicFileAsViewer(
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const plan = args.listed ? planListInTopic : planRemoveFromTopic
+  /*
+    Where topics are kept in order (SPEC §6.14, ALL-5): the entry follows the file's current entry on this topic, or
+    the topic's first record for a file never listed, read now. Each file is its own field, so two people adding
+    different files never clash, and a stale entry is written again after the newer one.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+  */
+  if (await topicFields()) {
+    const query = viewerQuery(relayUrl, token)
+    const [kind, author, ...d] = args.topic.split(':')
+    const pointer = { kind: Number(kind), pubkey: author!, d: d.join(':') }
+    const field = listsField(args.file)
+    const prev = (await prevsAfterSwitch(query, pointer, [field]).catch(() => undefined))?.[field]
+    if (!prev) return { ok: false, reason: 'The topic could not be read just now, so nothing was changed. Try again.' }
+    const written = await writeChange({
+      field,
+      value: args.listed ? 'true' : 'false',
+      prev,
+      build: (input) => plan(token.pubkey, input.createdAtMs, { topic: { address: args.topic, folder: args.folder }, file: args.file, prev: input.prev })[0]!,
+      sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
+      publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
+      query,
+      current: async (asked) => (await openFile(query, pointer, { text: false }))?.fields[asked]?.event,
+    }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
+    if (written.ok) return { ok: true }
+    return { ok: false, reason: 'refused' in written ? written.refused : 'The topic changed at the same time. Try again.' }
+  }
   const result = await publishInOrder(
     plan(token.pubkey, Date.now(), { topic: { address: args.topic, folder: args.folder }, file: args.file }),
     relayUrl,
@@ -2074,7 +2129,18 @@ export async function applyActionAsViewer(
     )
   }
 
-  const declared = resolved.manifest.actions?.find((action) => action.id === args.actionId)
+  const found = resolved.manifest.actions?.find((action) => action.id === args.actionId)
+  /*
+    A Delete declared as a `kind:5` on a file whose type is kept in order (a topic, a page; SPEC §7.3, §6.5, ALL-5):
+    the relay refuses the `kind:5`, and the delete is the file's `deleted` change, `true` to delete and empty to
+    restore, after the change it follows. Read here as that change, so it is written like any other field: nothing
+    is taken off a team's list, and Restore brings back exactly what was there.
+    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+  */
+  const marks = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && !!(await fieldsFor(pointer.kind))
+  const declared = found && marks ? { ...found, emits: { kind: KIND_CHANGE, field: DELETED_FIELD }, input: { type: 'string' as const } } : found
+  const manifest =
+    found && marks ? { ...resolved.manifest, actions: (resolved.manifest.actions ?? []).map((action) => (action === found ? declared! : action)) } : resolved.manifest
   /*
     A change to a project read by its fields (ALO-6, SPEC §6.2): written after
     the change it follows, through interop's `writeChange`. The relay's open
@@ -2194,7 +2260,7 @@ export async function applyActionAsViewer(
   */
   const inOrder = await inOrderTypes()
   const common = {
-    manifest: resolved.manifest,
+    manifest,
     kind: pointer.kind,
     address,
     objectAuthor: pointer.pubkey,
@@ -2219,7 +2285,7 @@ export async function applyActionAsViewer(
           (file) => (file && !file.unreachable ? prevOf(file, changedField) : undefined),
           () => undefined,
         )))
-    if (!prev) return fail(`That ${pointer.kind === ISSUE_KIND ? 'issue' : 'project'} could not be read just now, so nothing was changed. Reload and try again.`)
+    if (!prev) return fail(`That ${FILE_NOUN[pointer.kind] ?? 'file'} could not be read just now, so nothing was changed. Reload and try again.`)
     const written = await writeChange({
       field: changedField,
       value,
@@ -2479,6 +2545,12 @@ export async function deleteFileAsViewer(
   return { ok: true }
 }
 
+/** A `kind:1851`: a change to one of a file's fields (SPEC §6.7). */
+const KIND_CHANGE = 1851
+
+/** What Peek calls a file of each switched kind when it could not be read. */
+const FILE_NOUN: Record<number, string> = { [PROJECT_KIND]: 'project', [ISSUE_KIND]: 'issue', [TOPIC_KIND]: 'topic', [DOCUMENT_KIND]: 'page' }
+
 /** interop's `inOrder`, only when the relay keeps a type in order: absent otherwise, as before. */
 async function inOrderOption(): Promise<{ inOrder?: readonly string[] }> {
   const inOrder = await inOrderTypes()
@@ -2499,7 +2571,10 @@ async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string
   const resolved = await resolveActingManifest(pointer, undefined, viewerQuery(relayUrl, token), manifests).catch(() => null)
   if (!resolved) return null
   const declared = resolved.manifest.actions?.find((action) => action.id === actionId)
-  return declared && declared.emits.kind !== KIND.DELETION ? declared.emits.field : undefined
+  if (!declared) return undefined
+  // A `kind:5` Delete on a type kept in order is the `deleted` change (ALL-5); elsewhere it is still the `kind:5`.
+  if (declared.emits.kind === KIND.DELETION) return (await fieldsFor(pointer.kind)) ? DELETED_FIELD : undefined
+  return declared.emits.field
 }
 
 /**
