@@ -49,7 +49,7 @@ beforeEach(() => {
   queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
     if ((filters[0]?.kinds as number[] | undefined)?.includes(31990)) return { ok: true, events: [manifest] }
     const d = (filters[0]?.['#d'] as string[] | undefined)?.[0]
-    if (d === REFUSED) return refuse ? { ok: false, reason: 'rate-limited' } : { ok: true, events: [issue(REFUSED)] }
+    if (d === REFUSED) return refuse ? { ok: false, reason: 'restricted: not allowed' } : { ok: true, events: [issue(REFUSED)] }
     return { ok: true, events: d === FINE ? [issue(FINE)] : [] }
   })
 })
