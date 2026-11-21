@@ -40,6 +40,8 @@ export class RelayReadError extends Error {
   readonly reason: string
   /** What the relay said to wait, in ms — see {@link retryAfterMs}. */
   readonly retryAfterMs: number | null
+  /** Set once {@link waitingOut} has waited its whole three minutes for this read: nothing above it waits again. */
+  waitedOut?: true
 
   constructor(reason: string) {
     super(`relay read failed: ${reason}`)
@@ -193,7 +195,8 @@ export async function withRateLimitRetry<T>(
     } catch (error) {
       const reason = reasonOf(error)
       const hint = retryAfterMs(reason)
-      if (hint === null) throw error
+      // A read that already waited the limit out underneath (`waitingOut`) is not run, and waited for, again.
+      if (hint === null || (error instanceof RelayReadError && error.waitedOut)) throw error
       const wait = Math.max(hint, budget.noteRateLimited(reason))
       if (waited >= attempts || wait > maxWaitMs) throw error
       await sleep(wait)
@@ -256,7 +259,10 @@ export async function waitingOut<T>(
       const hint = retryAfterMs(reason)
       if (hint === null || options.waits?.() === false) throw error
       const wait = Math.max(hint, budget.noteRateLimited(reason)) + jitter()
-      if (now() + wait > giveUpAt) throw error
+      if (now() + wait > giveUpAt) {
+        if (error instanceof RelayReadError) error.waitedOut = true
+        throw error
+      }
       await sleep(wait)
     }
   }

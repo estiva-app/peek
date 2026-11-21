@@ -371,7 +371,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     it('keeps the thread, drawn deleted, never "can’t be shown", when only the deletion read is refused (§6.5)', async () => {
       const relay = relayOver(world.filter((e) => e !== deletion))
       queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
-        filters.some((f) => (f.kinds as number[] | undefined)?.includes(5)) ? { ok: false as const, reason: 'error: relay busy' } : relay(url, filters),
+        filters.some((f) => (f.kinds as number[] | undefined)?.includes(5)) ? { ok: false as const, reason: 'restricted: not allowed' } : relay(url, filters),
       )
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
       expect(found.roots.find((r) => r.id === GONE)).toMatchObject({ deleted: true })
@@ -382,7 +382,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     it('still draws the conversation when the read for them is refused', async () => {
       const relay = relayOver(world)
       queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
-        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'error: relay busy' } : relay(url, filters),
+        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'restricted: not allowed' } : relay(url, filters),
       )
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
       expect(found.roots.map((r) => r.id)).toEqual([root.id])
@@ -442,7 +442,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     it('the read-only panes keep their threads when the read for them is refused', async () => {
       const relay = relayOver(world)
       queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
-        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'error: relay busy' } : relay(url, filters),
+        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'restricted: not allowed' } : relay(url, filters),
       )
       const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
       expect(found.deleted).toEqual([])
