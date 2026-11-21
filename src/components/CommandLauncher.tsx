@@ -461,7 +461,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   */
   const ask = () => {
     const text = query.trim()
-    if (!hasThread) return setCannotAsk('Open a conversation to ask about it.')
+    // An open conversation with nothing in it yet is not "no conversation": say which it is.
+    if (!hasThread) return setCannotAsk(context.conversation ? 'Nothing has been said here yet.' : 'Open a conversation to ask about it.')
     if (modelDownloadable) return setCannotAsk('Download the on-device model below to ask.')
     // Not yet answered (the first moments after opening) is not a no: the ask is tried, and says so if nothing comes back.
     // A browser with no Prompt API answers 'unavailable' too, which counts as ready above; it is asked here outright.
@@ -818,7 +819,17 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       })),
     ),
     ...(hasThread && modelReady && context.composer
-      ? [{ id: 'draft', label: 'Draft a reply', icon: icon(IconWriting), onSelect: openDraft }]
+      ? [
+          {
+            id: 'draft',
+            label: 'Draft a reply',
+            // Peek's own action, so it carries Peek's mark like the rows above it.
+            ...(HOST_APPS[0]
+              ? { leading: <span className="flex size-8 items-center justify-center">{appMark(HOST_APPS[0], 16)}</span> }
+              : { icon: icon(IconWriting) }),
+            onSelect: openDraft,
+          },
+        ]
       : []),
   ]
 

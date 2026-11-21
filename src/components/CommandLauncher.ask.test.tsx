@@ -177,6 +177,16 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
     expect(promptForText).not.toHaveBeenCalled()
   })
 
+  it('says nothing has been said yet in an open conversation that is empty, not to open one', async () => {
+    open({ composer: { isFocused: true, hasDraft: false }, conversation: { references: [], messages: [] } })
+    await enter(input(), 'what did we decide')
+    await waitFor(() => expect(input().rows).toBe(3))
+    await userEvent.type(input(), '{Enter}')
+
+    expect(await screen.findByText('Nothing has been said here yet.')).toBeInTheDocument()
+    expect(screen.queryByText('Open a conversation to ask about it.')).not.toBeInTheDocument()
+  })
+
   it('says asking needs the on-device model, in a browser that has none', async () => {
     prefillAvailability.mockResolvedValue('unanswered')
     open()
