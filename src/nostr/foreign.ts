@@ -601,9 +601,15 @@ export async function searchFileReferencesAsViewer(text: string, relayUrl: strin
     Leaf's `[` find them (ALO-6); a deleted one is in no answer. Issues the same, once theirs is switched (ISS-6).
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-finds-a-file-by-the-words-of-its-current-fields.md
   */
-  const [projects, issues] = await Promise.all([projectFields(), issueFields()])
-  const fields = projects ?? issues
-  const searched = [...(projects?.search ? [PROJECT_KIND] : []), ...(issues?.search ? [ISSUE_KIND] : [])]
+  // Topics and pages the same, once theirs is (ALL-5): a page by a word of its current title, summary or text.
+  const [projects, issues, topics, documents] = await Promise.all([projectFields(), issueFields(), topicFields(), documentFields()])
+  const fields = projects ?? issues ?? topics ?? documents
+  const searched = [
+    ...(projects?.search ? [PROJECT_KIND] : []),
+    ...(issues?.search ? [ISSUE_KIND] : []),
+    ...(topics?.search ? [TOPIC_KIND] : []),
+    ...(documents?.search ? [DOCUMENT_KIND] : []),
+  ]
   const byFields = searched.length
     ? { kinds: searched, query: (filters: Record<string, unknown>[]) => queryRelayWithMatches(relayUrl, filters, token.accessToken, token.pubkey) }
     : undefined
@@ -1443,7 +1449,13 @@ async function deletedIssueCandidates(relayUrl: string, token: StoredToken): Pro
   const named = new Set<string>()
   let until: number | undefined
   for (;;) {
-    const page = await queryRelayTimes(relayUrl, [{ fields: 'times', kinds: [ISSUE_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }], token.accessToken, token.pubkey)
+    // Topics and pages with them (ALL-5): deleted by the same field once kept in order, and found the same way.
+    const page = await queryRelayTimes(
+      relayUrl,
+      [{ fields: 'times', kinds: [ISSUE_KIND, TOPIC_KIND, DOCUMENT_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }],
+      token.accessToken,
+      token.pubkey,
+    )
     for (const row of page) if (row.changes.some((change) => change.fields.includes(DELETED_FIELD))) named.add(row.a)
     const oldest = Math.min(...page.map((row) => row.created_at))
     if (page.length === 0 || oldest === until) break
@@ -2069,6 +2081,11 @@ export async function applyActionAsViewer(
      */
     prev?: string
     /**
+     * A Restore (ALL-5): a Delete declared as a `kind:5` is then written as the `deleted` change set back to empty,
+     * after the change it follows, whether or not this tab is switched for the file's type. Never a `kind:5`.
+     */
+    restores?: true
+    /**
      * For a project's text: the text the caller loaded and edited from. Used only when the change is written again
      * after the relay switched (ALO-8), so words saved since are merged onto, never written over.
      */
@@ -2137,7 +2154,8 @@ export async function applyActionAsViewer(
     is taken off a team's list, and Restore brings back exactly what was there.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
   */
-  const marks = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && !!(await fieldsFor(pointer.kind))
+  // A Restore is always that change: a file that reads as deleted was marked by it, whatever this tab is switched to.
+  const marks = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && (!!args.restores || !!(await fieldsFor(pointer.kind)))
   const declared = found && marks ? { ...found, emits: { kind: KIND_CHANGE, field: DELETED_FIELD }, input: { type: 'string' as const } } : found
   const manifest =
     found && marks ? { ...resolved.manifest, actions: (resolved.manifest.actions ?? []).map((action) => (action === found ? declared! : action)) } : resolved.manifest
@@ -2152,9 +2170,11 @@ export async function applyActionAsViewer(
     declared?.emits.field && declared.emits.kind !== KIND.DELETION && typeof args.value === 'string' ? declared.emits.field : undefined
   // Projects' switch or issues', each on its own (ISS-6): a status, assign, rename or move lands after the current change.
   const fields = changedField ? await fieldsFor(pointer.kind) : undefined
+  // Written after the change it follows: where this tab is switched for the kind, and a Restore anywhere.
+  const inOrderWrite = !!fields || (marks && !!args.restores)
   const open = async (field: string) =>
     openFile(query, { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }, { text: field === TEXT_FIELD && !!fields?.text })
-  const opened = fields && changedField ? await open(changedField).catch(() => undefined) : undefined
+  const opened = inOrderWrite && changedField ? await open(changedField).catch(() => undefined) : undefined
 
   // The Folder has to come off the object itself: it is required on the event
   // about to be published, and asking the user for it would be absurd.
@@ -2274,7 +2294,7 @@ export async function applyActionAsViewer(
     ...listing,
   }
 
-  if (fields && changedField && typeof value === 'string') {
+  if (inOrderWrite && changedField && typeof value === 'string') {
     // The field's current change as the relay just answered it, else the record's id for its first change; for a
     // project the open read no longer answers (a deleted one), the change its card was read with.
     const prev = opened
@@ -2588,7 +2608,7 @@ export async function restoreFileAsViewer(
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const result = await applyActionAsViewer(
-    { naddr: args.naddr, actionId: args.actionId, value: '', ...(args.prev ? { prev: args.prev } : {}) },
+    { naddr: args.naddr, actionId: args.actionId, value: '', restores: true, ...(args.prev ? { prev: args.prev } : {}) },
     relayUrl,
     token,
   )

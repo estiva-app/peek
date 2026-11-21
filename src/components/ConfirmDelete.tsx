@@ -14,10 +14,17 @@ import { ConfirmDialog } from '@estiva-app/ui'
  * @registry reusable: stays in Peek (Katerina, 18 September): estiva-ui's ConfirmDialog with Peek's words
  */
 export function ConfirmDelete({
+  restorable,
   onArchiveInstead,
   onConfirm,
   onClose,
 }: {
+  /**
+   * The file's type is kept in order, so its Delete only marks it and anyone who may edit it brings it back (ALL-5):
+   * the question says where from, as Leaf's does.
+   * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+   */
+  restorable?: boolean
   /**
    * The safer answer, for a topic its manifest lets you archive (FOL-46):
    * hidden from every list and restorable, where a deletion is neither.
@@ -46,10 +53,16 @@ export function ConfirmDelete({
         }
       }
     >
-      <p>
-        Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.
-      </p>
-      <p>If the relay keeps it, Peek will say so; other apps can still read it until then.</p>
+      {restorable ? (
+        <p>It leaves every list and search. Anyone who can edit it can bring it back from Archive → Deleted.</p>
+      ) : (
+        <>
+          <p>
+            Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.
+          </p>
+          <p>If the relay keeps it, Peek will say so; other apps can still read it until then.</p>
+        </>
+      )}
     </ConfirmDialog>
   )
 }
