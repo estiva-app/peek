@@ -231,7 +231,9 @@ describe('Delete, declared as a change of the deleted field', () => {
 })
 
 describe('Delete, declared as a kind:5', () => {
-  it('still sends the kind:5 and then the team removes, with no prev, when the switch is on', async () => {
+  // Interop 0.109: where the relay keeps projects in order it refuses a kind:5 on one, so an older
+  // listing's kind:5 Delete is the `deleted` change, and with no change to follow nothing is sent.
+  it('sends nothing, neither the kind:5 nor a team remove, when the switch is on and no prev is passed', async () => {
     relayInfo(true)
     queryRelay.mockImplementation(relayOver([shipManifest('kind:5'), project, channel, state]))
     const result = await deleteFileAsViewer(
@@ -240,13 +242,8 @@ describe('Delete, declared as a kind:5', () => {
       token,
     )
 
-    expect(result).toEqual({ ok: true })
-    const events = sent()
-    expect(events.map((e) => e.kind)).toEqual([5, 1852])
-    expect(tag(events[0], 'a')).toBe(ADDRESS)
-    expect(tag(events[0], 'prev')).toBeUndefined()
-    // The relay keeps projects in order: the team's remove names the project by its id.
-    expect(tag(events[1], 'o') ?? tag(events[1], 'a')).toBe(ID)
+    expect(result.ok).toBe(false)
+    expect(sent()).toEqual([])
   })
 })
 
