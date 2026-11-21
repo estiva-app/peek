@@ -241,10 +241,15 @@ beforeEach(() => {
   socket.subs = []
   window.localStorage.clear()
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
-    const events = filters.flatMap((f) =>
+    const events = filters.flatMap((f) => {
+      // The list read of a topic (ALL-5): its first record and its list entries, as the relay answers `fields: newest`.
+      if (f.fields === 'newest') {
+        const roots = relay.topics.filter((t) => (f.kinds as number[]).includes(t.kind) && (f['#d'] as string[]).includes(t.tags.find((tag) => tag[0] === 'd')?.[1] ?? ''))
+        return roots.flatMap((root) => [root, ...relay.entries.filter((e) => e.tags.some((tag) => tag[0] === 'O' && tag[1] === root.tags.find((t) => t[0] === 'd')?.[1]))])
+      }
       // The membership read's changes naming a person; every other filter over all the relay holds.
-      namesAPerson(f) ? answer(f, relay.changes) : answer(f, [...relay.topics, ...relay.files, ...relay.entries, ...relay.activity]),
-    )
+      return namesAPerson(f) ? answer(f, relay.changes) : answer(f, [...relay.topics, ...relay.files, ...relay.entries, ...relay.activity])
+    })
     return { ok: true, events }
   })
   relay.times = []

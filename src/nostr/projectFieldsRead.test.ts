@@ -250,7 +250,7 @@ describe('a deleted project, whichever way the switch is', () => {
     // Issues are asked of the relay by the times read, and only the ones it names read whole: no issue's list read.
     const asked = queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
     expect(asked.some((f) => f.fields === 'newest' && (f.kinds as number[] | undefined)?.includes(30851))).toBe(false)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500 }])
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500 }])
   })
 
   it('lists an issue deleted before the newest 500 issues changed, from the times read’s next page (ISS-6)', async () => {
@@ -276,7 +276,7 @@ describe('a deleted project, whichever way the switch is', () => {
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     expect(deleted?.map((file) => file.address)).toContain(GONE)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500, until: newest }])
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500, until: newest }])
   })
 
   it('is not on the Deleted tab once restored', async () => {
