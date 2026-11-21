@@ -8,7 +8,27 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Person } from '@/data/peopleData'
-import { snippetAround, matchPeople, messageEmptyState, type MessageSearchState } from './launcherSearch'
+import { isPrompt, snippetAround, matchPeople, messageEmptyState, type MessageSearchState } from './launcherSearch'
+
+describe('isPrompt — when the words stop being a search (a77dd5e3)', () => {
+  it('is a search up to two words, and a prompt from the third', () => {
+    expect(isPrompt('')).toBe(false)
+    expect(isPrompt('launch')).toBe(false)
+    expect(isPrompt('launch plan ')).toBe(false)
+    expect(isPrompt('launch plan review')).toBe(true)
+    expect(isPrompt('  what did   we decide  ')).toBe(true)
+  })
+
+  it('keeps search syntax a search at any length: a quoted phrase, a word left out', () => {
+    expect(isPrompt('"launch plan" review draft')).toBe(false)
+    expect(isPrompt('launch plan -draft')).toBe(false)
+  })
+
+  it('reads a hyphen inside a word, or a dash on its own, as part of a sentence', () => {
+    expect(isPrompt('follow-up on pricing')).toBe(true)
+    expect(isPrompt('pricing - what changed')).toBe(true)
+  })
+})
 
 const PEOPLE: Person[] = [
   { id: 'alice', name: 'Alice Johnson', role: 'Product Designer' },

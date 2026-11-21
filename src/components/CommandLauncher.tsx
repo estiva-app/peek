@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
-import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
+import { IconDownload, IconEraser, IconPencil, IconRefresh, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
@@ -9,12 +9,12 @@ import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } f
 import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
-import { fileEmptyState, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { fileEmptyState, isPrompt, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
-import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
-import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
+import { canPrefill, downloadModel, hasPromptApi, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
+import { probeable } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
 import { openConversation } from '@/lib/threadOpener'
@@ -27,7 +27,6 @@ import {
   launcherActionFrom,
   proseSubmission,
   splitSubmission,
-  vocabulariesFrom,
   type CreatableKindRead,
 } from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
@@ -56,9 +55,12 @@ import type { Failure } from '@estiva-app/platform'
  * **The levels are a stack**, so every way back puts back what was there:
  *
  * - the first level: this conversation, recents and apps before you type;
- *   apps, Ask, this conversation, people, actions and messages as you do
+ *   apps, this conversation, people, actions, files and messages for one or
+ *   two words; and from the third word a prompt — the field grows, Enter asks
+ *   about the open conversation and the answer shows in place, with up to
+ *   three title matches and the suggested actions as rows under it
  * - inside an app: the actions its manifest declares
- * - Ask, Draft or Make: the result, then what you can do with it as rows
+ * - Draft: the draft, then what you can do with it as rows
  * - a form: creating something, or changing something the thread refers to
  *
  * The design is the approved prototype and the key list
@@ -66,24 +68,19 @@ import type { Failure } from '@estiva-app/platform'
  * nine bugs F1–F9 it found in the launcher this replaces.
  */
 
-type Intent = 'ask' | 'draft' | 'propose'
+type Intent = 'ask' | 'draft'
 
 type Level =
   | { kind: 'first' }
   | { kind: 'app'; app: LauncherApp }
-  | { kind: 'ai'; intent: Intent }
+  | { kind: 'draft' }
   | {
       kind: 'form'
       action: LauncherAction
       /** The app it was reached through, when it was. */
       app?: LauncherApp
-      /**
-       * The catalogue entry a proposal opened it from (INT-5). A proposal opens
-       * another app's form directly, so its vocabularies and parent list travel
-       * with it — there is no app scope to read them off, and a form drawn
-       * without either is one the runtime refuses (PEE-1).
-       */
-      entry?: CatalogueEntry
+      /** The sentence a suggested action was picked under: the form is filled from it (Miky, 20 November 2026). */
+      sentence?: string
     }
 
 /** One level, and what was typed on it — kept when you go further in and come back. */
@@ -138,8 +135,6 @@ const asWords = (body: string) =>
     .replace(/\s*\n+\s*/g, ' ')
     .trim()
 
-const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
-
 /** The footer's "where": the composer the launcher was opened over, in words. */
 /*
   INT-13 (Miky, 2026-10-12): the app the launcher runs in is not one to go
@@ -167,7 +162,7 @@ function initialStack(appId?: string, actionId?: string): Frame[] {
 
 /** A form's draft is kept per action, so leaving and coming back finds it as it was (R1 A). */
 const formKey = (level: Extract<Level, { kind: 'form' }>) =>
-  `${level.action.target ?? level.app?.id ?? level.entry?.appId ?? ''}:${level.action.id}`
+  `${level.action.target ?? level.app?.id ?? ''}:${level.action.id}`
 
 export function CommandLauncher({ context, onClose, initialAppId, initialActionId }: CommandLauncherProps) {
   const [stack, setStack] = useState<Frame[]>(() => initialStack(initialAppId, initialActionId))
@@ -176,7 +171,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const query = frame.query
   const q = query.trim().toLowerCase()
 
-  const setQuery = (next: string) => setStack((s) => [...s.slice(0, -1), { ...s[s.length - 1], query: next }])
+  const setQuery = (next: string) => {
+    setCannotAsk(null)
+    setStack((s) => [...s.slice(0, -1), { ...s[s.length - 1], query: next }])
+  }
   const push = (...levels: Level[]) => setStack((s) => [...s, ...levels.map((l) => ({ level: l, query: '' }))])
   const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))
 
@@ -198,7 +196,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     else in the panel is (`lib/launcherSearch`). Searched on the first level only (F9): inside an app the
     results were never shown, and the relay was asked anyway on every pause.
   */
-  const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
+  /** The first level's field has become a prompt: its third word (`isPrompt`). */
+  const prompting = level.kind === 'first' && isPrompt(query)
+  // Messages are a search's results; under a prompt only titles stay, so the relay is not asked for them.
+  const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' && !prompting ? query : '')
   const { state: fileState, hits: fileHits } = useFileSearch(level.kind === 'first' ? query : '')
 
   const { creatableUnder, applyAction, startConversationInDm, resolveObject } = useForeignObjects()
@@ -381,25 +382,26 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   const hasThread = (context.conversation?.messages?.length ?? 0) > 0
 
-  // ── Ask, Draft and Make ─────────────────────────────────────────────────────
+  // ── Ask and Draft ───────────────────────────────────────────────────────────
 
   /*
     The question being answered, and what kind of answer. Separate from what is
-    in the field: changing the field does not ask again until you say so, and a
-    changed question puts "Ask: …" at the top for exactly that (the key list).
+    in the field: changing the field does not ask again until you say so. An
+    ask is answered on the first level, under the prompt; a draft has a level
+    of its own.
   */
   const [request, setRequest] = useState<{ intent: Intent; text: string } | null>(null)
   const [draft, setDraft] = useState<string | null | false>(null)
   const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
-  const [proposal, setProposal] = useState<Proposal | null | false>(null)
   /** A cited message the thread has not loaded — see the source row. */
   const [unreachable, setUnreachable] = useState<string | null>(null)
+  /** Why Enter could not ask, said once under the prompt until the words change. */
+  const [cannotAsk, setCannotAsk] = useState<string | null>(null)
 
   useEffect(() => {
     setDraft(null)
     setAnswer(null)
     setUnreachable(null)
-    setProposal(null)
     if (!request) return
     const messages = context.conversation?.messages ?? []
     if (messages.length === 0) return
@@ -412,55 +414,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         if (!conversation) return
         const written = await promptForText(draftInstruction(conversation, request.text))
         if (!cancelled) setDraft(written ?? false)
-        return
-      }
-
-      if (request.intent === 'propose') {
-        const conversation = threadContext(bodies(context.conversation))
-        if (!conversation) return
-        /*
-          INT-5 — every probeable app, not one. A label alone means nothing
-          across apps, so the catalogue carries which app each action belongs to.
-        */
-        const found = await Promise.all(
-          probeable(LAUNCHER_APPS).map(async (app) => {
-            try {
-              // Every kind, sorted back to the declaring app, as a section reads it (MAN-8).
-              const found = creationsFor(app, await readKinds(app.parentKind as number))
-              if (!found) return []
-              return found.filter(({ action }) => isProposable(action)).flatMap((creation) => {
-                const { action, parents, parentNoun } = creation
-                // The app's own word for the parent, not "Parent" (R10).
-                const converted = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
-                if (!converted) return []
-                const launcher = asLauncherCreation(creation, converted)
-                return [
-                  {
-                    appId: app.id,
-                    appLabel: app.label,
-                    action,
-                    launcher,
-                    vocabularies: vocabulariesFrom(action),
-                    parents,
-                  },
-                ]
-              })
-            } catch (error: unknown) {
-              console.warn('[nostr] reading an app’s creatable actions failed:', error)
-              return []
-            }
-          }),
-        )
-        const entries = found.flat()
-        if (cancelled) return
-        if (entries.length === 0) {
-          setProposal(false)
-          return
-        }
-        const answered = await promptForObject(proposalInstruction(conversation, entries), PROPOSAL_SCHEMA)
-        if (cancelled) return
-        // Validated against the real set: an id nothing declared is dropped, never guessed at.
-        setProposal(readProposal(answered, entries) ?? false)
         return
       }
 
@@ -492,14 +445,30 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, bodies(context.conversation).join('\u0000'), readKinds])
+  }, [request, bodies(context.conversation).join('\u0000')])
 
-  /** Go into Ask, Draft or Make with what was typed on the first level (R8: leaving keeps it). */
-  const openIntent = (intent: Intent) => {
+  /** Go into Draft with what was typed on the first level as the brief (R8: leaving keeps it). */
+  const openDraft = () => {
     const text = query.trim()
-    setStack((s) => [...s, { level: { kind: 'ai', intent }, query: text }])
-    // Make reads the conversation, not the words, so it starts at once.
-    setRequest(intent === 'propose' || text ? { intent, text } : null)
+    setStack((s) => [...s, { level: { kind: 'draft' }, query: text }])
+    setRequest(text ? { intent: 'draft', text } : null)
+  }
+
+  /*
+    Enter on a prompt. The box is the same in every browser and on every page
+    (Miky, 20 November 2026), so where nothing can answer, Enter says why in
+    one line instead of doing something else.
+  */
+  const ask = () => {
+    const text = query.trim()
+    // An open conversation with nothing in it yet is not "no conversation": say which it is.
+    if (!hasThread) return setCannotAsk(context.conversation ? 'Nothing has been said here yet.' : 'Open a conversation to ask about it.')
+    if (modelDownloadable) return setCannotAsk('Download the on-device model below to ask.')
+    // Not yet answered (the first moments after opening) is not a no: the ask is tried, and says so if nothing comes back.
+    // A browser with no Prompt API answers 'unavailable' too, which counts as ready above; it is asked here outright.
+    if (!hasPromptApi() || (availability !== null && !modelReady)) return setCannotAsk('Asking needs Chrome’s on-device model.')
+    setCannotAsk(null)
+    setRequest({ intent: 'ask', text })
   }
 
   // ── Forms ───────────────────────────────────────────────────────────────────
@@ -534,18 +503,23 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     is already on the person's own device. Nothing is offered or waited for
     (PEE-6): the form opens at once, and this lands values in the fields
     nobody has touched, or does not.
+
+    A form opened from a suggested action is filled from the sentence it was
+    picked under as well, and from the sentence alone where no conversation is
+    open (Miky, 20 November 2026).
   */
   const prefillFor = formLevel && !formLevel.action.target ? formKey(formLevel) : null
+  const sentence = formLevel?.sentence
   useEffect(() => {
     if (!formLevel || !prefillFor) return
     const conversation = threadContext(bodies(context.conversation))
-    if (!conversation) return
-    const built = formSchema(formLevel.action.fields, formLevel.app?.vocabularies ?? formLevel.entry?.vocabularies ?? {})
+    if (!conversation && !sentence) return
+    const built = formSchema(formLevel.action.fields, formLevel.app?.vocabularies ?? {})
     if (!built) return
     let cancelled = false
     void (async () => {
       if (!(await canPrefill())) return
-      const suggested = await promptForObject(prefillInstruction(formLevel.action.label, conversation), built.schema)
+      const suggested = await promptForObject(prefillInstruction(formLevel.action.label, conversation, sentence), built.schema)
       if (cancelled) return
       const usable = usablePrefill(suggested, built.keys)
       if (Object.keys(usable).length === 0) return
@@ -555,7 +529,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillFor, bodies(context.conversation).join('\u0000')])
+  }, [prefillFor, sentence, bodies(context.conversation).join('\u0000')])
 
   const parentOptionsFor = (form: Extract<Level, { kind: 'form' }>): Record<string, VocabOption[]> => {
     const out: Record<string, VocabOption[]> = {}
@@ -570,7 +544,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       options.filter((p) => !(p.value.startsWith('39000:') && legacyTopicByChannel(p.value.split(':')[2] ?? '')))
     const read = form.app ? live[form.app.id] : undefined
     if (read?.state === 'ready') out[PARENT_FIELD] = live39000(read.parents[form.action.id] ?? [])
-    if (!form.app && form.entry) out[PARENT_FIELD] = live39000(form.entry.parents)
     return out
   }
 
@@ -609,9 +582,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       closes saying nothing is indistinguishable from one that worked, which is
       how three dead rows survived being used.
     */
-    const appLabel = form.app?.label ?? form.entry?.appLabel ?? 'That app'
-    const declared =
-      (form.app ? liveActions(form.app).some((a) => a.id === action.id) : false) || form.entry?.launcher.id === action.id
+    const appLabel = form.app?.label ?? 'That app'
+    const declared = form.app ? liveActions(form.app).some((a) => a.id === action.id) : false
     if (!declared) {
       setSubmitError({ text: `${appLabel} has not published this action, so there is nothing to send.`, failure: 'unnamed' })
       return
@@ -799,12 +771,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       onSelect: () => push({ kind: 'form', action }),
     }))
 
-  /** Ask, Draft and Make as rows — or, where the model could run but is not here yet, the offer to fetch it. */
-  const intentRows = (typed: string): CommandPaletteRow[] => {
+  /** Under a prompt, where the model could run but is not here yet: the offer to fetch it (INT-10). Never a nag: only a prompt shows it. */
+  const downloadRows = (): CommandPaletteRow[] => {
     if (!hasThread) return []
     if (modelDownloadable) {
-      // INT-10: offered only once something is typed, so it is never a nag.
-      if (!typed) return []
       const label =
         download === 'failed'
           ? 'This browser refused the model — asking is unavailable here'
@@ -829,21 +799,39 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         },
       ]
     }
-    if (!modelReady) return []
-    return [
-      {
-        id: 'ask',
-        label: typed ? `Ask: “${typed}”` : 'Ask about this conversation',
-        icon: icon(IconMessageQuestion),
-        onSelect: () => openIntent('ask'),
-      },
-      // A draft needs somewhere to go.
-      ...(context.composer
-        ? [{ id: 'draft', label: typed ? `Draft a reply: “${typed}”` : 'Draft a reply', icon: icon(IconWriting), onSelect: () => openIntent('draft') }]
-        : []),
-      { id: 'propose', label: 'Suggest what to make from this conversation', icon: icon(IconSparkles), onSelect: () => openIntent('propose') },
-    ]
+    return []
   }
+
+  /*
+    What a sentence might want done: every action the installed apps declare,
+    each with its app's mark, as rows (Miky, 20 November 2026) — then Draft a
+    reply, where there is a conversation, a composer for it to go to and a
+    model to write it. Enter asks until an arrow lights one of these.
+  */
+  const suggestedRows = (typed: string): CommandPaletteRow[] => [
+    ...probeable(LAUNCHER_APPS).flatMap((app) =>
+      liveActions(app).map((action) => ({
+        id: `suggested-${app.id}-${action.id}`,
+        label: action.label,
+        description: app.isHost ? undefined : app.label,
+        leading: <span className="flex size-8 items-center justify-center">{appMark(app, 16)}</span>,
+        onSelect: () => setStack((s) => [...s, { level: { kind: 'form', action, app, sentence: typed }, query: '' }]),
+      })),
+    ),
+    ...(hasThread && modelReady && context.composer
+      ? [
+          {
+            id: 'draft',
+            label: 'Draft a reply',
+            // Peek's own action, so it carries Peek's mark like the rows above it.
+            ...(HOST_APPS[0]
+              ? { leading: <span className="flex size-8 items-center justify-center">{appMark(HOST_APPS[0], 16)}</span> }
+              : { icon: icon(IconWriting) }),
+            onSelect: openDraft,
+          },
+        ]
+      : []),
+  ]
 
   const firstLevel = (): { groups: CommandPaletteGroup[]; pending?: string; notes: string[]; empty?: string } => {
     const typed = query.trim()
@@ -885,7 +873,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       }))
       return {
         groups: [
-          { label: 'This conversation', rows: [...intentRows(''), ...changeRowsFor(changeRows)] },
+          // No Ask, Draft or Make rows: you ask by writing a sentence (Miky, 20 November 2026).
+          { label: 'This conversation', rows: changeRowsFor(changeRows) },
           ...hostGroups,
           {
             label: 'Recent',
@@ -901,9 +890,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
     // An app whose name starts with what was typed goes first (R6); not the host, whose actions are its own group (INT-13).
     const apps = OTHER_APPS.filter((a) => launcherMatch(a.label, query)).map(appRow)
-    // A word is a search, a sentence is a question (R5 C, C2).
-    const sentence = wordCount(typed) >= 2
-    const ask: CommandPaletteGroup = { label: 'Ask', rows: intentRows(typed) }
     const changes = changeRowsFor(
       // One row, one text: "rename launch" finds Rename on *Launch plan*.
       changeRows.filter(({ action }) => launcherMatch(`${action.label} ${action.targetLabel ?? ''}`, query)),
@@ -976,13 +962,11 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const fileNote = messageState.kind === 'failed' ? null : fileEmptyState(fileState)
     const groups: CommandPaletteGroup[] = [
       { label: 'Apps', rows: apps },
-      ...(sentence ? [ask] : []),
       { label: 'This conversation', rows: changes },
       { label: 'People', rows: peopleHits },
       { label: 'Actions', rows: actionHits },
       { label: 'Files', rows: fileRows },
       { label: 'Messages', rows: messageRows },
-      ...(!sentence ? [ask] : []),
     ]
     const anyRows = groups.some((g) => g.rows.length > 0)
     const searchingFiles = fileState.kind === 'searching'
@@ -1021,26 +1005,40 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     }
   }
 
-  const intentLevel = (intent: Intent): { groups: CommandPaletteGroup[]; body: React.ReactNode } => {
+  /*
+    The first level once the field is a prompt (its third word). The search's
+    results leave; what stays under the field is the answer, up to three files
+    whose *title* holds every word — a name of three words still finds its
+    file (Miky, 20 November 2026) — and what the sentence might want done.
+  */
+  const promptFace = (): { groups: CommandPaletteGroup[]; pending?: string; body: React.ReactNode } => {
     const typed = query.trim()
-    const changed = intent !== 'propose' && typed !== '' && typed !== request?.text
-    const askAgain: CommandPaletteRow[] = changed
-      ? [
-          {
-            id: 'again',
-            label: intent === 'ask' ? `Ask: “${typed}”` : `Write a draft: “${typed}”`,
-            icon: icon(request ? IconRefresh : intent === 'ask' ? IconMessageQuestion : IconWriting),
-            onSelect: () => setRequest({ intent, text: typed }),
-          },
-        ]
-      : []
-    const againLabel = intent === 'ask' ? (request ? 'Ask again' : 'Ask') : request ? 'Write again' : 'Draft'
+    const titleRows = fileHits
+      .filter((hit) => !(openFileRef && refNamesFile(openFileRef, hit.id)) && launcherMatch(hit.title, typed))
+      .slice(0, 3)
+      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
+    const { body, groups: answerGroups } = askView()
+    return {
+      body,
+      groups: [
+        ...answerGroups,
+        { label: 'Files', rows: titleRows },
+        { label: 'On-device model', rows: downloadRows() },
+        { label: 'Suggested', rows: suggestedRows(typed) },
+      ],
+      pending: fileState.kind === 'searching' ? 'Searching files…' : undefined,
+    }
+  }
 
-    if (intent === 'ask') {
+  /** Under a prompt: why Enter could not ask, or the answer on its way, or the answer and the rows it came from. */
+  const askView = (): { groups: CommandPaletteGroup[]; body: React.ReactNode } => {
+    const typed = query.trim()
+    if (cannotAsk) return { body: <FieldLine>{cannotAsk}</FieldLine>, groups: [] }
+    if (request?.intent !== 'ask') return { body: undefined, groups: [] }
+    const changed = typed !== request.text
+    {
       const body =
-        !request ? (
-          <FieldLine>Type a question, then press Enter.</FieldLine>
-        ) : answer === null ? (
+        answer === null ? (
           <CommandPaletteWorking>Reading the thread…</CommandPaletteWorking>
         ) : answer === false ? (
           <FieldLine>No answer came back. Edit the question and press Enter to try again.</FieldLine>
@@ -1106,14 +1104,28 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       return {
         body,
         groups: [
-          { label: againLabel, rows: askAgain },
           { label: sources.length === 1 ? 'Source' : 'Sources', rows: sources },
           { label: 'Next', rows: next },
         ],
       }
     }
+  }
 
-    if (intent === 'draft') {
+  const draftLevel = (): { groups: CommandPaletteGroup[]; body: React.ReactNode } => {
+    const typed = query.trim()
+    const changed = typed !== '' && typed !== request?.text
+    const askAgain: CommandPaletteRow[] = changed
+      ? [
+          {
+            id: 'again',
+            label: `Write a draft: “${typed}”`,
+            icon: icon(request ? IconRefresh : IconWriting),
+            onSelect: () => setRequest({ intent: 'draft', text: typed }),
+          },
+        ]
+      : []
+    const againLabel = request ? 'Write again' : 'Draft'
+    {
       const body = !request ? (
         <FieldLine>Say what the reply should say, then press Enter.</FieldLine>
       ) : draft === null ? (
@@ -1142,54 +1154,27 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           : []
       return { body, groups: [{ label: againLabel, rows: askAgain }, { label: 'Next', rows: next }] }
     }
-
-    // Make — about the conversation rather than the words.
-    const body =
-      proposal === null ? (
-        <CommandPaletteWorking>Reading the conversation and what apps can create…</CommandPaletteWorking>
-      ) : proposal === false ? (
-        <FieldLine>Nothing here matches what any app offers to make.</FieldLine>
-      ) : (
-        // Which app, always: two apps may declare something plausibly matching.
-        // The palette's own part since UIG-40 (ruling P4), drawn as it was.
-        <div data-testid="proposal">
-          <CommandPaletteProposal source={`${proposal.entry.appLabel} › ${proposal.entry.launcher.label}`} mark={appMark({ id: proposal.entry.appId }, 10)}>
-            {proposal.preview}
-          </CommandPaletteProposal>
-        </div>
-      )
-    const next: CommandPaletteRow[] = [
-      ...(proposal
-        ? [
-            {
-              id: 'make-open',
-              label: 'Open the form',
-              description: `${proposal.entry.appLabel} › ${proposal.entry.launcher.label} · nothing is created until you submit`,
-              icon: icon(IconPencil),
-              // Opens the form; it does not publish. The model proposed and a person submits.
-              onSelect: () => push({ kind: 'form', action: proposal.entry.launcher, entry: proposal.entry }),
-            },
-          ]
-        : []),
-      ...(proposal !== null
-        ? [{ id: 'make-again', label: 'Suggest something else', icon: icon(IconRefresh), onSelect: () => setRequest({ intent: 'propose', text: '' }) }]
-        : []),
-    ]
-    return { body, groups: [{ label: 'Next', rows: next }] }
   }
 
   // ── The level on screen ─────────────────────────────────────────────────────
 
   const modKey = isApplePlatform() ? 'Cmd' : 'Ctrl'
   const where = whereFrom(context)
+  /*
+    The conversation a sentence typed here would be asked about, named above
+    the field from the moment the box opens: a name that arrived with the third
+    word would push the line being typed down. The footer's "In …" says the
+    same thing, so it steps aside while the name is above the field.
+  */
+  const about = hasThread ? context.composer?.label : undefined
 
   const content = (() => {
     if (level.kind === 'form' && formDraft) {
-      const { action, app, entry } = level
+      const { action, app } = level
       const vocabularies = action.target
         ? changeRows.find((r) => r.action.target === action.target && r.action.id === action.id)?.vocabularies
-        : entry?.vocabularies
-      const owner = app?.label ?? entry?.appLabel
+        : undefined
+      const owner = app?.label
       const chip: CommandPaletteChip = { label: `${action.targetLabel ?? owner ?? ''} · ${action.label}`, onBack: back }
       /*
         A change that changes nothing waits, and says why (F4). The field holds
@@ -1201,7 +1186,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       return (
         <CommandPaletteForm
           chip={chip}
-          icon={action.target ? icon(IconPencil) : appMark({ id: app?.id ?? entry?.appId ?? '' }, 16)}
+          icon={action.target ? icon(IconPencil) : appMark({ id: app?.id ?? '' }, 16)}
           submitLabel={action.submitLabel}
           onSubmit={() => {
             setAttempted((a) => ({ ...a, [key]: true }))
@@ -1246,23 +1231,34 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       )
     }
 
-    if (level.kind === 'ai') {
-      const { groups, body } = intentLevel(level.intent)
-      const Glyph = level.intent === 'ask' ? IconMessageQuestion : level.intent === 'draft' ? IconWriting : IconSparkles
+    if (level.kind === 'draft') {
+      const { groups, body } = draftLevel()
       return (
         <CommandPaletteSearch
           query={query}
           onQueryChange={setQuery}
-          placeholder={
-            level.intent === 'ask'
-              ? `Ask anything about ${context.composer?.label ?? 'this conversation'}`
-              : level.intent === 'draft'
-                ? 'What should the reply say?'
-                : 'Looking at the conversation'
-          }
+          placeholder="What should the reply say?"
           groups={groups}
           // The mode only; the field keeps the sentence (R9).
-          chip={{ label: level.intent === 'ask' ? 'Ask' : level.intent === 'draft' ? 'Draft' : 'Make', leading: <Glyph size={16} stroke={1.5} />, onBack: back }}
+          chip={{ label: 'Draft', leading: <IconWriting size={16} stroke={1.5} />, onBack: back }}
+        >
+          {body}
+        </CommandPaletteSearch>
+      )
+    }
+
+    const placeholder = hasThread ? 'Search, or ask about this conversation' : 'Search Peek, or choose an app'
+    if (prompting) {
+      const { groups, pending, body } = promptFace()
+      return (
+        <CommandPaletteSearch
+          query={query}
+          onQueryChange={setQuery}
+          placeholder={placeholder}
+          groups={groups}
+          pending={pending}
+          about={about}
+          prompt={{ onSubmit: ask, submitWord: 'ask' }}
         >
           {body}
         </CommandPaletteSearch>
@@ -1274,17 +1270,18 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       <CommandPaletteSearch
         query={query}
         onQueryChange={setQuery}
-        placeholder={hasThread ? 'Search, or ask about this conversation' : 'Search Peek, or choose an app'}
+        placeholder={placeholder}
         groups={groups}
         pending={pending}
         notes={notes}
         empty={empty}
+        about={about}
       />
     )
   })()
 
   return (
-    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={where} modKey={modKey}>
+    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={level.kind === 'first' && about ? undefined : where} modKey={modKey}>
       {content}
     </CommandPalette>
   )

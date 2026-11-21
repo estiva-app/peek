@@ -237,6 +237,16 @@ export const SESSION_OPTIONS: SamplingOptions[] = [
 
 
 /**
+ * Whether this browser has the Prompt API at all. Firefox, Safari and a phone
+ * have none, and no session will ever start there — unlike a Chrome that
+ * answers `'unavailable'` and then creates one (see `canPrefill`). The launcher
+ * asks this before a person's Enter is spent on an attempt that cannot work.
+ */
+export function hasPromptApi(): boolean {
+  return typeof globalThis.LanguageModel !== 'undefined'
+}
+
+/**
  * Whether prefill can run **right now**, without downloading anything.
  *
  * `'downloadable'` is reported as unavailable on purpose. It is honest — the

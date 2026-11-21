@@ -31,7 +31,7 @@ const { canPrefill, promptForText, showInConversation, showInConversationWhenDra
 vi.mock('@/lib/threadOpener', () => ({ openConversation }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, promptForText }
+  return { ...actual, canPrefill, promptForText, hasPromptApi: () => true }
 })
 // Showing a message is the kit's (C3), and its own tests hold what it does on the page; here, which message the launcher asks for.
 vi.mock('@estiva-app/ui', async () => ({ ...(await vi.importActual<Record<string, unknown>>('@estiva-app/ui')), showInConversation, showInConversationWhenDrawn }))
@@ -80,8 +80,7 @@ const input = () => document.querySelector<HTMLInputElement>('[data-command-pale
 async function ask(question = 'what did we decide about the migration') {
   open()
   await enter(input(), question)
-  await userEvent.click(await screen.findByText(/^Ask: “/))
-}
+  await userEvent.type(input(), '{Enter}')}
 
 /** The Sources group: one row per cited message (R7 — they are rows now, reachable by the arrows). */
 const sources = () => screen.getByRole('group', { name: /^Sources?$/ })
@@ -217,7 +216,7 @@ describe('refining, and what retrieval admits to (INT-3)', () => {
       Also a fix: `rows` is still computed on this level, so Enter used to fire
       a search result nobody could see (shipped in INT-2).
     */
-    await ask('migration')
+    await ask('about the migration')
     await screen.findByTestId('answer')
     promptForText.mockClear()
 
@@ -231,7 +230,7 @@ describe('refining, and what retrieval admits to (INT-3)', () => {
   it('says when the question matched nothing and recency chose instead', async () => {
     // A different thing from retrieval, and reported rather than hidden behind
     // an identical-looking answer.
-    await ask('zzqxvwmkjjbtplfd')
+    await ask('zzqxvwmkjjbtplfd qqxzv wwvkq')
 
     await screen.findByTestId('answer')
     expect(screen.getByText(/Nothing here matched/i)).toBeInTheDocument()
@@ -279,15 +278,16 @@ describe('asking about a whole topic (INT-8)', () => {
   async function askTopic(question = 'what did we decide about the migration') {
     open(acrossConversations)
     await enter(input(), question)
-    await userEvent.click(await screen.findByText(/^Ask: “/))
+    await userEvent.type(input(), '{Enter}')
   }
 
   it('offers to answer with no thread open and no composer', async () => {
     // The gap: a topic detail page has neither, and used to offer nothing.
     open(acrossConversations)
     await enter(input(), 'what did we decide')
+    await userEvent.type(input(), '{Enter}')
 
-    expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
+    expect(await screen.findByTestId('answer')).toBeInTheDocument()
     // Draft still needs somewhere to put a reply, and correctly stays away.
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
@@ -347,8 +347,8 @@ describe('asking about a whole topic (INT-8)', () => {
         ],
       },
     })
-    await enter(input(), 'migration')
-    await userEvent.click(await screen.findByText(/^Ask: “/))
+    await enter(input(), 'about the migration')
+    await userEvent.type(input(), '{Enter}')
     await screen.findByTestId('answer')
 
     expect(screen.getByText(/did not fit/i)).toBeInTheDocument()
