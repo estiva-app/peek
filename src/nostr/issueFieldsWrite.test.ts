@@ -146,6 +146,9 @@ describe("A change from an issue's card", () => {
 
     expect(result.ok).toBe(true)
     expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([[1851, 'status', 'done', statusChange.id]])
+    // It says the type of the file it changes, right after the file's id (SPEC §6.2, interop 0.110).
+    expect(sent()[0].tags.slice(0, 3).map((t) => t[0])).toEqual(['a', 'O', 'K'])
+    expect(tag(sent()[0], 'K')).toBe('osnova.issue')
   })
 
   it('follows the current change in a tab opted into issues alone, and not in one opted into projects alone', async () => {
