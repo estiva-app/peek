@@ -82,7 +82,7 @@ beforeEach(() => {
     const f = filters[0]!
     // The list read (a topic kept in order): the topic's first record with the entries the relay holds.
     if (f.fields === 'newest') {
-      if (relay.refuse) return { ok: false, reason: 'rate-limited' }
+      if (relay.refuse) return { ok: false, reason: 'error: relay busy' }
       const asked = (f['#d'] as string[] | undefined) ?? []
       // Real event ids here: a change names the one it follows by its id.
       return {
@@ -93,7 +93,7 @@ beforeEach(() => {
         ],
       }
     }
-    if (f['#O']) return relay.refuse ? { ok: false, reason: 'rate-limited' } : { ok: true, events: relay.entries.map((e, at) => ({ id: `e${at}`, pubkey: VIEWER, content: '', sig: '', ...e })) }
+    if (f['#O']) return relay.refuse ? { ok: false, reason: 'error: relay busy' } : { ok: true, events: relay.entries.map((e, at) => ({ id: `e${at}`, pubkey: VIEWER, content: '', sig: '', ...e })) }
     const ds = (f['#d'] as string[] | undefined) ?? []
     return { ok: true, events: roots.filter((e) => ds.includes(tag(e, 'd')!) && (f.kinds as number[]).includes(e.kind)) }
   })
