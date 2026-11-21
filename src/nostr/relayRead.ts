@@ -201,6 +201,67 @@ export async function withRateLimitRetry<T>(
   }
 }
 
+/**
+ * How long a read somebody asked for waits out the relay's per-minute limit
+ * before it fails as it always did: three of the relay's one-minute windows.
+ */
+export const WAIT_OUT_MS = 180_000
+
+/** Spread over this, so the reads a tab holds do not all land in the new window's first instant. */
+export const WAIT_OUT_JITTER_MS = 1_000
+
+/**
+ * Run a relay read; while the relay only says "wait", wait and ask again.
+ *
+ * Under every read a person asked for (`viewerQuery`), where
+ * {@link withRateLimitRetry} sits on six of them and gives up after two tries.
+ * A file opened several times in a minute spends the person's 300 requests,
+ * and its first read then threw at once: "This conversation could not be
+ * read." under a bare "File" title (Sentry PEEK-9, 19–21 Nov) for a page the
+ * relay would have answered seconds later. Now the caller stays loading, or
+ * keeps what it drew, until the relay answers.
+ *
+ * - The wait is the later of the relay's stated seconds and the pause the tab
+ *   has learned ({@link relayBudget}), plus a little jitter.
+ * - Past {@link WAIT_OUT_MS} the refusal is thrown as before, so a limit that
+ *   never lifts still ends in words rather than a skeleton for good.
+ * - `waits` answering false throws at once: a read loaded ahead of any click is
+ *   nobody's wait, and holding it would spend the next minute on it.
+ * - Any other failure is rethrown untouched: no access and a refusal will not
+ *   change their minds.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
+ */
+export async function waitingOut<T>(
+  read: () => Promise<T>,
+  options: {
+    waits?: () => boolean
+    waitOutMs?: number
+    sleep?: (ms: number) => Promise<void>
+    now?: () => number
+    jitter?: () => number
+    budget?: Pick<typeof relayBudget, 'noteRateLimited'>
+  } = {},
+): Promise<T> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
+  const now = options.now ?? Date.now
+  const jitter = options.jitter ?? (() => Math.random() * WAIT_OUT_JITTER_MS)
+  const budget = options.budget ?? relayBudget
+  const giveUpAt = now() + (options.waitOutMs ?? WAIT_OUT_MS)
+  for (;;) {
+    try {
+      return await read()
+    } catch (error) {
+      const reason = reasonOf(error)
+      const hint = retryAfterMs(reason)
+      if (hint === null || options.waits?.() === false) throw error
+      const wait = Math.max(hint, budget.noteRateLimited(reason)) + jitter()
+      if (now() + wait > giveUpAt) throw error
+      await sleep(wait)
+    }
+  }
+}
+
 /** Whether this failure says anything about the relay being reachable. */
 export function isOutage(kind: RelayFailureKind): boolean {
   return kind !== 'not_a_member'

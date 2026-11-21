@@ -34,7 +34,7 @@ const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, queryRelayTimes, queryRelayWithMatches, signViaEstivaId, type QueryLane } from './bridge'
 import { readFrom, type ReadSource } from './readFrom'
 import { MAX_FILTERS_PER_REQ } from './socketRead'
-import { RelayReadError } from './relayRead'
+import { RelayReadError, waitingOut } from './relayRead'
 import { rootOf } from './channelStreams'
 import { dmChannelFilters, dmChannelsOf, dmConversationsOf, dmPeopleOf, KIND_CHANNEL_MEMBERS, unnamedDmsOf } from './dms'
 import { profilesOf } from './workspacePeople'
@@ -175,11 +175,17 @@ export function firstReadQuery(relayUrl: string, token: StoredToken): QueryFn {
 }
 
 export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLane | (() => QueryLane) = 'click'): QueryFn {
-  return async (filters) => {
-    const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
-    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-    return result.events
-  }
+  // A read loaded ahead is nobody's wait; one the person has joined since (a lane that now answers `click`) is.
+  const asked = () => (typeof lane === 'function' ? lane() : lane) !== 'ahead'
+  return (filters) =>
+    waitingOut(
+      async () => {
+        const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
+        if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+        return result.events
+      },
+      { waits: asked },
+    )
 }
 
 /** The pacer lane a read from `source` waits in: `ahead` for Desk's loader (PEE-5), every other relay read a click's. */
@@ -1092,7 +1098,7 @@ export async function topicListsAsViewer(topics: readonly string[], relayUrl: st
 export async function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
   // Where the relay offers it, listed files' changes and the files under them are learnt as times, not read whole.
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
-  const times = (await timesOffered()) ? { times: (filters: Record<string, unknown>[]) => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey) } : {}
+  const times = (await timesOffered()) ? { times: (filters: Record<string, unknown>[]) => waitingOut(() => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey)) } : {}
   return readTopicActivity(viewerQuery(relayUrl, token), topics, times)
 }
 
@@ -1388,7 +1394,7 @@ async function deletedIssueCandidates(relayUrl: string, token: StoredToken): Pro
   const named = new Set<string>()
   let until: number | undefined
   for (;;) {
-    const page = await queryRelayTimes(relayUrl, [{ fields: 'times', kinds: [ISSUE_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }], token.accessToken, token.pubkey)
+    const page = await waitingOut(() => queryRelayTimes(relayUrl, [{ fields: 'times', kinds: [ISSUE_KIND], limit: TIMES_PAGE, ...(until !== undefined ? { until } : {}) }], token.accessToken, token.pubkey))
     for (const row of page) if (row.changes.some((change) => change.fields.includes(DELETED_FIELD))) named.add(row.a)
     const oldest = Math.min(...page.map((row) => row.created_at))
     if (page.length === 0 || oldest === until) break
