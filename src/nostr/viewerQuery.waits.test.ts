@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { viewerQuery } from './foreign'
 import { relayBudget } from './relayBudget'
-import { RelayReadError, WAIT_OUT_MS } from './relayRead'
+import { RelayReadError, WAIT_OUT_MS, withRateLimitRetry } from './relayRead'
 
 const TOKEN = { accessToken: 't', pubkey: 'a'.repeat(64), expiresAt: Date.now() + 60_000 } as never
 const ROW = { id: 'e1', kind: 30840, pubkey: 'f'.repeat(64), created_at: 2, content: '', sig: '', tags: [['d', 'topic']] }
@@ -70,6 +70,17 @@ describe('a read the relay asks to wait for', () => {
     await vi.advanceTimersByTimeAsync(WAIT_OUT_MS + 5_000)
     expect(end.error).toBeInstanceOf(RelayReadError)
     expect((end.error as RelayReadError).kind).toBe('rate_limited')
+  })
+
+  it('is not waited for a second time by a caller that also waits: three minutes, then the failure', async () => {
+    queryRelay.mockResolvedValue(wait(59))
+    const end = settled(withRateLimitRetry(() => viewerQuery('https://relay', TOKEN)(FILTERS)))
+
+    await vi.advanceTimersByTimeAsync(WAIT_OUT_MS + 5_000)
+    expect((end.error as RelayReadError).kind).toBe('rate_limited')
+    const askedByThen = queryRelay.mock.calls.length
+    await vi.advanceTimersByTimeAsync(WAIT_OUT_MS)
+    expect(queryRelay).toHaveBeenCalledTimes(askedByThen)
   })
 
   it('does not hold a read loaded ahead of any click', async () => {

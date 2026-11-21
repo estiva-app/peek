@@ -77,7 +77,7 @@ beforeEach(() => {
   })
   relay.queryRelay.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
     const f = filters[0]!
-    if (f['#O']) return relay.refuse ? { ok: false, reason: 'error: relay busy' } : { ok: true, events: relay.entries.map((e, at) => ({ id: `e${at}`, pubkey: VIEWER, content: '', sig: '', ...e })) }
+    if (f['#O']) return relay.refuse ? { ok: false, reason: 'restricted: not allowed' } : { ok: true, events: relay.entries.map((e, at) => ({ id: `e${at}`, pubkey: VIEWER, content: '', sig: '', ...e })) }
     const ds = (f['#d'] as string[] | undefined) ?? []
     return { ok: true, events: roots.filter((e) => ds.includes(tag(e, 'd')!) && (f.kinds as number[]).includes(e.kind)) }
   })

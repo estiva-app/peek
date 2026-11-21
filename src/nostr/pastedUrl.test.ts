@@ -164,7 +164,7 @@ describe('what a pasted link names', () => {
       let refuse = true
       queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
         if ((filters[0]?.kinds as number[] | undefined)?.includes(31990)) return { ok: true, events: [manifest, peekManifest] }
-        return refuse ? { ok: false, reason: 'error: relay busy' } : { ok: true, events: [issue] }
+        return refuse ? { ok: false, reason: 'restricted: not allowed' } : { ok: true, events: [issue] }
       })
       const url = `https://ship.estiva.app/issue/x-${UUID}`
       await expect(valueOf(url)).rejects.toThrow()

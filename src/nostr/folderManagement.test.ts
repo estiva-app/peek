@@ -395,7 +395,7 @@ describe('deleting a folder', () => {
   })
 
   it('sends nothing when the check itself fails', async () => {
-    queryRelay.mockResolvedValue({ ok: false, events: [], reason: 'error: relay busy' })
+    queryRelay.mockResolvedValue({ ok: false, events: [], reason: 'restricted: not allowed' })
 
     expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toMatchObject({ ok: false })
     expect(sent()).toHaveLength(0)
