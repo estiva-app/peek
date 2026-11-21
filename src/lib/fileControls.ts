@@ -78,6 +78,18 @@ export function fileControlsOf(
 }
 
 /**
+ * The action a file that reads as deleted is restored with (SPEC §6.5), for the Deleted list's row and the file's own
+ * notice alike: its Delete declared as a change of `deleted`, set back to empty; else its Delete declared as a
+ * `kind:5` (a topic's, a page's), which on a deleted file is written as that same change (ALL-5).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
+ */
+export function restoreActionOf(file: Pick<ForeignObject, 'actions' | 'slots' | 'naddr' | 'parentField'> | null | undefined) {
+  if (!file?.naddr) return undefined
+  return file.actions.find((a) => a.field === DELETED_FIELD) ?? fileControlsOf(file).delete
+}
+
+/**
  * Whether Move is offered (FOL-45). Every file with an address can be listed in
  * another Folder — a Folder lists addresses, whatever app owns them — and one
  * whose manifest declares a parent can also be put under another file. Whether

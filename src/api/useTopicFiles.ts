@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isArchived, planLookInTopic, planMoveInTopic, planPutBackInTopic, type ArrangedFile, type FileLook, type ForeignObject, type ListedFile } from '@estiva-app/interop'
-import { arrangeTopicAsViewer, publishAsViewer, setTopicFileAsViewer, topicListAsViewer } from '@/nostr/foreign'
+import { arrangeTopicAsViewer, listsPrevAsViewer, publishAsViewer, setTopicFileAsViewer, topicListAsViewer } from '@/nostr/foreign'
 import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRelayViewer, useResolvedReferences } from './foreign'
@@ -232,7 +232,13 @@ export function useTopicFiles(
       if (!address || !folder || !v) return { ok: false, reason: 'Sign in again to change this topic.' }
       setBusy((now) => new Set(now).add(gone.file))
       return queued(async () => {
-        const back = planPutBackInTopic(v.token.pubkey, Date.now(), { topic: { address, folder }, file: gone, after })
+        // Where topics are kept in order, the listing follows the Remove it undoes, read now (ALL-5).
+        const listsPrev = await listsPrevAsViewer(address, gone.file, v.relayUrl, v.token)
+        if (listsPrev === null) {
+          done(gone.file)
+          return { ok: false, reason: 'Couldn’t put the file back.' } as const
+        }
+        const back = planPutBackInTopic(v.token.pubkey, Date.now(), { topic: { address, folder }, file: gone, after, ...(listsPrev ? { listsPrev } : {}) })
         // Back on the list, with no answer to read it by: drawn at the end, where the relay now has it.
         const atTheEnd = () =>
           setHeld((now) =>

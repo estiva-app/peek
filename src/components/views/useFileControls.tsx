@@ -4,7 +4,7 @@ import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/intero
 import type { Failure } from '@estiva-app/platform'
 import type { RenameOutcome } from '@/api'
 import { ArchiveDialog, MoveDialog, type MoveChoice, type MovePlace } from '@estiva-app/ui'
-import { fileArchiveChanged, folderLoad, placeLevelChanged, reloadFoldersOnScreen, topicFollowTarget, useForeignObjects, useMembership, usePeekActions, useReloadHeldObject, useTeams, entryNames } from '@/api'
+import { fileArchiveChanged, folderLoad, placeLevelChanged, reloadFoldersOnScreen, topicFollowTarget, useForeignObjects, useMembership, usePeekActions, useReloadHeldObject, useRestorableDelete, useTeams, entryNames } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { ARCHIVE_WORDS, archiveImpactWords, kindNoun } from '@/lib/archiveWords'
@@ -192,6 +192,8 @@ export function useFileControls({
     | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
     | null
   >(null)
+  // Whether the file being asked about comes back from Archive → Deleted: the question then says so (ALL-5).
+  const restorable = useRestorableDelete(dialog?.kind === 'confirm' ? dialog.file.address : undefined)
   /*
     Which team marks a file a space, and which teams the person is in (TEA-5):
     read once Move is pressed, beside the Folder's own read, since from the
@@ -638,13 +640,17 @@ export function useFileControls({
 
   const dialogs = dialog ? (
     dialog.kind === 'confirm' ? (
-      <ConfirmDelete
-        onArchiveInstead={
-          fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
-        }
-        onConfirm={() => void runDelete(dialog.file)}
-        onClose={() => setDialog(null)}
-      />
+      // Asked once it is known whether the delete can be undone: its words never change in front of the person.
+      restorable === undefined ? null : (
+        <ConfirmDelete
+          restorable={restorable}
+          onArchiveInstead={
+            fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
+          }
+          onConfirm={() => void runDelete(dialog.file)}
+          onClose={() => setDialog(null)}
+        />
+      )
     ) : dialog.kind === 'archive' ? (
       <ArchiveDialog
         title={titleOf(dialog.file)}

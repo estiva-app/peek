@@ -3,7 +3,7 @@ import { EmptyState, KindIcon, MetaText, NavItem, SkeletonList, thingKindOf } fr
 import { prevOf, type ForeignObject } from '@estiva-app/interop'
 import { formatShortDate, useWorkspaceDirectory, type DeletedProjectsState } from '@/api'
 import { Button } from '@/components/ui/Button'
-import { DELETED_FIELD } from '@/lib/fileControls'
+import { DELETED_FIELD, restoreActionOf } from '@/lib/fileControls'
 import { filePath } from '@/lib/objectUrl'
 import { useReportFailure } from '@/lib/failureReports'
 
@@ -42,14 +42,16 @@ export function DeletedProjects({
         // A dash for a person nobody has named, as the kit's Person draws one: never their key.
         const by = people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'
         // The Delete that is a change of `deleted`, even beside a confirm-style one: only it can be undone.
-        const action = file.actions.find((candidate) => candidate.field === DELETED_FIELD)
+        // A topic's or a page's Delete is declared as a confirm (a `kind:5`); on a file that reads as deleted it is
+        // written as the same change set back to empty (ALL-5).
+        const action = restoreActionOf(file)
         return (
           <DeletedRow
             key={file.ref}
             file={file}
             caption={[teamOf(file), `Deleted by ${by} · ${formatShortDate(deleted.at * 1000)}`].filter(Boolean).join(' · ')}
             active={file.ref === selectedRef}
-            restore={action?.field && file.naddr ? () => onRestore(file, action.id, prevOf(file, action.field!)) : undefined}
+            restore={action && file.naddr ? () => onRestore(file, action.id, prevOf(file, DELETED_FIELD)) : undefined}
           />
         )
       })}
