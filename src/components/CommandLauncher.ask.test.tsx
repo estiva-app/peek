@@ -97,6 +97,9 @@ describe('up to two words the field is a search', () => {
     open()
     expect(await screen.findByText('Apps')).toBeInTheDocument()
     expect(screen.getAllByText(/Build failures/)).toHaveLength(1)
+    // Alone on its line (the footer's would read "In Build failures"), and before the field.
+    const name = screen.getByText('Build failures')
+    expect(name.compareDocumentPosition(input()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('lists what two words find, on one line, with no Ask row beside it', async () => {
