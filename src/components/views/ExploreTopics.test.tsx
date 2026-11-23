@@ -78,20 +78,20 @@ describe('Explore topics (TOPI-6)', () => {
 
   it('counts each tab', () => {
     mount(LISTS)
-    for (const [label, count] of [['All', 3], ['Your topics', 1], ['Other topics', 2], ['Archived', 1]] as const) {
+    for (const [label, count] of [['All', 3], ['Your initiatives', 1], ['Other initiatives', 2], ['Archived', 1]] as const) {
       expect(screen.getByRole('tab', { name: new RegExp(`${label}`) }).textContent).toContain(String(count))
     }
   })
 
   it('finds a topic by the start of any word of its title, and not by the middle of one', async () => {
     mount(LISTS)
-    const search = screen.getByLabelText('Find a topic')
+    const search = screen.getByLabelText('Find an initiative')
     await userEvent.type(search, 'pla')
     expect(shownTitles()).toEqual(['Q4-plan review'])
     await userEvent.clear(search)
     await userEvent.type(search, 'idgets')
     expect(shownTitles()).toEqual([])
-    expect(screen.getByText('No topic matches “idgets”.')).toBeInTheDocument()
+    expect(screen.getByText('No initiative matches “idgets”.')).toBeInTheDocument()
   })
 
   it('draws each row’s team, members and last active, and a dash for what is not read yet', () => {
@@ -141,25 +141,25 @@ describe('Explore topics (TOPI-6)', () => {
 
   it('says so on an empty tab, in Ship’s and Leaf’s words', () => {
     mount({ all: [PRICING], yours: [], others: [PRICING], archived: [] }, 'yours')
-    expect(screen.getByText('You’re in no topics yet.')).toBeInTheDocument()
+    expect(screen.getByText('You’re in no initiatives yet.')).toBeInTheDocument()
   })
 
   it('asks a signed-out person to sign in, rather than loading for ever', () => {
     mount('signedOut')
-    expect(screen.getByText('Sign in to see topics.')).toBeInTheDocument()
+    expect(screen.getByText('Sign in to see initiatives.')).toBeInTheDocument()
     expect(shownTitles()).toEqual([])
   })
 
   it('finds by the launcher’s rules: a minus word leaves out the topics that have it', async () => {
     mount(LISTS, 'all')
-    await userEvent.type(screen.getByLabelText('Find a topic'), 'p -review')
+    await userEvent.type(screen.getByLabelText('Find an initiative'), 'p -review')
     expect(shownTitles()).toEqual(['Pricing'])
   })
 
   it('says the topics did not load, and Try again asks again', async () => {
     const onRetry = vi.fn()
     mount({ failed: true }, 'yours', { onRetry })
-    expect(screen.getByText('Topics didn’t load.')).toBeInTheDocument()
+    expect(screen.getByText('Initiatives didn’t load.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
   })

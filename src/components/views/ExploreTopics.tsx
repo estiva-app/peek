@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { IconTarget } from '@tabler/icons-react'
-import { Button, EmptyState, KindIcon, ListTable, ListTableRow, MembersPill, Panel, SearchInput, SkeletonList, Tabs, type AvatarGroupMember, type ListTableColumn } from '@estiva-app/ui'
+import { Button, EmptyState, KindIcon, exploreWords, ListTable, ListTableRow, MembersPill, Panel, SearchInput, SkeletonList, Tabs, type AvatarGroupMember, type ListTableColumn } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { findsTopic, formatActive, useExploreTopics, useFaceOf, type ExploreRow, type ExploreState, type ExploreTab } from '@/api'
 import { rememberOpenedFrom } from '@/lib/openedFrom'
@@ -20,48 +19,11 @@ const COLUMNS: ListTableColumn[] = [
   { label: 'Active', width: 'medium', keep: 'low' },
 ]
 
-/** Every word the page says about what it lists: Peek's topics by default; the navigation prototype passes its initiatives' (Katerina, 16 November). */
-export interface ExploreWords {
-  title: string
-  tabs: Record<ExploreTab, string>
-  /** What an empty tab says, in Ship's and Leaf's words; with nothing shown at all, every open tab says `all`'s. */
-  empty: Record<ExploreTab, string>
-  find: string
-  noMatch: (asked: string) => string
-  failed: string
-  signedOut: string
-}
+/** Every word the page says about what it lists: the kit's for an initiative, as Ship's and Leaf's Explore say them, so its story shows what people see (review of 23 November, E1). */
+const WORDS = exploreWords({ one: 'initiative', many: 'initiatives', a: 'an' })
 
-const TOPIC_WORDS: ExploreWords = {
-  title: 'Explore topics',
-  tabs: { all: 'All', yours: 'Your topics', others: 'Other topics', archived: 'Archived' },
-  empty: {
-    all: 'No topics yet.',
-    yours: 'You’re in no topics yet.',
-    others: 'No other topics.',
-    archived: 'No archived topics.',
-  },
-  find: 'Find a topic',
-  noMatch: (asked) => `No topic matches “${asked}”.`,
-  failed: 'Topics didn’t load.',
-  signedOut: 'Sign in to see topics.',
-}
-
-/** The page in the new word (Katerina, 16 November, I-10: "renaming the title should work too"), as the navigation prototype words it. */
-const INITIATIVE_WORDS: ExploreWords = {
-  title: 'Explore initiatives',
-  tabs: { all: 'All', yours: 'Your initiatives', others: 'Other initiatives', archived: 'Archived' },
-  empty: {
-    all: 'No initiatives yet.',
-    yours: 'You’re in no initiatives yet.',
-    others: 'No other initiatives.',
-    archived: 'No archived initiatives.',
-  },
-  find: 'Find an initiative',
-  noMatch: (asked) => `No initiative matches “${asked}”.`,
-  failed: 'Initiatives didn’t load.',
-  signedOut: 'Sign in to see initiatives.',
-}
+/** Each row's ◎, the kit's KindIcon, the icon of the Initiatives column beside it (Katerina, 16 November, I-11; review of 23 November, C7). */
+const ICON = <KindIcon kind="topic" tone="inherit" />
 
 /**
  * **Explore topics** (TOPI-6): the page Peek's Topics column ends in, in place
@@ -83,7 +45,6 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
   const [now] = useState(() => Date.now())
   const faceOf = useFaceOf()
   // Join is Peek's own (its toast says what happened); the row turns yours at once, and back if the relay refuses.
-  // Explore initiatives (Katerina, 16 November): its words, and ◎ on every row, the icon of the column beside it (I-11).
   return (
     <ExploreTopicsView
       state={state}
@@ -93,8 +54,6 @@ export function ExploreTopics({ onControl }: { onControl: (control: FileControl,
       onJoin={(topic) => onControl('join', topic)}
       now={now}
       faceOf={faceOf}
-      words={INITIATIVE_WORDS}
-      icon={<IconTarget size={16} stroke={1.5} aria-hidden />}
     />
   )
 }
@@ -108,8 +67,6 @@ export function ExploreTopicsView({
   onJoin,
   now,
   faceOf = NO_FACE,
-  words = TOPIC_WORDS,
-  icon = <KindIcon kind="topic" />,
 }: {
   state: ExploreState
   tab: ExploreTab
@@ -120,24 +77,20 @@ export function ExploreTopicsView({
   now: number
   /** A person's face by their key, for each row's members pill. Default a dash: the number alone tells. */
   faceOf?: (pubkey: string) => AvatarGroupMember
-  /** What it calls what it lists. Default Peek's topics. */
-  words?: ExploreWords
-  /** Each row's icon, its kind's: the same as the column beside it draws (Katerina, 16 November). Default a topic's. */
-  icon?: ReactNode
 }) {
   const [query, setQuery] = useState('')
   const asked = query.trim()
   return (
     // 24px between the tabs and the list, the kit's step between a page's parts (Katerina, 16 November: 16 was too tight).
-    <Panel title={words.title} bodyClassName="flex flex-col gap-6 px-6 py-5">
+    <Panel title={WORDS.title} bodyClassName="flex flex-col gap-6 px-6 py-5">
       {state === 'loading' ? (
         <SkeletonList rows={8} />
       ) : state === 'signedOut' ? (
-        <EmptyState scope="page" message={words.signedOut} />
+        <EmptyState scope="page" message={WORDS.signedOut} />
       ) : 'failed' in state ? (
-        <EmptyState icon={<IconTarget size={16} stroke={1.5} />} scope="page" message={words.failed} action={{ label: 'Try again', onClick: onRetry }} />
+        <EmptyState icon={ICON} scope="page" message={WORDS.failed} action={{ label: 'Try again', onClick: onRetry }} />
       ) : (
-        <ExploreBody lists={state} tab={tab} onTab={onTab} query={query} asked={asked} onQuery={setQuery} onJoin={onJoin} now={now} faceOf={faceOf} words={words} icon={icon} />
+        <ExploreBody lists={state} tab={tab} onTab={onTab} query={query} asked={asked} onQuery={setQuery} onJoin={onJoin} now={now} faceOf={faceOf} />
       )}
     </Panel>
   )
@@ -153,8 +106,6 @@ function ExploreBody({
   onJoin,
   now,
   faceOf,
-  words,
-  icon,
 }: {
   lists: Record<ExploreTab, ExploreRow[]>
   tab: ExploreTab
@@ -165,27 +116,25 @@ function ExploreBody({
   onJoin: (topic: ForeignObject) => void
   now: number
   faceOf: (pubkey: string) => AvatarGroupMember
-  words: ExploreWords
-  icon: ReactNode
 }) {
   const rows = asked ? lists[tab].filter((row) => findsTopic(row.title, asked)) : lists[tab]
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs<ExploreTab> aria-label={words.title} tabs={TAB_ORDER.map((id) => ({ id, label: words.tabs[id], count: lists[id].length }))} active={tab} onChange={onTab} />
+        <Tabs<ExploreTab> aria-label={WORDS.title} tabs={TAB_ORDER.map((id) => ({ id, label: WORDS.tabs[id], count: lists[id].length }))} active={tab} onChange={onTab} />
         <div className="w-64">
-          <SearchInput placeholder={words.find} aria-label={words.find} value={query} onChange={(event) => onQuery(event.target.value)} />
+          <SearchInput placeholder={WORDS.find} aria-label={WORDS.find} value={query} onChange={(event) => onQuery(event.target.value)} />
         </div>
       </div>
       {rows.length === 0 ? (
         <EmptyState
           scope="section"
-          message={asked ? words.noMatch(asked) : lists.all.length === 0 && tab !== 'archived' ? words.empty.all : words.empty[tab]}
+          message={asked ? WORDS.noMatch(asked) : lists.all.length === 0 && tab !== 'archived' ? WORDS.empty.all : WORDS.empty[tab]}
         />
       ) : (
-        <ListTable aria-label={words.title} columns={COLUMNS} end>
+        <ListTable aria-label={WORDS.title} columns={COLUMNS} end>
           {rows.map((row) => (
-            <TopicRow key={row.address} row={row} now={now} faceOf={faceOf} icon={icon} onJoin={!row.yours && !row.archived ? () => onJoin(row.topic) : undefined} />
+            <TopicRow key={row.address} row={row} now={now} faceOf={faceOf} icon={ICON} onJoin={!row.yours && !row.archived ? () => onJoin(row.topic) : undefined} />
           ))}
         </ListTable>
       )}

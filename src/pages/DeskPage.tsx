@@ -6,9 +6,9 @@ import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { useToast } from '@/lib/toast'
 import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
-import { IconCheck, IconHash, IconSortDescending, IconTarget, IconX } from '@tabler/icons-react'
+import { IconCheck, IconHash, IconSortDescending, IconX } from '@tabler/icons-react'
 import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, KindIcon, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
@@ -189,7 +189,7 @@ export function DeskPage() {
     teams && Number(address.split(':')[0]) === KIND_BARE_FILE
       ? spaceTeamOf(teams, address)
         ? <IconHash size={16} stroke={1.5} aria-hidden />
-        : <IconTarget size={16} stroke={1.5} aria-hidden />
+        : <KindIcon kind="topic" tone="inherit" />
       : undefined
   const openWorkItems = sortOpenWork(
     (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : []).filter((i) => !dismissedOpenWorkIds.has(i.id) && (i.kind !== 'chat' || !!chatTeamOf(i.address))),

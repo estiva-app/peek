@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { IconBellOff, IconDotsVertical, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
+import { IconBellOff, IconDotsVertical, IconHash, IconUsers } from '@tabler/icons-react'
 import {
   EmptyState,
   IconButton,
@@ -216,7 +216,7 @@ export function TeamPage({
     label: topic.slots.title?.value ?? 'Untitled',
     ...(topic.slots.subtitle?.value?.trim() ? { description: topic.slots.subtitle.value.trim() } : {}),
     // One icon per kind, as its row in the column wears it: # a team's topic, ◎ an initiative.
-    icon: initiative ? <IconTarget {...ICON} aria-hidden /> : <IconHash {...ICON} aria-hidden />,
+    icon: initiative ? <KindIcon kind="topic" tone="inherit" /> : <IconHash {...ICON} aria-hidden />,
     ...(topic.address && facts.members.get(topic.address) !== undefined ? { members: facts.members.get(topic.address) } : {}),
     // Who they are, as the chat's row shows them: up to three faces in its members pill (17 November).
     ...(topic.address && facts.people.get(topic.address) ? { faces: facts.people.get(topic.address)!.slice(0, 3).map(faceOf) } : {}),

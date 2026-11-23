@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { IconDotsVertical, IconExternalLink, IconHash, IconTarget, IconUsers } from '@tabler/icons-react'
+import { IconDotsVertical, IconExternalLink, IconHash, IconUsers } from '@tabler/icons-react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import { Breadcrumb, Button, Chip, ConversationLayout, KindIcon, PageHeader, Panel, Toolbar, ToolbarButton, WithTooltip, ArchivedNotice, DeletedNotice, isPlainClick, thingKindOf, useShortcut } from '@estiva-app/ui'
 import { useToggleOpenWork } from '@/components/views/useToggleOpenWork'
@@ -200,7 +200,7 @@ export function useFilePane(
     ? teams
       ? listing?.space
         ? <IconHash size={16} stroke={1.5} aria-hidden />
-        : <IconTarget size={16} stroke={1.5} aria-hidden />
+        : <KindIcon kind="topic" tone="inherit" />
       : <span aria-hidden="true" className="size-4" data-kind-pending />
     : undefined
 
