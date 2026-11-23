@@ -50,7 +50,7 @@ afterAll(() => vi.unstubAllGlobals())
 
 const actions = () => renderHook(() => usePeekActions()).result.current
 const pick = async (place: Place, choice: 'important' | 'all' | 'not-following' | 'default') => {
-  const read = await readPlaceAsViewer(place, RELAY, held)
+  const read = await readPlaceAsViewer(place, RELAY, held, undefined)
   relay.sent.length = 0
   return actions().choosePlaceLevel({ place, folder: TEAM, choice, read, archived: false, muted: false })
 }
@@ -142,7 +142,7 @@ describe('the switch on a space reached by its team’s default, at the wire', (
 
   it('a teams list that turns unreadable between the read and the write is not written over: it says it was only partly changed', async () => {
     relay.seed(teamsList([]))
-    const read = await readPlaceAsViewer(topic, RELAY, held)
+    const read = await readPlaceAsViewer(topic, RELAY, held, undefined)
     // Another device saved a list this tab cannot read, after the switch was drawn.
     relay.seed(signed({ kind: 30078, created_at: T0 + 10, tags: [['d', TEAMS_D_TAG]], content: 'not-a-fake-ciphertext' }))
     relay.sent.length = 0
@@ -174,7 +174,7 @@ describe('Add, at the wire', () => {
   beforeEach(() => relay.seed(root))
 
   const add = async (person: string) => {
-    const read = await readPlaceAsViewer(topic, RELAY, held)
+    const read = await readPlaceAsViewer(topic, RELAY, held, undefined)
     relay.sent.length = 0
     return actions().addToPlace({ place: topic, folder: TEAM, person, read })
   }

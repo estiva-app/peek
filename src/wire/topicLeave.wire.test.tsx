@@ -83,7 +83,7 @@ const membership = (inTopic: boolean) => ({
   isMentioned: () => false,
   refresh: async () => {
     const place = { address: TOPIC, team: TEAM }
-    const read = await readPlaceAsViewer(place, 'https://relay.test', storedToken()!)
+    const read = await readPlaceAsViewer(place, 'https://relay.test', storedToken()!, [])
     held.set(switchStateOf(place, ME, read.facts).shown !== 'not-following')
   },
   setMember: async () => true,

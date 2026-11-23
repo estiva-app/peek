@@ -15,6 +15,7 @@ import {
   buildPlaceAdd,
   buildTeamsEvent,
   followingOf,
+  KIND_CHANGE,
   parseTeamsBlob,
   placeFilters,
   serializeMutedBlob,
@@ -50,9 +51,28 @@ const ROSTER_COMMANDS: readonly number[] = [KIND.NIP29_PUT_USER, KIND.NIP29_REMO
  * One place's facts for `person`: its root and changes, its team's roster,
  * list and the commands naming it, and the person's teams list — one
  * `POST /query`. Throws when the read fails: a failed read is not "nobody".
+ *
+ * Of the place's changes, only the ones naming `person` or one of `people`
+ * (ALL-5): a level, an Add, a join, a leave and a placement each carry their
+ * person's `p` (§11.8), so that is everything the following rules read, and
+ * none of the renames, file-list entries or saves. `people` undefined (no
+ * directory): every change, as before.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-membership-change-names-the-person-it-is-about.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
  */
-export async function readPlace(place: Place, person: string, query: QueryFn, decrypt: (ciphertext: string) => Promise<string | undefined>): Promise<PlaceRead> {
-  const events = await query(placeFilters(place, person) as Record<string, unknown>[])
+export async function readPlace(
+  place: Place,
+  person: string,
+  query: QueryFn,
+  decrypt: (ciphertext: string) => Promise<string | undefined>,
+  people?: readonly string[],
+): Promise<PlaceRead> {
+  const filters = (placeFilters(place, person) as Record<string, unknown>[]).map((filter) => {
+    const kinds = filter.kinds as readonly number[] | undefined
+    const everyChange = people && kinds?.length === 1 && kinds[0] === KIND_CHANGE && Array.isArray(filter['#a']) && !('#p' in filter)
+    return everyChange ? { ...filter, '#p': [...new Set([person, ...people])].sort() } : filter
+  })
+  const events = await query(filters)
   const own: SignedEvent[] = []
   const placeEvents: SignedEvent[] = []
   const roster: SignedEvent[] = []
@@ -83,9 +103,14 @@ async function readTeamsListFrom(events: readonly SignedEvent[], decrypt: (ciphe
 /** A teams list the switch must not write over: there and unreadable, or read but not one this version reads. */
 const unwritable = (read: TeamsListRead) => read.state === 'unreachable' || (read.state === 'absent' && read.unparsed === true)
 
-/** {@link readPlace} as the viewer. */
-export function readPlaceAsViewer(place: Place, relayUrl: string, token: StoredToken): Promise<PlaceRead> {
-  return readPlace(place, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken))
+/**
+ * {@link readPlace} as the viewer. `people`: whose changes besides the
+ * viewer's are read — everyone with a profile for Who follows, `[]` when only
+ * the viewer's own following is asked (a row's Leave or Join), `undefined`
+ * for every change.
+ */
+export function readPlaceAsViewer(place: Place, relayUrl: string, token: StoredToken, people: readonly string[] | undefined): Promise<PlaceRead> {
+  return readPlace(place, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken), people)
 }
 
 async function publish(unsigned: UnsignedEvent, relayUrl: string, token: StoredToken): Promise<boolean> {

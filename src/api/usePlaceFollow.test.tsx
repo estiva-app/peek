@@ -92,6 +92,21 @@ describe('usePlaceFollow — what the switch shows', () => {
     expect(sync.refresh).toHaveBeenCalled()
   })
 
+  it('lists somebody else who follows it, once people have profiles and only the changes naming a person are read', async () => {
+    const KATERINA = 'e'.repeat(64)
+    const profile = (pubkey: string, name: string) => signed({ kind: 0, created_at: T0, tags: [], content: JSON.stringify({ name }) }, pubkey)
+    const hers = signed(
+      { kind: 1851, created_at: T0 + 6, tags: [['a', TOPIC], ['field', `follow:${KATERINA}`], ['value', 'important'], ['h', TEAM], ['ts', String((T0 + 6) * 1000)], ['p', KATERINA]] },
+      KATERINA,
+    )
+    const rename = signed({ kind: 1851, created_at: T0 + 7, tags: [['a', TOPIC], ['field', 'title'], ['value', 'Renamed'], ['h', TEAM]] }, MIKY)
+    relay.seed(root, level('all'), hers, rename, profile(ME, 'Me'), profile(KATERINA, 'Katerina'))
+    const { result } = follow()
+    await waitFor(() => expect(result.current.listed).toBeDefined())
+    const levelOf = (pubkey: string) => result.current.listed?.find((l) => l.pubkey === pubkey)?.level
+    expect([levelOf(ME), levelOf(KATERINA)]).toEqual(['all', 'important'])
+  })
+
   it('a refused pick leaves the switch where it was', async () => {
     relay.seed(root, level('all'))
     relay.refuse({ when: (event) => event.kind === 1851 })
