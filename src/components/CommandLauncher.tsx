@@ -158,6 +158,7 @@ interface CommandLauncherProps {
   initialActionId?: string
 }
 
+/** Peek's ⌘K box: the shared launcher, mounted with what only Peek knows. */
 export function CommandLauncher(props: CommandLauncherProps) {
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
