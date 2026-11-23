@@ -47,6 +47,8 @@ export interface Refusal {
 export interface WireRelay {
   /** Every event the relay was sent, in order, refused ones included. */
   readonly sent: SignedEvent[]
+  /** Every filter the relay was asked, in order: what a read downloads is asserted here. */
+  readonly asked: Record<string, unknown>[]
   /** Events the relay answers queries from. */
   seed: (...events: SignedEvent[]) => void
   /** Refuse matching events with `200 {accepted:false}`. */
@@ -101,6 +103,7 @@ const json = (status: number, body: unknown) =>
 /** Stub `fetch` and `WebSocket` with a fresh fake; call it in each `beforeEach`, so no stub outlives a test. */
 export function installWireRelay(): WireRelay {
   const sent: SignedEvent[] = []
+  const asked: Filter[] = []
   let held: SignedEvent[] = []
   let refusals: Refusal[] = []
 
@@ -157,6 +160,7 @@ export function installWireRelay(): WireRelay {
       }
       if (path === '/query') {
         const filters = JSON.parse(body) as Filter[]
+        asked.push(...filters)
         const answer = new Map<string, SignedEvent>()
         for (const filter of filters) {
           const hits = held.filter((event) => matches(filter, event)).sort((a, b) => b.created_at - a.created_at)
@@ -197,12 +201,14 @@ export function installWireRelay(): WireRelay {
 
   return {
     sent,
+    asked,
     seed: (...events) => events.forEach(hold),
     refuse: (rule) => void refusals.push({ ...rule }),
     sentOf: (...kinds) => sent.filter((event) => kinds.includes(event.kind)),
     decrypt,
     reset: () => {
       sent.length = 0
+      asked.length = 0
       held = []
       refusals = []
     },

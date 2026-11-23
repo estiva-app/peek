@@ -101,10 +101,19 @@ describe('usePlaceFollow — what the switch shows', () => {
     )
     const rename = signed({ kind: 1851, created_at: T0 + 7, tags: [['a', TOPIC], ['field', 'title'], ['value', 'Renamed'], ['h', TEAM]] }, MIKY)
     relay.seed(root, level('all'), hers, rename, profile(ME, 'Me'), profile(KATERINA, 'Katerina'))
-    const { result } = follow()
-    await waitFor(() => expect(result.current.listed).toBeDefined())
-    const levelOf = (pubkey: string) => result.current.listed?.find((l) => l.pubkey === pubkey)?.level
-    expect([levelOf(ME), levelOf(KATERINA)]).toEqual(['all', 'important'])
+    // The people directory is kept for a minute, and the tests above read it empty: a minute on, it is read again.
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now + 61_000)
+    try {
+      const { result } = follow()
+      await waitFor(() => expect(result.current.listed).toBeDefined())
+      const levelOf = (pubkey: string) => result.current.listed?.find((l) => l.pubkey === pubkey)?.level
+      expect([levelOf(ME), levelOf(KATERINA)]).toEqual(['all', 'important'])
+      const changesAsked = relay.asked.filter((f) => (f.kinds as number[]).includes(1851) && (f['#a'] as string[] | undefined)?.includes(TOPIC))
+      expect(changesAsked).toEqual([{ kinds: [1851], '#a': [TOPIC], '#p': [ME, KATERINA].sort() }])
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('a refused pick leaves the switch where it was', async () => {
