@@ -67,6 +67,7 @@ export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFr
         onSearch={kept.toggle}
         searchPlaceholder="Search Peek..."
         searchStatus={kept.searchStatus}
+        searchStatusLabel={kept.searchStatusLabel}
         identity={bar.identity}
         banner={banner}
         nav={<NavRail />}

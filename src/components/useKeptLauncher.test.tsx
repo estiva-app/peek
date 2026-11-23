@@ -77,7 +77,7 @@ function Frame() {
   const kept = useKeptLauncher()
   return (
     <>
-      <TopBar onSearch={kept.toggle} searchPlaceholder="Search Peek..." searchStatus={kept.searchStatus} />
+      <TopBar onSearch={kept.toggle} searchPlaceholder="Search Peek..." searchStatus={kept.searchStatus} searchStatusLabel={kept.searchStatusLabel} />
       <Where />
       {kept.launcher}
     </>

@@ -1,5 +1,4 @@
 import { useCallback, useState, type ReactNode } from 'react'
-import type { TopBarSearchStatus } from '@estiva-app/ui'
 import { CommandLauncher, type LauncherState } from '@/components/CommandLauncher'
 import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
 
@@ -28,7 +27,12 @@ import { captureLauncherContext, type LauncherContext } from '@/lib/launcherCont
  * not looked at. Shown, they are looking at it, so there is no dot; and an
  * answer that has been seen does not light it again.
  */
-export function useKeptLauncher(): { toggle: () => void; searchStatus: TopBarSearchStatus | undefined; launcher: ReactNode } {
+export function useKeptLauncher(): {
+  toggle: () => void
+  searchStatus: 'working' | 'waiting' | undefined
+  searchStatusLabel: string | undefined
+  launcher: ReactNode
+} {
   const [held, setHeld] = useState<{ context: LauncherContext; open: boolean } | null>(null)
   const [box, setBox] = useState<LauncherState>({ holds: false, status: null })
   const holds = box.holds
@@ -43,14 +47,12 @@ export function useKeptLauncher(): { toggle: () => void; searchStatus: TopBarSea
     setHeld((v) => (v?.open ? (holds ? { ...v, open: false } : null) : { context: captureLauncherContext(), open: true }))
   }, [holds])
 
-  const searchStatus: TopBarSearchStatus | undefined =
-    held && !held.open && box.status
-      ? { state: box.status, label: box.status === 'working' ? 'working on what you asked' : 'an answer is waiting' }
-      : undefined
+  const searchStatus = held && !held.open && box.status ? box.status : undefined
+  const searchStatusLabel = searchStatus && (searchStatus === 'working' ? 'working on what you asked' : 'an answer is waiting')
 
   const launcher = held && (
     <CommandLauncher context={held.context} open={held.open} onHide={dismiss} onClose={() => setHeld(null)} onState={setBox} />
   )
 
-  return { toggle, searchStatus, launcher }
+  return { toggle, searchStatus, searchStatusLabel, launcher }
 }
