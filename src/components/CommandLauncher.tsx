@@ -12,6 +12,8 @@ import { addrToNaddr } from '@estiva-app/protocol'
 import { fileEmptyState, isPrompt, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
+import { referenceOfValue } from '@/lib/embedValue'
+import { FilePreviewCard } from './ui/MessageLinks'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, hasPromptApi, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { probeable } from '@/lib/actionCatalogue'
@@ -835,14 +837,24 @@ export function CommandLauncher({ context: opened, onClose, open = true, onHide,
     the title, as `[` draws it; without one, an issue's project is the second
     line, and anything else is the title alone (SUM-7, the SearchRow story).
   */
-  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => ({
-    id: `file-${f.id}`,
-    label: f.title,
-    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
-    icon: <KindIcon kind={fileGlyphOfAddress(f.id)} tone="inherit" />,
-    onSelect: close(() => navigate(filePath(f.id, f.title))),
-    onForget: forget,
-  })
+  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void, withPreview = false): CommandPaletteRow => {
+    const glyph = fileGlyphOfAddress(f.id)
+    /*
+      A file found by its title shows its card beside the box while it is lit, so two like titles can be told apart
+      without opening either (KIN-3; Miky's 5 November prototype): the card a link to it draws. A topic has none: its
+      card is its latest conversation, which the box is not for. Recent shows none either: nothing was asked for yet.
+    */
+    const uri = withPreview && glyph !== 'topic' ? referenceOfValue(f.id) : undefined
+    return {
+      id: `file-${f.id}`,
+      label: f.title,
+      ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
+      icon: <KindIcon kind={glyph} tone="inherit" />,
+      onSelect: close(() => navigate(filePath(f.id, f.title))),
+      onForget: forget,
+      ...(uri ? { preview: <FilePreviewCard uri={uri} /> } : {}),
+    }
+  }
 
   const personRow = (p: Person, forget?: () => void): CommandPaletteRow => ({
     id: `person-${p.id}`,
@@ -1055,7 +1067,7 @@ export function CommandLauncher({ context: opened, onClose, open = true, onHide,
     const fileRows = fileHits
       .filter((hit) => !(openFileRef && refNamesFile(openFileRef, hit.id)))
       .slice(0, 5)
-      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }))
+      .map((hit) => fileRow({ id: hit.id, title: hit.title, summary: hit.summary, caption: hit.caption }, undefined, true))
 
     const searching = messageState.kind === 'searching'
     const messageNote = searching ? null : messageEmptyState(messageState)

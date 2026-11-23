@@ -123,7 +123,7 @@ try {
   // A service worker would answer from production's cache, around the routes below.
   // PROBE_PHONE=1: a phone's width, touch and no hover, as a phone reads Peek. PROBE_HIDPI=1: screenshots at 2x, for a look someone judges.
   const context = await browser.newContext({
-    ...(process.env.PROBE_PHONE ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 800 } }),
+    ...(process.env.PROBE_PHONE ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : { viewport: { width: Number(process.env.PROBE_WIDTH ?? 1280), height: 800 } }),
     ...(process.env.PROBE_HIDPI ? { deviceScaleFactor: 2 } : {}),
     ...(process.env.PROBE_SERVE ? { serviceWorkers: 'block' } : {}),
   })

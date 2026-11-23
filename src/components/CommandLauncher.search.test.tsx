@@ -12,8 +12,9 @@
  * cannot work in mock mode (there is no relay to ask), so its states are
  * injected.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { referenceOfValue } from '@/lib/embedValue'
 import { enter } from '@/test-enter'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { MessageSearchState } from '@/lib/launcherSearch'
@@ -40,9 +41,20 @@ const { messageSearch, fileSearch } = vi.hoisted(() => ({
   })),
 }))
 
+/* The one file a lit row's card reads, by the reference it is asked with (KIN-3). */
+const held = vi.hoisted(() => ({ asked: [] as string[], objects: new Map<string, unknown>() }))
+
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
-  return { ...actual, useMessageSearch: messageSearch, useFileSearch: fileSearch }
+  return {
+    ...actual,
+    useMessageSearch: messageSearch,
+    useFileSearch: fileSearch,
+    useHeldObject: (reference: string | null) => {
+      if (reference) held.asked.push(reference)
+      return { object: (reference && held.objects.get(reference)) ?? 'loading', reload: async () => {}, gone: false }
+    },
+  }
 })
 
 Element.prototype.scrollIntoView = vi.fn()
@@ -286,5 +298,71 @@ describe('Recent shows a file’s summary before anything is typed (SUM-7)', () 
     expect(optionNamed('Ledger reconciliation').textContent).toContain('Finance')
     expect(optionNamed('Ledger archive').textContent).toContain('Finance')
     expect(optionNamed('Ledger notes').textContent).not.toContain('Finance')
+  })
+})
+
+describe('Cmd+K shows a lit file’s card beside the box (KIN-3)', () => {
+  const pane = () => document.querySelector('[data-command-palette-preview]')
+  const reference = (address: string) => referenceOfValue(address)!.replace(/^nostr:/, '')
+  const page = (d: string, title: string, summary: string) => {
+    const address = `30842:${AUTHOR}:${d}`
+    return {
+      ref: address,
+      address,
+      naddr: reference(address),
+      eventId: d.padEnd(64, 'e'),
+      kind: 30842,
+      widget: 'card',
+      appName: 'Leaf',
+      noun: 'Page',
+      slots: { title: { value: title }, subtitle: { value: summary } },
+      meta: [],
+      comments: [],
+      actions: [],
+      viaRecommendation: false,
+    }
+  }
+
+  beforeEach(() => {
+    messageSearch.mockReturnValue({ state: { kind: 'idle' }, hits: [] })
+    held.asked = []
+    held.objects.clear()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('draws the lit page’s card, its title and summary, once the row has stayed lit', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const notes = page('c', 'Ledger notes', SUMMARY)
+    held.objects.set(notes.naddr, notes)
+    fileSearch.mockReturnValue({ state: { kind: 'done', count: 1 }, hits: [fileHit('c', 30842, 'Ledger notes', '')] })
+    open()
+    await type('ledger')
+    await screen.findByText('Files')
+    expect(pane()).toBeNull()
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(pane()?.textContent).toContain('Ledger notes')
+    expect(pane()?.textContent).toContain(SUMMARY)
+    expect(held.asked).toContain(notes.naddr)
+  })
+
+  it('reads and draws nothing for a lit topic, nor for a file the arrows only passed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    fileSearch.mockReturnValue({
+      state: { kind: 'done', count: 3 },
+      hits: [fileHit('t', 30840, 'Ledger room', ''), fileHit('p', 30842, 'Ledger plan', ''), fileHit('q', 30842, 'Ledger quarter', '')],
+    })
+    open()
+    await type('ledger')
+    await screen.findByText('Files')
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(document.querySelector('[role="option"][data-highlighted]')?.textContent).toContain('Ledger room')
+    expect(pane()).toBeNull()
+    const field = document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(document.querySelector('[role="option"][data-highlighted]')?.textContent).toContain('Ledger quarter')
+    expect(held.asked).toEqual(expect.not.arrayContaining([reference(`30840:${AUTHOR}:t`), reference(`30842:${AUTHOR}:p`)]))
+    expect(held.asked).toContain(reference(`30842:${AUTHOR}:q`))
   })
 })
