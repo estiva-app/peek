@@ -7,6 +7,7 @@ import { TopicsPage } from '@/pages/TopicsPage'
 import { FilePage } from '@/pages/FilePage'
 import { ObjectPage } from './pages/ObjectPage'
 import { useRouteWords } from '@/api'
+import { KeptLauncherProvider } from '@/lib/KeptLauncherProvider'
 
 /**
  * A page of Peek's own that moved under `/app/` (FOL-39): the old path sends
@@ -61,6 +62,9 @@ function App() {
   // the manifests answer — and the tree draws again when they do.
   useRouteWords()
   return (
+    // One launcher for the whole app, above the pages: each page draws its own frame, and what ⌘K holds must
+    // outlive going from one to another (KIN-2).
+    <KeptLauncherProvider>
     <Routes>
       <Route path="/" element={<Navigate to="/app/desk" replace />} />
       <Route path="/app" element={<Navigate to="/app/desk" replace />} />
@@ -119,6 +123,7 @@ function App() {
           file by `FilePage` (FOL-26). */}
       <Route path="/:word/:ref" element={<FilePage />} />
     </Routes>
+    </KeptLauncherProvider>
   )
 }
 

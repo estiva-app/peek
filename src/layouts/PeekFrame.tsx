@@ -1,10 +1,9 @@
-import { useState, useCallback, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { AppShell as Frame, ErrorBoundary, useSidebarFold } from '@estiva-app/ui'
 import { CALLBACK_PATH } from '@/auth/estivaId'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
-import { CommandLauncher } from '@/components/CommandLauncher'
-import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
+import { useKeptLauncher, useKeptSearch } from '@/components/useKeptLauncher'
 import { RailClosed } from './railClosed'
 
 interface PeekFrameProps {
@@ -50,18 +49,29 @@ function isFile(): boolean {
  * The list column is the page's own: the package's `ListColumn` (UIG-14, N9),
  * with its own error boundary. The frame only tells it when the rail is closed.
  */
-export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFrameProps) {
-  const [navOpen, setNavOpen] = useSidebarFold({ storageKey: 'peek.sidebarFolded', isFile })
-  // The launcher's context is captured ONCE at the invoking keystroke/click
-  // (selection > composer > nothing) and frozen for the launcher's lifetime.
-  const [launcher, setLauncher] = useState<{ context: LauncherContext } | null>(null)
+export function PeekFrame(props: PeekFrameProps) {
+  // The launcher is the app's, held above the routes so it outlives a change of
+  // page (KIN-2). A frame drawn alone (a story, a test) holds its own.
+  const kept = useKeptSearch()
+  if (kept) return <FrameWithSearch {...props} kept={kept} />
+  return <FrameAlone {...props} />
+}
 
-  // The bar's search field and Cmd/Ctrl+K, from anywhere — browsing or typing in
-  // a composer alike — both land here. A second Ctrl+K closes it. A click on the
-  // field leaves focus in the composer, so the context sees it (0.60.1).
-  const toggleLauncher = useCallback(() => {
-    setLauncher((v) => (v ? null : { context: captureLauncherContext() }))
-  }, [])
+/** A frame with nothing above it holding the launcher: it holds its own, as every frame did until KIN-2. */
+function FrameAlone(props: PeekFrameProps) {
+  const { launcher, ...kept } = useKeptLauncher()
+  return (
+    <>
+      <FrameWithSearch {...props} kept={kept} />
+      {launcher}
+    </>
+  )
+}
+
+function FrameWithSearch({ leftPanel, rightPanel, threadPanel, banner, kept }: PeekFrameProps & { kept: NonNullable<ReturnType<typeof useKeptSearch>> }) {
+  const [navOpen, setNavOpen] = useSidebarFold({ storageKey: 'peek.sidebarFolded', isFile })
+  // The bar's search field and Cmd/Ctrl+K both open the launcher, which is
+  // hidden, not thrown away, while it holds something (KIN-2): `useKeptLauncher`.
 
   const bar = useTopBarSlots()
 
@@ -72,8 +82,10 @@ export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFr
         variant="floating"
         navOpen={navOpen}
         onNavOpenChange={setNavOpen}
-        onSearch={toggleLauncher}
+        onSearch={kept.toggle}
         searchPlaceholder="Search Peek..."
+        searchStatus={kept.searchStatus}
+        searchStatusLabel={kept.searchStatusLabel}
         identity={bar.identity}
         banner={banner}
         nav={<NavRail />}
@@ -102,13 +114,6 @@ export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFr
         </div>
       </Frame>
       {bar.panel}
-
-      {launcher && (
-        <CommandLauncher
-          context={launcher.context}
-          onClose={() => setLauncher(null)}
-        />
-      )}
     </div>
   )
 }
