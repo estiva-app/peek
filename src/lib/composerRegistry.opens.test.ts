@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '@tiptap/react'
-import { insertTextWhenComposerOpens, registerActiveComposer, unregisterComposer } from './composerRegistry'
+import { insertTextIntoComposer, insertTextWhenComposerOpens, registerActiveComposer, unregisterComposer } from './composerRegistry'
 
 /** A message box that records what is put in it. */
 function box() {
@@ -47,12 +47,49 @@ describe('insertTextWhenComposerOpens', () => {
   })
 
   it('answers false and writes nothing when no such box opens in time, even if one opens later', async () => {
-    const placed = insertTextWhenComposerOpens('Build failures', 'It broke after the bump.', 5000)
+    const placed = insertTextWhenComposerOpens('Build failures', 'It broke after the bump.', () => true, 5000)
     await vi.advanceTimersByTimeAsync(5000)
     expect(await placed).toBe(false)
     const late = box()
     registerActiveComposer({ editor: late.editor, label: 'Build failures' })
     expect(late.written).toEqual([])
     unregisterComposer(late.editor)
+  })
+
+  it('writes nothing when the person has left the page by the time the box opens', async () => {
+    let onThePage = true
+    const placed = insertTextWhenComposerOpens('Weekly notes', 'It broke after the bump.', () => onThePage)
+    onThePage = false
+    // Another conversation with the same name opens its box.
+    const sameName = box()
+    registerActiveComposer({ editor: sameName.editor, label: 'Weekly notes' })
+    expect(await placed).toBe(false)
+    expect(sameName.written).toEqual([])
+    unregisterComposer(sameName.editor)
+  })
+})
+
+describe('insertTextIntoComposer', () => {
+  it('writes into the conversation’s own box while a thread’s reply box has the cursor', () => {
+    const main = box()
+    const thread = box()
+    registerActiveComposer({ editor: main.editor, label: 'Release talk' })
+    registerActiveComposer({ editor: thread.editor, label: 'Reply in thread' })
+    expect(insertTextIntoComposer('Release talk', 'It broke after the bump.')).toBe(true)
+    expect(main.written).toEqual([[{ type: 'text', text: 'It broke after the bump.' }]])
+    expect(thread.written).toEqual([])
+    unregisterComposer(main.editor)
+    unregisterComposer(thread.editor)
+  })
+
+  it('answers false and writes nothing once that box has gone', () => {
+    const main = box()
+    const other = box()
+    registerActiveComposer({ editor: main.editor, label: 'Release talk' })
+    registerActiveComposer({ editor: other.editor, label: 'Reply in thread' })
+    unregisterComposer(main.editor)
+    expect(insertTextIntoComposer('Release talk', 'It broke after the bump.')).toBe(false)
+    expect(other.written).toEqual([])
+    unregisterComposer(other.editor)
   })
 })

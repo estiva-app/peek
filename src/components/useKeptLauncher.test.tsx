@@ -12,21 +12,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TopBar } from '@estiva-app/ui'
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { enter } from '@/test-enter'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
-import { useKeptLauncher } from './useKeptLauncher'
+import { KeptLauncherProvider } from './KeptLauncherProvider'
+import { useKeptSearch } from './useKeptLauncher'
 
-const { promptForText, captureLauncherContext, insertTextIntoActiveComposer, insertTextWhenComposerOpens, getComposerTarget } = vi.hoisted(() => ({
+const { promptForText, captureLauncherContext, insertTextIntoActiveComposer, insertTextWhenComposerOpens, insertTextIntoComposer } = vi.hoisted(() => ({
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(),
   captureLauncherContext: vi.fn<() => LauncherContext>(),
   insertTextIntoActiveComposer: vi.fn<(text: string) => boolean>(() => true),
   insertTextWhenComposerOpens: vi.fn<(label: string | undefined, text: string) => Promise<boolean>>(async () => true),
-  getComposerTarget: vi.fn<() => { label?: string } | null>(() => null),
+  insertTextIntoComposer: vi.fn<(label: string | undefined, text: string) => boolean>(() => false),
 }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
@@ -39,7 +40,7 @@ vi.mock('@/lib/launcherContext', async () => {
 // The composer itself is covered in `composerRegistry.test`; here it is where the text is sent, and with which label.
 vi.mock('@/lib/composerRegistry', async () => {
   const actual = await vi.importActual<typeof import('@/lib/composerRegistry')>('@/lib/composerRegistry')
-  return { ...actual, insertTextIntoActiveComposer, insertTextWhenComposerOpens, getComposerTarget }
+  return { ...actual, insertTextIntoActiveComposer, insertTextWhenComposerOpens, insertTextIntoComposer }
 })
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -69,18 +70,40 @@ function Where() {
       <button type="button" onClick={() => navigate('/topic/launch')}>
         Go to Launch plan
       </button>
+      <button type="button" onClick={() => navigate('?thread=1')}>
+        Open a thread here
+      </button>
     </>
   )
 }
 
-function Frame() {
-  const kept = useKeptLauncher()
+/** A page's own frame: its search reads the app's kept launcher, as `PeekFrame` does. */
+function PageFrame() {
+  const kept = useKeptSearch()!
   return (
     <>
       <TopBar onSearch={kept.toggle} searchPlaceholder="Search Peek..." searchStatus={kept.searchStatus} searchStatusLabel={kept.searchStatusLabel} />
       <Where />
-      {kept.launcher}
     </>
+  )
+}
+
+/** As the app is built: one launcher above the routes, and every page drawing a frame of its own, thrown away when the page changes. */
+function Frame() {
+  return (
+    <KeptLauncherProvider>
+      <Routes>
+        <Route path="/topic/builds" element={<PageFrame />} />
+        <Route
+          path="*"
+          element={
+            <section>
+              <PageFrame />
+            </section>
+          }
+        />
+      </Routes>
+    </KeptLauncherProvider>
   )
 }
 
@@ -133,8 +156,9 @@ beforeEach(() => {
   captureLauncherContext.mockReturnValue(builds)
   insertTextIntoActiveComposer.mockClear()
   insertTextWhenComposerOpens.mockClear()
-  getComposerTarget.mockReset()
-  getComposerTarget.mockReturnValue({ label: 'Build failures' })
+  insertTextIntoComposer.mockReset()
+  // The message box on screen is the first conversation's.
+  insertTextIntoComposer.mockImplementation((label) => label === 'Build failures')
 })
 
 describe('Escape keeps what the box holds', () => {
@@ -245,6 +269,15 @@ describe('after moving to another conversation', () => {
     expect(promptForText.mock.calls[0][0]).toContain('we ship the website on Friday')
   })
 
+  it('keeps the sentence when the page changes and its frame is drawn anew', async () => {
+    const user = mount()
+    await enter(await openBox(user), SENTENCE)
+    await hide(user)
+    await user.click(screen.getByRole('button', { name: 'Go to Launch plan' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/topic/launch')
+    expect((await openBox(user)).value).toBe(SENTENCE)
+  })
+
   it('a sentence that was sent stays about the conversation it was asked in', async () => {
     const user = mount()
     await ask(user)
@@ -262,11 +295,25 @@ describe('after moving to another conversation', () => {
     await ask(user)
     await act(async () => answerNow('It broke after the bump [1].'))
     await user.click(await screen.findByText('Put the answer in the composer'))
-    expect(insertTextIntoActiveComposer).toHaveBeenCalledWith('It broke after the bump.')
+    expect(insertTextIntoComposer).toHaveBeenCalledWith('Build failures', 'It broke after the bump.')
     expect(insertTextWhenComposerOpens).not.toHaveBeenCalled()
     await waitFor(() => expect(box()).toBeNull())
     // Acted on: the next open is empty.
     expect((await openBox(user)).value).toBe('')
+  })
+
+  it('puts the answer straight in the message box when only the address changed within the same conversation', async () => {
+    const user = mount()
+    await ask(user)
+    await hide(user)
+    await act(async () => answerNow('It broke after the bump [1].'))
+    // Same conversation, same message box; the address gained a thread.
+    await user.click(screen.getByRole('button', { name: 'Open a thread here' }))
+    await openBox(user)
+    await user.click(await screen.findByText('Put the answer in the composer'))
+    expect(insertTextIntoComposer).toHaveBeenCalledWith('Build failures', 'It broke after the bump.')
+    expect(insertTextWhenComposerOpens).not.toHaveBeenCalled()
+    await waitFor(() => expect(box()).toBeNull())
   })
 
   it('opens the conversation the answer is about and puts it in that message box, not the one on screen', async () => {
@@ -276,13 +323,14 @@ describe('after moving to another conversation', () => {
     await act(async () => answerNow('It broke after the bump [1].'))
     // The person is somewhere else now: another page, another message box.
     captureLauncherContext.mockReturnValue(launch)
-    getComposerTarget.mockReturnValue({ label: 'Launch plan' })
+    insertTextIntoComposer.mockImplementation((label) => label === 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Go to Launch plan' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/topic/launch')
     await openBox(user)
     await user.click(await screen.findByText('Put the answer in the composer'))
     expect(insertTextIntoActiveComposer).not.toHaveBeenCalled()
-    expect(insertTextWhenComposerOpens).toHaveBeenCalledWith('Build failures', 'It broke after the bump.')
+    expect(insertTextIntoComposer).not.toHaveBeenCalled()
+    expect(insertTextWhenComposerOpens).toHaveBeenCalledWith('Build failures', 'It broke after the bump.', expect.any(Function))
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/topic/builds'))
   })
 })

@@ -3,7 +3,8 @@ import { AppShell as Frame, ErrorBoundary, useSidebarFold } from '@estiva-app/ui
 import { CALLBACK_PATH } from '@/auth/estivaId'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
-import { useKeptLauncher } from '@/components/useKeptLauncher'
+import { KeptLauncherProvider } from '@/components/KeptLauncherProvider'
+import { useKeptSearch } from '@/components/useKeptLauncher'
 import { RailClosed } from './railClosed'
 
 interface PeekFrameProps {
@@ -49,11 +50,27 @@ function isFile(): boolean {
  * The list column is the page's own: the package's `ListColumn` (UIG-14, N9),
  * with its own error boundary. The frame only tells it when the rail is closed.
  */
-export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFrameProps) {
+export function PeekFrame(props: PeekFrameProps) {
+  // The launcher is the app's, held above the routes so it outlives a change of
+  // page (KIN-2). A frame drawn alone (a story, a test) holds its own.
+  const kept = useKeptSearch()
+  if (kept) return <FrameWithSearch {...props} kept={kept} />
+  return (
+    <KeptLauncherProvider>
+      <FrameUnderProvider {...props} />
+    </KeptLauncherProvider>
+  )
+}
+
+function FrameUnderProvider(props: PeekFrameProps) {
+  const kept = useKeptSearch()
+  return kept && <FrameWithSearch {...props} kept={kept} />
+}
+
+function FrameWithSearch({ leftPanel, rightPanel, threadPanel, banner, kept }: PeekFrameProps & { kept: NonNullable<ReturnType<typeof useKeptSearch>> }) {
   const [navOpen, setNavOpen] = useSidebarFold({ storageKey: 'peek.sidebarFolded', isFile })
   // The bar's search field and Cmd/Ctrl+K both open the launcher, which is
   // hidden, not thrown away, while it holds something (KIN-2): `useKeptLauncher`.
-  const kept = useKeptLauncher()
 
   const bar = useTopBarSlots()
 
@@ -96,8 +113,6 @@ export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFr
         </div>
       </Frame>
       {bar.panel}
-
-      {kept.launcher}
     </div>
   )
 }

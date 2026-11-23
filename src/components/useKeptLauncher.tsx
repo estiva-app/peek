@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import { CommandLauncher, type LauncherState } from '@/components/CommandLauncher'
 import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
 
@@ -26,6 +26,10 @@ import { captureLauncherContext, type LauncherContext } from '@/lib/launcherCont
  * the person: working on what they sent, or waiting with an answer they have
  * not looked at. Shown, they are looking at it, so there is no dot; and an
  * answer that has been seen does not light it again.
+ *
+ * **One for the whole app.** Every page draws its own frame, so the box lives
+ * above the routes (`KeptLauncherProvider`, in `App`) and each frame's search
+ * reads it (`useKeptSearch`): going from a topic to a DM or to Desk keeps it.
  */
 export function useKeptLauncher(): {
   toggle: () => void
@@ -55,4 +59,15 @@ export function useKeptLauncher(): {
   )
 
   return { toggle, searchStatus, searchStatusLabel, launcher }
+}
+
+/** What a frame's search needs of the kept launcher: how to open it, and what the field says while it is hidden. */
+export type KeptSearch = Omit<ReturnType<typeof useKeptLauncher>, 'launcher'>
+
+/** Filled by `KeptLauncherProvider`. */
+export const KeptSearchContext = createContext<KeptSearch | null>(null)
+
+/** The app's kept launcher, for a frame's search; `null` where nothing above holds one (a story, a test of one page). */
+export function useKeptSearch(): KeptSearch | null {
+  return useContext(KeptSearchContext)
 }

@@ -30,7 +30,7 @@ import {
   type CreatableKindRead,
 } from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
-import { getComposerTarget, insertReferenceIntoActiveComposer, insertTextIntoActiveComposer, insertTextWhenComposerOpens } from '@/lib/composerRegistry'
+import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer, insertTextIntoComposer, insertTextWhenComposerOpens } from '@/lib/composerRegistry'
 import { activeFolder, bodies } from '@/lib/conversationRegistry'
 import { useLastSelection } from '@/lib/lastSelection'
 import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
@@ -212,14 +212,14 @@ export function CommandLauncher({ context: opened, onClose, open = true, onHide,
   /** The page the person is on, as the router has it. */
   const here = pathname + search
   const [request, setRequest] = useState<{ intent: Intent; text: string } | null>(null)
-  const [sentFrom, setSentFrom] = useState<{ context: LauncherContext; path: string } | null>(null)
+  const [sentFrom, setSentFrom] = useState<{ context: LauncherContext; path: string; pathname: string } | null>(null)
   const [draft, setDraft] = useState<string | null | false>(null)
   const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
   const context = request && sentFrom ? sentFrom.context : opened
   /** Send, or drop (`null`), a request. What the last one brought goes with it at once, so an old answer is never read as the new one's. */
   const send = (next: { intent: Intent; text: string } | null) => {
     // Asking again from the same sentence keeps where it was first asked.
-    if (next && (!request || !sentFrom)) setSentFrom({ context: opened, path: here })
+    if (next && (!request || !sentFrom)) setSentFrom({ context: opened, path: here, pathname })
     setDraft(null)
     setAnswer(null)
     setRequest(next)
@@ -549,18 +549,27 @@ export function CommandLauncher({ context: opened, onClose, open = true, onHide,
   */
   const putInComposer = (text: string) => {
     const label = sentFrom?.context.composer?.label
-    const moved = !!sentFrom && (sentFrom.path !== here || getComposerTarget()?.label !== label)
-    if (!moved || !onHide) {
+    if (!sentFrom || !onHide) {
       insertTextIntoActiveComposer(text)
       onClose()
       return
     }
-    const lost = () => showToast({ label: 'Open the conversation this is about to put it in its message box. It is still in search.', type: 'error' })
-    // Same page, another message box (a different thread): nothing to open by its address, so say so and keep the text.
+    // Still on that page: its message box is on screen, whatever else the address now carries (a thread, a message
+    // it scrolled to) and whichever box has the cursor.
+    if (sentFrom.pathname === pathname && insertTextIntoComposer(label, text)) return onClose()
+    const lost = () =>
+      showToast({
+        label: `Could not reach the message box of ${label ? `“${label}”` : 'that conversation'}. Open it and choose this again: the answer is still in search.`,
+        type: 'error',
+      })
+    // The same address and no such box on it: there is nowhere to go, so say so and keep the text.
     if (sentFrom.path === here) return lost()
     onHide()
     navigate(sentFrom.path)
-    void insertTextWhenComposerOpens(label, text).then((placed) => (placed ? onClose() : lost()))
+    // A name is not an address: if the person leaves that page before its box opens, nothing is written.
+    const to = sentFrom.path
+    const stillThere = () => window.location.pathname + window.location.search === to
+    void insertTextWhenComposerOpens(label, text, stillThere).then((placed) => (placed ? onClose() : lost()))
   }
 
   // ── Forms ───────────────────────────────────────────────────────────────────
