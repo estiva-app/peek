@@ -98,7 +98,7 @@ const peekUnclaimed = event({
   kind: 31990,
   pubkey: PEEK_APP,
   tags: [['d', 'estiva-peek'], web('naddr'), web('nevent')],
-  content: JSON.stringify({ name: 'Peek', about: 'Conversations', aspect: 'conversation', fileNoun: 'topic', projections: {}, vocabularies: {} }),
+  content: JSON.stringify({ name: 'Peek', about: 'Conversations', aspect: 'conversation', fileNoun: 'initiative', projections: {}, vocabularies: {} }),
 })
 const ship = event({
   kind: 31990,

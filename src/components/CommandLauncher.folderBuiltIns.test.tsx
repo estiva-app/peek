@@ -88,7 +88,7 @@ const WORLD: TestEvent[] = [
     kind: 31990,
     pubkey: 'e'.repeat(64),
     tags: [['d', 'estiva-peek'], web('naddr'), web('nevent')],
-    content: JSON.stringify({ name: 'Peek', about: 'Conversations', aspect: 'conversation', fileNoun: 'topic', projections: {}, vocabularies: {} }),
+    content: JSON.stringify({ name: 'Peek', about: 'Conversations', aspect: 'conversation', fileNoun: 'initiative', projections: {}, vocabularies: {} }),
   }),
   event({
     kind: 31990,
