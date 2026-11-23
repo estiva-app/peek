@@ -466,7 +466,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     if (modelDownloadable) return setCannotAsk('Download the on-device model below to ask.')
     // Not yet answered (the first moments after opening) is not a no: the ask is tried, and says so if nothing comes back.
     // A browser with no Prompt API answers 'unavailable' too, which counts as ready above; it is asked here outright.
-    if (!hasPromptApi() || (availability !== null && !modelReady)) return setCannotAsk('Asking needs Chrome’s on-device model.')
+    if (!hasPromptApi() || (availability !== null && !modelReady)) return setCannotAsk('Asking needs this browser’s on-device model, which is not turned on.')
     setCannotAsk(null)
     setRequest({ intent: 'ask', text })
   }

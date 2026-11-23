@@ -194,7 +194,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
     await waitFor(() => expect(input().rows).toBe(3))
     await userEvent.type(input(), '{Enter}')
 
-    expect(await screen.findByText('Asking needs Chrome’s on-device model.')).toBeInTheDocument()
+    expect(await screen.findByText('Asking needs this browser’s on-device model, which is not turned on.')).toBeInTheDocument()
     expect(promptForText).not.toHaveBeenCalled()
   })
 
@@ -207,7 +207,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
     await waitFor(() => expect(input().rows).toBe(3))
     await userEvent.type(input(), '{Enter}')
 
-    expect(await screen.findByText('Asking needs Chrome’s on-device model.')).toBeInTheDocument()
+    expect(await screen.findByText('Asking needs this browser’s on-device model, which is not turned on.')).toBeInTheDocument()
     expect(promptForText).not.toHaveBeenCalled()
   })
 
