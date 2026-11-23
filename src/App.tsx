@@ -7,7 +7,7 @@ import { TopicsPage } from '@/pages/TopicsPage'
 import { FilePage } from '@/pages/FilePage'
 import { ObjectPage } from './pages/ObjectPage'
 import { useRouteWords } from '@/api'
-import { KeptLauncherProvider } from '@/components/KeptLauncherProvider'
+import { KeptLauncherProvider } from '@/lib/KeptLauncherProvider'
 
 /**
  * A page of Peek's own that moved under `/app/` (FOL-39): the old path sends

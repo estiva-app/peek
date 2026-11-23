@@ -19,7 +19,7 @@ import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
-import { KeptLauncherProvider } from './KeptLauncherProvider'
+import { KeptLauncherProvider } from '@/lib/KeptLauncherProvider'
 import { useKeptSearch } from './useKeptLauncher'
 
 const { promptForText, captureLauncherContext, insertTextIntoActiveComposer, insertTextWhenComposerOpens, insertTextIntoComposer } = vi.hoisted(() => ({

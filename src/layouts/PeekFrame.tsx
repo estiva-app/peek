@@ -3,8 +3,7 @@ import { AppShell as Frame, ErrorBoundary, useSidebarFold } from '@estiva-app/ui
 import { CALLBACK_PATH } from '@/auth/estivaId'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
-import { KeptLauncherProvider } from '@/components/KeptLauncherProvider'
-import { useKeptSearch } from '@/components/useKeptLauncher'
+import { useKeptLauncher, useKeptSearch } from '@/components/useKeptLauncher'
 import { RailClosed } from './railClosed'
 
 interface PeekFrameProps {
@@ -55,16 +54,18 @@ export function PeekFrame(props: PeekFrameProps) {
   // page (KIN-2). A frame drawn alone (a story, a test) holds its own.
   const kept = useKeptSearch()
   if (kept) return <FrameWithSearch {...props} kept={kept} />
-  return (
-    <KeptLauncherProvider>
-      <FrameUnderProvider {...props} />
-    </KeptLauncherProvider>
-  )
+  return <FrameAlone {...props} />
 }
 
-function FrameUnderProvider(props: PeekFrameProps) {
-  const kept = useKeptSearch()
-  return kept && <FrameWithSearch {...props} kept={kept} />
+/** A frame with nothing above it holding the launcher: it holds its own, as every frame did until KIN-2. */
+function FrameAlone(props: PeekFrameProps) {
+  const { launcher, ...kept } = useKeptLauncher()
+  return (
+    <>
+      <FrameWithSearch {...props} kept={kept} />
+      {launcher}
+    </>
+  )
 }
 
 function FrameWithSearch({ leftPanel, rightPanel, threadPanel, banner, kept }: PeekFrameProps & { kept: NonNullable<ReturnType<typeof useKeptSearch>> }) {
