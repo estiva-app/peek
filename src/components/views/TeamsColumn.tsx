@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { IconFolder, IconHash, IconPlus, IconTarget, IconUsers } from '@tabler/icons-react'
-import { CollapsibleSection, EmptyState, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, UnreadDot, type UnreadDotTone } from '@estiva-app/ui'
+import { IconFolder, IconHash, IconPlus, IconUsers } from '@tabler/icons-react'
+import { CollapsibleSection, EmptyState, KindIcon, NavItem, NavTree, shortcutLabel, SkeletonList, SkeletonRow, UnreadDot, type UnreadDotTone } from '@estiva-app/ui'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
 import {
   teamPlaces,
@@ -284,7 +284,7 @@ function TeamInitiativesFold({
     <CollapsibleSection
       look="row"
       title="Initiatives"
-      icon={<IconTarget {...ICON} aria-hidden />}
+      icon={<KindIcon kind="topic" tone="inherit" />}
       open={open}
       onOpenChange={setOpen}
       {...(holdsOpen && selectedRef ? { openFor: selectedRef } : {})}

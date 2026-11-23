@@ -1,12 +1,11 @@
 import {
   IconMessage,
   IconNote,
-  IconTarget,
   IconUsers,
   // IconBrackets,
   // IconFiles,
 } from '@tabler/icons-react'
-import { Rail, RailItem, isPlainClick } from '@estiva-app/ui'
+import { KindIcon, Rail, RailItem, isPlainClick } from '@estiva-app/ui'
 import { FreshnessIndicator } from './FreshnessIndicator'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { MouseEvent } from 'react'
@@ -52,7 +51,8 @@ export function NavRail() {
       // Your initiatives (TOP-4's Topics, renamed 16 November), the Per app prototype's target icon.
       // Back to where it was — an initiative, or none open — as DMs goes back to the last DM (Katerina, 5 October; kept 16 November).
       to: topicsPath ?? '/app/initiatives',
-      icon: <IconTarget size={16} stroke={1.5} />,
+      // ◎ from the kit's KindIcon, the one part that names an initiative (review of 23 November, C7).
+      icon: <KindIcon kind="topic" tone="inherit" />,
       label: 'Initiatives',
       active: isAt(pathname, '/app/initiatives') || fileIn('topics'),
       onClick: topicsPath ? inColumn(topicsPath, 'topics') : undefined,

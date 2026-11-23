@@ -1,6 +1,6 @@
 import { useContext, useState, type ReactNode } from 'react'
-import { EmptyState, NavItem, WithTooltip, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
-import { IconBellOff, IconHash, IconTarget } from '@tabler/icons-react'
+import { EmptyState, KindIcon, NavItem, WithTooltip, shortcutLabel, SkeletonList, SkeletonRow, useRememberedOpen, type UnreadDotTone } from '@estiva-app/ui'
+import { IconBellOff, IconHash } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState, RowNewsItem } from '@/api'
@@ -280,7 +280,7 @@ export function TreeRow({
         place === 'topic' ? (
           <IconHash size={16} stroke={1.5} aria-hidden />
         ) : place === 'initiative' ? (
-          <IconTarget size={16} stroke={1.5} aria-hidden />
+          <KindIcon kind="topic" tone="inherit" />
         ) : (
           <TopicState
             type={type}

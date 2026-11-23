@@ -7,9 +7,10 @@ import { PEOPLE } from '@/data/peopleData'
 import { ExploreTopicsView } from './ExploreTopics'
 
 /**
- * Explore topics (TOPI-6): every topic you can read, archived ones too, with a
- * search and Join, as the approved prototype draws it (peek
- * `concept/topics-level-up`, *Peek: Explore topics*).
+ * Explore initiatives (TOPI-6): every initiative you can read, archived ones
+ * too, with a search and Join, as the approved prototype draws it (peek
+ * `concept/topics-level-up`, *Peek: Explore topics*), in the words and ◎ the
+ * app shows (review of 23 November, E1).
  */
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const NOW = Date.UTC(2026, 10, 10, 12)
@@ -74,11 +75,11 @@ type Story = StoryObj<typeof meta>
 /** Opens on All, A to Z, yours and others; Pricing's Members and Active are still being read. */
 export const All: Story = { args: { state: LISTS } }
 
-/** Your topics, in the column's order. */
-export const YourTopics: Story = { args: { state: LISTS, start: 'yours' } }
+/** Your initiatives, in the column's order. */
+export const YourInitiatives: Story = { args: { state: LISTS, start: 'yours' } }
 
-/** Other topics, A to Z, each with Join. */
-export const OtherTopics: Story = { args: { state: LISTS, start: 'others' } }
+/** Other initiatives, A to Z, each with Join. */
+export const OtherInitiatives: Story = { args: { state: LISTS, start: 'others' } }
 
 /** Archived, A to Z: each opens read-only, with no Join. */
 export const Archived: Story = { args: { state: LISTS, start: 'archived' } }
