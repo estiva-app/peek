@@ -66,6 +66,7 @@ export type QueryLane = ReadLane | 'first'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
 import { heardRefusal } from '@/lib/failureReports'
+import { heardFailure } from '@/lib/heardFailures'
 import { relayBudget } from './relayBudget'
 import { RelayReadError } from './relayRead'
 import { keepRelayAnswer } from './deviceCopy'
@@ -238,6 +239,10 @@ export async function queryRelay(
         release?.()
       }
     }
+  } catch (error) {
+    // Never answered: Estiva ID would not sign, or the relay was not reached. Said for the failure a screen draws next (34396209).
+    heardFailure(error)
+    throw error
   } finally {
     if (click) {
       clickReads.open -= 1
@@ -246,6 +251,8 @@ export async function queryRelay(
   }
   // Every answer is also the copy a reload draws from, and its correction (PEE-2).
   if (answer.ok) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
+  // Why a read failed, for the report of the failure it becomes: the relay's prefix, never its sentence.
+  else heardFailure(answer.reason ?? '')
   return answer
 }
 
