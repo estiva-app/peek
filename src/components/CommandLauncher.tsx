@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { IconDownload, IconEraser, IconPencil, IconRefresh, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
-import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
+import { Avatar, KindIcon, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform, isPlainClick, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
@@ -12,6 +12,8 @@ import { addrToNaddr } from '@estiva-app/protocol'
 import { fileEmptyState, isPrompt, launcherMatch, matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
+import { referenceOfValue } from '@/lib/embedValue'
+import { FilePreviewCard } from './ui/MessageLinks'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, hasPromptApi, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { probeable } from '@/lib/actionCatalogue'
@@ -835,14 +837,37 @@ export function CommandLauncher({ context: opened, onClose, open = true, onHide,
     the title, as `[` draws it; without one, an issue's project is the second
     line, and anything else is the title alone (SUM-7, the SearchRow story).
   */
-  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => ({
-    id: `file-${f.id}`,
-    label: f.title,
-    ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
-    icon: <KindIcon kind={fileGlyphOfAddress(f.id)} tone="inherit" />,
-    onSelect: close(() => navigate(filePath(f.id, f.title))),
-    onForget: forget,
-  })
+  const fileRow = (f: { id: string; title: string; summary?: string; caption?: string }, forget?: () => void): CommandPaletteRow => {
+    const glyph = fileGlyphOfAddress(f.id)
+    /*
+      A lit file shows its card beside the box, so two like titles can be told apart without opening either (KIN-3;
+      Miky's 5 November prototype): the card a link to it draws, in every list, Recent included (Miky, 23 Nov). A topic
+      has none: its card is its latest conversation, which the box is not for.
+    */
+    const uri = glyph !== 'topic' ? referenceOfValue(f.id) : undefined
+    return {
+      id: `file-${f.id}`,
+      label: f.title,
+      ...(f.summary ? { description: f.summary, aside: f.caption || undefined } : f.caption ? { description: f.caption } : {}),
+      icon: <KindIcon kind={glyph} tone="inherit" />,
+      onSelect: close(() => navigate(filePath(f.id, f.title))),
+      onForget: forget,
+      /*
+        A link on the card (its title, a project's issue, its comments) opens through Peek's router as any card's does;
+        the box is done with then, as when the row itself is chosen.
+      */
+      ...(uri
+        ? {
+            preview: (
+              // @estiva-escape(no-raw-element): not a control — it hears the card's own links (focusable, keyed) as they open, to close the box
+              <div onClick={(event) => isPlainClick(event) && (event.target as Element).closest('a') && onClose()}>
+                <FilePreviewCard uri={uri} />
+              </div>
+            ),
+          }
+        : {}),
+    }
+  }
 
   const personRow = (p: Person, forget?: () => void): CommandPaletteRow => ({
     id: `person-${p.id}`,

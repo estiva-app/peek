@@ -1,7 +1,7 @@
 import { useCallback, type MouseEvent, type ReactNode } from 'react'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { AttachedCard, FieldLine, isPlainClick, LinkChip, LinkRow, type LinkedConversation, type LinkState } from '@estiva-app/ui'
-import { formatDateLabel, useConversationBadges, useDeleted, useLinksIn } from '@/api'
+import { AttachedCard, FieldLine, isPlainClick, LinkCard, LinkChip, LinkRow, type LinkedConversation, type LinkState } from '@estiva-app/ui'
+import { formatDateLabel, useConversationBadges, useDeleted, useHeldObject, useLinksIn } from '@/api'
 import { DELETED_FIELD } from '@/lib/fileControls'
 import { linkedKindOf, linkStateOf, messageWordsOf } from '@/lib/linked'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
@@ -93,6 +93,19 @@ function useConversationOf(file: ForeignObject | null | undefined | 'loading'): 
 function openingAt(link: LinkState, written: string | undefined): LinkState {
   const block = link.state === 'ready' ? writtenLinkOf(written, link.linked.href) : undefined
   return block && link.state === 'ready' ? { ...link, linked: { ...link.linked, href: block.href } } : link
+}
+
+/**
+ * A file's card as a link to it draws it, read only and in no box of its own: what ⌘K shows beside a lit file
+ * (KIN-3). The kit mounts it only once the row has stayed lit, so this reads one file, held for the tab as a link's
+ * card is, and its comment count. A file this reader cannot see draws as "not available", as its link would.
+ */
+export function FilePreviewCard({ uri }: { uri: string }) {
+  const { object } = useHeldObject(uri.replace(/^nostr:/i, ''))
+  const conversation = useConversationOf(object)
+  const deleted = useDeleted(uri, object === 'loading' ? undefined : object)
+  const link: LinkState = object === 'loading' ? { state: 'loading', kind: linkedKindOf(uri) } : linkStateOf(uri, object, { deleted, ...(conversation ? { conversation } : {}) })
+  return <LinkCard link={link} bare readOnly />
 }
 
 /** A part of another file shown in a message (SPEC §13.6.1): its links are clicked as a chip's are. */

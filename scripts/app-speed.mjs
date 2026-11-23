@@ -2,7 +2,7 @@
  * How long Leaf, Ship and the Estiva agent take to show a page, on production — the measure every issue in "Apps
  * read only what they show" proves its Done when with (APP-1). Run it before and after a change, the same way.
  *
- *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,peek-topic-all,peek-topic-important,page-topic,page-team,page-chat,page-dm] [--runs 3]
+ *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,desk-cmdk,peek-topic-all,peek-topic-important,page-topic,page-team,page-chat,page-dm] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
@@ -76,7 +76,7 @@ if (SESSION && AS === 'qa1') throw new Error('--session needs --as <name>: the s
 if (!SESSION && AS !== 'qa1') throw new Error(`--as ${AS} needs --session <file>: only QA-1 signs in by itself here`)
 if (SESSION && args.includes('--together')) throw new Error('--together opens each leg as its own person: no --as/--session')
 /** Legs that read QA-1's own fixtures, measured only as QA-1. */
-const QA1_ONLY = ['teams', 'topics', 'peek-topic-all', 'peek-topic-important']
+const QA1_ONLY = ['teams', 'topics', 'peek-topic-all', 'peek-topic-important', 'desk-cmdk']
 /** `--reads`: keep every relay read of a run (when, bytes, filter), to tell which part of the app asked for it. */
 const READS = args.includes('--reads')
 /** The box the relay runs on, for its log (`--together`). */
@@ -192,6 +192,12 @@ const LEGS = {
   teams: () => ['--base', 'https://peek.estiva.app', '--url', '/app/teams', ...settle(60000), ...whole, ...report('teams')],
   topics: () => ['--base', 'https://peek.estiva.app', '--url', '/app/topics', ...settle(60000), ...whole, ...report('topics')],
   desk: () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...whole, ...report('desk')],
+  // Desk, then ⌘K: two words, a rest on the first lit row, three ↓ 150 ms apart and a rest on the last. What `desk` does
+  // not read is what the box read: its search, and each card it showed beside the box (KIN-3). QA-1's own fixtures.
+  'desk-cmdk': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...whole,
+    '--press', 'Control+k', '--wait', '1500', '--type', option('cmdk-words', 'live widget'), '--wait', '4000',
+    '--press', 'ArrowDown', '--wait', '150', '--press', 'ArrowDown', '--wait', '150', '--press', 'ArrowDown', '--wait', '1500',
+    ...whole, ...report('desk-cmdk')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
   ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
@@ -403,7 +409,7 @@ if (args.includes('--compare')) {
   // Peek's Topics column (TOPI-7), cold: one of QA-1's topics, a row drawn once the column's reads land.
   if (legs.includes('topics')) awaitList.push(['^peek\\.', '^/app/topics/?$', [option('topics-await', TOPICS_AWAIT)]])
   // Peek's Desk (ACT-9), cold: its Open work heading; the whole load is the measure, the rows' dots read what it holds.
-  if (legs.includes('desk')) awaitList.push(['^peek\\.', '^/app/desk/?$', ['Open work']])
+  if (legs.includes('desk') || legs.includes('desk-cmdk')) awaitList.push(['^peek\\.', '^/app/desk/?$', ['Open work']])
   // Before Weekly Plans' Peek entry, whose path pattern would match this topic too.
   if (legs.some((l) => l.startsWith('peek-topic-'))) awaitList.unshift(['^peek\\.', QA_TOPIC.path, [QA_TOPIC.own]])
   // The title-dot pages (ACT-4), each by its own path, ahead of the patterns above that would match a topic's too.
