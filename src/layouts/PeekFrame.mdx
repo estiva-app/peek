@@ -48,10 +48,17 @@ frame only tells the list column when the rail is closed.
 
 ## What it owns
 
-- **The launcher's context, captured once.** It is read at the invoking
-  keystroke or click — selection, then composer, then nothing — and **frozen for
-  the launcher's lifetime**, so what the launcher acts on cannot change under it
+- **The launcher's context, captured at each open.** It is read at the invoking
+  keystroke or click — selection, then composer, then nothing — and **frozen
+  while the box is shown**, so what the launcher acts on cannot change under it
   while somebody is typing into it.
+- **A launcher that holds something is hidden, not thrown away.** Escape, a
+  click outside or a second Cmd/Ctrl+K hides a box with words, an open level or
+  a sentence that was sent, and the next open shows it as it was; a reload
+  forgets it. While it is hidden the search field carries a dot: breathing
+  while a sentence the person sent is worked on, still once its answer waits
+  unseen. Words never sent are about wherever the box is opened next; a sent
+  sentence stays about the conversation it was asked in (`useKeptLauncher`).
 - **Cmd/Ctrl+K**, in one place rather than per page.
 - **Telling the list column** when the rail is folded, so it folds with it.
 

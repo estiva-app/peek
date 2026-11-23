@@ -30,8 +30,40 @@ export function getComposerTarget(): ComposerTarget | null {
   }
 }
 
+/** Text waiting for a composer that is not on screen yet (`insertTextWhenComposerOpens`). */
+const waiting = new Set<(handle: ComposerHandle) => void>()
+
 export function registerActiveComposer(handle: ComposerHandle) {
   activeComposer = handle
+  for (const tell of [...waiting]) tell(handle)
+}
+
+/**
+ * Put text in a composer that is about to open: the one labelled `label`, in a
+ * conversation Peek is on its way to (KIN-2: an answer goes into the
+ * conversation it is about, not the one on screen when it is picked).
+ *
+ * Only a composer that registers **after** this call counts, and only one
+ * carrying the label, so the text cannot land in the box that happens to be
+ * active while the page is still changing: a reply about one conversation in
+ * another's message box is the mistake this is for. If none arrives within
+ * `deadlineMs` it answers `false` and nothing was written.
+ */
+export function insertTextWhenComposerOpens(label: string | undefined, text: string, deadlineMs = 8000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const before = activeComposer?.editor
+    const tell = (handle: ComposerHandle) => {
+      if (handle.editor === before || handle.label !== label) return
+      done(insertTextIntoActiveComposer(text))
+    }
+    const timer = setTimeout(() => done(false), deadlineMs)
+    const done = (placed: boolean) => {
+      clearTimeout(timer)
+      waiting.delete(tell)
+      resolve(placed)
+    }
+    waiting.add(tell)
+  })
 }
 
 export function unregisterComposer(editor: Editor) {

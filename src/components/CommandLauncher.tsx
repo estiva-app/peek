@@ -30,7 +30,7 @@ import {
   type CreatableKindRead,
 } from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
-import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
+import { getComposerTarget, insertReferenceIntoActiveComposer, insertTextIntoActiveComposer, insertTextWhenComposerOpens } from '@/lib/composerRegistry'
 import { activeFolder, bodies } from '@/lib/conversationRegistry'
 import { useLastSelection } from '@/lib/lastSelection'
 import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
@@ -114,10 +114,35 @@ type LiveRead =
   | { state: 'none' }
   | { state: 'failed' }
 
+/**
+ * What the frame needs to know about the box (KIN-2).
+ *
+ * `holds`: there are words in the field, a level is open, or a sentence was sent, so dismissing hides the box
+ * instead of closing it. `status` is for the dot on the top bar's search while the box is hidden: `working` on a
+ * sentence the person sent, `waiting` with an answer (or the news that none came) they have not looked at.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/intelligence-works-in-the-background-and-reaches-you-only-by-naming-you.md
+ * The dot is the answer to the person's own sentence. Nothing they did not send may light it.
+ */
+export interface LauncherState {
+  holds: boolean
+  status: 'working' | 'waiting' | null
+}
+
 interface CommandLauncherProps {
   /** Captured at the invoking keystroke/click - see lib/launcherContext. */
   context: LauncherContext
+  /** The box is finished with: something was chosen or done, or it was dismissed holding nothing. The frame unmounts it. */
   onClose: () => void
+  /**
+   * Shown or hidden (KIN-2). A hidden box stays mounted, so its words, its level, a request in flight and the answer
+   * are all still there when it is shown again. Default shown.
+   */
+  open?: boolean
+  /** Escape or a click outside while the box holds something: the frame hides it. Without it, dismissing closes. */
+  onHide?: () => void
+  /** Whether the box holds anything worth keeping, and what the search should say about it while it is hidden. */
+  onState?: (state: LauncherState) => void
   /** Open inside an app (tests only). */
   initialAppId?: string
   /** Open with an action's form already up (tests only; needs initialAppId). */
@@ -164,15 +189,46 @@ function initialStack(appId?: string, actionId?: string): Frame[] {
 const formKey = (level: Extract<Level, { kind: 'form' }>) =>
   `${level.action.target ?? level.app?.id ?? ''}:${level.action.id}`
 
-export function CommandLauncher({ context, onClose, initialAppId, initialActionId }: CommandLauncherProps) {
+export function CommandLauncher({ context: opened, onClose, open = true, onHide, onState, initialAppId, initialActionId }: CommandLauncherProps) {
   const [stack, setStack] = useState<Frame[]>(() => initialStack(initialAppId, initialActionId))
   const frame = stack[stack.length - 1]
   const level = frame.level
   const query = frame.query
   const q = query.trim().toLowerCase()
 
+  /*
+    The question being answered, and what kind of answer. Separate from what is
+    in the field. An ask is answered on the first level, under the prompt; a
+    draft has a level of its own.
+
+    `sentFrom` is where it was sent from (KIN-2; Miky, 23 November 2026). The box
+    can be hidden and shown again somewhere else. Words that were never sent
+    follow the person: the box is about wherever it was opened last. A sentence
+    that was sent stays about the conversation it was asked in, with that
+    conversation's name above the field, until it is acted on or the field is
+    changed.
+  */
+  const { pathname, search } = useLocation()
+  /** The page the person is on, as the router has it. */
+  const here = pathname + search
+  const [request, setRequest] = useState<{ intent: Intent; text: string } | null>(null)
+  const [sentFrom, setSentFrom] = useState<{ context: LauncherContext; path: string } | null>(null)
+  const [draft, setDraft] = useState<string | null | false>(null)
+  const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
+  const context = request && sentFrom ? sentFrom.context : opened
+  /** Send, or drop (`null`), a request. What the last one brought goes with it at once, so an old answer is never read as the new one's. */
+  const send = (next: { intent: Intent; text: string } | null) => {
+    // Asking again from the same sentence keeps where it was first asked.
+    if (next && (!request || !sentFrom)) setSentFrom({ context: opened, path: here })
+    setDraft(null)
+    setAnswer(null)
+    setRequest(next)
+  }
+
   const setQuery = (next: string) => {
     setCannotAsk(null)
+    // A changed sentence is a new one: its answer no longer answers it, and a request in flight is abandoned (KIN-2).
+    if (level.kind === 'first' && request?.intent === 'ask' && next.trim() !== request.text) send(null)
     setStack((s) => [...s.slice(0, -1), { ...s[s.length - 1], query: next }])
   }
   const push = (...levels: Level[]) => setStack((s) => [...s, ...levels.map((l) => ({ level: l, query: '' }))])
@@ -181,7 +237,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const navigate = useNavigate()
   const { showToast } = useToast()
   const { setPendingTopicMessage, dmId: selectedPersonId } = useLastSelection()
-  const { pathname } = useLocation()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
   const openPersonId = pathname.startsWith('/app/dms/') ? selectedPersonId : null
   // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
@@ -384,15 +439,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   // ── Ask and Draft ───────────────────────────────────────────────────────────
 
-  /*
-    The question being answered, and what kind of answer. Separate from what is
-    in the field: changing the field does not ask again until you say so. An
-    ask is answered on the first level, under the prompt; a draft has a level
-    of its own.
-  */
-  const [request, setRequest] = useState<{ intent: Intent; text: string } | null>(null)
-  const [draft, setDraft] = useState<string | null | false>(null)
-  const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
   /** A cited message the thread has not loaded — see the source row. */
   const [unreachable, setUnreachable] = useState<string | null>(null)
   /** Why Enter could not ask, said once under the prompt until the words change. */
@@ -451,7 +497,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const openDraft = () => {
     const text = query.trim()
     setStack((s) => [...s, { level: { kind: 'draft' }, query: text }])
-    setRequest(text ? { intent: 'draft', text } : null)
+    send(text ? { intent: 'draft', text } : null)
   }
 
   /*
@@ -468,7 +514,53 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     // A browser with no Prompt API answers 'unavailable' too, which counts as ready above; it is asked here outright.
     if (!hasPromptApi() || (availability !== null && !modelReady)) return setCannotAsk('Asking needs this browser’s on-device model, which is not turned on.')
     setCannotAsk(null)
-    setRequest({ intent: 'ask', text })
+    send({ intent: 'ask', text })
+  }
+
+  /*
+    What the top bar's search says while the box is hidden (KIN-2): working on
+    a sentence that was sent, or waiting with an answer nobody has looked at.
+    "No answer came back" waits the same way, so a failure is not mistaken for
+    work still going (Miky, 23 November 2026). Once the box has been open on
+    the answer it has been seen, and the dot does not come back.
+  */
+  const working = !!request && hasThread && (request.intent === 'ask' ? answer === null : draft === null)
+  const arrived = !!request && (request.intent === 'ask' ? answer !== null : draft !== null)
+  const [seen, setSeen] = useState(false)
+  useEffect(() => setSeen(false), [request])
+  useEffect(() => {
+    if (open && arrived) setSeen(true)
+  }, [open, arrived])
+  const holds = stack.length > 1 || query.trim() !== '' || request !== null
+  const status = working ? 'working' : arrived && !seen ? 'waiting' : null
+  useEffect(() => onState?.({ holds, status }), [holds, status, onState])
+  // Unmounted, it holds nothing and says nothing.
+  useEffect(() => () => onState?.({ holds: false, status: null }), [onState])
+
+  /** Escape, or a click outside: hidden while there is something to keep, closed otherwise. */
+  const dismiss = () => (holds && onHide ? onHide() : onClose())
+
+  /*
+    An answer or a draft goes into the composer of the conversation it is
+    about (Miky, 23 November 2026). After the box was hidden and shown again
+    somewhere else, that is not the composer on screen: Peek opens the
+    conversation it was asked in and puts the text there. The box only hides
+    until that has happened, so text that found no composer is not lost.
+  */
+  const putInComposer = (text: string) => {
+    const label = sentFrom?.context.composer?.label
+    const moved = !!sentFrom && (sentFrom.path !== here || getComposerTarget()?.label !== label)
+    if (!moved || !onHide) {
+      insertTextIntoActiveComposer(text)
+      onClose()
+      return
+    }
+    const lost = () => showToast({ label: 'Open the conversation this is about to put it in its message box. It is still in search.', type: 'error' })
+    // Same page, another message box (a different thread): nothing to open by its address, so say so and keep the text.
+    if (sentFrom.path === here) return lost()
+    onHide()
+    navigate(sentFrom.path)
+    void insertTextWhenComposerOpens(label, text).then((placed) => (placed ? onClose() : lost()))
   }
 
   // ── Forms ───────────────────────────────────────────────────────────────────
@@ -1097,7 +1189,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
                 label: 'Put the answer in the composer',
                 description: 'It will not send. Edit it first.',
                 icon: icon(IconCornerDownLeft),
-                onSelect: close(() => insertTextIntoActiveComposer(answer.text.replace(/\s*\[\d+\]/g, ''))),
+                onSelect: () => putInComposer(answer.text.replace(/\s*\[\d+\]/g, '')),
               },
             ]
           : []
@@ -1120,7 +1212,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
             id: 'again',
             label: `Write a draft: “${typed}”`,
             icon: icon(request ? IconRefresh : IconWriting),
-            onSelect: () => setRequest({ intent: 'draft', text: typed }),
+            onSelect: () => send({ intent: 'draft', text: typed }),
           },
         ]
       : []
@@ -1147,9 +1239,9 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
                 description: 'It will not send. Edit it first.',
                 icon: icon(IconCornerDownLeft),
                 // At the cursor, never replacing, and never sending.
-                onSelect: close(() => insertTextIntoActiveComposer(draft)),
+                onSelect: () => putInComposer(draft),
               },
-              { id: 'draft-again', label: 'Write it again', icon: icon(IconRefresh), onSelect: () => setRequest({ ...request }) },
+              { id: 'draft-again', label: 'Write it again', icon: icon(IconRefresh), onSelect: () => send({ ...request }) },
             ]
           : []
       return { body, groups: [{ label: againLabel, rows: askAgain }, { label: 'Next', rows: next }] }
@@ -1281,7 +1373,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   })()
 
   return (
-    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={level.kind === 'first' && about ? undefined : where} modKey={modKey}>
+    <CommandPalette
+      open={open}
+      onOpenChange={(next) => !next && dismiss()}
+      label="Launcher"
+      where={level.kind === 'first' && about ? undefined : where}
+      modKey={modKey}
+      // The footer says what Escape will do: the box comes back with what it holds (KIN-2).
+      escWord={holds && onHide ? 'hide' : 'close'}
+    >
       {content}
     </CommandPalette>
   )
