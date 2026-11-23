@@ -133,7 +133,11 @@ const dot = () => search().getAttribute('data-search-status')
 /** Open with Ctrl+K and wait for the field. */
 async function openBox(user: ReturnType<typeof userEvent.setup>) {
   await user.keyboard('{Control>}k{/Control}')
-  await waitFor(() => expect(field()).not.toBeNull())
+  // Shown and with the cursor in it: the dialog takes focus a moment after it opens, and keys pressed before that go nowhere.
+  await waitFor(() => {
+    expect(field()).not.toBeNull()
+    expect(document.activeElement).toBe(field())
+  })
   return field()!
 }
 /** Escape, and wait until the box is off the screen. */
