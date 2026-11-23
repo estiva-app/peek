@@ -40,6 +40,8 @@ export class RelayReadError extends Error {
   readonly reason: string
   /** What the relay said to wait, in ms — see {@link retryAfterMs}. */
   readonly retryAfterMs: number | null
+  /** Set once {@link waitingOut} has waited its whole three minutes for this read: nothing above it waits again. */
+  waitedOut?: true
 
   constructor(reason: string) {
     super(`relay read failed: ${reason}`)
@@ -193,9 +195,74 @@ export async function withRateLimitRetry<T>(
     } catch (error) {
       const reason = reasonOf(error)
       const hint = retryAfterMs(reason)
-      if (hint === null) throw error
+      // A read that already waited the limit out underneath (`waitingOut`) is not run, and waited for, again.
+      if (hint === null || (error instanceof RelayReadError && error.waitedOut)) throw error
       const wait = Math.max(hint, budget.noteRateLimited(reason))
       if (waited >= attempts || wait > maxWaitMs) throw error
+      await sleep(wait)
+    }
+  }
+}
+
+/**
+ * How long a read somebody asked for waits out the relay's per-minute limit
+ * before it fails as it always did: three of the relay's one-minute windows.
+ */
+export const WAIT_OUT_MS = 180_000
+
+/** Spread over this, so the reads a tab holds do not all land in the new window's first instant. */
+export const WAIT_OUT_JITTER_MS = 1_000
+
+/**
+ * Run a relay read; while the relay only says "wait", wait and ask again.
+ *
+ * Under every read a person asked for (`viewerQuery`), where
+ * {@link withRateLimitRetry} sits on six of them and gives up after two tries.
+ * A file opened several times in a minute spends the person's 300 requests,
+ * and its first read then threw at once: "This conversation could not be
+ * read." under a bare "File" title (Sentry PEEK-9, 19–21 Nov) for a page the
+ * relay would have answered seconds later. Now the caller stays loading, or
+ * keeps what it drew, until the relay answers.
+ *
+ * - The wait is the later of the relay's stated seconds and the pause the tab
+ *   has learned ({@link relayBudget}), plus a little jitter.
+ * - Past {@link WAIT_OUT_MS} the refusal is thrown as before, so a limit that
+ *   never lifts still ends in words rather than a skeleton for good.
+ * - `waits` answering false throws at once: a read loaded ahead of any click is
+ *   nobody's wait, and holding it would spend the next minute on it.
+ * - Any other failure is rethrown untouched: no access and a refusal will not
+ *   change their minds.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-busy-relay-says-it-is-busy.md
+ */
+export async function waitingOut<T>(
+  read: () => Promise<T>,
+  options: {
+    waits?: () => boolean
+    waitOutMs?: number
+    sleep?: (ms: number) => Promise<void>
+    now?: () => number
+    jitter?: () => number
+    budget?: Pick<typeof relayBudget, 'noteRateLimited'>
+  } = {},
+): Promise<T> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
+  const now = options.now ?? Date.now
+  const jitter = options.jitter ?? (() => Math.random() * WAIT_OUT_JITTER_MS)
+  const budget = options.budget ?? relayBudget
+  const giveUpAt = now() + (options.waitOutMs ?? WAIT_OUT_MS)
+  for (;;) {
+    try {
+      return await read()
+    } catch (error) {
+      const reason = reasonOf(error)
+      const hint = retryAfterMs(reason)
+      if (hint === null || options.waits?.() === false) throw error
+      const wait = Math.max(hint, budget.noteRateLimited(reason)) + jitter()
+      if (now() + wait > giveUpAt) {
+        if (error instanceof RelayReadError) error.waitedOut = true
+        throw error
+      }
       await sleep(wait)
     }
   }

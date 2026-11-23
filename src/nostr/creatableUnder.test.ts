@@ -191,7 +191,7 @@ const matches = (e: TestEvent, f: Record<string, unknown>) => {
 function relayOver(world: TestEvent[], refuse?: (f: Record<string, unknown>) => boolean) {
   return async (_url: string, filters: Record<string, unknown>[]) =>
     refuse && filters.some(refuse)
-      ? { ok: false as const, reason: 'rate-limited: slow down' }
+      ? { ok: false as const, reason: 'restricted: not allowed' }
       : { ok: true as const, events: world.filter((e) => filters.some((f) => matches(e, f))) }
 }
 
