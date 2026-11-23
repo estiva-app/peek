@@ -32,6 +32,7 @@
  * a lost star is not.
  */
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
+import { heardFailure } from '@/lib/heardFailures'
 import { keepPlaintext, plaintextFromCopy } from './deviceCopy'
 
 /**
@@ -75,6 +76,17 @@ export function assertNotReadState(d: string): void {
 }
 
 async function nip44(op: 'encrypt' | 'decrypt', body: object, token: string): Promise<unknown> {
+  try {
+    return await asked(op, body, token)
+  } catch (error) {
+    // Why, for the report of the failure a screen draws next (34396209): Estiva ID's own limit, or a sign-in that
+    // ended. Its 400 is a blob that will never decrypt, which is no failure, and is not said.
+    if (!(error instanceof Nip44Error) || error.status !== 400) heardFailure(error, 'id')
+    throw error
+  }
+}
+
+async function asked(op: 'encrypt' | 'decrypt', body: object, token: string): Promise<unknown> {
   const response = await fetch(`${ESTIVA_ID_ORIGIN}/nip44/${op}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },

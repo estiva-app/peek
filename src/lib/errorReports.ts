@@ -14,6 +14,7 @@ import { createErrorReporter, type Failure } from '@estiva-app/platform'
 import { reportCrashesTo, reportFailuresTo } from '@estiva-app/ui'
 import { ESTIVA_ID_ORIGIN, currentEstivaToken } from '@/auth/estivaId'
 import { reportDrawnFailuresTo, reportRefusalsTo } from '@/lib/failureReports'
+import { heardFailures } from '@/lib/heardFailures'
 
 /**
  * Peek's routes as patterns, most specific first: `/:word/:ref` would match
@@ -66,6 +67,8 @@ export const errorReporter = createErrorReporter({
   token: currentEstivaToken,
   screen: () => screenOf(window.location.pathname),
   screens: SCREENS,
+  // Why: what Peek's reads last heard (34396209), so each reason a page fails to load is its own error.
+  reason: heardFailures.recent,
 })
 
 /** Starts reporting: the window's unhandled errors, and every ErrorBoundary's crash. */
