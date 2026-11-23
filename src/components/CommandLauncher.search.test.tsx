@@ -19,7 +19,7 @@ import { enter } from '@/test-enter'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { fileReference, type ReferenceCandidate } from '@estiva-app/conversation'
-import { resetRecentsForTests } from '@/lib/recents'
+import { rememberRecent, resetRecentsForTests } from '@/lib/recents'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -315,6 +315,7 @@ describe('Cmd+K shows a lit file’s card beside the box (KIN-3)', () => {
       widget: 'card',
       appName: 'Leaf',
       noun: 'Page',
+      openUrl: `https://leaf.estiva.app/document/${d}`,
       slots: { title: { value: title }, subtitle: { value: summary } },
       meta: [],
       comments: [],
@@ -343,6 +344,40 @@ describe('Cmd+K shows a lit file’s card beside the box (KIN-3)', () => {
     expect(pane()?.textContent).toContain('Ledger notes')
     expect(pane()?.textContent).toContain(SUMMARY)
     expect(held.asked).toContain(notes.naddr)
+  })
+
+  it('closes the box when a link on the card is clicked, as choosing the row does', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const notes = page('c', 'Ledger notes', SUMMARY)
+    held.objects.set(notes.naddr, notes)
+    fileSearch.mockReturnValue({ state: { kind: 'done', count: 1 }, hits: [fileHit('c', 30842, 'Ledger notes', '')] })
+    const { onClose } = open()
+    await type('ledger')
+    await screen.findByText('Files')
+    await act(async () => void vi.advanceTimersByTime(300))
+    const link = pane()?.querySelector('a')
+    expect(link?.textContent).toContain('Ledger notes')
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.click(link!)
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('shows the card of a lit file in Recent, before anything is typed (Miky, 23 Nov)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    resetRecentsForTests()
+    const notes = page('r', 'Quarter notes', SUMMARY)
+    held.objects.set(notes.naddr, notes)
+    rememberRecent({ kind: 'file', id: notes.address, title: 'Quarter notes' })
+    fileSearch.mockReturnValue({ state: { kind: 'idle' }, hits: [] })
+    open()
+    await screen.findByText('Quarter notes')
+    const field = document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
+    for (let i = 0; i < 12 && !document.querySelector('[role="option"][data-highlighted]')?.textContent?.includes('Quarter notes'); i++) {
+      fireEvent.keyDown(field, { key: 'ArrowDown' })
+    }
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(document.querySelector('[role="option"][data-highlighted]')?.textContent).toContain('Quarter notes')
+    expect(pane()?.textContent).toContain(SUMMARY)
   })
 
   it('reads and draws nothing for a lit topic, nor for a file the arrows only passed', async () => {
