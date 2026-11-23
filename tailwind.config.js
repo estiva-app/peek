@@ -8,7 +8,8 @@ export default {
   // `content` from a preset — verified — so without spreading it every class
   // used only by a shared component is purged, and the app builds and tests
   // clean while rendering at the wrong size.
-  content: [...estivaContent, './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
+  // The ⌘K box is `@estiva-app/launcher`'s since KIN-4, and carries a few classes of its own: scanned the same way.
+  content: [...estivaContent, './node_modules/@estiva-app/launcher/dist/*.js', './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
   /**
    * The shared tokens come from @estiva-app/ui (SHA-5, 2026-08-28): the type
    * ramp, radii, shadows, the skeleton animation and every colour name. What

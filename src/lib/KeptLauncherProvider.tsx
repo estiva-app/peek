@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
-import { KeptSearchContext, useKeptLauncher } from '@/components/useKeptLauncher'
+import { KeptSearchContext } from '@estiva-app/launcher'
+import { useKeptLauncher } from '@/components/useKeptLauncher'
 
 /**
  * Holds the app's one command launcher above whatever page is drawn, so what
