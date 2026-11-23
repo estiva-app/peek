@@ -50,12 +50,17 @@ export function manifestContent() {
     aspect: 'conversation',
 
     /**
-     * What Peek calls a file nobody owns: a topic (PRO-24, interop 0.44.0).
+     * What Peek calls a file nobody owns: an initiative (PRO-24, interop 0.44.0).
      * A consumer labels a bare file by its type, and the word is the opening
      * app's rather than the protocol's (Miky, 2026-10-02), so Ship's chip for
-     * one of these reads "Topic" because this says so.
+     * one of these reads "Initiative" because this says so. It said "topic"
+     * until Katerina's rename of 16 November reached the other apps (23
+     * November: "yes change it"): today's topic is an initiative on screen. A
+     * team's # topic is the same kind, so it reads "initiative" in the places
+     * that name the kind (a link's chip, "archived with its …").
+     * Published by hand (`scripts/publish-manifest.ts`), never by a deploy.
      */
-    fileNoun: 'topic',
+    fileNoun: 'initiative',
 
     /**
      * **No projection, and no `records` rule.** Peek's projections were a Folder's (its name, its one-liner and

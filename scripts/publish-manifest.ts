@@ -427,8 +427,8 @@ async function main() {
     */
     const content = JSON.parse(stored.content) as { aspect?: string; fileNoun?: string }
     check('the manifest declares the conversation aspect', content.aspect === 'conversation', content.aspect ?? '(none)')
-    // PRO-24: what Ship's chip for a topic reads, so the same kind of typo is found here.
-    check('the manifest calls a bare file a topic', content.fileNoun === 'topic', content.fileNoun ?? '(none)')
+    // PRO-24: what Ship's chip for an initiative reads, so the same kind of typo is found here.
+    check('the manifest calls a bare file an initiative', content.fileNoun === 'initiative', content.fileNoun ?? '(none)')
   }
 
   console.log(
