@@ -4,6 +4,7 @@ import { heldToken } from '@/auth/heldSession'
 import { readPlaceAsViewer, type PlaceRead } from '@/nostr/places'
 import type { TeamWrite } from '@/nostr/teams'
 import { usePeekActions } from './actions'
+import { workspaceKeys } from './foreign'
 import { useMembership } from './internal/membership'
 import { RELAY_URL } from './relayUrl'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
@@ -74,8 +75,9 @@ export interface PlaceFollow {
  * `@estiva-app/conversation`'s — `switchStateOf`, `placeListing`,
  * `switchWrites`, `buildPlaceAdd` — so Ship says and writes the same.
  *
- * Load cost: one `POST /query` per opened place (its changes, its team's
- * roster and list, the commands naming it, the viewer's teams list).
+ * Load cost: one `POST /query` per opened place (its changes that name a
+ * person, its team's roster and list, the commands naming it, the viewer's
+ * teams list), after the people directory the pickers share.
  */
 export function usePlaceFollow(target: FollowTarget | undefined): PlaceFollow {
   const membership = useMembership()
@@ -89,7 +91,10 @@ export function usePlaceFollow(target: FollowTarget | undefined): PlaceFollow {
     if (!target || !RELAY_URL || !token) return
     const mine = ++started.current
     try {
-      const read = await readPlaceAsViewer(target.place, RELAY_URL, token)
+      // Everyone with a profile, so only the changes naming someone are read (ALL-5, as the Members list). No directory,
+      // or an empty one, is no answer: every change, or Who follows would miss everyone but the viewer.
+      const people = await workspaceKeys(RELAY_URL, token)
+      const read = await readPlaceAsViewer(target.place, RELAY_URL, token, people?.length ? people : undefined)
       if (mine === started.current) setHeld({ key, read, failed: false })
     } catch (error) {
       console.warn('[places] could not read the place:', error)
