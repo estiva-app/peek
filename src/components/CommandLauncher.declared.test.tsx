@@ -90,6 +90,8 @@ const applyAction = vi.fn<
 const startConversationInDm = vi.fn<(args: { channel: string; body: string }) => Promise<{ ok: true; id: string }>>(
   async () => ({ ok: true as const, id: 'e'.repeat(64) }),
 )
+/** Off for the one test that mounts the box as an app with no DMs would (KIN-4). */
+let hasDmSender = true
 /*
   Answers per kind, which it has to now that two apps are probed.
 
@@ -137,7 +139,7 @@ vi.mock('@/api', async () => {
       resolveObject: vi.fn(),
       resolveFolderProject: vi.fn(),
       applyAction,
-      startConversationInDm,
+      startConversationInDm: hasDmSender ? startConversationInDm : undefined,
       creatableUnder,
     }),
   }
@@ -171,6 +173,7 @@ function open(initialAppId: string, initialActionId?: string) {
 }
 
 beforeEach(() => {
+  hasDmSender = true
   applyAction.mockClear()
   startConversationInDm.mockClear()
   creatableUnder.mockClear()
@@ -289,6 +292,16 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(applyAction).not.toHaveBeenCalled()
     expect(startConversationInDm).not.toHaveBeenCalled()
     expect(await screen.findByText('Start a conversation in one of your DMs.')).toBeInTheDocument()
+  })
+
+  it('offers no DM where the app has no way to send to one, so none goes on as a Folder’s conversation (KIN-4)', async () => {
+    // The box is shared since KIN-4: an app with no DMs hands over no sender, and a DM never takes the Folder's action (SPEC §3.2).
+    hasDmSender = false
+    await openLiveConversationForm()
+
+    await userEvent.click(screen.getByLabelText(/topic/i))
+    expect(await screen.findByRole('option', { name: 'Intelligence in Peek' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'DM' })).not.toBeInTheDocument()
   })
 
   it('offers nothing for an app that declares nothing, and says which app', async () => {
