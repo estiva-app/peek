@@ -24,7 +24,7 @@
     "@estiva-app/conversation": "^0.45.0",
     "@estiva-app/identity": "^0.3.0",
     "@estiva-app/interop": "^0.116.0",
-    "@estiva-app/launcher": "^0.1.0",
+    "@estiva-app/launcher": "^0.3.2",
     "@estiva-app/platform": "^0.12.0",
     "@estiva-app/protocol": "^0.68.0",
     "@estiva-app/ui": "^0.128.0",
