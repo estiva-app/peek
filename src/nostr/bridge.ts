@@ -172,11 +172,12 @@ async function bridgePostOnce(
   } finally {
     if (timer) clearTimeout(timer)
   }
-  recordReadAnswered()
   const text = await res.text()
   // Counted once the relay has answered, so the answer says whether this one
   // was refused, and why (PER-8, `window.__relayReads()`).
   const refusal = refusalOf(res.status, text)
+  // Any answer ends a silent relay; only a read that brought data is a sync (5cd7579f).
+  recordReadAnswered(read && res.ok && !refusal)
   recordRelayRequest(path, payload, refusal)
   // Every quota refusal passes here, so this is where the tab learns the pause
   // the refresh triggers and `withRateLimitRetry` honour (PER-13). No reader
@@ -245,7 +246,7 @@ export async function queryRelay(
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
     // Answered over the socket: that ends a silent relay as an HTTP answer does (5cd7579f).
-    if (answer) recordReadAnswered()
+    if (answer) recordReadAnswered(answer.ok)
     if (!answer) {
       const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {

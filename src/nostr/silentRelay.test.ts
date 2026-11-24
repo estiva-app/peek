@@ -108,6 +108,17 @@ describe('a read the relay never answers', () => {
   })
 })
 
+describe('a refusal before the silence', () => {
+  it('is not a sync: the words do not say it synced just now', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'restricted: not a member' }), { status: 403 })))
+    await queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)
+    silentHttp()
+    void queryRelay('https://relay', [{ kinds: [9] }], 'token', ME).catch(() => {})
+    await vi.advanceTimersByTimeAsync(READ_ANSWER_TIMEOUT_MS)
+    expect(dot()).toBe("The relay isn't answering. Showing saved data, not yet synced.")
+  })
+})
+
 describe('a slow relay that answers', () => {
   it('never shows the dot for a read answered just inside the set time', async () => {
     const http = silentHttp()

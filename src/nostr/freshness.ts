@@ -156,8 +156,10 @@ export interface FreshnessObservation {
    * backfill is only worth announcing between them.
    */
   backfillSince: number | null
-  /** When the relay last answered a read (`recordReadAnswered`), or an HTTP backfill last completed. */
+  /** When a read last brought data (`recordReadAnswered(true)`), or an HTTP backfill last completed. */
   lastSyncAt: number | null
+  /** When the relay last answered anything, a refusal or a busy answer included: what ends a `silent` failure. */
+  lastAnswerAt?: number | null
   /**
    * The most recent relay read failure that says something about reachability.
    *
@@ -216,7 +218,7 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   // It ends with the next answer, not after a while — a silent relay stays silent however long ago it began.
   if (
     o.lastReadFailure?.kind === 'silent' &&
-    (o.lastSyncAt === null || o.lastSyncAt < o.lastReadFailure.at)
+    (o.lastAnswerAt ?? -Infinity) < o.lastReadFailure.at
   ) {
     return {
       kind: 'polling',
@@ -359,15 +361,16 @@ export function recordReadFailure(kind: RelayFailureKind, at = Date.now()): void
 }
 
 /**
- * The relay answered a read, over the socket or HTTP — any answer, a refusal included (5cd7579f).
+ * The relay answered, over the socket or HTTP — any answer, a refusal or a busy one included (5cd7579f).
  *
- * It is what ends a `silent` failure, so the rail's amber dot goes with the first answer once the relay is back.
- * Told to the listeners only when it ends one: a reopen answers about 170 reads, and the dot has nothing to redraw
- * for the rest.
+ * Any answer ends a `silent` failure, so the rail's amber dot goes with the first one once the relay is back. Only an
+ * answer that brought data (`synced`) moves the "synced … ago" the dot's words give: a refusal is not a sync.
+ * Told to the listeners only when it ends a `silent` failure: a reopen answers about 170 reads, and the dot has
+ * nothing to redraw for the rest.
  */
-export function recordReadAnswered(at = Date.now()): void {
-  const ends = observation.lastReadFailure?.kind === 'silent' && (observation.lastSyncAt ?? -Infinity) < observation.lastReadFailure.at
-  observation = { ...observation, lastSyncAt: at }
+export function recordReadAnswered(synced: boolean, at = Date.now()): void {
+  const ends = observation.lastReadFailure?.kind === 'silent' && (observation.lastAnswerAt ?? -Infinity) < observation.lastReadFailure.at
+  observation = { ...observation, lastAnswerAt: at, ...(synced ? { lastSyncAt: at } : {}) }
   if (ends) emit()
 }
 

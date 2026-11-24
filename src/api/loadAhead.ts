@@ -107,7 +107,7 @@ const AHEAD_RETRY_MS = 6_000
 const PASSING = /socket paused|not live|no EOSE|rate-limited|quota exceeded|reconnecting|connecting|too many concurrent|database error/i
 
 function passing(error: unknown): boolean {
-  if (error instanceof RelayReadError && (error.kind === 'rate_limited' || error.kind === 'unreachable')) return true
+  if (error instanceof RelayReadError && (error.kind === 'rate_limited' || error.kind === 'unreachable' || error.kind === 'silent')) return true
   return PASSING.test(String(error))
 }
 

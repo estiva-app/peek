@@ -97,7 +97,7 @@ export function classifyRelayFailure(reason: string): RelayFailureKind {
   if (text.includes('restricted') || text.includes('auth-required') || text.includes('forbidden')) {
     return 'refused'
   }
-  if (text.startsWith(NO_ANSWER)) return 'silent'
+  if (text.includes(NO_ANSWER)) return 'silent'
   return 'unreachable'
 }
 
