@@ -55,6 +55,8 @@ import {
   type RelayAnswer,
 } from '@estiva-app/protocol'
 import type { ReadLane } from '@estiva-app/platform'
+import { recordReadAnswered, recordReadFailure } from './freshness'
+import { NO_ANSWER, READ_ANSWER_TIMEOUT_MS } from './relayRead'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 
 /**
@@ -149,15 +151,33 @@ async function bridgePostOnce(
     token,
     pubkey,
   )
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: authorizationHeaderFor(auth) },
-    body,
-  })
+  // A read the relay takes and never answers ends here, rather than waiting for good (5cd7579f). Only a read: a
+  // publish that hangs is its own question. Timed per attempt, from when it is sent, so the waits for the allowance
+  // and a busy retry are not counted, and only to the headers, so a big answer that has started is not cut.
+  const read = path !== '/events'
+  const abort = read ? new AbortController() : null
+  const timer = abort ? setTimeout(() => abort.abort(), READ_ANSWER_TIMEOUT_MS) : null
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: authorizationHeaderFor(auth) },
+      body,
+      ...(abort ? { signal: abort.signal } : {}),
+    })
+  } catch (error) {
+    if (!abort?.signal.aborted) throw error
+    recordReadFailure('silent')
+    throw new RelayReadError(`${NO_ANSWER} the relay took the read and did not answer in ${READ_ANSWER_TIMEOUT_MS / 1000}s`)
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
   const text = await res.text()
   // Counted once the relay has answered, so the answer says whether this one
   // was refused, and why (PER-8, `window.__relayReads()`).
   const refusal = refusalOf(res.status, text)
+  // Any answer ends a silent relay; only a read that brought data is a sync (5cd7579f).
+  recordReadAnswered(read && res.ok && !refusal)
   recordRelayRequest(path, payload, refusal)
   // Every quota refusal passes here, so this is where the tab learns the pause
   // the refresh triggers and `withRateLimitRetry` honour (PER-13). No reader
@@ -225,6 +245,8 @@ export async function queryRelay(
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
+    // Answered over the socket: that ends a silent relay as an HTTP answer does (5cd7579f).
+    if (answer) recordReadAnswered(answer.ok)
     if (!answer) {
       const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {

@@ -342,7 +342,8 @@ export const FOLDERS_RETRY_MAX_MS = RETRY_MAX_MS
 const folderListing = createRetryingRead<FolderSummary[] | null>({
   retryable: (error) => {
     const kind = relayFailureKind(error)
-    return kind === 'unreachable' || kind === 'rate_limited'
+    // `silent` too: a read the relay took and never answered may well be answered next time (5cd7579f).
+    return kind === 'unreachable' || kind === 'rate_limited' || kind === 'silent'
   },
   freshMs: 5_000,
 })
