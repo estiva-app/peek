@@ -240,7 +240,7 @@ export async function openReadOption(): Promise<{ openRead?: readonly number[] }
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
  */
-export async function withOpenRead<T extends { archivedWith?: boolean }>(
+export async function withOpenRead<T extends { archivedWith?: boolean; archivedChildren?: boolean }>(
   options: T | undefined,
 ): Promise<T | (T & { openRead?: readonly number[]; listRead?: true }) | undefined> {
   const [{ openRead }, listRead] = await Promise.all([
