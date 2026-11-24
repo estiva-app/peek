@@ -1509,7 +1509,7 @@ export async function archivedChildrenAsViewer(
 ): Promise<ForeignObject[]> {
   if (parents.length === 0) return []
   const query = read ?? folderLoadAsViewer(relayUrl, token, 'relay')
-  const objects = await resolveForeignObjects(parents, query, cachedPeople(query), manifests, { archivedChildren: true })
+  const objects = await resolveForeignObjects(parents, query, cachedPeople(query), manifests, await withOpenRead({ archivedChildren: true }))
   return Object.values(objects).flatMap((parent) => parent?.children?.filter((child) => !!child.archived) ?? [])
 }
 
@@ -1904,7 +1904,7 @@ export async function creatableUnderAsViewer(
     const address = pointerToAddress(pointer)
     if (!resolved) {
       // The one resolve. Its projection is the kind's, not this object's.
-      const object = await resolveForeignObject(address, query, people, 0, manifests)
+      const object = await resolveForeignObject(address, query, people, 0, manifests, await withOpenRead(undefined))
       if (!object) continue
       // Already memoised by the resolve above; asked for its address alone.
       const owner = await resolveManifest(pointer, query, manifests)
