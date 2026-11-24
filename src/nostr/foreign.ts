@@ -1688,6 +1688,9 @@ export async function listFoldersAsViewer(
  * names a file *inside* that Folder rather than the Folder itself: the page
  * lands on the Folder and opens that file's conversation beside it.
  */
+/** The file kinds `FilePage` draws, which a reference opens on: a topic, a page, a project and an issue. */
+const PEEK_DRAWS: readonly number[] = [KIND_BARE_FILE, 30842, 30850, 30851]
+
 export type ReferencePlace = {
   folder: string
   file?: string
@@ -1734,7 +1737,11 @@ export type ReferencePlace = {
  *   trio — and the thread it is in is `rootOf`, so the place is the file with
  *   that thread open and the comment to land on.
  *
- * Returns null for anything else — a Ship project's `naddr` is a perfectly good
+ * A page, a project and an issue open the same way as a bare file (LIN-3):
+ * `FilePage` draws them too.
+ *
+ * Returns null for anything else — a named file, which Peek's file view does
+ * not draw, or another app's object that is not a file: a perfectly good
  * reference that Peek has nowhere to open, and saying so beats redirecting
  * somewhere arbitrary.
  */
@@ -1756,9 +1763,16 @@ export async function placeForReferenceAsViewer(
     if (pointer.kind === KIND_TOPIC) {
       return pointer.identifier ? { folder: pointer.identifier } : null
     }
-    if (pointer.kind === KIND_BARE_FILE && pointer.identifier) {
+    /*
+      Every file Peek draws, not only a bare one (LIN-3): a page, a project and
+      an issue have their page in Peek too (`FilePage`, at their word's link),
+      and before the manifests are read their link is `/o/<naddr>` (SPEC §7.7
+      rule 3). A named file (30852) Peek's file view does not draw, so it stays
+      "nothing Peek can open" rather than a page that cannot read it.
+    */
+    if (PEEK_DRAWS.includes(pointer.kind) && pointer.identifier) {
       const [file] = await viewerQuery(relayUrl, token)([
-        { kinds: [KIND_BARE_FILE], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
+        { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
       ])
       const folder = file ? folderOf(file) : null
       return folder ? { folder, file: pointerToAddress(pointer) } : null
