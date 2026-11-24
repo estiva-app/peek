@@ -37,10 +37,12 @@ describe('a Topic answers from the pointer, with no read at all', () => {
     expect(await resolve(`39000:${AUTHOR}:${FOLDER}`)).toEqual({ folder: FOLDER })
   })
 
-  it('refuses another app’s object rather than redirecting somewhere arbitrary', async () => {
-    // A Ship project's naddr is a perfectly good reference that Peek has
+  it('refuses another app’s object that is not a file rather than redirecting somewhere arbitrary', async () => {
+    // A long-form article's naddr is a perfectly good reference that Peek has
     // nowhere to open. Saying so beats landing the person on a desk.
-    expect(await resolve(`30850:${AUTHOR}:some-project`)).toBeNull()
+    queryRelay.mockClear()
+    expect(await resolve(`30023:${AUTHOR}:${FOLDER}`)).toBeNull()
+    expect(queryRelay).not.toHaveBeenCalled()
   })
 })
 
@@ -153,6 +155,25 @@ describe('a bare file opens beside the Folder it lives in', () => {
   it('is unopenable when the file names no Folder', async () => {
     queryRelay.mockResolvedValueOnce({ ok: true, events: [bareFile([['d', FILE_D], ['title', 't']])] })
     expect(await resolve(ADDRESS)).toBeNull()
+  })
+
+  /*
+    LIN-3: a page, a project and an issue open in Peek too, and their link is
+    `/o/<naddr>` before the manifests are read. Before, Peek said it could not
+    open a link it had written itself.
+  */
+  it('a named file, which Peek does not draw, is still nothing Peek can open', async () => {
+    queryRelay.mockClear()
+    expect(await resolve(`30852:${AUTHOR}:${FILE_D}`)).toBeNull()
+    expect(queryRelay).not.toHaveBeenCalled()
+  })
+
+  it.each([30842, 30850, 30851])('a file of kind %i opens too, fetched by its own kind', async (kind) => {
+    const address = `${kind}:${AUTHOR}:${FILE_D}`
+    queryRelay.mockClear()
+    queryRelay.mockResolvedValueOnce({ ok: true, events: [{ ...bareFile([['d', FILE_D], ['h', FOLDER]]), kind }] })
+    expect(await resolve(`nostr:${addrToNaddr(address, [])}`)).toEqual({ folder: FOLDER, file: address })
+    expect(queryRelay.mock.calls[0][1]).toEqual([{ kinds: [kind], authors: [AUTHOR], '#d': [FILE_D], limit: 1 }])
   })
 })
 

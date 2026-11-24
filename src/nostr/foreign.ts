@@ -1738,6 +1738,9 @@ export type ReferencePlace = {
  * reference that Peek has nowhere to open, and saying so beats redirecting
  * somewhere arbitrary.
  */
+/** The file kinds `FilePage` draws: a topic, a page, a project and an issue. */
+const PEEK_DRAWS: readonly number[] = [KIND_BARE_FILE, 30842, 30850, 30851]
+
 export async function placeForReferenceAsViewer(
   reference: string,
   relayUrl: string,
@@ -1756,9 +1759,16 @@ export async function placeForReferenceAsViewer(
     if (pointer.kind === KIND_TOPIC) {
       return pointer.identifier ? { folder: pointer.identifier } : null
     }
-    if (pointer.kind === KIND_BARE_FILE && pointer.identifier) {
+    /*
+      Every file Peek draws, not only a bare one (LIN-3): a page, a project and
+      an issue have their page in Peek too (`FilePage`, at their word's link),
+      and before the manifests are read their link is `/o/<naddr>` (SPEC §7.7
+      rule 3). A named file (30852) Peek's file view does not draw, so it stays
+      "nothing Peek can open" rather than a page that cannot read it.
+    */
+    if (PEEK_DRAWS.includes(pointer.kind) && pointer.identifier) {
       const [file] = await viewerQuery(relayUrl, token)([
-        { kinds: [KIND_BARE_FILE], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
+        { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
       ])
       const folder = file ? folderOf(file) : null
       return folder ? { folder, file: pointerToAddress(pointer) } : null
