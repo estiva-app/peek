@@ -123,7 +123,12 @@ export async function loadFileParentsAhead(
       }
     }
   } catch (error) {
-    if (cache === held) for (const address of missing) held.asked.delete(address)
+    if (cache === held) {
+      for (const address of missing) held.asked.delete(address)
+      // A row drawn meanwhile left these to this read: it asks for itself now.
+      retries += 1
+      for (const listener of listeners) listener()
+    }
     throw error
   } finally {
     if (read) for (const address of missing) if (held.reading.get(address) === read) held.reading.delete(address)

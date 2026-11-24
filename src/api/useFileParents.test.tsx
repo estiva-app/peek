@@ -89,6 +89,24 @@ describe('the parents read ahead and a row asking at the same time', () => {
     expect(Object.fromEntries(parents)).toEqual({ [I1]: PROJECT, [I2]: PROJECT })
   })
 
+  it('a row drawn while the loader’s read is under way asks for itself once that read is refused', async () => {
+    // The relay refuses the loader's read, and answers the next.
+    let refuse = true
+    relay.answer = (references) => {
+      if (!refuse) return Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+      refuse = false
+      return new RelayReadError('rate_limited')
+    }
+    const open = holdReads()
+    const ahead = loadFileParentsAhead([I1], AT)
+    const { result } = renderHook(() => useFileParents([I1]))
+    expect(relay.asked).toEqual([[I1]])
+    open()
+    await expect(ahead).rejects.toBeInstanceOf(RelayReadError)
+    await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT }))
+    expect(relay.asked).toEqual([[I1], [I1]])
+  })
+
   it('a refused read ahead leaves its files for a row to ask about', async () => {
     relay.answer = () => new RelayReadError('rate_limited')
     await expect(loadFileParentsAhead([I1], AT)).rejects.toBeInstanceOf(RelayReadError)
