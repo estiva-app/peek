@@ -212,8 +212,9 @@ const LEGS = {
   // A reopen of the Desk from the copy on the device: an open that fills the copy and goes quiet on both doors, then
   // the Desk again in a new tab of the same browser with the first one closed (probe --tab), as Miky does when he
   // comes back to Peek. The report is the reopen's alone; the copy is counted before and after it.
+  // Peek saves the copy behind the reads (deviceCopy.ts queues them): 5 s more before the count and the reopen.
   'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
-    '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT, ...report('desk-reopen')],
+    '--wait', '5000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
   ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
@@ -434,7 +435,9 @@ if (args.includes('--compare')) {
   // A topic's path matches at /topic/ and /document/ alike.
   for (const leg of legs) if (PAGES[leg]) awaitList.unshift(['^peek\\.', `${escapeRe(PAGES[leg][0].split('?')[0].replace(/^\/(topic|document)\//, '/'))}/?$`, [PAGES[leg][1]]])
   const awaitFile = join(scratch, 'recorder.js')
-  writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${readFileSync(RECORDER, 'utf8')}`)
+  // desk-reopen's extra recording (every socket frame's moment, the page's changes) stays off for the other legs.
+  const watch = legs.includes('desk-reopen') ? 'window.__spWatch = true;\n' : ''
+  writeFileSync(awaitFile, `window.__spAwait = ${JSON.stringify(awaitList)};\n${watch}${readFileSync(RECORDER, 'utf8')}`)
   const keep = (n, reports) => {
     for (const r of reports) {
       ;(result.rows[r.label] ??= []).push(r)

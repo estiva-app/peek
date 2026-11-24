@@ -64,7 +64,7 @@
         if (toRelay) {
           sp.socket.in += text.length
           sp.socket.lastIn = now()
-          sp.socket.times.push(sp.socket.lastIn)
+          if (window.__spWatch) sp.socket.times.push(sp.socket.lastIn)
           // ["EVENT","<sub>",…] / ["EOSE","<sub>"] / ["CLOSED","<sub>",…]: the verb and the sub id, without parsing the event.
           const verb = text.slice(2, text.indexOf('"', 2))
           const from = text.indexOf('"', text.indexOf(',') + 1)
@@ -72,9 +72,9 @@
           if (sub && verb === 'EVENT') {
             sub.bytes += text.length
             sub.events++
-            if (sub.done === null) sub.bytesAtDone = sub.bytes
           }
           if (sub && verb === 'EOSE' && sub.done === null) sub.done = now()
+          // A refused or closed question is over, not answered: the summary counts it as unanswered.
           if (sub && verb === 'CLOSED' && sub.done === null) sub.done = now(), (sub.closed = text.slice(0, 160))
         }
         const type = /^\["(\w+)"/.exec(text)?.[1]
@@ -95,7 +95,7 @@
           try {
             const frame = JSON.parse(text)
             const filters = JSON.stringify(frame.slice(2))
-            const sub = { via: 'ws', socket: this.__spN, sub: frame[1], at: now(), filter: filters.slice(0, 2000), shape: shapeOf(filters)?.slice(0, 400), filters: frame.length - 2, out: text.length, bytes: 0, bytesAtDone: 0, events: 0, done: null }
+            const sub = { via: 'ws', socket: this.__spN, sub: frame[1], at: now(), filter: filters.slice(0, 2000), shape: shapeOf(filters)?.slice(0, 400), out: text.length, bytes: 0, events: 0, done: null }
             this.__spSubs.set(frame[1], sub)
             sp.subs.push(sub)
           } catch {}
@@ -181,7 +181,10 @@
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'data-state', 'aria-label'] })
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch)
+  // Only when app-speed asks (desk-reopen's `window.__spWatch`): the other legs' pages are timed without this work.
+  if (!window.__spWatch) {
+    // nothing to watch
+  } else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch)
   else watch()
 
   // ms since the last relay read started or finished: the whole load is over once this stays high.

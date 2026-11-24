@@ -49,9 +49,11 @@ export function reopenSummary(report) {
     const name = storeOf(ask)
     if (!name) continue
     if (stores[name]) stores[name].asks++
-    else stores[name] = { asks: 1, asked: ask.at, answered: ask.done }
+    // A first question closed or never answered leaves the store unanswered.
+    else stores[name] = { asks: 1, asked: ask.at, answered: ask.closed ? null : ask.done, ...(ask.closed ? { closed: ask.closed } : {}) }
   }
-  const answered = Object.values(stores).map((s) => s.answered ?? Infinity)
+  const unanswered = Object.keys(stores).filter((n) => stores[n].answered === null)
+  const answered = Object.values(stores).map((s) => s.answered).filter((t) => t !== null)
   // The last change of the Desk on screen up to the relay's quiet: rows, their text and their dots.
   const changes = (wire.changes ?? []).filter((t) => wire.quietAt === null || t <= wire.quietAt + 1000)
   const missing = Object.keys(DESK_STORES).filter((n) => !stores[n])
@@ -60,7 +62,8 @@ export function reopenSummary(report) {
   const keys = new Set(wire.asks.map((a) => a.filter))
   return {
     deskOnScreen: report.marks?.allTexts ?? null,
-    storesAnswered: answered.length ? Math.max(...answered) : null,
+    storesAnswered: answered.length && !unanswered.length ? Math.max(...answered) : null,
+    unansweredStores: unanswered,
     rowsCurrent: changes.at(-1) ?? null,
     // How many moments the Desk changed after it was first on screen, and in which seconds: a Desk that redraws for 20 s.
     changesAfterPaint: changes.filter((t) => t > (report.marks?.allTexts ?? 0)).length,
@@ -97,7 +100,7 @@ export function reopenTable(runs) {
     const s = reopenSummary(r)
     if (!s) return lines.push(`| ${i + 1} | ${r.failure ?? 'no wire'} | | | | | | | |`)
     const copy = s.copy ? s.copy.map((c) => (c.events === undefined ? c.error : `${c.events} ev`)).join(' → ') : '–'
-    lines.push(`| ${i + 1} | ${s1(s.deskOnScreen)} | ${s1(s.storesAnswered)}${s.missingStores.length ? ` (not asked: ${s.missingStores.join(', ')})` : ''} | ${s1(s.rowsCurrent)} | ${s1(s.quiet)} | ${s.questions} (${s.socketQuestions} + ${s.httpQuestions}) | ${s.askedTwice} | ${s.mb} (${s.mbSocket} + ${s.mbHttp}) | ${copy} |`)
+    lines.push(`| ${i + 1} | ${s1(s.deskOnScreen)} | ${s.unansweredStores.length ? `never (${s.unansweredStores.join(', ')})` : s1(s.storesAnswered)}${s.missingStores.length ? ` (not asked: ${s.missingStores.join(', ')})` : ''} | ${s1(s.rowsCurrent)} | ${s1(s.quiet)} | ${s.questions} (${s.socketQuestions} + ${s.httpQuestions}) | ${s.askedTwice} | ${s.mb} (${s.mbSocket} + ${s.mbHttp}) | ${copy} |`)
   })
   return lines.join('\n')
 }
