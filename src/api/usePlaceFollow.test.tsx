@@ -116,6 +116,26 @@ describe('usePlaceFollow — what the switch shows', () => {
     }
   })
 
+  it('says the place could not be read when the people directory cannot be, and never lists the viewer alone', async () => {
+    relay.seed(root, level('all'))
+    const answer = vi.mocked(fetch).getMockImplementation()!
+    // The relay fails the profiles read only, with an error that is not "busy" (asked again quietly): the rest answers.
+    vi.mocked(fetch).mockImplementation(async (input, init) =>
+      typeof init?.body === 'string' && /"kinds":\[0\]/.test(init.body) ? new Response('{"error":"internal"}', { status: 500 }) : answer(input, init),
+    )
+    // A minute past the directory the tests above kept, so it is read again.
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now + 180_000)
+    try {
+      const { result } = follow()
+      await waitFor(() => expect(result.current.failed).toBe(true))
+      expect(result.current.listed).toBeUndefined()
+      expect(relay.asked.filter((f) => (f.kinds as number[] | undefined)?.includes(1851) && (f['#a'] as string[] | undefined)?.includes(TOPIC))).toEqual([])
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('a refused pick leaves the switch where it was', async () => {
     relay.seed(root, level('all'))
     relay.refuse({ when: (event) => event.kind === 1851 })
