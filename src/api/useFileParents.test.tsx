@@ -12,11 +12,14 @@ const relay = vi.hoisted(() => ({
   asked: [] as string[][],
   answer: (references: readonly string[]): Record<string, string | null> | Error =>
     Object.fromEntries(references.map((reference) => [reference, null])),
+  /** While set, every read waits for it: a read still under way. */
+  gate: null as Promise<void> | null,
 }))
 const viewer = vi.hoisted(() => ({ pubkey: 'c'.repeat(64) }))
 vi.mock('@/nostr/foreign', () => ({
   resolveParentsAsViewer: async (references: readonly string[]) => {
     relay.asked.push([...references])
+    if (relay.gate) await relay.gate
     const answer = relay.answer(references)
     if (answer instanceof Error) throw answer
     return answer
@@ -32,7 +35,7 @@ vi.mock('./foreign', async () => {
 vi.mock('@/nostr/liveTopics', () => ({ relayLog: () => {} }))
 
 import { RelayReadError } from '@/nostr/relayRead'
-import { FILE_PARENTS_RETRY_MS, resetFileParentsForTests, useFileParents } from './useFileParents'
+import { FILE_PARENTS_RETRY_MS, loadFileParentsAhead, resetFileParentsForTests, useFileParents } from './useFileParents'
 
 const PK = 'b'.repeat(64)
 const I1 = `30851:${PK}:i1`
@@ -44,7 +47,56 @@ beforeEach(() => {
   resetFileParentsForTests()
   relay.asked = []
   relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+  relay.gate = null
   viewer.pubkey = 'c'.repeat(64)
+})
+
+/** A read that answers only when `open` is called. */
+function holdReads(): () => void {
+  let open = () => {}
+  relay.gate = new Promise<void>((resolve) => (open = resolve))
+  return () => {
+    relay.gate = null
+    open()
+  }
+}
+
+const AT = { relayUrl: 'wss://relay.test', token: { pubkey: 'c'.repeat(64), accessToken: 't' } as never }
+
+/*
+  THE-4. On a reopen the Desk's loader reads the parents ahead while the rows it drew from the copy ask for theirs:
+  each asked for the files the other's read had not answered yet, and the same roots went to the relay twice.
+*/
+describe('the parents read ahead and a row asking at the same time', () => {
+  it('a row drawn while the loader’s read is under way asks nothing again, and shows the parent once it answers', async () => {
+    const open = holdReads()
+    const ahead = loadFileParentsAhead([I1, I2], AT)
+    const { result } = renderHook(() => useFileParents([I1]))
+    open()
+    await ahead
+    await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT }))
+    expect(relay.asked).toEqual([[I1, I2]])
+  })
+
+  it('the loader asks only for what no row is asking about, and answers with the row’s parents too', async () => {
+    const open = holdReads()
+    renderHook(() => useFileParents([I1]))
+    await waitFor(() => expect(relay.asked).toEqual([[I1]]))
+    const ahead = loadFileParentsAhead([I1, I2], AT)
+    open()
+    const parents = await ahead
+    expect(relay.asked).toEqual([[I1], [I2]])
+    expect(Object.fromEntries(parents)).toEqual({ [I1]: PROJECT, [I2]: PROJECT })
+  })
+
+  it('a refused read ahead leaves its files for a row to ask about', async () => {
+    relay.answer = () => new RelayReadError('rate_limited')
+    await expect(loadFileParentsAhead([I1], AT)).rejects.toBeInstanceOf(RelayReadError)
+    relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+    const { result } = renderHook(() => useFileParents([I1]))
+    await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT }))
+    expect(relay.asked).toEqual([[I1], [I1]])
+  })
 })
 
 describe('useFileParents', () => {

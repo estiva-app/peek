@@ -113,6 +113,8 @@ const published = () =>
   })
 
 beforeEach(() => {
+  // Each test is its own relay, with its own apps: every manifest is read in one sweep, kept an hour (THE-4).
+  forgetUrlShapes()
   publishSigned.mockReset()
   publishSigned.mockImplementation(async () => ({ ok: true }))
   signViaEstivaId.mockClear()

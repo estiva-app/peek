@@ -32,7 +32,13 @@ import type { StoredToken } from '@/auth/estivaId'
  * nothing about is asked again with the next file named as long after. Until then those files stay
  * where they are talked about, which is what they did before this existed.
  */
-let cache: { viewer: string; parents: Map<string, string | null>; asked: Set<string> } | null = null
+let cache: {
+  viewer: string
+  parents: Map<string, string | null>
+  asked: Set<string>
+  /** The read under way for a file asked about and not answered yet. */
+  reading: Map<string, Promise<unknown>>
+} | null = null
 let version = 0
 /** Bumped a while after a refused read, so a sidebar naming nothing new still asks again. */
 let retries = 0
@@ -42,7 +48,7 @@ const listeners = new Set<() => void>()
 export const FILE_PARENTS_RETRY_MS = 30_000
 
 function cacheFor(viewer: string) {
-  if (cache?.viewer !== viewer) cache = { viewer, parents: new Map(), asked: new Set() }
+  if (cache?.viewer !== viewer) cache = { viewer, parents: new Map(), asked: new Set(), reading: new Map() }
   return cache
 }
 
@@ -98,21 +104,31 @@ export async function loadFileParentsAhead(
   at: { relayUrl: string; token: StoredToken },
 ): Promise<ReadonlyMap<string, string | null>> {
   const held = cacheFor(`${at.relayUrl}|${at.token.pubkey}`)
-  const missing = [...new Set(addresses)].filter((address) => !held.asked.has(address))
-  if (missing.length > 0) {
-    const parents = await resolveParentsAsViewer(missing, at.relayUrl, at.token, 'ahead')
-    if (cache === held) {
-      const unanswered: string[] = []
-      for (const address of missing) {
-        if (held.asked.has(address)) continue
-        held.asked.add(address)
-        if (address in parents) held.parents.set(address, parents[address])
-        else unanswered.push(address)
+  const wanted = [...new Set(addresses)]
+  const missing = wanted.filter((address) => !held.asked.has(address))
+  // Asked from the moment the read starts, not when it answers: a row drawn meanwhile asked the same files again
+  // (THE-4: the same roots twice, two seconds apart, on a reopen). It waits for this read instead.
+  for (const address of missing) held.asked.add(address)
+  const read = missing.length > 0 ? resolveParentsAsViewer(missing, at.relayUrl, at.token, 'ahead') : null
+  if (read) for (const address of missing) held.reading.set(address, read)
+  // The reads already under way for the rest, by a row or an earlier load.
+  const others = [...new Set(wanted.filter((address) => !missing.includes(address)).map((address) => held.reading.get(address)))]
+  try {
+    if (read) {
+      const parents = await read
+      if (cache === held) {
+        for (const address of missing) if (address in parents) held.parents.set(address, parents[address])
+        askAgainLater(held, missing.filter((address) => !(address in parents)))
+        changed()
       }
-      askAgainLater(held, unanswered)
-      changed()
     }
+  } catch (error) {
+    if (cache === held) for (const address of missing) held.asked.delete(address)
+    throw error
+  } finally {
+    if (read) for (const address of missing) if (held.reading.get(address) === read) held.reading.delete(address)
   }
+  await Promise.allSettled(others.filter((other) => other !== undefined))
   return held.parents
 }
 
@@ -136,7 +152,13 @@ export function useFileParents(addresses: readonly string[]): Readonly<Record<st
     const missing = key.split(',').filter((address) => !held.asked.has(address))
     if (missing.length === 0) return
     for (const address of missing) held.asked.add(address)
-    withRateLimitRetry(() => resolveParentsAsViewer(missing, v.relayUrl, v.token)).then(
+    const read = withRateLimitRetry(() => resolveParentsAsViewer(missing, v.relayUrl, v.token))
+    for (const address of missing) held.reading.set(address, read)
+    const done = () => {
+      for (const address of missing) if (held.reading.get(address) === read) held.reading.delete(address)
+    }
+    read.then(done, done)
+    read.then(
       (parents) => {
         if (cache !== held) return
         for (const address of missing) if (address in parents) held.parents.set(address, parents[address])
