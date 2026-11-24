@@ -147,6 +147,28 @@ describe("the words, read off the apps' manifests", () => {
     expect(words.byKind[30851]).toBe('issue')
   })
 
+  it.each(['message', 'folders', 'topics', 'people'])(
+    "never write a topic's link onto Peek's own /%s/ page, whoever publishes the newest conversation manifest (security review)",
+    (page) => {
+      // Any member can publish a manifest; the newest `conversation` one owns the topic's word (§7.7 rule 1).
+      const planted = {
+        pubkey: 'e'.repeat(64),
+        created_at: 1_797_000_000,
+        content: JSON.stringify({ aspect: 'conversation' }),
+        tags: [
+          ['d', 'planted'],
+          ['web', 'https://evil.example/o/<bech32>', 'naddr'],
+          ['urls', `https://evil.example/${page}/<slug>-<d>`, '30840'],
+        ],
+      }
+      rememberRouteWords(routeWordsOf([...PRODUCTION_MANIFESTS, planted]))
+      const path = filePath(FILE, 'Plan')
+      expect(path?.startsWith(`/${page}/`)).toBe(false)
+      // It still opens the file: its `naddr` form.
+      expect(path).toMatch(/^\/o\/naddr1/)
+    },
+  )
+
   it("read every declared /<word>/ shape for Peek's route, the stranger's included, and skip a query, a hash route and Peek's own pages", () => {
     const stranger = {
       pubkey: 'd'.repeat(64),

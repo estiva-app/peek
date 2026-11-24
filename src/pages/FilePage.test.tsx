@@ -686,6 +686,15 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_LINK))
   })
 
+  it('at /o/<naddr>?thread= before the manifests are read, keeps the open thread when it moves to its short link (code review)', async () => {
+    forgetRouteWords()
+    writes.placeForReference.mockResolvedValue({ file: ISSUE_ADDRESS })
+    mount(`/o/${addrToNaddr(ISSUE_ADDRESS)}?thread=x`)
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    act(() => rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST])))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}?thread=x`))
+  })
+
   it('moves to the short link once the manifests have been read', async () => {
     forgetRouteWords()
     mount(`/topic/${ISSUE_ADDRESS}`)

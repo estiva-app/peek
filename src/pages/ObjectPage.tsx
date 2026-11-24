@@ -5,8 +5,10 @@ import { Navigate, useParams } from 'react-router-dom'
 import { useForeignObjects, useRouteWords } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
-import { fileThreadPath, isNaddrPath } from '@/lib/objectUrl'
+import { fileThreadPath } from '@/lib/objectUrl'
 import { FilePage } from '@/pages/FilePage'
+import { channelDestination } from '@/lib/legacyTopicLinks'
+import { EmptyState } from '@estiva-app/ui'
 
 /** The address an `/o/<naddr>` ref names, lowercased — compared by address, since one address has several `naddr` spellings. */
 function reachedAt(ref: string | undefined): string | null {
@@ -17,8 +19,6 @@ function reachedAt(ref: string | undefined): string | null {
     return null
   }
 }
-import { channelDestination } from '@/lib/legacyTopicLinks'
-import { EmptyState } from '@estiva-app/ui'
 
 /**
  * `/o/<bech32>` — the address Peek's NIP-89 manifest advertises (PRO-11).
@@ -116,14 +116,15 @@ export function ObjectPage() {
     // An address no file can have (LIN-3) has no page to open.
     if (!path) return <ObjectPageView state="unopenable" />
     /*
-      A file whose link is its `naddr` form — its kind's owner declares no
-      word, or the manifests are not read yet — is drawn here, at the address
-      it was reached at (§7.7 rule 4), rather than sent to `/o/` again, which
-      is this page (LIN-3). Once a word is known, `path` is the word's link and
-      the page moves there. Reached some other way (a comment's `nevent`, a
-      `/message/` link), it goes to the file's own `/o/` link first.
+      A file reached at its own `naddr` is drawn here (LIN-3), rather than sent
+      to its `/o/` link, which is this page. Its kind's owner may declare no
+      word, or the manifests may not be read yet: it then stays at the address
+      it was reached at (§7.7 rule 4). Once a word is known, `FilePage` moves it
+      to the word's link as from any other address, keeping the thread open in
+      the URL. Reached some other way (a comment's `nevent`, a `/message/`
+      link), it goes to the file's link, at the comment's thread.
     */
-    if (isNaddrPath(path) && reachedAt(ref) === state.file.toLowerCase()) return <FilePage address={state.file} />
+    if (reachedAt(ref) === state.file.toLowerCase()) return <FilePage address={state.file} />
     return <Navigate to={path} replace />
   }
   /*

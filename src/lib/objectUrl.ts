@@ -80,9 +80,11 @@ export interface RouteWords {
  * listing and topic pages, the `naddr` form, a message, the sign-in callback,
  * and `/app/`, under which every page of Peek's that is not a file lives. A
  * manifest shape at one of these — Peek's own `/topic-old/` and `/message/` —
- * is a page, not a `#d` route, and stays out of the words.
+ * is a page, not a `#d` route, and stays out of the words. `folders`,
+ * `people` and `desk` are the pages that moved under `/app/`, still routed to
+ * send an old link on.
  */
-export const PEEK_ROOT_PATHS: readonly string[] = ['app', 'auth', 'topics', 'topic-old', 'o', 'message']
+export const PEEK_ROOT_PATHS: readonly string[] = ['app', 'auth', 'topics', 'topic-old', 'o', 'message', 'folders', 'people', 'desk']
 
 /** A declared shape's URL taken apart: the path and the query, host dropped. */
 const PATTERN_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)?(\?[^#]*)?/i
@@ -128,7 +130,17 @@ export function routeWordsOf(manifests: readonly LinkManifest[]): RouteWords {
     const kinds = (byWord[word.toLowerCase()] ??= [])
     if (!kinds.includes(kind)) kinds.push(kind)
   }
-  return { byWord, byKind: fileLinkWordsOf(manifests).byKind, origins: [...origins] }
+  /*
+    A word that is one of Peek's own pages is never written either (security
+    review): any member can publish a manifest, and a newer one naming
+    `/message/<slug>-<d>` for a topic would send every topic link Peek writes,
+    and every topic page, to a page that cannot open it. The kind falls back to
+    its `/o/<naddr>`, which opens the file.
+  */
+  const byKind = Object.fromEntries(
+    Object.entries(fileLinkWordsOf(manifests).byKind).filter(([, word]) => !PEEK_ROOT_PATHS.includes(word.toLowerCase())),
+  )
+  return { byWord, byKind, origins: [...origins] }
 }
 
 /** Every kind any word resolves against — what an unknown word falls back to (§7.7 rule 4). */
