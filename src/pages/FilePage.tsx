@@ -7,9 +7,9 @@ import { PendingColumn, TopicsColumn } from '@/components/views/TopicsColumn'
 import { forgetOpenedFrom, openedFrom, type ListColumnName } from '@/lib/openedFrom'
 import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
-import { KIND_BARE_FILE } from '@estiva-app/interop'
-import { useFileAddress, rememberFileAddress, spaceTeamOf, useFolderContents, useReferenceFolder, useRememberFile, useTeams } from '@/api'
-import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
+import { identifierFromRef, KIND_BARE_FILE } from '@estiva-app/interop'
+import { useFileAddress, rememberFileAddress, spaceTeamOf, useFolderContents, useReferenceFolder, useRememberFile, useRouteWords, useTeams } from '@/api'
+import { addressFromRef, filePath, isNaddrPath } from '@/lib/objectUrl'
 import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -67,10 +67,20 @@ import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
  * person is reading one file's talk and not the team's general chat — a sibling
  * in the same Folder stays exactly as unread as it was. Verified against Ship's
  * issue page, which marks only the issue.
+ *
+ * ## At `/o/<naddr>`
+ *
+ * `ObjectPage` draws a file here, by `address`, when the file's link is its
+ * `naddr` form (LIN-3): a kind whose owner declares no word, or any kind
+ * before the manifests are read. The URL it was reached at stays (§7.7 rule
+ * 4); once a word is known the page moves to `/<word>/…` as from any other
+ * address. A word route is never sent to `/o/`.
  */
-export function FilePage() {
+export function FilePage({ address: drawnAt }: { address?: string } = {}) {
   const { word = 'topic', ref } = useParams<{ word: string; ref: string }>()
-  const address = ref ? addressFromRef(ref) : null
+  // Drawn again when the manifests' words arrive, so the page can move to its short link.
+  useRouteWords()
+  const address = drawnAt ?? (ref ? addressFromRef(ref) : null)
   /*
     A topic is not a file page. A `39000:` address resolves — it is a real
     addressable event — but its conversation is `kind:9` messages carrying `h`
@@ -159,7 +169,9 @@ export function FilePage() {
     already canonical and is left alone.
   */
   const shortFormAddress = file?.address ?? null
-  const canonicalPath = shortFormAddress ? shortFilePath(shortFormAddress, file?.slots.title?.value) : null
+  const linkPath = shortFormAddress ? filePath(shortFormAddress, file?.slots.title?.value) : null
+  // Only a word's link is moved to: `/o/` is where a file with no word yet stays, never where a page is sent.
+  const canonicalPath = linkPath && !isNaddrPath(linkPath) ? linkPath : null
   useEffect(() => {
     if (canonicalPath && shortFormAddress && location.pathname !== canonicalPath) {
       // The short form carries no author; the page has one, so the replace costs no read.
@@ -257,7 +269,11 @@ export function FilePage() {
 
   if (topicIdentifier) return <Navigate to={channelDestination(topicIdentifier)} replace />
   // A Convex topic's old short link: the file its conversation moved to.
-  if (identifier && legacyTopic) return <Navigate to={channelDestination(identifier)} replace />
+  if (identifier && legacyTopic) {
+    // Its file's short link carries no author; the table has the address, so the next page costs no `#d` read.
+    if ('file' in legacyTopic) rememberFileAddress(legacyTopic.file)
+    return <Navigate to={channelDestination(identifier)} replace />
+  }
 
   if (!address && !identifier) {
     // The window's height, so the line sits in its middle (D46).

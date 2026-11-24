@@ -4,6 +4,8 @@ import { beforeEach, vi } from 'vitest'
 import { clearListingCaches } from '@/platform/listingCache'
 import { resetConversationsForTests } from '@/api/conversations'
 import { clearRailMemory } from '@/lib/railMemory'
+import { rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
+import { PRODUCTION_MANIFESTS } from '@/test/manifests'
 
 // `findBy…`, `waitFor` and `vi.waitFor` give up after 1 s by default, which a
 // starved worker on a busy box misses with nothing wrong (2164b3d5). A real
@@ -22,4 +24,7 @@ beforeEach(() => {
   if (typeof window !== 'undefined') window.sessionStorage.clear()
   // Where the rail's items come back to is also kept for the next tab, in localStorage (17 November).
   if (typeof window !== 'undefined') clearRailMemory()
+  // Signed in, the apps' manifests are read first thing (`App`): each case starts with production's words, as a
+  // session does (LIN-3). A case about the moment before they arrive forgets them itself.
+  rememberRouteWords(routeWordsOf(PRODUCTION_MANIFESTS))
 })

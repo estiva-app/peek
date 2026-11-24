@@ -29,8 +29,8 @@
  * thread opener are the chip's business.
  */
 import { addressToPointer } from '@estiva-app/protocol'
-import { KIND_BARE_FILE, writtenOpenerOf, type ForeignObject } from '@estiva-app/interop'
-import { currentRouteWords, filePath, objectRef } from '@/lib/objectUrl'
+import { KIND_BARE_FILE, objectRef, writtenOpenerOf, type ForeignObject } from '@estiva-app/interop'
+import { currentRouteWords, filePath } from '@/lib/objectUrl'
 import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
 
 export type ReferenceLink =
@@ -73,12 +73,10 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
 
   if (object.kind === KIND_BARE_FILE) {
     const title = object.slots.title
-    return {
-      place: 'file',
-      href: object.address
-        ? filePath(object.address, title && !title.isPubkey ? title.value : undefined)
-        : `/o/${uri.replace(/^nostr:/i, '')}`,
-    }
+    if (!object.address) return { place: 'file', href: `/o/${uri.replace(/^nostr:/i, '')}` }
+    // An address no file can have (a `d` that is not a random lowercase uuid) has no link (LIN-3).
+    const href = filePath(object.address, title && !title.isPubkey ? title.value : undefined)
+    return href ? { place: 'file', href } : null
   }
 
   return object.openUrl ? { place: 'app', href: object.openUrl } : null

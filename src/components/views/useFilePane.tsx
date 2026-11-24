@@ -78,7 +78,7 @@ export function useFilePane(
   const { showToast } = useToast()
   const moves = canMove(file) && mayMove(teams, file?.address ?? undefined)
   const listing = isTopic ? listingOf(teams, file?.address ?? undefined) : undefined
-  const pageDot = useTopicPageDot(file ?? undefined, file?.address ? filePath(file.address, file.slots.title?.value) : '')
+  const pageDot = useTopicPageDot(file ?? undefined, (file?.address && filePath(file.address, file.slots.title?.value)) || '')
   // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
@@ -266,7 +266,7 @@ export function useFilePane(
         resolution={archive.resolution}
         withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
         onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
-        onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
+        onOpenParent={archivedWith && filePath(archivedWith) ? () => navigate(filePath(archivedWith)!) : undefined}
       />
     ) : undefined
 
@@ -288,13 +288,14 @@ export function useFilePane(
     if (column && address) rememberOpenedFrom(address, column)
     navigate(href)
   }
+  const parentHref = parentAddress && parent && typeof parent === 'object' ? filePath(parentAddress, parent.slots.title?.value) : null
   const trail =
     elsewhere && file ? (
       <Breadcrumb
         items={[
           // No team in the trail: the team is the chip after the name (Katerina, 17 November).
-          ...(parentAddress && parent && typeof parent === 'object'
-            ? [{ label: parent.slots.title?.value ?? 'Untitled', href: filePath(parentAddress, parent.slots.title?.value), onClick: go(filePath(parentAddress, parent.slots.title?.value), 'folders', parentAddress) }]
+          ...(parentAddress && parentHref && parent && typeof parent === 'object'
+            ? [{ label: parent.slots.title?.value ?? 'Untitled', href: parentHref, onClick: go(parentHref, 'folders', parentAddress) }]
             : []),
           { label: title, icon: <KindIcon kind={thingKindOf(file.kind)} tone="inherit" /> },
         ]}

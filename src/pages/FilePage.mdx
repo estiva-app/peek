@@ -1,0 +1,37 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Pages/FilePage" />
+
+# FilePage
+
+A file's page: a topic, an issue, a project or a page, with its conversation, its open thread and its side panel, at the link the file's owner declares.
+
+**Seen in** — No story: the file, its conversation and its read state are read from and written to the relay. Its parts are **TopicsColumn**, **useFilePane** and **useFileView**.
+
+## When
+
+- The router's `/<word>/<ref>`: a file's short link (`/topic/<slug>-<d>`, `/issue/<slug>-<d>`, …) or Peek's old long link, which it still reads.
+- **ObjectPage**, for a file reached at its own `/o/<naddr>`: pass `address`, and the page is drawn there. A kind whose owner declares no word stays at `/o/`; any other moves to its word's link once the manifests are read.
+
+## When not
+
+- For a team's chat. That is **TeamChat**.
+- For a link to a comment or a message (`nevent`, `/message/`). **ObjectPage** finds its file and opens it at the comment's thread.
+
+## How
+
+```tsx
+import { FilePage } from '@/pages/FilePage'
+
+<Route path="/:word/:ref" element={<FilePage />} />
+<FilePage address={file} />
+```
+
+- With no `address`, the file is read off the route's `ref`: a long link's address, or a short link's `d` looked up under its word.
+- A link may name a thread (`?thread=<root>`). It opens beside the conversation and is scrolled into view where it was said, and it stays when the page moves to its short link.
+
+## What it owns
+
+- **The address bar:** once the file is known, the page moves to the link `filePath` writes for it, so the address bar is the link to copy. It never moves to `/o/`.
+- **Retired links:** a Convex topic's channel lands on the file its conversation moved to, and a team's on its team.
+- **Reading:** opening the file marks only it read.

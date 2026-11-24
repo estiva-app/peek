@@ -21,7 +21,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { urlPatternsOf } from '@estiva-app/interop'
 import { declaredKinds, filePath, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
 
 const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace(/\/+$/, '')
@@ -56,7 +55,7 @@ async function main() {
   const relay = new agent.Relay(RELAY_URL, agent.estivaIdSigner({ base: credentials.base, pubkey: token.pubkey, token: token.access_token }))
 
   const manifests = await relay.query([{ kinds: [31990], limit: 100 }])
-  const words = routeWordsOf(manifests.flatMap((m) => urlPatternsOf(m)))
+  const words = routeWordsOf(manifests)
   rememberRouteWords(words)
   console.log(`relay ${RELAY_URL}: ${manifests.length} manifests`)
   console.log('words  ', JSON.stringify(words.byWord))

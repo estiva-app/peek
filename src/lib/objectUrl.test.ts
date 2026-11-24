@@ -1,24 +1,24 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest'
+// @vitest-environment jsdom
+// A document, for Copy link's clipboard and origin.
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { identifierFromRef, matchObjectUrl, urlPatternsOf } from '@estiva-app/interop'
 import {
-  slugify,
-  objectRef,
-  identifierFromRef,
   addressFromRef,
   filePath,
-  shortFilePath,
   fileRouteFromPath,
   routeWordsOf,
   declaredKinds,
   rememberRouteWords,
   forgetRouteWords,
   subscribeRouteWords,
-  currentRouteWords,
   refNamesFile,
   shareableFileUrl,
+  copyFileLink,
   topicPath,
   shareableTopicUrl,
   shareableMessageUrl,
 } from './objectUrl'
+import { LEAF_MANIFEST, PEEK_MANIFEST, PRODUCTION_MANIFESTS, SHIP_MANIFEST } from '@/test/manifests'
 
 /** A real production channel uuid, from RFC 0.5 §7.2's own example. */
 const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -65,172 +65,183 @@ describe('addressFromRef', () => {
   })
 })
 
+/*
+  Every link Peek writes is the shared writer's (LIN-3), with the words the
+  apps' manifests declare. The test setup reads production's manifests first,
+  as a signed-in session does; the cases about the moment before forget them.
+*/
 describe('filePath', () => {
-  it('opens a file of a kind no manifest declares under /topic/ at its bare address', () => {
-    // The colons stay: a legal path character, and the one part of the URL
-    // that carries meaning stays readable (§7.3, from the other side).
-    expect(filePath(ISSUE)).toBe(`/topic/${ISSUE}`)
-    // A title does not buy a short form: only a declared word does (FOL-39),
-    // and until the manifests have been read Ship's issue has none.
-    expect(filePath(ISSUE, 'Fix the header')).toBe(`/topic/${ISSUE}`)
-  })
-
-  /* A topic in a Folder takes §7's short form — FOL-37. */
-  it('opens a bare file at /topic/<slug>-<d>, the d alone being the identity', () => {
-    expect(filePath(FILE, 'Design review')).toBe(`/topic/design-review-${FILE_D}`)
+  it("writes each kind's link with its owner's word: a topic, a page, a project, an issue", () => {
+    expect(filePath(FILE, 'Launch naming')).toBe(`/topic/launch-naming-${FILE_D}`)
+    expect(filePath(`30842:${SHIP}:${FILE_D}`, 'Weekly plans')).toBe(`/document/weekly-plans-${FILE_D}`)
+    expect(filePath(`30850:${SHIP}:${FILE_D}`, 'Q4 roadmap')).toBe(`/project/q4-roadmap-${FILE_D}`)
+    expect(filePath(ISSUE, 'Copy link is wrong')).toBe(`/issue/copy-link-is-wrong-${FILE_D}`)
   })
 
   it('writes the bare d when there is no title, for the page to canonicalise', () => {
     expect(filePath(FILE)).toBe(`/topic/${FILE_D}`)
-    expect(filePath(FILE, '日本語')).toBe(`/topic/${FILE_D}`)
   })
 
-  it('lowercases an upper-cased d so the short link resolves against the relay spelling', () => {
-    expect(filePath(`30840:${SHIP}:${FILE_D.toUpperCase()}`, 'X')).toBe(`/topic/x-${FILE_D}`)
+  it('never writes the long /topic/<kind>:<pubkey>:<d> link: a kind with no word is /o/<naddr>', () => {
+    // A named file (30852): no app can declare a word for it today.
+    const named = `30852:${SHIP}:${FILE_D}`
+    const path = filePath(named, 'Invoice')!
+    expect(path).toMatch(/^\/o\/naddr1[0-9a-z]+$/)
+    expect(path).not.toContain(':')
   })
 
-  it('keeps the long form for a 30840 whose d is not a uuid, since the tail could not be read back', () => {
-    expect(filePath(`30840:${SHIP}:handmade`, 'X')).toBe(`/topic/30840:${SHIP}:handmade`)
+  it('gives no link for an id no file can have — the relay refuses any but a random lowercase uuid', () => {
+    expect(filePath(`30850:${SHIP}:PROJ-1`, 'Project one')).toBeNull()
+    expect(filePath(`30840:${SHIP}:${FILE_D.toUpperCase()}`)).toBeNull()
+    // A uuid that is not version 4.
+    expect(filePath(`30840:${SHIP}:d68a8c78-5ec7-1652-b236-89ab57ac5b1e`)).toBeNull()
   })
 
-  it('round-trips the short form: what it writes, identifierFromRef reads', () => {
-    const path = filePath(FILE, 'A very, very long name — with punctuation')
-    expect(identifierFromRef(path.slice('/topic/'.length))).toBe(FILE_D)
-    expect(addressFromRef(path.slice('/topic/'.length))).toBe(null)
+  it('round-trips: the route it writes reads back as the same file', () => {
+    const path = filePath(FILE, 'FOL-15 test topic')!
+    const route = fileRouteFromPath(path)!
+    expect(route.word).toBe('topic')
+    expect(identifierFromRef(route.ref)).toBe(FILE_D)
+    expect(refNamesFile(route.ref, FILE)).toBe(true)
   })
 
-  it('escapes only the d, which is the one segment an app may put anything in', () => {
-    expect(filePath(`30840:${SHIP}:a b/c`)).toBe(`/topic/30840:${SHIP}:a%20b%2Fc`)
-  })
-
-  it('lowercases the pubkey so a link that was upper-cased in transit still resolves', () => {
-    expect(filePath(`30851:${SHIP.toUpperCase()}:d`)).toBe(`/topic/30851:${SHIP}:d`)
-  })
-
-  it('round-trips through the router and addressFromRef', () => {
-    // A `/` in the d would split the path into two segments, so it must be
-    // escaped; the router decodes the segment once before the page sees it.
-    const withSlash = `30840:${SHIP}:a/b`
-    const segment = filePath(withSlash).slice('/topic/'.length)
-    expect(segment).not.toContain('/')
-    expect(addressFromRef(decodeURIComponent(segment))).toBe(withSlash)
+  it('reads as the same file where Ship and Leaf read a pasted link', () => {
+    const url = shareableFileUrl(ISSUE, 'Copy link is wrong', 'https://peek.estiva.app')!
+    const patterns = PRODUCTION_MANIFESTS.flatMap((manifest) => urlPatternsOf(manifest))
+    expect(matchObjectUrl(url, patterns)).toMatchObject({ kind: 30851, identifier: FILE_D })
   })
 })
 
-describe('shareableFileUrl', () => {
-  it('is the short form for a bare file and the address for anything else, on the origin', () => {
-    expect(shareableFileUrl(FILE, 'Design review', 'https://peek.estiva.app/')).toBe(
-      `https://peek.estiva.app/topic/design-review-${FILE_D}`,
-    )
-    expect(shareableFileUrl(ISSUE, 'Fix the header', 'https://peek.estiva.app')).toBe(
-      `https://peek.estiva.app/topic/${ISSUE}`,
-    )
+describe('a link before the manifests are read', () => {
+  beforeEach(() => forgetRouteWords())
+
+  it("is the file's /o/<naddr>, with no word of Peek's own — not even topic", () => {
+    expect(filePath(FILE, 'Launch naming')).toMatch(/^\/o\/naddr1/)
+    expect(filePath(ISSUE)).toMatch(/^\/o\/naddr1/)
+  })
+
+  it('becomes the short link once they are read, and subscribers are told so links drawn early are drawn again', () => {
+    const told = vi.fn()
+    const unsubscribe = subscribeRouteWords(told)
+    rememberRouteWords(routeWordsOf(PRODUCTION_MANIFESTS))
+    unsubscribe()
+    expect(told).toHaveBeenCalled()
+    expect(filePath(FILE, 'Launch naming')).toBe(`/topic/launch-naming-${FILE_D}`)
   })
 })
 
-/*
-  Every declared shape — RFC 0.5 §7.7, FOL-39. The words come off the
-  manifests' `urls` tags; these are the shapes production's manifests declared
-  on 2026-09-21 (`scripts/probe-fol38-manifest-readback.ts`), Ship's and Peek's.
-*/
-const SHIP_SHAPES = [
-  { pattern: 'https://ship.estiva.app/project/<slug>-<d>', kind: 30850 },
-  { pattern: 'https://ship.estiva.app/issue/<slug>-<d>', kind: 30851 },
-  { pattern: 'https://ship.estiva.app/#/project/<d>', kind: 30850 },
-  { pattern: 'https://ship.estiva.app/#/issue/<d>', kind: 30851 },
-]
-const PEEK_SHAPES = [
-  { pattern: 'https://peek.estiva.app/topic/<slug>-<d>', kind: 30840 },
-  { pattern: 'https://peek.estiva.app/topic/<slug>-<d>?thread=<id>', kind: 1111 },
-  { pattern: 'https://peek.estiva.app/topic-old/<slug>-<d>', kind: 39000 },
-  { pattern: 'https://peek.estiva.app/message/<id>', kind: 9 },
-]
-const PROJECT = `30850:${SHIP}:fa6af533-2fa1-48d8-b7f0-1f6330443e61`
-
-describe('routeWordsOf', () => {
-  it('reads a word per declared /<word>/<slug>-<d> shape, whatever the host', () => {
-    const words = routeWordsOf([...SHIP_SHAPES, ...PEEK_SHAPES])
-    expect(words.byWord).toEqual({ topic: [30840], project: [30850], issue: [30851] })
-    expect(words.byKind).toEqual({ 30840: 'topic', 30850: 'project', 30851: 'issue' })
+describe("the words, read off the apps' manifests", () => {
+  it('give a kind the word only its owner declares: another app declaring a word for it is not the owner', () => {
+    // A stranger's manifest declaring `/ticket/` for Ship's issues: Ship claims 30851, so the word stays Ship's.
+    const stranger = {
+      pubkey: 'd'.repeat(64),
+      created_at: 1_796_000_000,
+      content: '{}',
+      tags: [
+        ['d', 'tickets'],
+        ['web', 'https://tickets.example.com/o/<bech32>', 'naddr'],
+        ['urls', 'https://tickets.example.com/ticket/<slug>-<d>', '30851'],
+      ],
+    }
+    const words = routeWordsOf([...PRODUCTION_MANIFESTS, stranger])
+    expect(words.byKind[30851]).toBe('issue')
   })
 
-  it('skips a shape whose identity is in the query, an <id> shape, a hash route and a page of Peek’s own', () => {
-    // `?thread=<id>` is about the comment (FOL-38); `/message/<id>` and
-    // `/topic-old/` are Peek's own pages; `/#/issue/<d>` has no path word.
-    const words = routeWordsOf(PEEK_SHAPES)
-    expect(words.byWord).toEqual({ topic: [30840] })
-    expect(routeWordsOf([{ pattern: 'https://ship.estiva.app/#/issue/<d>', kind: 30851 }]).byWord).toEqual({ topic: [30840] })
-  })
+  it.each(['message', 'folders', 'topics', 'people'])(
+    "never write a topic's link onto Peek's own /%s/ page, whoever publishes the newest conversation manifest (security review)",
+    (page) => {
+      // Any member can publish a manifest; the newest `conversation` one owns the topic's word (§7.7 rule 1).
+      const planted = {
+        pubkey: 'e'.repeat(64),
+        created_at: 1_797_000_000,
+        content: JSON.stringify({ aspect: 'conversation' }),
+        tags: [
+          ['d', 'planted'],
+          ['web', 'https://evil.example/o/<bech32>', 'naddr'],
+          ['urls', `https://evil.example/${page}/<slug>-<d>`, '30840'],
+        ],
+      }
+      rememberRouteWords(routeWordsOf([...PRODUCTION_MANIFESTS, planted]))
+      const path = filePath(FILE, 'Plan')
+      expect(path?.startsWith(`/${page}/`)).toBe(false)
+      // It still opens the file: its `naddr` form.
+      expect(path).toMatch(/^\/o\/naddr1/)
+    },
+  )
 
-  it('skips a shape that does not say its kind — there is nothing to resolve against', () => {
-    expect(routeWordsOf([{ pattern: 'https://other.example/note/<slug>-<d>' }]).byWord).toEqual({ topic: [30840] })
-  })
-
-  it('gathers two apps’ kinds under one word, and gives a kind the first word declared for it', () => {
-    const words = routeWordsOf([
-      { pattern: 'https://a.example/issue/<slug>-<d>', kind: 30851 },
-      { pattern: 'https://b.example/issue/<slug>-<d>', kind: 41000 },
-      { pattern: 'https://b.example/ticket/<slug>-<d>', kind: 41000 },
-    ])
-    expect(words.byWord).toEqual({ topic: [30840], issue: [30851, 41000], ticket: [41000] })
-    expect(words.byKind[41000]).toBe('issue')
-  })
-
-  it('always holds Peek’s own shape, so a bare file is short before the manifests answer', () => {
-    expect(routeWordsOf([])).toEqual({ byWord: { topic: [30840] }, byKind: { 30840: 'topic' }, origins: [] })
-  })
-
-  it('answers every declared kind for the unknown-word fallback — never a bare #d', () => {
-    expect(declaredKinds(routeWordsOf([...SHIP_SHAPES, ...PEEK_SHAPES]))).toEqual([30840, 30850, 30851])
-  })
-})
-
-describe('filePath with the manifests read', () => {
-  beforeEach(() => rememberRouteWords(routeWordsOf([...SHIP_SHAPES, ...PEEK_SHAPES])))
-  afterEach(() => forgetRouteWords())
-
-  it('writes /<word>/<slug>-<d> for a kind with a declared word', () => {
-    expect(filePath(ISSUE, 'Fix the header')).toBe('/issue/fix-the-header-d68a8c78-5ec7-4652-b236-89ab57ac5b1e')
-    expect(filePath(PROJECT, 'Composition')).toBe('/project/composition-fa6af533-2fa1-48d8-b7f0-1f6330443e61')
-    expect(filePath(FILE, 'Design review')).toBe(`/topic/design-review-${FILE_D}`)
-  })
-
-  it('keeps the long form for a kind no manifest declares', () => {
-    const other = `30890:${SHIP}:${FILE_D}`
-    expect(filePath(other, 'State')).toBe(`/topic/${other}`)
-    expect(shortFilePath(other, 'State')).toBeNull()
-  })
-
-  it('keeps the long form for a declared kind whose d is not a uuid, since the tail could not be read back', () => {
-    expect(filePath(`30851:${SHIP}:SHI-4`, 'Refs collide')).toBe(`/topic/30851:${SHIP}:SHI-4`)
-  })
-
-  it('round-trips: the word and the d it writes are what the route reads', () => {
-    const path = filePath(PROJECT, 'Composition')
-    const route = fileRouteFromPath(path)
-    expect(route?.word).toBe('project')
-    expect(identifierFromRef(route!.ref)).toBe('fa6af533-2fa1-48d8-b7f0-1f6330443e61')
-    expect(refNamesFile(route!.ref, PROJECT)).toBe(true)
-  })
-
-  it('is what Copy link hands out', () => {
-    expect(shareableFileUrl(ISSUE, 'Fix the header', 'https://peek.estiva.app')).toBe(
-      'https://peek.estiva.app/issue/fix-the-header-d68a8c78-5ec7-4652-b236-89ab57ac5b1e',
+  it("read every declared /<word>/ shape for Peek's route, the stranger's included, and skip a query, a hash route and Peek's own pages", () => {
+    const stranger = {
+      pubkey: 'd'.repeat(64),
+      created_at: 1_796_000_000,
+      content: '{}',
+      tags: [
+        ['d', 'tickets'],
+        ['web', 'https://tickets.example.com/o/<bech32>', 'naddr'],
+        ['urls', 'https://tickets.example.com/ticket/<slug>-<d>', '30851'],
+      ],
+    }
+    const words = routeWordsOf([...PRODUCTION_MANIFESTS, stranger])
+    expect(words.byWord).toEqual({ topic: [30840], project: [30850], issue: [30851], document: [30842], ticket: [30851] })
+    expect(words.origins).toEqual(
+      expect.arrayContaining(['https://peek.estiva.app', 'https://ship.estiva.app', 'https://leaf.estiva.app', 'https://tickets.example.com']),
     )
   })
 
-  it('tells subscribers when the words change, so links drawn early are drawn again', () => {
-    const seen: string[] = []
-    const stop = subscribeRouteWords(() => seen.push(filePath(ISSUE)))
-    rememberRouteWords(routeWordsOf([]))
-    stop()
-    rememberRouteWords(routeWordsOf(SHIP_SHAPES))
-    expect(seen).toEqual([`/topic/${ISSUE}`])
-    expect(currentRouteWords().byKind[30851]).toBe('issue')
+  it('hold nothing of Peek’s own: without its manifest there is no topic word, to write or to read', () => {
+    const words = routeWordsOf([SHIP_MANIFEST, LEAF_MANIFEST])
+    expect(words.byKind[30840]).toBeUndefined()
+    expect(words.byWord.topic).toBeUndefined()
+    expect(routeWordsOf([PEEK_MANIFEST]).byKind[30840]).toBe('topic')
+  })
+
+  it('answer every declared kind for the unknown-word fallback — never a bare #d', () => {
+    expect(declaredKinds(routeWordsOf(PRODUCTION_MANIFESTS)).sort()).toEqual([30840, 30842, 30850, 30851])
   })
 })
 
-/* The root is files; Peek's own pages are under /app/ — FOL-39. */
+describe('Copy link', () => {
+  let copied: string[]
+  beforeEach(() => {
+    copied = []
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => void copied.push(text) },
+    })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('copies the short link', async () => {
+    await expect(copyFileLink(FILE, 'Launch naming')).resolves.toBe(true)
+    expect(copied).toEqual([`${window.location.origin}/topic/launch-naming-${FILE_D}`])
+  })
+
+  it('pressed before the manifests are read, waits for them and copies the short link, not /o/', async () => {
+    vi.useFakeTimers()
+    forgetRouteWords()
+    const copying = copyFileLink(FILE, 'Launch naming')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(copied).toEqual([])
+    rememberRouteWords(routeWordsOf(PRODUCTION_MANIFESTS))
+    await expect(copying).resolves.toBe(true)
+    expect(copied).toEqual([`${window.location.origin}/topic/launch-naming-${FILE_D}`])
+  })
+
+  it('gives the /o/ link when the manifests never come, after two seconds', async () => {
+    vi.useFakeTimers()
+    forgetRouteWords()
+    const copying = copyFileLink(FILE, 'Launch naming')
+    await vi.advanceTimersByTimeAsync(2000)
+    await expect(copying).resolves.toBe(true)
+    expect(copied).toHaveLength(1)
+    expect(copied[0]).toMatch(new RegExp(`^${window.location.origin}/o/naddr1`))
+  })
+
+  it('copies nothing for an id no file can have', async () => {
+    await expect(copyFileLink(`30850:${SHIP}:PROJ-1`, 'Project one')).resolves.toBe(false)
+    expect(copied).toEqual([])
+  })
+})
+
 describe('fileRouteFromPath', () => {
   it('reads the word and the ref off a two-segment root path', () => {
     expect(fileRouteFromPath('/issue/fix-the-header-d68a8c78-5ec7-4652-b236-89ab57ac5b1e')).toEqual({
@@ -264,75 +275,6 @@ describe('refNamesFile', () => {
 
   it('names nothing when the ref carries no identity', () => {
     expect(refNamesFile('just-a-slug', FILE)).toBe(false)
-  })
-})
-
-describe('slugify', () => {
-  it('reduces a title to url-safe words', () => {
-    expect(slugify('Design review')).toBe('design-review')
-    expect(slugify('Launch checklist for v2 of the mobile app')).toBe(
-      'launch-checklist-for-v2-of-the-mobile-app',
-    )
-  })
-
-  it('folds accents and drops punctuation rather than escaping it', () => {
-    expect(slugify('Café déjà vu')).toBe('cafe-deja-vu')
-    expect(slugify('Q3 planning — "the big one"!')).toBe('q3-planning-the-big-one')
-  })
-
-  it('collapses runs and never leaves a leading or trailing hyphen', () => {
-    expect(slugify('  spaced   out  ')).toBe('spaced-out')
-    expect(slugify('!!!')).toBe('')
-  })
-
-  it('caps length without leaving a dangling hyphen at the cut', () => {
-    const slug = slugify('a'.repeat(40) + ' ' + 'b'.repeat(40))
-    expect(slug.length).toBeLessThanOrEqual(60)
-    expect(slug.endsWith('-')).toBe(false)
-  })
-})
-
-describe('objectRef', () => {
-  it('puts the identity last, where the resolver reads it', () => {
-    expect(objectRef(UUID, 'Design review')).toBe(`design-review-${UUID}`)
-  })
-
-  it('degrades to the bare identity when a title slugs to nothing', () => {
-    expect(objectRef(UUID, '???')).toBe(UUID)
-    expect(objectRef(UUID)).toBe(UUID)
-  })
-})
-
-describe('identifierFromRef', () => {
-  it('reads the identity out of a ref', () => {
-    expect(identifierFromRef(`design-review-${UUID}`)).toBe(UUID)
-    expect(identifierFromRef(UUID)).toBe(UUID)
-  })
-
-  /**
-   * §7.2's rule, and the property that keeps old links working: a consumer MUST
-   * ignore everything before the final uuid, so a stale slug still resolves.
-   */
-  it('ignores everything before the final uuid, however stale', () => {
-    expect(identifierFromRef(`the-old-name-${UUID}`)).toBe(UUID)
-    expect(identifierFromRef(`-${UUID}`)).toBe(UUID)
-  })
-
-  /** A slug may itself contain hyphens, digits and hex — the tail still wins. */
-  it('is not confused by a slug that looks like an identifier', () => {
-    expect(identifierFromRef(`deadbeef-1234-5678-9abc-${UUID}`)).toBe(UUID)
-  })
-
-  it('accepts an upper-cased uuid and normalises it to the relay spelling', () => {
-    expect(identifierFromRef(`design-review-${UUID.toUpperCase()}`)).toBe(UUID)
-  })
-
-  it('returns null for a ref carrying no identity', () => {
-    expect(identifierFromRef('3')).toBeNull()
-    expect(identifierFromRef('design-review')).toBeNull()
-    // Truncated: 11 hex in the last group rather than 12. A near-miss must not
-    // resolve — a link that half-matches is worse than one that does not.
-    expect(identifierFromRef('925897ad-796e-4bc6-999c-ca19df26c4a')).toBeNull()
   })
 })
 

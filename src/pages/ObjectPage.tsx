@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react'
 import { eventIdFromRef } from '@estiva-app/interop'
+import { naddrToAddr } from '@estiva-app/protocol'
 import { Navigate, useParams } from 'react-router-dom'
-import { useForeignObjects } from '@/api'
+import { useForeignObjects, useRouteWords } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
-import { filePath } from '@/lib/objectUrl'
+import { fileThreadPath } from '@/lib/objectUrl'
+import { FilePage } from '@/pages/FilePage'
 import { channelDestination } from '@/lib/legacyTopicLinks'
 import { EmptyState } from '@estiva-app/ui'
+
+/** The address an `/o/<naddr>` ref names, lowercased — compared by address, since one address has several `naddr` spellings. */
+function reachedAt(ref: string | undefined): string | null {
+  if (!ref) return null
+  try {
+    return naddrToAddr(decodeURIComponent(ref)).toLowerCase()
+  } catch {
+    return null
+  }
+}
 
 /**
  * `/o/<bech32>` — the address Peek's NIP-89 manifest advertises (PRO-11).
@@ -31,6 +43,8 @@ export function ObjectPage() {
   const { ref } = useParams<{ ref: string }>()
   const { placeForReference } = useForeignObjects()
   const { setPendingTopicMessage } = useLastSelection()
+  // Drawn again when the manifests' words arrive: a file drawn here then moves to its word's link.
+  useRouteWords()
   const [state, setState] = useState<ReferencePlace | 'looking' | 'unopenable'>('looking')
 
   useEffect(() => {
@@ -98,8 +112,20 @@ export function ObjectPage() {
       to scroll. Before this, a comment's link landed by `h` on the team's
       channel, which is not where the comment is.
     */
-    const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
-    return <Navigate to={`${filePath(state.file)}${thread}`} replace />
+    const path = fileThreadPath(state.file, undefined, state.thread)
+    // An address no file can have (LIN-3) has no page to open.
+    if (!path) return <ObjectPageView state="unopenable" />
+    /*
+      A file reached at its own `naddr` is drawn here (LIN-3), rather than sent
+      to its `/o/` link, which is this page. Its kind's owner may declare no
+      word, or the manifests may not be read yet: it then stays at the address
+      it was reached at (§7.7 rule 4). Once a word is known, `FilePage` moves it
+      to the word's link as from any other address, keeping the thread open in
+      the URL. Reached some other way (a comment's `nevent`, a `/message/`
+      link), it goes to the file's link, at the comment's thread.
+    */
+    if (reachedAt(ref) === state.file.toLowerCase()) return <FilePage address={state.file} />
+    return <Navigate to={path} replace />
   }
   /*
     Something said in a DM opens the DM, with the one-shot above opening its

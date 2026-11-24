@@ -11,7 +11,6 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { TopicsColumnState } from '@/api'
-import { filePath } from '@/lib/objectUrl'
 import { openedFrom } from '@/lib/openedFrom'
 import { TopicsColumnView } from './TopicsColumn'
 
@@ -19,7 +18,7 @@ const PK = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const file = (kind: number, d: string, title: string) =>
   ({ ref: `${kind}:${PK}:${d}`, address: `${kind}:${PK}:${d}`, kind, folder: 'f', slots: { title: { value: title } } }) as unknown as ForeignObject
 
-const WIDGETS = file(30840, 'widgets', 'Widgets')
+const WIDGETS = file(30840, '9d2f4b6a-8c1e-4a3b-9f5d-7e6c5b4a3d2e', 'Widgets')
 const DESIGN = file(30840, 'design', 'Design')
 const ALPHA = file(30840, 'alpha', 'alpha')
 const STRANGER = file(30840, 'stranger', 'Somebody else’s')
@@ -47,7 +46,7 @@ describe('the Topics column (TOP-4, TOPI-10)', () => {
   it('a topic’s row links to it, and a click on it opens it with Topics beside it', async () => {
     mount({ mine: [WIDGETS], others: [], archived: [] })
     const link = document.querySelector('a[data-file]')!
-    expect(link.getAttribute('href')).toBe(filePath(WIDGETS.address!, 'Widgets'))
+    expect(link.getAttribute('href')).toBe('/topic/widgets-9d2f4b6a-8c1e-4a3b-9f5d-7e6c5b4a3d2e')
     await userEvent.click(link)
     expect(openedFrom(WIDGETS.address!)).toBe('topics')
   })

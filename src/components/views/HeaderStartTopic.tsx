@@ -62,7 +62,8 @@ export function HeaderStartTopic({ column, defaultFolder, onClose }: {
         // Its row in the column beside, once it is written: shown and marked, as the open page's (T-12).
         showStartedTopicWhenWritten(result.address)
         // Into the topic: under a filter the tree may not be showing it.
-        navigate(filePath(result.address, title), { state: { column } })
+        const path = filePath(result.address, title)
+        if (path) navigate(path, { state: { column } })
         return true
       }}
     />

@@ -17,9 +17,9 @@ import type { FileConversation, ForeignConversationState, ListedSource, TopicFil
 const CATH = 'b'.repeat(64)
 const T = 1_700_000_000
 const TEAM = '2b0c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
-const TOPIC = `30840:${CATH}:launch`
-const ISSUE = `30851:${CATH}:issue-12`
-const NOTES = `30840:${CATH}:launch-notes`
+const TOPIC = `30840:${CATH}:2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e`
+const ISSUE = `30851:${CATH}:3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f`
+const NOTES = `30840:${CATH}:4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f8a`
 const SHIP_URL = 'https://ship.estiva.app/issue/issue-12'
 
 const conversationOf = (roots: { id: string; body: string; createdAt: number }[]): FileConversation => ({
@@ -159,7 +159,7 @@ describe("a file's heading opens the file where its card does (TOPI-3)", () => {
     expect(screen.getByTestId('where').textContent).toBe('/t')
 
     act(() => void fireEvent.click(screen.getByText('Launch notes')))
-    await waitFor(() => expect(screen.getByTestId('where').textContent).toContain('launch-notes'))
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toContain('/topic/launch-notes-4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f8a'))
     expect(opened).toHaveBeenCalledTimes(1)
   })
 })

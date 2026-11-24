@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
-import { filePath } from '@/lib/objectUrl'
+import { fileThreadPath } from '@/lib/objectUrl'
 import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { useToast } from '@/lib/toast'
 import { laterToastLabel } from '@/lib/laterTimes'
@@ -342,11 +342,8 @@ export function DeskPage() {
     const item = screenerItems.find((i) => i.id === id)
     if (!item) return
     // A file opens at the thread of the comment that brought it in, which lands in view (Katerina, 17 November, U-07).
-    navigate(
-      item.kind === 'file'
-        ? `${filePath(item.address, item.title)}${item.thread ? `?${new URLSearchParams({ thread: item.thread })}` : ''}`
-        : personHref(item.dmId),
-    )
+    const to = item.kind === 'file' ? fileThreadPath(item.address, item.title, item.thread) : personHref(item.dmId)
+    if (to) navigate(to)
   }
 
   /*

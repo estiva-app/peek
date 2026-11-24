@@ -75,7 +75,7 @@ function DeletedRow({
   return (
     <li data-file={file.ref}>
       <NavItem
-        href={file.address ? filePath(file.address, title) : '#'}
+        href={(file.address && filePath(file.address, title)) || '#'}
         label={title}
         icon={<KindIcon kind={thingKindOf(file.kind)} tone="inherit" />}
         active={active}

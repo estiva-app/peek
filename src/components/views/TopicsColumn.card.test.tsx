@@ -18,8 +18,8 @@ const ME = 'c'.repeat(64)
 const MIKY = 'a'.repeat(64)
 const KATERINA = 'b'.repeat(64)
 const TEAM = '85db5b59-9e49-4ea1-8e93-3d2a2d78c048'
-const TOPIC = `30840:${MIKY}:launch`
-const ISSUE = `30851:${MIKY}:issue-12`
+const TOPIC = `30840:${MIKY}:2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e`
+const ISSUE = `30851:${MIKY}:3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f`
 const NOW = Math.floor(Date.now() / 1000)
 const topic = { ref: TOPIC, address: TOPIC, kind: 30840, folder: TEAM, slots: { title: { value: 'Launch' } } } as unknown as ForeignObject
 
@@ -148,7 +148,7 @@ describe('resting on a lit topic shows what is new there (ACT-3)', () => {
     const text = first.closest('[data-side]')?.textContent ?? ''
     expect(text.indexOf('Katerina')).toBeLessThan(text.indexOf('Miky'))
     await user.click(first)
-    expect(screen.getByTestId('where').textContent).toBe(`/topic/${ISSUE}?thread=${newer.id}`)
+    expect(screen.getByTestId('where').textContent).toBe(`/issue/3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f?thread=${newer.id}`)
   })
 
   it('a row with nothing new has no dot and opens no card', async () => {

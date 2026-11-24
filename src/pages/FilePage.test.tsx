@@ -23,7 +23,10 @@ import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } fro
 import { rememberOpenedFrom } from '@/lib/openedFrom'
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
+import { PEEK_MANIFEST, SHIP_MANIFEST } from '@/test/manifests'
 import { FilePage } from './FilePage'
+import { ObjectPage } from './ObjectPage'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { PeekSetup } from '@/lib/PeekSetup'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -32,6 +35,8 @@ const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const PROJECT_ADDRESS = `30850:${SHIP}:0ebd5fdd-c58a-416e-b8a7-cbdcec77b77f`
 const ISSUE_ADDRESS = `30851:${SHIP}:d68a8c78-5ec7-4652-b236-89ab57ac5b1e`
+/** The issue's link with production's words: Ship's `issue`, and its title "The file route". */
+const ISSUE_LINK = '/issue/the-file-route-d68a8c78-5ec7-4652-b236-89ab57ac5b1e'
 const TOPIC_D = '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
 const TOPIC_ADDRESS = `30840:${CATH}:${TOPIC_D}`
 /** The short form FOL-37 gives a bare file: its slug and `d`, no author. */
@@ -116,6 +121,8 @@ const writes = vi.hoisted(() => ({
   moveFile: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
   resolveObject: vi.fn(async () => null),
+  // What an `/o/<naddr>` names, for `ObjectPage` (LIN-3).
+  placeForReference: vi.fn<(ref: string) => Promise<unknown>>(async () => null),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // A record channel placed under its team (interop 0.28 `listedIn`), for FOL-4's typed-parent case.
@@ -418,6 +425,7 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
                   Peek's own pages rank ahead of it there, and so here. */}
               <Route path="/topic-old/:ref" element={<Probe />} />
               <Route path="/app/*" element={<Probe />} />
+              <Route path="/o/:ref" element={<><ObjectPage /><Probe /></>} />
               <Route path="/:word/:ref" element={<><FilePage /><Probe /></>} />
               <Route path="*" element={<Probe />} />
             </Routes>
@@ -610,7 +618,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
     // be an empty one; FOL-26 sends it where the conversation is.
     mount(`/topic/39000:${CATH}:${FOLDER}`)
     expect(screen.getByTestId('url').textContent).toBe(
-      '/topic/30850:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:f3652427-fcf5-4777-86a2-1dd4ee1f3808',
+      '/project/claude-on-estiva-estiva-steer-f3652427-fcf5-4777-86a2-1dd4ee1f3808',
     )
   })
 
@@ -650,10 +658,48 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${TOPIC_SHORT}?thread=x`))
   })
 
-  it('leaves a Ship issue at its long form until its manifest has been read: no word, no short form', () => {
+  it('leaves a file at the address it was reached at until the manifests are read — never sent to /o/', () => {
+    forgetRouteWords()
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(within(screen.getByTestId('middle')).getByText('The file route')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+  })
+
+  it('at /o/<naddr>, draws a file whose kind has no word there, and stays — not sent to /o/ again', async () => {
+    // Only Peek's manifest: Ship's issue has no word to write.
+    rememberRouteWords(routeWordsOf([PEEK_MANIFEST]))
+    writes.placeForReference.mockResolvedValue({ file: ISSUE_ADDRESS })
+    const at = `/o/${addrToNaddr(ISSUE_ADDRESS)}`
+    mount(at)
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    expect(screen.getByTestId('url').textContent).toBe(at)
+  })
+
+  it('at /o/<naddr> before the manifests are read, draws the file there, then moves to its short link', async () => {
+    forgetRouteWords()
+    writes.placeForReference.mockResolvedValue({ file: ISSUE_ADDRESS })
+    const at = `/o/${addrToNaddr(ISSUE_ADDRESS)}`
+    mount(at)
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    expect(screen.getByTestId('url').textContent).toBe(at)
+    act(() => rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST])))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_LINK))
+  })
+
+  it('at /o/<naddr>?thread= before the manifests are read, keeps the open thread when it moves to its short link (code review)', async () => {
+    forgetRouteWords()
+    writes.placeForReference.mockResolvedValue({ file: ISSUE_ADDRESS })
+    mount(`/o/${addrToNaddr(ISSUE_ADDRESS)}?thread=x`)
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    act(() => rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST])))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}?thread=x`))
+  })
+
+  it('moves to the short link once the manifests have been read', async () => {
+    forgetRouteWords()
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    act(() => rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST])))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_LINK))
   })
 
   it('says so for a d no bare file carries, rather than drawing an empty conversation', async () => {
@@ -668,7 +714,7 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     // empty here, so this is answered from the bundle.
     mount(`/topic/whatever-${FOLDER}?huddle=h1`)
     expect(screen.getByTestId('url').textContent).toBe(
-      '/topic/30850:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:f3652427-fcf5-4777-86a2-1dd4ee1f3808',
+      '/project/claude-on-estiva-estiva-steer-f3652427-fcf5-4777-86a2-1dd4ee1f3808',
     )
     expect(writes.resolveFileAddress).not.toHaveBeenCalled()
   })
@@ -684,19 +730,14 @@ describe('FilePage serves every declared shape', () => {
   const ISSUE_D = ISSUE_ADDRESS.split(':')[2]
   const ISSUE_SHORT = `/issue/the-file-route-${ISSUE_D}`
   beforeEach(() => {
-    rememberRouteWords(
-      routeWordsOf([
-        { pattern: 'https://ship.estiva.app/project/<slug>-<d>', kind: 30850 },
-        { pattern: 'https://ship.estiva.app/issue/<slug>-<d>', kind: 30851 },
-      ]),
-    )
+    rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST]))
   })
   afterEach(() => forgetRouteWords())
 
   it('opens /issue/<slug>-<d> from the d alone, asking with the word so the read is over Ship’s kind', async () => {
     mount(`/issue/whatever-${ISSUE_D}`)
     expect(writes.resolveFileAddress).toHaveBeenCalledWith('issue', ISSUE_D)
-    expect(await within(screen.getByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
     // …and takes the slug Ship's title gives it, the d being the identity.
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT))
   })
@@ -711,7 +752,7 @@ describe('FilePage serves every declared shape', () => {
     // §7.7 rule 4: the seam resolves over every declared kind; the page does not refuse the word.
     mount(`/ticket/whatever-${ISSUE_D}`)
     expect(writes.resolveFileAddress).toHaveBeenCalledWith('ticket', ISSUE_D)
-    expect(await within(screen.getByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    expect(await within(await screen.findByTestId('middle')).findByText('The file route')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT))
   })
 
@@ -1027,7 +1068,7 @@ describe('FilePage opens a thread beside the conversation', () => {
     const thread = screen.getByTestId('thread')
     expect(thread.querySelector(`[data-thread="${rootId}"]`)).not.toBeNull()
     expect(within(thread).getByText('First on the issue')).toBeInTheDocument()
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}?thread=${rootId}`)
     // The comment whose thread is open is marked in the middle pane.
     expect(middle.querySelector('[data-comment][aria-current="true"]')).not.toBeNull()
   })
@@ -1064,7 +1105,7 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     fireEvent.click(screen.getByRole('button', { name: 'Close thread' }))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}`)
   })
 })
 
@@ -1124,7 +1165,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     expect(screen.getByTestId('peek-thread').textContent).toBe(rootId)
     const last = peekView.args.at(-1)! as { onOpenThread: (id: string | null) => void }
     act(() => last.onOpenThread(null))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}`)
     expect(screen.queryByTestId('peek-thread')).toBeNull()
   })
 
@@ -1478,7 +1519,7 @@ describe('FilePage lands on a comment left for it (FOL-36)', () => {
   it('opens the thread itself when the URL did not carry it — the one-shot is enough on its own', async () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
     mount(`/topic/${ISSUE_ADDRESS}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}?thread=${rootId}`))
     await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(replyId))
   })
 
@@ -1488,7 +1529,7 @@ describe('FilePage lands on a comment left for it (FOL-36)', () => {
     mount(`/topic/${ISSUE_ADDRESS}`, { pending: elsewhere })
     expect(screen.getByTestId('pending').textContent).toBe(JSON.stringify(elsewhere))
     expect(anchor.scrollTo).not.toHaveBeenCalled()
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}`)
   })
 })
 
@@ -1935,7 +1976,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
 
   it('a project says that leaving it does not leave its issues', () => {
     // The child's noun is the owner's own word for it, from its manifest.
-    rememberRouteWords(routeWordsOf([{ pattern: 'https://ship.estiva.app/issue/<slug>-<d>', kind: 30851 }]))
+    rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST]))
     objects.byAddress[PROJECT_ADDRESS] = { ...project, children: [issue] } as ForeignObject
     roster.members = new Map([[ME, { member: true }]])
     mount(`/topic/${PROJECT_ADDRESS}`)

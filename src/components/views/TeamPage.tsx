@@ -212,7 +212,7 @@ export function TeamPage({
 
   const placeLine = (topic: ForeignObject, initiative: boolean): PlaceLine => ({
     key: topic.ref,
-    href: topic.address ? filePath(topic.address, topic.slots.title?.value) : '#',
+    href: (topic.address && filePath(topic.address, topic.slots.title?.value)) || '#',
     label: topic.slots.title?.value ?? 'Untitled',
     ...(topic.slots.subtitle?.value?.trim() ? { description: topic.slots.subtitle.value.trim() } : {}),
     // One icon per kind, as its row in the column wears it: # a team's topic, ◎ an initiative.
@@ -295,7 +295,7 @@ export function TeamPage({
                 {files.map((file) => (
                   <ListTableRow
                     key={file.ref}
-                    href={file.address ? filePath(file.address, file.slots.title?.value) : '#'}
+                    href={(file.address && filePath(file.address, file.slots.title?.value)) || '#'}
                     label={file.slots.title?.value ?? 'Untitled'}
                     icon={<KindIcon kind={thingKindOf(file.kind)} tone="inherit" />}
                     onClick={() => file.address && rememberOpenedFrom(file.address, 'folders')}

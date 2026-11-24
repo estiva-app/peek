@@ -109,7 +109,8 @@ export function FolderActionDialog({
           // Its row in Teams once it is written: shown and marked, as the open page's (T-12).
           showStartedTopicWhenWritten(result.address)
           // Into the topic, with Teams beside it: under a filter the tree may not be showing it.
-          navigate(filePath(result.address, title), { state: { column: 'folders' } })
+          const path = filePath(result.address, title)
+          if (path) navigate(path, { state: { column: 'folders' } })
           return true
         }}
       />

@@ -26,7 +26,6 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { FoldersPage } from './FoldersPage'
 import { PeekSetup } from '@/lib/PeekSetup'
 import { channelDestination } from '@/lib/legacyTopicLinks'
-import { filePath } from '@/lib/objectUrl'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 
 const FOLDER = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b'
@@ -108,7 +107,7 @@ const dms = vi.hoisted(() => ({
 const BARE_CHANNEL = 'bbbbbbbb-0000-4000-8000-000000000000'
 /* A Ship project's channel, listed in its team, and the project it belongs to (5 October). */
 const PROJECT_CHANNEL = 'dddddddd-0000-4000-8000-000000000000'
-const SHIP_PROJECT = `30850:${'e'.repeat(64)}:launch`
+const SHIP_PROJECT = `30850:${'e'.repeat(64)}:7c1e9a2b-4d3f-4a6e-8b5c-1f2e3d4c5b6a`
 const projects = vi.hoisted(() => ({ resolve: vi.fn<(folder: string) => Promise<unknown>>(async () => null) }))
 // PEE-42: a listing read that failed hands back `[]`, which is not "no Folders".
 const listing = vi.hoisted(() => ({ failed: false }))
@@ -402,7 +401,7 @@ describe('a stateless channel’s link (5 October)', () => {
     mount(`/app/teams/${PROJECT_CHANNEL}`)
     // On its way there the tab never names the channel's machine id (SFX-2 review).
     expect(document.title).toBe('Peek')
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(filePath(SHIP_PROJECT, 'Launch')))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe('/project/launch-7c1e9a2b-4d3f-4a6e-8b5c-1f2e3d4c5b6a'))
     expect(projects.resolve).toHaveBeenCalledWith(PROJECT_CHANNEL)
   })
 

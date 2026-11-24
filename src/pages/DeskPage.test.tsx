@@ -18,7 +18,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DebugProvider } from '@/lib/debug'
 import { ToastProvider } from '@/lib/toast'
 import { DeskPage } from './DeskPage'
-import { filePath } from '@/lib/objectUrl'
 
 /** "Widgets", a bare-file topic. */
 const WIDGETS_FILE = '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:7a384136-31a6-4d91-80ac-1d599464d2f2'
@@ -90,7 +89,7 @@ vi.mock('@/components/views/useDmConversationView', () => ({
 }))
 const openWork = vi.hoisted(() => ({ remove: vi.fn(), removeDm: vi.fn(), addScreener: vi.fn() }))
 /** A second Open work file, for the order test. */
-const SECOND = '30851:aa:issue-2'
+const SECOND = `30851:${'a'.repeat(64)}:5b8e2c4a-1f3d-4e6b-9a7c-2d4f6e8a0b1c`
 const desk = vi.hoisted(() => ({
   openWork: [] as unknown[],
   urgent: [] as unknown[],
@@ -588,7 +587,7 @@ describe('a click on a Screener row reads the item on its own page (Katerina, 30
     desk.screener = [screenerFile(SECOND, 'Issue two')]
     mount()
     fireEvent.click(leftColumn().getByText('A comment on Issue two'))
-    expect(url()).toBe(filePath(SECOND, 'Issue two'))
+    expect(url()).toBe('/issue/issue-two-5b8e2c4a-1f3d-4e6b-9a7c-2d4f6e8a0b1c')
     expect(openWork.addScreener).not.toHaveBeenCalled()
   })
 
@@ -597,7 +596,7 @@ describe('a click on a Screener row reads the item on its own page (Katerina, 30
     desk.screener = [{ ...screenerFile(SECOND, 'Issue two'), thread: 'comment-7' }]
     mount()
     fireEvent.click(leftColumn().getByText('A comment on Issue two'))
-    expect(url()).toBe(`${filePath(SECOND, 'Issue two')}?thread=comment-7`)
+    expect(url()).toBe('/issue/issue-two-5b8e2c4a-1f3d-4e6b-9a7c-2d4f6e8a0b1c?thread=comment-7')
   })
 
   it('a DM goes to the person’s page', () => {

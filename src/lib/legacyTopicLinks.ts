@@ -23,7 +23,8 @@
  *     the uuid is here and a Folder's otherwise (a team, since FOL-35 is
  *     deferred to Teams).
  */
-import { filePath, identifierFromRef } from './objectUrl'
+import { identifierFromRef } from '@estiva-app/interop'
+import { filePath } from './objectUrl'
 
 type LegacyTopic = {
   /** Convex `seedKey`, what `/topics/<id>` carried. */
@@ -68,7 +69,7 @@ const byChannel = new Map(LEGACY_TOPICS.map((t) => [t.channel, t]))
 const byId = new Map(LEGACY_TOPICS.map((t) => [t.id, t]))
 
 const destinationOf = (topic: LegacyTopic): string =>
-  'file' in topic ? filePath(topic.file, topic.title) : `/app/teams/${topic.team}`
+  'file' in topic ? (filePath(topic.file, topic.title) ?? '/app/desk') : `/app/teams/${topic.team}`
 
 /** The topic a channel uuid belonged to, or undefined for any other channel. */
 export function legacyTopicByChannel(channel: string): LegacyTopic | undefined {

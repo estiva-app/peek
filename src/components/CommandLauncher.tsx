@@ -7,7 +7,7 @@ import { PEEK_FORM } from './launcherForm'
 import { FilePreviewCard } from './ui/MessageLinks'
 import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople } from '@/api'
 import { snippetAround } from '@/lib/launcherSearch'
-import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
+import { filePath, fileRouteFromPath, fileThreadPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { referenceOfValue } from '@/lib/embedValue'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -133,7 +133,8 @@ function usePeekMessageSearch(query: string) {
       // or the file, with the thread open from the URL and the same one-shot for the scroll.
       open: () => {
         if (pending) setPendingTopicMessage(pending)
-        if (hit.file) navigate(`${filePath(hit.file, hit.fileTitle)}?thread=${encodeURIComponent(hit.root ?? hit.id)}`)
+        const path = hit.file ? fileThreadPath(hit.file, hit.fileTitle, hit.root ?? hit.id) : null
+        if (path) navigate(path)
         else if (topic) navigate(channelDestination(topic.channel))
       },
     }
@@ -184,7 +185,10 @@ export function CommandLauncher(props: CommandLauncherProps) {
     isOpenPerson: (id) => id === openPersonId,
     file: {
       glyph: fileGlyphOfAddress,
-      open: (id, title) => navigate(filePath(id, title)),
+      open: (id, title) => {
+        const path = filePath(id, title)
+        if (path) navigate(path)
+      },
       isOpen: (id) => !!openFileRef && refNamesFile(openFileRef, id),
       preview,
     },
