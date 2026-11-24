@@ -1688,6 +1688,9 @@ export async function listFoldersAsViewer(
  * names a file *inside* that Folder rather than the Folder itself: the page
  * lands on the Folder and opens that file's conversation beside it.
  */
+/** The file kinds `FilePage` draws, which a reference opens on: a topic, a page, a project and an issue. */
+const PEEK_DRAWS: readonly number[] = [KIND_BARE_FILE, 30842, 30850, 30851]
+
 export type ReferencePlace = {
   folder: string
   file?: string
@@ -1734,13 +1737,14 @@ export type ReferencePlace = {
  *   trio — and the thread it is in is `rootOf`, so the place is the file with
  *   that thread open and the comment to land on.
  *
- * Returns null for anything else — a Ship project's `naddr` is a perfectly good
+ * A page, a project and an issue open the same way as a bare file (LIN-3):
+ * `FilePage` draws them too.
+ *
+ * Returns null for anything else — a named file, which Peek's file view does
+ * not draw, or another app's object that is not a file: a perfectly good
  * reference that Peek has nowhere to open, and saying so beats redirecting
  * somewhere arbitrary.
  */
-/** The file kinds `FilePage` draws: a topic, a page, a project and an issue. */
-const PEEK_DRAWS: readonly number[] = [KIND_BARE_FILE, 30842, 30850, 30851]
-
 export async function placeForReferenceAsViewer(
   reference: string,
   relayUrl: string,
