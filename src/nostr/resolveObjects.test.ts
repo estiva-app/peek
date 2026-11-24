@@ -14,7 +14,7 @@ vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId
 vi.mock('./readFrom', async (original) => ({ ...(await original<typeof import('./readFrom')>()), readFrom }))
 
 import { encodeNevent, type SignedEvent } from '@estiva-app/protocol'
-import { forgetUrlShapes, resolveObjectsAsViewer } from './foreign'
+import { forgetUrlShapes, resolveObjectsAsViewer, routeWordsAsViewer } from './foreign'
 import { RelayReadError } from './relayRead'
 import { relayAnswer } from '@/test/listRead'
 
@@ -92,6 +92,18 @@ describe('resolveObjectsAsViewer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('asks the relay for the manifests once in an open, for the route words and every file resolved (THE-4)', async () => {
+    // A reopen asked `kind:31990` five times and each author's claims again: the route words, then each resolve.
+    await Promise.all([routeWordsAsViewer('https://relay.test', token), resolveObjectsAsViewer(addresses, 'https://relay.test', token)])
+    await resolveObjectsAsViewer(addresses.slice(0, 3), 'https://relay.test', token)
+    const manifestAsks = queryRelay.mock.calls.filter(([, filters]) =>
+      (filters as Record<string, unknown>[]).some((f) => (f.kinds as number[] | undefined)?.includes(31990)),
+    )
+    expect(manifestAsks).toHaveLength(1)
+    const objects = await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
+    expect(objects[addresses[0]]?.slots.title?.value).toBe('File 0')
   })
 
   it('throws a refused read rather than answering null, so a held row can stay', async () => {

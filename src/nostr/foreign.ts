@@ -70,6 +70,7 @@ import {
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
+  readAllManifests,
   projectEvents,
   resolveActingManifest,
   resolveParents,
@@ -283,7 +284,10 @@ export function forgetUrlShapes(): void {
 
 function urlManifests(query: QueryFn): Promise<SignedEvent[]> {
   if (manifestsRead) return manifestsRead
-  const read = query([{ kinds: [31990], limit: 100 }]).then((found) => {
+  // The same sweep every resolve reads its manifests from (`manifests`, THE-4): one question for the session where
+  // a reopen asked it five times.
+  const read = readAllManifests(query, manifests).then((answer) => {
+    const found = [...answer]
     // The same read answers which words Peek writes and routes (FOL-39, LIN-3);
     // `filePath` reads the registry in render, where it cannot await this. An
     // empty read is asked again (below), so it is not remembered as the words.
