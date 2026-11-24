@@ -399,8 +399,8 @@ if (net) {
 // A page that logs the same error on every render would otherwise drown the result.
 report.errorCount = report.errors.length
 report.errors = [...new Set(report.errors)].slice(0, 10)
-console.log(JSON.stringify(report, null, 2))
-process.exit(report.failure || report.steps.some((s) => s.error) ? 1 : 0)
+// Exit once the report is written: to a pipe, process.exit straight after console.log cuts a large one short (desk-reopen).
+process.stdout.write(JSON.stringify(report, null, 2) + '\n', () => process.exit(report.failure || report.steps.some((s) => s.error) ? 1 : 0))
 
 async function run(page, step, value) {
   switch (step) {

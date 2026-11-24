@@ -60,6 +60,7 @@ import { promisify } from 'node:util'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { reopenTable } from './app-speed-reopen.mjs'
 
 const run = promisify(execFile)
 const args = process.argv.slice(2)
@@ -176,6 +177,16 @@ const settle = (ms) => ['--until', `'allNoPlaceholder' in __sp.marks || performa
 const whole = ['--wait', '1000', '--until', '__sp.quiet() > 5000 || performance.now() > 180000']
 const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)}, ${READS})`]
 
+// desk-reopen: the open waits until the socket is quiet too, not only HTTP (Peek reads mostly over its socket).
+const wholeAll = ['--wait', '1000', '--until', '__sp.quietAll() > 5000 || performance.now() > 120000']
+// What the copy on the device holds, read from IndexedDB: signed events (counted by their `sig`) and bytes, whatever
+// the platform's snapshot keeps them in.
+const COPY_COUNT = `new Promise((done) => { const open = indexedDB.open('peek-device-copy'); open.onerror = () => done('{"error":"no copy"}');
+  open.onsuccess = () => { const db = open.result; const names = [...db.objectStoreNames]; if (!names.length) return done('{"events":0,"mb":0}');
+    const tx = db.transaction(names); let events = 0, bytes = 0, left = names.length;
+    for (const n of names) tx.objectStore(n).getAll().onsuccess = (e) => { const text = JSON.stringify(e.target.result); bytes += text.length;
+      events += text.split('"sig":"').length - 1; if (!--left) done(JSON.stringify({ events, mb: bytes / 1e6 })) } } })`
+
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
   'weekly-from-peek': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${WEEKLY.address}`,
@@ -198,6 +209,11 @@ const LEGS = {
     '--press', 'Control+k', '--wait', '1500', '--type', option('cmdk-words', 'live widget'), '--wait', '4000',
     '--press', 'ArrowDown', '--wait', '150', '--press', 'ArrowDown', '--wait', '150', '--press', 'ArrowDown', '--wait', '1500',
     ...whole, ...report('desk-cmdk')],
+  // A reopen of the Desk from the copy on the device: an open that fills the copy and goes quiet on both doors, then
+  // the Desk again in a new tab of the same browser with the first one closed (probe --tab), as Miky does when he
+  // comes back to Peek. The report is the reopen's alone; the copy is counted before and after it.
+  'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
+    '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
   ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
@@ -218,10 +234,12 @@ async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
     died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
   }
   let out = {}
-  try { out = JSON.parse(stdout) } catch {}
+  try { out = JSON.parse(stdout) } catch { died ||= `unreadable probe output: ${String(stdout ?? '').slice(-200)}` }
   const step = (out.steps ?? []).find((s) => 'eval' in s && typeof s.result === 'string' && s.result.startsWith('{"label"'))
   const failure = out.failure ?? (out.steps ?? []).filter((s) => s.error).map((s) => s.error).join('; ')
-  return step ? { ...JSON.parse(step.result), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
+  // desk-reopen: what the copy on the device held before and after the reopen (COPY_COUNT's answers).
+  const copy = (out.steps ?? []).filter((s) => typeof s.result === 'string' && /^\{"(events|error)"/.test(s.result)).map((s) => JSON.parse(s.result))
+  return step ? { ...JSON.parse(step.result), ...(copy.length ? { copy } : {}), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
 }
 
 /** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */
@@ -409,7 +427,7 @@ if (args.includes('--compare')) {
   // Peek's Topics column (TOPI-7), cold: one of QA-1's topics, a row drawn once the column's reads land.
   if (legs.includes('topics')) awaitList.push(['^peek\\.', '^/app/topics/?$', [option('topics-await', TOPICS_AWAIT)]])
   // Peek's Desk (ACT-9), cold: its Open work heading; the whole load is the measure, the rows' dots read what it holds.
-  if (legs.includes('desk') || legs.includes('desk-cmdk')) awaitList.push(['^peek\\.', '^/app/desk/?$', ['Open work']])
+  if (legs.some((l) => l.startsWith('desk'))) awaitList.push(['^peek\\.', '^/app/desk/?$', ['Open work']])
   // Before Weekly Plans' Peek entry, whose path pattern would match this topic too.
   if (legs.some((l) => l.startsWith('peek-topic-'))) awaitList.unshift(['^peek\\.', QA_TOPIC.path, [QA_TOPIC.own]])
   // The title-dot pages (ACT-4), each by its own path, ahead of the patterns above that would match a topic's too.
@@ -444,5 +462,6 @@ if (args.includes('--compare')) {
     }
   }
   console.log(table(result))
+  if (result.rows['desk-reopen']) console.log(`\nReopen of the Desk from the copy (${result.as}):\n${reopenTable(result.rows['desk-reopen'])}`)
   console.error(`\nRaw runs: ${out}`)
 }

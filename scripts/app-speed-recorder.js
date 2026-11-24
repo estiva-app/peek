@@ -39,18 +39,44 @@
     }
   }
 
+  // Every question over the relay's socket, with what it was answered (desk-reopen, 46c5d0aa): the socket carries most
+  // of a Peek open, and the HTTP counts above miss it. One row per REQ: its filter, the bytes and events that came for
+  // it, and when its EOSE came (`done`); `sp.socket` sums every frame both ways.
+  sp.subs = []
+  sp.socket = { in: 0, out: 0, lastIn: null, times: [] }
+  let sockets = 0
   const NativeWS = window.WebSocket
   window.WebSocket = class extends NativeWS {
     constructor(...args) {
       super(...args)
       sp.ws.push({ at: now(), dir: 'open', url: String(args[0]).slice(0, 80) })
+      const toRelay = relay(new URL(String(args[0])))
+      this.__spSubs = new Map()
+      this.__spRelay = toRelay
+      this.__spN = ++sockets
       let opened = false
       this.addEventListener('open', () => (opened = true))
       this.addEventListener('close', (e) => {
-        if (!opened && relay(new URL(String(args[0])))) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
+        if (!opened && toRelay) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
       })
       this.addEventListener('message', (e) => {
         const text = String(e.data)
+        if (toRelay) {
+          sp.socket.in += text.length
+          sp.socket.lastIn = now()
+          sp.socket.times.push(sp.socket.lastIn)
+          // ["EVENT","<sub>",…] / ["EOSE","<sub>"] / ["CLOSED","<sub>",…]: the verb and the sub id, without parsing the event.
+          const verb = text.slice(2, text.indexOf('"', 2))
+          const from = text.indexOf('"', text.indexOf(',') + 1)
+          const sub = this.__spSubs.get(text.slice(from + 1, text.indexOf('"', from + 1)))
+          if (sub && verb === 'EVENT') {
+            sub.bytes += text.length
+            sub.events++
+            if (sub.done === null) sub.bytesAtDone = sub.bytes
+          }
+          if (sub && verb === 'EOSE' && sub.done === null) sub.done = now()
+          if (sub && verb === 'CLOSED' && sub.done === null) sub.done = now(), (sub.closed = text.slice(0, 160))
+        }
         const type = /^\["(\w+)"/.exec(text)?.[1]
         if (type === 'CLOSED' || type === 'NOTICE' || (type === 'OK' && /^\["OK",[^,]+,false/.test(text))) {
           sp.ws.push({ at: now(), dir: 'in', type, body: text.slice(0, 200) })
@@ -61,7 +87,20 @@
     }
     send(data) {
       const text = String(data)
-      sp.ws.push({ at: now(), dir: 'out', type: /^\["(\w+)"/.exec(text)?.[1] ?? '?', bytes: text.length })
+      const type = /^\["(\w+)"/.exec(text)?.[1] ?? '?'
+      sp.ws.push({ at: now(), dir: 'out', type, bytes: text.length })
+      if (this.__spRelay) {
+        sp.socket.out += text.length
+        if (type === 'REQ') {
+          try {
+            const frame = JSON.parse(text)
+            const filters = JSON.stringify(frame.slice(2))
+            const sub = { via: 'ws', socket: this.__spN, sub: frame[1], at: now(), filter: filters.slice(0, 2000), shape: shapeOf(filters)?.slice(0, 400), filters: frame.length - 2, out: text.length, bytes: 0, bytesAtDone: 0, events: 0, done: null }
+            this.__spSubs.set(frame[1], sub)
+            sp.subs.push(sub)
+          } catch {}
+        }
+      }
       return super.send(data)
     }
   }
@@ -125,8 +164,45 @@
     if (all && !ph && !('allNoPlaceholder' in sp.marks)) sp.marks.allNoPlaceholder = now()
   }, 25)
 
+  // When the page's own area last changed on screen, outside the sidebar (desk-reopen): a row, its text or its dot. The
+  // Desk's rows are current once they stop changing, whichever read brought the last change.
+  sp.changes = []
+  // The body, not <main>: the app replaces its <main> as it routes, and an observer on the old one hears nothing.
+  const inPage = (node) => {
+    const el = node.nodeType === 1 ? node : node.parentElement
+    return !!el?.closest('main') && !el.closest('aside, nav')
+  }
+  const watch = () => {
+    if (!document.body) return setTimeout(watch, 50)
+    new MutationObserver((records) => {
+      if (records.some((r) => inPage(r.target))) {
+        const t = now()
+        if (sp.changes.at(-1) !== t) sp.changes.push(t)
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'data-state', 'aria-label'] })
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch)
+  else watch()
+
   // ms since the last relay read started or finished: the whole load is over once this stays high.
   sp.quiet = () => (sp.http.some((h) => relay(h) && h.pending) ? 0 : now() - Math.max(0, ...sp.http.filter(relay).map((h) => h.done ?? h.at + (h.ms ?? 0))))
+  // The same, counting the socket's frames too: Peek reads mostly over its socket (desk-reopen).
+  sp.quietAll = () => Math.min(sp.quiet(), sp.socket.lastIn === null ? Infinity : now() - sp.socket.lastIn)
+  // Every question of the open over both doors, and when the relay went quiet: the last answer before 5 s with none.
+  sp.asks = () => {
+    const http = sp.http.filter((h) => relay(h) && /\/(query|count)$/.test(h.path))
+      .map((h) => ({ via: 'http', at: h.at, filter: h.filter, shape: h.shape?.slice(0, 400), bytes: h.bytes ?? 0, events: undefined, done: h.done ?? null, status: h.status }))
+    const asks = [...sp.subs.map(({ socket, sub, out, ...rest }) => rest), ...http].sort((a, b) => a.at - b.at)
+    const moments = [...sp.socket.times, ...http.filter((h) => h.done !== null).map((h) => h.done)].sort((a, b) => a - b)
+    let quietAt = moments[0] ?? null
+    for (const m of moments) {
+      if (m - quietAt > 5000) break
+      quietAt = m
+    }
+    const perSecond = {}
+    for (const t of sp.socket.times) perSecond[Math.floor(t / 1000)] = (perSecond[Math.floor(t / 1000)] ?? 0) + 1
+    return { asks, quietAt, changes: sp.changes, socket: { mbIn: sp.socket.in / 1e6, mbOut: sp.socket.out / 1e6, frames: sp.socket.times.length }, framesPerSecond: perSecond }
+  }
   sp.report = (label, everyRead = false) => {
     const reads = sp.http.filter(relay)
     const until = (at) => reads.filter((h) => at !== undefined && h.at <= at)
@@ -151,6 +227,10 @@
       readsAtText: until(sp.marks.allTexts).length,
       mbAtText: mb(until(sp.marks.allTexts)),
       socketReqs: sp.ws.filter((w) => w.dir === 'out' && w.type === 'REQ').length,
+      // What came over the socket, which `mb` (HTTP only) leaves out.
+      mbSocket: sp.socket.in / 1e6,
+      // desk-reopen: every question both ways, for app-speed.mjs to find the Desk's own and when they were answered.
+      ...(label.startsWith('desk-reopen') ? { wire: sp.asks() } : {}),
       statuses: reads.reduce((s, h) => ({ ...s, [h.status ?? h.error ?? 'pending']: (s[h.status ?? h.error ?? 'pending'] ?? 0) + 1 }), {}),
       refusals: sp.refusals,
       failed: sp.failed,
