@@ -226,8 +226,10 @@ describe('the tags a message’s words earn for its links', () => {
       'https://relay',
       TOKEN,
     )
+    // A file of a base type is named by its id as well (SPEC §6.13).
     expect(tags).toEqual([
       ['a', `30851:${AUTHOR}:${UUID}`],
+      ['o', UUID],
       ['q', EVENT],
     ])
   })

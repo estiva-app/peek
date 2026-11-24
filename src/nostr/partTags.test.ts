@@ -49,21 +49,23 @@ const link = (block: string) => `https://ship.estiva.app/issue/plan-${UUID}#bloc
 describe('a pasted block link', () => {
   it('earns a part beside the a', async () => {
     const tags = await linkTagsAsViewer(`See ${link('8373a025427f')}`, {}, 'https://relay', TOKEN)
+    // A file of a base type is named by its id as well, and its part by that id (SPEC §6.13).
     expect(tags).toEqual([
       ['a', ADDRESS],
-      ['part', ADDRESS, '8373a025427f'],
+      ['o', UUID],
+      ['part', UUID, '8373a025427f'],
     ])
   })
 
   it('earns only the a while the app declares no block in its links', async () => {
     declared = 'https://ship.estiva.app/issue/<slug>-<d>'
     const tags = await linkTagsAsViewer(`See ${link('8373a025427f')}`, {}, 'https://relay', TOKEN)
-    expect(tags).toEqual([['a', ADDRESS]])
+    expect(tags).toEqual([['a', ADDRESS], ['o', UUID]])
   })
 
   it('writes one part per object, the first link’s', async () => {
     const tags = await linkTagsAsViewer(`${link('aaa')} and ${link('bbb')}`, {}, 'https://relay', TOKEN)
-    expect(tags.filter((t) => t[0] === 'part')).toEqual([['part', ADDRESS, 'aaa']])
+    expect(tags.filter((t) => t[0] === 'part')).toEqual([['part', UUID, 'aaa']])
   })
 
   it('earns nothing for a block of the file the comment is on: the link is its chip only', async () => {

@@ -20,7 +20,7 @@ export function DeletedProjects({
   onRestore,
   onRetry,
 }: {
-  state: Exclude<DeletedProjectsState, 'unavailable'>
+  state: DeletedProjectsState
   /** Read them again, after a read that failed. */
   onRetry: () => Promise<void>
   /** The name of the team a project is in, as the Teams column says it. */
@@ -42,7 +42,7 @@ export function DeletedProjects({
         // A dash for a person nobody has named, as the kit's Person draws one: never their key.
         const by = people?.[deleted.by]?.displayName ?? file.people?.[deleted.by]?.displayName ?? '—'
         // The Delete that is a change of `deleted`, even beside a confirm-style one: only it can be undone.
-        // A topic's or a page's Delete is declared as a confirm (a `kind:5`); on a file that reads as deleted it is
+        // An older listing's Delete is declared as a confirm (a `kind:5`); on a file that reads as deleted it is
         // written as the same change set back to empty (ALL-5).
         const action = restoreActionOf(file)
         return (

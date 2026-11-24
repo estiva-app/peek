@@ -1,12 +1,11 @@
 /**
- * Peek's writes to a project once the relay keeps projects in order (ALO-6, SPEC §6.2, §6.5).
+ * Peek's writes to a project, kept in order like every file (ALO-6, ALL-8, SPEC §6.2, §6.5, §6.13).
  *
- * Every change names the change it follows (`prev`), so the relay's order check, when it starts refusing, does not
- * refuse Peek. Delete comes in two shapes, whichever Ship's manifest declares: a `kind:5` (today) or a change of the
- * `deleted` field, `true` to delete and the empty value to restore — and the second keeps the project listed in its
- * team, since a deleted file stays listed and readers hide it. Asserted on the signed events that reach the relay.
- */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ * Every change names the change it follows (`prev`). Delete is a change of the `deleted` field, `true` to delete and
+ * the empty value to restore, whether Ship's manifest declares it so or still as a `kind:5`; it keeps the project
+ * listed in its team, since a deleted file stays listed and readers hide it. Asserted on the signed events that reach
+ * the relay.
+ */import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
@@ -15,11 +14,8 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 }))
 
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
-// A build with a relay, so the switch asks it; tests have none by default.
-vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, moveFileAsViewer, restoreFileAsViewer } from './foreign'
-import { forgetProjectFields } from './projectFields'
 import { parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -137,14 +133,6 @@ function relayOver(world: TestEvent[], { deletedHidden = false, byIdToo = [] as 
   }))
 }
 
-/** The relay's NIP-11: keeping projects in order (the switch on), or saying nothing of it (off). */
-function relayInfo(on: boolean) {
-  const info = on
-    ? { files: { requires_prev: ['osnova.project'] }, file_list: { newest: true, text: true } }
-    : { supported_nips: [1, 11] }
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
-}
-
 const tag = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
 const sent = () => signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; tags: string[][] })
 
@@ -153,18 +141,12 @@ beforeEach(() => {
   publishSigned.mockImplementation(async () => ({ ok: true }))
   signViaEstivaId.mockClear()
   forgetUrlShapes()
-  forgetProjectFields()
-})
-
-afterEach(() => {
-  vi.unstubAllGlobals()
 })
 
 describe('Delete, declared as a change of the deleted field', () => {
   const world = (...more: TestEvent[]) => [shipManifest('deleted field'), project, channel, state, nameChange, ...more]
 
-  it('sends deleted = true after the project’s first record, and leaves it listed in its team (switch on)', async () => {
-    relayInfo(true)
+  it('sends deleted = true after the project’s first record, and leaves it listed in its team', async () => {
     queryRelay.mockImplementation(relayOver(world()))
     const result = await deleteFileAsViewer(
       { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
@@ -184,21 +166,7 @@ describe('Delete, declared as a change of the deleted field', () => {
     expect(tag(deleted, 'prev')).toBe(project.id)
   })
 
-  it('sends deleted = true with no prev and no team remove when the relay does not keep projects in order', async () => {
-    relayInfo(false)
-    queryRelay.mockImplementation(relayOver(world()))
-    const result = await deleteFileAsViewer(
-      { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
-      'https://relay.test',
-      token,
-    )
-
-    expect(result).toEqual({ ok: true })
-    expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([[1851, 'deleted', 'true', undefined]])
-  })
-
   it('Restore sends deleted = empty after the deleting change, even where the open read hides the deleted project', async () => {
-    relayInfo(true)
     const deleting = change('deleted', 'true')
     queryRelay.mockImplementation(relayOver(world(deleting), { deletedHidden: true }))
     // Restore is the same action with the empty value, after the change the deleted card was read with.
@@ -209,7 +177,6 @@ describe('Delete, declared as a change of the deleted field', () => {
   })
 
   it('Restore from a card that holds no prev reads the deleted project as before and follows its deleting change', async () => {
-    relayInfo(true)
     const deleting = change('deleted', 'true')
     queryRelay.mockImplementation(relayOver(world(deleting), { deletedHidden: true }))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'delete-project', value: '' }, 'https://relay.test', token)
@@ -219,7 +186,6 @@ describe('Delete, declared as a change of the deleted field', () => {
   })
 
   it('Restore from Archive → Deleted or a deleted card sends deleted = empty after the deleting change', async () => {
-    relayInfo(true)
     const deleting = change('deleted', 'true')
     queryRelay.mockImplementation(relayOver(world(deleting), { deletedHidden: true }))
     // What the tab's row and the card call: the project's Delete action, by its id, after the change they hold.
@@ -233,8 +199,7 @@ describe('Delete, declared as a change of the deleted field', () => {
 describe('Delete, declared as a kind:5', () => {
   // Interop 0.109: where the relay keeps projects in order it refuses a kind:5 on one, so an older
   // listing's kind:5 Delete is the `deleted` change, and with no change to follow nothing is sent.
-  it('marks the file deleted after its first record, with no kind:5 and no team remove, when the switch is on', async () => {
-    relayInfo(true)
+  it('marks the file deleted after its first record, with no kind:5 and no team remove', async () => {
     queryRelay.mockImplementation(relayOver([shipManifest('kind:5'), project, channel, state]))
     const result = await deleteFileAsViewer(
       { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
@@ -249,7 +214,6 @@ describe('Delete, declared as a kind:5', () => {
 
 describe('Delete, when the manifest cannot be read', () => {
   it('sends nothing and says so, rather than a restore and a team remove', async () => {
-    relayInfo(true)
     // The manifest read fails once (a busy relay); the next read would answer Ship's deleted-field Delete.
     const relay = relayOver([shipManifest('deleted field'), project, channel, state])
     queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) => {
@@ -270,11 +234,10 @@ describe('Delete, when the manifest cannot be read', () => {
   })
 })
 
-describe('A change to a project, with the switch on', () => {
+describe('A change to a project', () => {
   const world = () => [shipManifest('deleted field'), project, channel, state, nameChange]
 
   it('names the field’s current change as its prev', async () => {
-    relayInfo(true)
     queryRelay.mockImplementation(relayOver(world()))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
 
@@ -284,7 +247,6 @@ describe('A change to a project, with the switch on', () => {
   })
 
   it('is set again on top of a crossing change the relay names in its conflict', async () => {
-    relayInfo(true)
     // Someone renamed it after Peek read it: the open read does not have it yet, the relay does.
     const crossing = change('name', 'Launch 4')
     queryRelay.mockImplementation(relayOver(world(), { byIdToo: [crossing] }))
@@ -301,7 +263,6 @@ describe('A change to a project, with the switch on', () => {
   })
 
   it('a move to another team names it by its id', async () => {
-    relayInfo(true)
     queryRelay.mockImplementation(relayOver(world()))
     const OTHER_TEAM = '9c69f247-0000-4000-8000-0000000000ff'
     const file = { ref: ADDRESS, address: ADDRESS }
@@ -321,7 +282,6 @@ describe('A change to a project, with the switch on', () => {
   })
 
   it('a comment on it names it by its id as well as its address', async () => {
-    relayInfo(true)
     queryRelay.mockImplementation(relayOver(world()))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'comment', value: 'Looks good' }, 'https://relay.test', token)
 
@@ -331,128 +291,5 @@ describe('A change to a project, with the switch on', () => {
     expect(tag(comment, 'A')).toBe(ADDRESS)
     expect(tag(comment, 'O')).toBe(ID)
     expect(tag(comment, 'prev')).toBeUndefined()
-  })
-})
-
-describe('A change from a tab that read the relay before it switched (ALO-8)', () => {
-  const SWITCH_REFUSAL = 'invalid: a project change names the change it follows in prev'
-  const BLOCKS = 'estiva-blocks-1'
-  const ON = { files: { requires_prev: ['osnova.project'] }, file_list: { newest: true, text: true } }
-  /** The relay's NIP-11 said nothing of the switch when the tab read it, and says it is on from then on. */
-  function switchesAfterTheTabRead() {
-    let reads = 0
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => (reads++ === 0 ? { supported_nips: [1, 11] } : ON) })),
-    )
-  }
-  /** A switched relay: a project change with no `prev` is refused with its words, as the relay says them. */
-  function refusingChangesWithNoPrev() {
-    publishSigned.mockImplementation(async (...args: unknown[]) => {
-      const e = args[1] as { kind: number; tags: string[][] }
-      return e.kind === 1851 && !tag(e, 'prev') ? { ok: false, reason: SWITCH_REFUSAL } : { ok: true }
-    })
-  }
-  /** Ship's manifest with a change of the project's text, as the launcher would offer it. */
-  const textManifest = () => {
-    const manifest = shipManifest('deleted field')
-    const content = JSON.parse(manifest.content)
-    content.actions.push({
-      id: 'edit-description',
-      label: 'Edit description',
-      appliesTo: String(PROJECT),
-      emits: { kind: 1851, field: 'description' },
-      input: { type: 'string', format: BLOCKS },
-    })
-    return { ...manifest, content: JSON.stringify(content) }
-  }
-  const world = () => [shipManifest('deleted field'), project, channel, state, nameChange]
-
-  it('a rename refused for naming no prev is read again and sent after the name’s current change, with no message', async () => {
-    switchesAfterTheTabRead()
-    refusingChangesWithNoPrev()
-    queryRelay.mockImplementation(relayOver(world()))
-    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
-
-    // Nothing for the person to read: an ok with no reason.
-    expect(result.ok).toBe(true)
-    expect(result.reason).toBeUndefined()
-    expect(sent().map((e) => [e.kind, tag(e, 'field'), tag(e, 'value'), tag(e, 'prev')])).toEqual([
-      [1851, 'name', 'Launch 3', undefined],
-      [1851, 'name', 'Launch 3', nameChange.id],
-    ])
-  })
-
-  it('the text written again keeps the words someone saved after the tab loaded it', async () => {
-    switchesAfterTheTabRead()
-    refusingChangesWithNoPrev()
-    const p = (id: string, text: string) => ({ type: 'paragraph' as const, id, content: [{ type: 'text' as const, text }] })
-    const text = (...blocks: ReturnType<typeof p>[]) => serializeBlockDocument({ type: 'doc', content: blocks } as never)
-    const textChange = (value: string) =>
-      event({ kind: 1851, tags: [['a', ADDRESS], ['O', ID], ['field', 'description'], ['value', value], ['content-format', BLOCKS], ['h', FOLDER]] })
-    const loadedText = text(p('b1', 'Intro'), p('b2', 'Goals'))
-    const loaded = textChange(loadedText)
-    // Someone added a paragraph after this tab loaded the text, before the switch.
-    const savedSince = textChange(text(p('b1', 'Intro'), p('b2', 'Goals'), p('b3', 'Risks')))
-    queryRelay.mockImplementation(relayOver([textManifest(), project, channel, state, loaded, savedSince]))
-    const result = await applyActionAsViewer(
-      {
-        naddr: ADDRESS,
-        actionId: 'edit-description',
-        value: text(p('b1', 'Intro, shorter'), p('b2', 'Goals')),
-        contentFormat: BLOCKS,
-        base: { value: loadedText, format: BLOCKS },
-      },
-      'https://relay.test',
-      token,
-    )
-
-    expect(result.ok).toBe(true)
-    const [first, again] = sent()
-    expect(tag(first, 'prev')).toBeUndefined()
-    expect(tag(again, 'prev')).toBe(savedSince.id)
-    const words = (parseBlockDocument(tag(again, 'value')!).content as ReturnType<typeof p>[]).map((b) => b.content[0]!.text)
-    expect(words).toEqual(['Intro, shorter', 'Goals', 'Risks'])
-  })
-
-  it('a different refusal is said as before and nothing is sent again', async () => {
-    switchesAfterTheTabRead()
-    publishSigned.mockImplementation(async () => ({ ok: false, reason: 'restricted: not a member of this team' }))
-    queryRelay.mockImplementation(relayOver(world()))
-    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
-
-    expect(result).toEqual({ ok: false, reason: 'restricted: not a member of this team' })
-    expect(sent()).toHaveLength(1)
-  })
-
-  it('a second switch refusal asks for a reload in Peek’s words, not tried a third time', async () => {
-    switchesAfterTheTabRead()
-    publishSigned.mockImplementation(async () => ({ ok: false, reason: SWITCH_REFUSAL }))
-    queryRelay.mockImplementation(relayOver(world()))
-    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
-
-    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
-    expect(sent().map((e) => tag(e, 'prev'))).toEqual([undefined, nameChange.id])
-  })
-
-  it('a relay whose NIP-11 still says nothing of the switch: a reload is asked for and nothing is sent again', async () => {
-    relayInfo(false)
-    refusingChangesWithNoPrev()
-    queryRelay.mockImplementation(relayOver(world()))
-    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'rename-project', value: 'Launch 3' }, 'https://relay.test', token)
-
-    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
-    expect(sent()).toHaveLength(1)
-  })
-
-  it('a text with no text it was edited from is not written again over words saved since', async () => {
-    switchesAfterTheTabRead()
-    refusingChangesWithNoPrev()
-    queryRelay.mockImplementation(relayOver([textManifest(), project, channel, state]))
-    const mine = serializeBlockDocument({ type: 'doc', content: [{ type: 'paragraph', id: 'b1', content: [{ type: 'text', text: 'Mine' }] }] } as never)
-    const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'edit-description', value: mine, contentFormat: BLOCKS }, 'https://relay.test', token)
-
-    expect(result).toEqual({ ok: false, reason: 'This was not saved. Reload and try again.' })
-    expect(sent()).toHaveLength(1)
   })
 })

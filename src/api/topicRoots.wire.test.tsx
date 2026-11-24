@@ -17,6 +17,7 @@ vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: tr
 vi.mock('@/auth/heldSession', () => ({ heldToken: () => ({ accessToken: 't', pubkey: 'v'.repeat(64) }) }))
 
 import { useResolvedReferences } from './foreign'
+import { relayAnswer } from '@/test/listRead'
 
 const AUTHOR = 'a'.repeat(64)
 const TOPIC = 30840
@@ -43,21 +44,8 @@ const events = [
   ...topics.map((address) => event({ kind: 1111, tags: [['A', address], ['a', address], ['h', FOLDER]], content: 'hello' })),
 ]
 
-/** The relay, matching each filter as buzz does and concatenating the answers. */
-function answer(filters: Record<string, unknown>[]): SignedEvent[] {
-  return filters.flatMap((f) =>
-    events.filter((e) => {
-      if (Array.isArray(f.kinds) && !f.kinds.includes(e.kind)) return false
-      if (Array.isArray(f.authors) && !f.authors.includes(e.pubkey)) return false
-      for (const [key, want] of Object.entries(f)) {
-        if (!key.startsWith('#') || !Array.isArray(want)) continue
-        const held = e.tags.filter((t) => t[0] === key.slice(1)).map((t) => t[1])
-        if (!want.some((v) => held.includes(v))) return false
-      }
-      return true
-    }),
-  )
-}
+/** The relay: files by the list and open reads (SPEC §6.13), every other filter as buzz matches it. */
+const answer = (filters: Record<string, unknown>[]): SignedEvent[] => relayAnswer(events, filters)
 
 const sent = () => queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
 

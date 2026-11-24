@@ -97,7 +97,7 @@ vi.mock('@/api/internal/membership', () => ({
 }))
 
 import { fileArchiveChanged, readTopicsAgain, resetTopicsColumn, topicListChanged, useListedNews, useTopicsColumn } from './useTopicsColumn'
-import { forgetProjectFields } from '@/nostr/projectFields'
+import { forgetSearchedKinds } from '@/nostr/projectFields'
 import { TOPIC_ORDER_KEY } from '@/lib/topicOrder'
 import { useTeamTopics } from './useTeams'
 
@@ -171,21 +171,21 @@ function list(topic: string, file: string, listed = true, at = 200) {
 
 /** A filter for the changes and comments that can make one person a member, not a topic's list or root. */
 const namesAPerson = (f: Record<string, unknown>) =>
-  !f['#O'] && (f.kinds as number[]).some((kind) => kind === 1851 || kind === 1111) && !!(f['#p'] || f.authors)
+  !f['#O'] && ((f.kinds as number[] | undefined) ?? []).some((kind) => kind === 1851 || kind === 1111) && !!(f['#p'] || f.authors)
 
-/** A list read: list entries (`kind:1851`) by the topics' `O`. */
-const isListRead = (f: Record<string, unknown>) => !!f['#O'] && (f.kinds as number[]).includes(1851)
+/** A list read: the topics' open read (SPEC §6.13), their first records by `d` with each field's current change. */
+const isListRead = (f: Record<string, unknown>) => f.fields === 'newest' && ((f.kinds as number[] | undefined) ?? []).includes(30840)
 /** Every list request the hook sent: each is the topics whose lists it read. */
 const listReads = () =>
   relay.queryRelay.mock.calls
     .map(([, filters]) => filters as Array<Record<string, unknown>>)
     .filter((filters) => filters.some(isListRead))
-    .map((filters) => filters.filter(isListRead).flatMap((f) => f['#O'] as string[]))
+    .map((filters) => filters.filter(isListRead).flatMap((f) => f['#d'] as string[]))
 /** Every request of the order's read: a topic's conversation by its `A` is its first filter. */
 const activityReads = () =>
   relay.queryRelay.mock.calls
     .map(([, filters]) => filters as Array<Record<string, unknown>>)
-    .filter((filters) => filters.some((f) => (f.kinds as number[]).includes(9)))
+    .filter((filters) => filters.some((f) => ((f.kinds as number[] | undefined) ?? []).includes(9)))
 
 /** As the relay answers one filter: by kind, author, every `#x` tag, `until`, newest first, cut at `limit`. */
 function answer(f: Record<string, unknown>, pool: readonly Event[]): Event[] {
@@ -198,6 +198,20 @@ function answer(f: Record<string, unknown>, pool: readonly Event[]): Event[] {
   )
   found.sort((a, b) => b.created_at - a.created_at)
   return typeof f.limit === 'number' ? found.slice(0, f.limit) : found
+}
+
+/** Each topic's own row in the times read, from its list entries: every field's current change, by id and name. */
+function topicTimes() {
+  return relay.topics.map((root) => {
+    const own = root.tags.find((t) => t[0] === 'd')![1]!
+    const current = new Map<string, Event>()
+    for (const entry of relay.entries.filter((e) => e.tags.some((t) => t[0] === 'O' && t[1] === own))) {
+      const field = entry.tags.find((t) => t[0] === 'field')![1]!
+      if ((current.get(field)?.created_at ?? -1) <= entry.created_at) current.set(field, entry)
+    }
+    const changes = [...current].map(([field, e]) => ({ id: e.id, created_at: e.created_at, fields: [field] }))
+    return { a: `30840:${root.pubkey}:${own}`, created_at: root.created_at, h: FOLDER, changes } as (typeof relay.times)[number]
+  })
 }
 
 /** A message in `topic` by somebody, `at` Unix seconds. */
@@ -215,7 +229,7 @@ const titlesOf = (state: ReturnType<typeof useTopicsColumn>['state']) => {
 
 beforeEach(() => {
   resetTopicsColumn()
-  forgetProjectFields()
+  forgetSearchedKinds()
   nip11 = { supported_extensions: ['nip-er'] }
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => nip11 })))
   relay.entries = []
@@ -247,6 +261,8 @@ beforeEach(() => {
         const roots = relay.topics.filter((t) => (f.kinds as number[]).includes(t.kind) && (f['#d'] as string[]).includes(t.tags.find((tag) => tag[0] === 'd')?.[1] ?? ''))
         return roots.flatMap((root) => [root, ...relay.entries.filter((e) => e.tags.some((tag) => tag[0] === 'O' && tag[1] === root.tags.find((t) => t[0] === 'd')?.[1]))])
       }
+      // A read by id: the `lists:` changes the times read named.
+      if (f.ids) return [...relay.entries, ...relay.activity].filter((e) => (f.ids as string[]).includes(e.id))
       // The membership read's changes naming a person; every other filter over all the relay holds.
       return namesAPerson(f) ? answer(f, relay.changes) : answer(f, [...relay.topics, ...relay.files, ...relay.entries, ...relay.activity])
     })
@@ -256,7 +272,7 @@ beforeEach(() => {
   // As the relay answers the times read: by kind and `#d`, or by the file above (`#a`).
   relay.queryRelayTimes.mockReset().mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) =>
     filters.flatMap((f) =>
-      relay.times.filter((entry) => {
+      [...topicTimes(), ...relay.times].filter((entry) => {
         const [kind, , dd] = entry.a.split(':')
         if (!(f.kinds as number[]).includes(Number(kind))) return false
         if (f['#d']) return (f['#d'] as string[]).includes(dd!)
@@ -276,7 +292,8 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
 
   it('a change to a file a topic lists, in that file’s own team, moves the topic up (TOPI-10)', async () => {
     list(ALPHA, TESTING, true, 200)
-    relay.activity = [message(WIDGETS, 400), { ...event(1851, [['a', TESTING], ['h', OTHER_FOLDER], ['field', 'status'], ['value', 'done']], 500), id: 'status' }]
+    relay.activity = [message(WIDGETS, 400)]
+    relay.times = [{ a: TESTING, created_at: 100, h: OTHER_FOLDER, changes: [{ id: 'status', created_at: 500, fields: ['status'] }] }]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
   })
@@ -292,7 +309,7 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(typeof result.current.state).toBe('object'))
     expect(activityReads()).toHaveLength(1)
-    const conversations = activityReads()[0]!.filter((f) => (f.kinds as number[]).includes(9)).flatMap((f) => f['#A'] as string[])
+    const conversations = activityReads()[0]!.filter((f) => ((f.kinds as number[] | undefined) ?? []).includes(9)).flatMap((f) => f['#A'] as string[])
     expect(conversations.sort()).toEqual([ALPHA, WIDGETS].sort())
   })
 
@@ -322,7 +339,7 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     const answered = relay.queryRelay.getMockImplementation()!
     // The order's read never answers.
     relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
-      filters.some((f) => (f.kinds as number[]).includes(9)) ? new Promise(() => {}) : answered(url, filters),
+      filters.some((f) => ((f.kinds as number[] | undefined) ?? []).includes(9)) ? new Promise(() => {}) : answered(url, filters),
     )
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
@@ -332,7 +349,7 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     let answerOrder: () => void = () => {}
     const answered = relay.queryRelay.getMockImplementation()!
     relay.queryRelay.mockImplementation((url: string, filters: Array<Record<string, unknown>>) =>
-      filters.some((f) => (f.kinds as number[]).includes(9))
+      filters.some((f) => ((f.kinds as number[] | undefined) ?? []).includes(9))
         ? new Promise((done) => (answerOrder = () => done(answered(url, filters))))
         : answered(url, filters),
     )
@@ -348,7 +365,7 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     window.localStorage.setItem(`${TOPIC_ORDER_KEY}.${VIEWER}`, JSON.stringify({ [WIDGETS]: 900 }))
     const answered = relay.queryRelay.getMockImplementation()!
     relay.queryRelay.mockImplementation(async (url: string, filters: Array<Record<string, unknown>>) =>
-      filters.some((f) => (f.kinds as number[]).includes(9)) ? { ok: false, reason: 'rate-limited' } : answered(url, filters),
+      filters.some((f) => ((f.kinds as number[] | undefined) ?? []).includes(9)) ? { ok: false, reason: 'rate-limited' } : answered(url, filters),
     )
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
@@ -389,11 +406,10 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
   const changeReadsOf = (file: string) =>
     relay.queryRelay.mock.calls
       .flatMap(([, filters]) => filters as Array<Record<string, unknown>>)
-      .filter((f) => (f.kinds as number[]).includes(1851) && ((f['#a'] as string[] | undefined) ?? []).includes(file))
+      .filter((f) => ((f.kinds as number[] | undefined) ?? []).includes(1851) && ((f['#a'] as string[] | undefined) ?? []).includes(file))
   const timesFilters = () => relay.queryRelayTimes.mock.calls.flatMap(([, filters]) => filters as Array<Record<string, unknown>>)
 
-  it('on a relay that answers when files changed, a listed file’s change is read as its time, never whole, and still moves its topic up (ALO-22)', async () => {
-    nip11 = { supported_extensions: ['nip-er'], file_list: { newest: true, text: true, times: true } }
+  it('a listed file’s change is read as its time, never whole, and still moves its topic up (ALO-22)', async () => {
     list(WIDGETS, TESTING, true, 200)
     relay.activity = [message(ALPHA, 400)]
     relay.times = [{ a: TESTING, created_at: 100, h: OTHER_FOLDER, changes: [{ id: 'status-600', created_at: 600, fields: ['status'] }] }]
@@ -402,15 +418,6 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
     expect(timesFilters()).toContainEqual({ fields: 'times', kinds: [30851], '#d': [d(TESTING)] })
     expect(changeReadsOf(TESTING)).toEqual([])
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['Widgets', 'alpha'] }))
-  })
-
-  it('on a relay that does not say so, a listed file’s changes are read whole, and the times read is never asked (ALO-22)', async () => {
-    nip11 = { supported_extensions: ['nip-er'], file_list: { newest: true, text: true } }
-    list(WIDGETS, TESTING, true, 200)
-    const { result } = renderHook(() => useTopicsColumn())
-    await waitFor(() => expect(typeof result.current.state).toBe('object'))
-    expect(changeReadsOf(TESTING)).not.toEqual([])
-    expect(relay.queryRelayTimes).not.toHaveBeenCalled()
   })
 
   it('back on Topics within a minute, a message heard there still moves its topic to the top (TOPI-10)', async () => {
@@ -508,6 +515,10 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
       pubkey: by,
     })
     // The order's read holds the page's newest comment; the membership read holds it too, and the rest naming the viewer.
+    relay.times = [
+      { a: PAGE, created_at: 150, h: OTHER_FOLDER, under: DOC, changes: [] },
+      { a: SUBPAGE, created_at: 160, h: OTHER_FOLDER, under: PAGE, changes: [] },
+    ]
     const onPage = on(PAGE, 'page-held', 500)
     relay.activity = [onPage]
     seen.named = [on(DOC, 'doc-mine', 300, VIEWER), onPage, on(PAGE, 'page-by-id', 400, SOMEBODY, 'O'), on(SUBPAGE, 'subpage', 600)]
@@ -538,7 +549,8 @@ describe('the Topics screen’s topics (TOP-4, TOPI-10)', () => {
   })
 
   it('a file added on a topic’s page reads only that topic’s list again, and the order with it, so the file’s activity counts (TOPI-10)', async () => {
-    relay.activity = [message(ALPHA, 400), { ...event(1851, [['a', TESTING], ['h', OTHER_FOLDER], ['field', 'status'], ['value', 'done']], 300), id: 'status' }]
+    relay.activity = [message(ALPHA, 400)]
+    relay.times = [{ a: TESTING, created_at: 100, h: OTHER_FOLDER, changes: [{ id: 'status', created_at: 300, fields: ['status'] }] }]
     const { result } = renderHook(() => useTopicsColumn())
     await waitFor(() => expect(titlesOf(result.current.state)).toMatchObject({ mine: ['alpha', 'Widgets'] }))
     // Added at 600: its entry is news on the topic, and the file's own change is now read for it.

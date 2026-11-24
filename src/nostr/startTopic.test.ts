@@ -8,13 +8,15 @@
 */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-const { publishSigned, signViaEstivaId } = vi.hoisted(() => ({
+const { publishSigned, signViaEstivaId, queryRelay } = vi.hoisted(() => ({
   publishSigned: vi.fn(),
   signViaEstivaId: vi.fn(),
+  queryRelay: vi.fn(),
 }))
-vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay: vi.fn() }))
+vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay }))
 
 import { createTopicAsViewer } from './startTopic'
+import { relayAnswer } from '@/test/listRead'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const TEAM = '85db5b59-9e49-4ea1-8e93-3d2a2d78c048'
@@ -30,6 +32,12 @@ beforeEach(() => {
   signViaEstivaId.mockReset()
   signViaEstivaId.mockImplementation(async (event: unknown) => event)
   publishSigned.mockResolvedValue({ ok: true })
+  // The relay holds what was published: the saved topic a refused add then marks deleted is opened from it.
+  queryRelay.mockReset()
+  queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => ({
+    ok: true,
+    events: relayAnswer(publishSigned.mock.calls.map(([, event]) => event as never), filters),
+  }))
 })
 
 describe('starting a topic', () => {
@@ -88,7 +96,8 @@ describe('starting a topic', () => {
     expect(command.kind).toBe(1852)
     expect(command.tags.find((t) => t[0] === 'h')?.[1]).toBe(TEAM)
     expect(command.tags.find((t) => t[0] === 'op')?.[1]).toBe('add')
-    expect(command.tags.find((t) => t[0] === 'a')?.[1]).toBe(`30840:${AUTHOR}:${file.tags[0][1]}`)
+    // A Folder command names the file by its id (SPEC §7.3).
+    expect(command.tags.find((t) => t[0] === 'o')?.[1]).toBe(file.tags[0][1])
   })
 
   it('started as its team’s topic (#), the one add that lists it carries the space role, and nothing is written after it (17 November)', async () => {
@@ -99,13 +108,13 @@ describe('starting a topic', () => {
     expect(events.map((e) => e.kind)).toEqual([30840, 1852])
     const [file, command] = events
     expect(command.tags.find((t) => t[0] === 'op')?.[1]).toBe('add')
-    expect(command.tags.find((t) => t[0] === 'a')).toEqual(['a', `30840:${AUTHOR}:${file.tags[0][1]}`, '', 'space'])
+    expect(command.tags.find((t) => t[0] === 'o')).toEqual(['o', file.tags[0][1], '', 'space'])
   })
 
   it('started as an initiative, its add carries no role', async () => {
     await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
     const command = sent()[1]
-    expect(command.tags.find((t) => t[0] === 'a')?.length).toBe(2)
+    expect(command.tags.find((t) => t[0] === 'o')?.length).toBe(2)
   })
 
   it('reads the accepted field, not the status code', async () => {
@@ -123,7 +132,7 @@ describe('starting a topic', () => {
     expect(sent().map((e) => e.kind)).toEqual([30840])
   })
 
-  it('deletes the saved file by its id when the Folder refuses to list it, and reports the topic as not created', async () => {
+  it('marks the saved file deleted, after its first record, when the Folder refuses to list it, and reports the topic as not created', async () => {
     const idOf = (kind: number) => String(kind).padStart(64, 'a')
     signViaEstivaId.mockImplementation(async (event: { kind: number }) => ({ ...event, id: idOf(event.kind), sig: 's' }))
     publishSigned
@@ -134,10 +143,9 @@ describe('starting a topic', () => {
     // `deleted`: its `d` is spent, so starting it again takes a new one.
     expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member', deleted: true })
     const [, , deletion] = sent()
-    expect(deletion.kind).toBe(5)
-    // By the event, not the address: the same `d` started again is a new version nothing deleted.
-    expect(deletion.tags.find((t) => t[0] === 'e')?.[1]).toBe(idOf(30840))
-    expect(deletion.tags.some((t) => t[0] === 'a')).toBe(false)
+    // Its `deleted` change, following the record it saved: no kind:5 (SPEC §6.13).
+    expect(deletion.kind).toBe(1851)
+    expect([['field', 'deleted'], ['value', 'true'], ['prev', idOf(30840)]].every(([name, value]) => deletion.tags.some((t) => t[0] === name && t[1] === value))).toBe(true)
   })
 
   it('keeps the same d to start again when the deletion is refused too, since the file is still there unlisted', async () => {
@@ -148,6 +156,6 @@ describe('starting a topic', () => {
       .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
     const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
     expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member' })
-    expect(sent().map((e) => e.kind)).toEqual([30840, 1852, 5])
+    expect(sent().map((e) => e.kind)).toEqual([30840, 1852, 1851])
   })
 })

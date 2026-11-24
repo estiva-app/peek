@@ -516,7 +516,7 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
       'https://relay.test',
       token,
     )
-    expect(signed().tags.filter((t) => t[0] === 'part')).toEqual([['part', `${BARE_FILE}:${CATH}:${SECOND_D}`, 'b2']])
+    expect(signed().tags.filter((t) => t[0] === 'part')).toEqual([['part', SECOND_D, 'b2']])
   })
 
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
@@ -961,9 +961,10 @@ describe('a channel conversation (REM-1)', () => {
     const published = signed()
     expect(published.kind).toBe(40003)
     expect(published.content).toBe('Here it is')
+    // A file of a base type is embedded by its id (SPEC §6.13).
     expect(published.tags.filter((t) => t[0] === 'embed')).toEqual([
-      ['embed', issue, 'none'],
-      ['embed', other, 'detailed'],
+      ['embed', issue.split(':')[2], 'none'],
+      ['embed', other.split(':')[2], 'detailed'],
     ])
     // The message's file rides the same edit, its tag as the message has it (SPEC §6.8).
     expect(published.tags.filter((t) => t[0] === 'imeta')).toEqual([

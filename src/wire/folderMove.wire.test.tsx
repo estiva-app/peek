@@ -106,7 +106,8 @@ describe('moving a file at the wire', () => {
     expect(commands()).toEqual(['move HQ→Steer'])
     for (const event of relay.sentOf(1852)) {
       expect(event.pubkey).toBe(ME)
-      expect(tagsOf(event, 'a')).toEqual([ADDRESS])
+      // Named by its id, a topic being a base type every relay keeps in order (SPEC §3.3).
+      expect(tagsOf(event, 'o')).toEqual([D])
     }
     // The file's own record is not rewritten: its conversation keeps its Folder.
     expect(relay.sent.filter((event) => event.kind !== 1852)).toEqual([])
@@ -123,7 +124,7 @@ describe('moving a file at the wire', () => {
 
     await waitFor(() => expect(onMoved).toHaveBeenCalled())
     expect(commands()).toEqual(['move HQ→Steer'])
-    for (const event of relay.sentOf(1852)) expect(tagsOf(event, 'a').sort()).toEqual([ADDRESS, SUB].sort())
+    for (const event of relay.sentOf(1852)) expect(tagsOf(event, 'o').sort()).toEqual([D, SUB_D].sort())
   })
 
   it('a refused move says why in Peek’s words, not the relay’s, and counts as not moved', async () => {
@@ -195,7 +196,8 @@ describe('moving a space at the wire', () => {
       signed({ kind: 39002, created_at: 1_700_000_000, tags: [['d', HQ], ['p', ME]] }, RELAY_KEY),
     )
   })
-  const roleAtTarget = () => relay.sentOf(1852)[0]?.tags.find((t) => t[0] === 'a' && t[1] === ADDRESS)?.[3]
+  // A topic is named by its id in a Folder command (SPEC §3.3).
+  const roleAtTarget = () => relay.sentOf(1852)[0]?.tags.find((t) => t[0] === 'o' && t[1] === D)?.[3]
 
   it('ticked, the move makes it a space of the team it goes to', async () => {
     const onMoved = await pick('Steer')

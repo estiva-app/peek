@@ -63,7 +63,8 @@ export function fileControlsOf(
   if (!file?.naddr) return {}
   const titleField = file.slots.title?.field
   const rename = titleField ? file.actions.find((a) => a.control === 'text' && a.field === titleField) : undefined
-  // A `kind:5` asks to confirm; a delete declared as a change of `deleted` (SPEC §6.5, ALO-6) is found by field.
+  // An older listing's `kind:5` asks to confirm; a delete declared as a change of `deleted` (SPEC §6.5) is found by field.
+  // Either is written as the file's `deleted` change, and asked with a confirm.
   const remove = file.actions.find((a) => a.control === 'confirm') ?? file.actions.find((a) => a.field === DELETED_FIELD)
   const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
   const archive = file.actions.find((a) => a.field === ARCHIVED_FIELD)

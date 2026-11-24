@@ -16,6 +16,7 @@ vi.mock('./readFrom', async (original) => ({ ...(await original<typeof import('.
 import { encodeNevent, type SignedEvent } from '@estiva-app/protocol'
 import { forgetUrlShapes, resolveObjectsAsViewer } from './foreign'
 import { RelayReadError } from './relayRead'
+import { relayAnswer } from '@/test/listRead'
 
 const AUTHOR = 'a'.repeat(64)
 const VIEWER = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -50,22 +51,8 @@ const events = [
   ...addresses.map((address, i) => event({ kind: 1111, tags: [['A', address], ['a', address]], content: `On ${i}` })),
 ]
 
-/** The relay, matching each filter as buzz does and concatenating the answers. */
-function answer(filters: Record<string, unknown>[]): SignedEvent[] {
-  return filters.flatMap((f) =>
-    events.filter((e) => {
-      if (Array.isArray(f.ids) && !f.ids.includes(e.id)) return false
-      if (Array.isArray(f.kinds) && !f.kinds.includes(e.kind)) return false
-      if (Array.isArray(f.authors) && !f.authors.includes(e.pubkey)) return false
-      for (const [key, want] of Object.entries(f)) {
-        if (!key.startsWith('#') || !Array.isArray(want)) continue
-        const held = e.tags.filter((t) => t[0] === key.slice(1)).map((t) => t[1])
-        if (!want.some((v) => held.includes(v))) return false
-      }
-      return true
-    }),
-  )
-}
+/** The relay, matching each filter as buzz does, files by the list read. */
+const answer = (filters: Record<string, unknown>[]): SignedEvent[] => relayAnswer(events, filters)
 
 beforeEach(() => {
   forgetUrlShapes()
@@ -73,13 +60,17 @@ beforeEach(() => {
   queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => ({ ok: true, events: answer(filters) }))
 })
 
+/** Requests made, each the open read of the set or the read of their conversations. */
+const OPEN_AND_CONVERSATIONS = 2
+
 describe('resolveObjectsAsViewer', () => {
-  it('reads twelve files in one request once the manifest is known, where it took twelve', async () => {
+  it('reads twelve files in two requests once the manifest is known, their open read and their conversations, where it took twelve', async () => {
     await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
     queryRelay.mockClear()
 
     const objects = await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
-    expect(queryRelay).toHaveBeenCalledTimes(1)
+    expect(queryRelay).toHaveBeenCalledTimes(OPEN_AND_CONVERSATIONS)
+    expect(queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[]).filter((f) => f.fields === 'newest')).toHaveLength(1)
     expect(addresses.map((a) => objects[a]?.slots.title?.value)).toEqual(addresses.map((_, i) => `File ${i}`))
     expect(addresses.map((a) => objects[a]?.comments.map((c) => c.body))).toEqual(addresses.map((_, i) => [`On ${i}`]))
   })
@@ -92,7 +83,7 @@ describe('resolveObjectsAsViewer', () => {
 
       vi.setSystemTime(Date.now() + 6 * 60_000)
       await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
-      expect(queryRelay).toHaveBeenCalledTimes(1)
+      expect(queryRelay).toHaveBeenCalledTimes(OPEN_AND_CONVERSATIONS)
       queryRelay.mockClear()
 
       vi.setSystemTime(Date.now() + 60 * 60_000)

@@ -836,7 +836,7 @@ export function useForeignObjects() {
   )
 
   /** Every deleted project the viewer can see, newest deleted first — Archive's Deleted tab; see `deletedProjectsAsViewer`. */
-  const deletedProjects = useCallback(async (): Promise<ForeignObject[] | null> => {
+  const deletedProjects = useCallback(async (): Promise<ForeignObject[]> => {
     const v = viewer()
     return v ? deletedProjectsAsViewer(v.relayUrl, v.token) : []
   }, [viewer])

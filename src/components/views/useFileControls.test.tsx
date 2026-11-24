@@ -19,7 +19,7 @@ const foreign = vi.hoisted(() => ({
 const toasts = vi.hoisted(() => ({ shown: [] as { label: string; actionLabel?: string; onAction?: () => void }[] }))
 
 vi.mock('@/api', () => ({
-  useRestorableDelete: () => false,
+  isRestorableDelete: () => false,
   reloadFoldersOnScreen: async () => {},
   fileArchiveChanged: async () => {},
   useReloadHeldObject: () => async () => {},

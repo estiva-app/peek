@@ -14,6 +14,7 @@ const { publishSigned, signViaEstivaId, queryRelay } = vi.hoisted(() => ({
 vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay }))
 
 import { setTopicFileAsViewer, topicFilesAsViewer } from './foreign'
+import { relayAnswer } from '@/test/listRead'
 
 const VIEWER = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -32,13 +33,22 @@ beforeEach(() => {
   queryRelay.mockReset()
 })
 
+const event = (kind: number, tags: string[][], created_at = 100) => ({ id: `${kind}${created_at}${tags.length}`.padStart(64, '0'), kind, pubkey: VIEWER, created_at, tags, content: '', sig: '' })
+const root = event(30840, [['d', TOPIC_D], ['title', 'Widgets'], ['h', FOLDER]])
+
 describe('adding and removing a file on a topic', () => {
+  // The topic is opened first: an entry follows the topic's first record for a file never listed (SPEC §6.14).
+  beforeEach(() => {
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => ({ ok: true, events: relayAnswer([root], filters) }))
+  })
+
   it('Add file signs one change on the topic, in its Folder, naming the file by its id', async () => {
     const result = await setTopicFileAsViewer({ topic: TOPIC, folder: FOLDER, file: PROJECT_D, listed: true }, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: true })
     expect(sent()).toHaveLength(1)
     const entry = sent()[0]!
+    expect(tag(entry, 'prev')).toEqual([root.id])
     expect(entry.kind).toBe(1851)
     expect(entry.pubkey).toBe(VIEWER)
     expect(tag(entry, 'a')).toEqual([TOPIC])
@@ -68,19 +78,13 @@ describe('adding and removing a file on a topic', () => {
 })
 
 describe("reading a topic's files", () => {
-  const event = (kind: number, tags: string[][], created_at = 100) => ({ id: `${kind}-${created_at}-${tags.length}`, kind, pubkey: VIEWER, created_at, tags, content: '', sig: '' })
   const entryOf = (file: string, value: string, at: number) =>
     event(1851, [['a', TOPIC], ['O', TOPIC_D], ['field', `lists:${file}`], ['value', value], ['h', FOLDER], ['ts', String(at * 1000)], ['o', file]], at)
-  const root = event(30840, [['d', TOPIC_D], ['title', 'Widgets'], ['h', FOLDER]])
   const project = event(30850, [['d', PROJECT_D], ['title', 'Widgets 2: build 1']])
 
   it('returns the files it can find, and not one whose id nobody it can read holds, nor one taken off', async () => {
-    queryRelay.mockImplementation(async (_url: string, filters: Array<Record<string, unknown>>) => {
-      const f = filters[0]!
-      if (f['#O']) return { ok: true, events: [entryOf(PROJECT_D, 'true', 100), entryOf('gone', 'true', 101), entryOf('removed', 'true', 102), entryOf('removed', 'false', 103)] }
-      const ds = (f['#d'] as string[] | undefined) ?? []
-      return { ok: true, events: [root, project].filter((e) => ds.includes(tag(e, 'd')[0]!) && (f.kinds as number[]).includes(e.kind)) }
-    })
+    const world = [root, project, entryOf(PROJECT_D, 'true', 100), entryOf('gone', 'true', 101), entryOf('removed', 'true', 102), entryOf('removed', 'false', 103)]
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => ({ ok: true, events: relayAnswer(world, filters) }))
 
     const files = await topicFilesAsViewer(TOPIC, 'https://relay.test', token)
 

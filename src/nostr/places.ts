@@ -15,7 +15,6 @@ import {
   buildPlaceAdd,
   buildTeamsEvent,
   followingOf,
-  KIND_CHANGE,
   parseTeamsBlob,
   placeFilters,
   serializeMutedBlob,
@@ -55,8 +54,8 @@ const ROSTER_COMMANDS: readonly number[] = [KIND.NIP29_PUT_USER, KIND.NIP29_REMO
  * Of the place's changes, only the ones naming `person` or one of `people`
  * (ALL-5): a level, an Add, a join, a leave and a placement each carry their
  * person's `p` (§11.8), so that is everything the following rules read, and
- * none of the renames, file-list entries or saves. `people` undefined (no
- * directory): every change, as before.
+ * none of the renames, file-list entries or saves (conversation's
+ * `placeFilters`). `[]` reads only `person`'s own.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-membership-change-names-the-person-it-is-about.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
  */
@@ -65,14 +64,9 @@ export async function readPlace(
   person: string,
   query: QueryFn,
   decrypt: (ciphertext: string) => Promise<string | undefined>,
-  people?: readonly string[],
+  people: readonly string[],
 ): Promise<PlaceRead> {
-  const filters = (placeFilters(place, person) as Record<string, unknown>[]).map((filter) => {
-    const kinds = filter.kinds as readonly number[] | undefined
-    const everyChange = people && kinds?.length === 1 && kinds[0] === KIND_CHANGE && Array.isArray(filter['#a']) && !('#p' in filter)
-    return everyChange ? { ...filter, '#p': [...new Set([person, ...people])].sort() } : filter
-  })
-  const events = await query(filters)
+  const events = await query(placeFilters(place, person, people) as Record<string, unknown>[])
   const own: SignedEvent[] = []
   const placeEvents: SignedEvent[] = []
   const roster: SignedEvent[] = []
@@ -106,10 +100,9 @@ const unwritable = (read: TeamsListRead) => read.state === 'unreachable' || (rea
 /**
  * {@link readPlace} as the viewer. `people`: whose changes besides the
  * viewer's are read — everyone with a profile for Who follows, `[]` when only
- * the viewer's own following is asked (a row's Leave or Join), `undefined`
- * for every change.
+ * the viewer's own following is asked (a row's Leave or Join).
  */
-export function readPlaceAsViewer(place: Place, relayUrl: string, token: StoredToken, people: readonly string[] | undefined): Promise<PlaceRead> {
+export function readPlaceAsViewer(place: Place, relayUrl: string, token: StoredToken, people: readonly string[]): Promise<PlaceRead> {
   return readPlace(place, token.pubkey, viewerQuery(relayUrl, token), (ciphertext) => decryptBlob(ciphertext, token.accessToken), people)
 }
 

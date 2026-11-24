@@ -40,7 +40,8 @@ vi.mock('./useTeams', async () => ({
   useTeams: () => ({ teams: teamsRead.teams, failed: false, reload: async () => {} }),
 }))
 const viewer = { relayUrl: 'https://relay.test', token: { accessToken: 't', pubkey: PK } }
-vi.mock('./foreign', () => ({ useRelayViewer: () => () => viewer }))
+// The people directory a place's member changes are read against (SPEC §11.8).
+vi.mock('./foreign', () => ({ useRelayViewer: () => () => viewer, workspaceKeys: async () => [] }))
 vi.mock('./relayUrl', () => ({ hasRelay: true }))
 const reads = vi.hoisted(() => ({ members: vi.fn(), lists: vi.fn(), activity: vi.fn() }))
 vi.mock('@/nostr/topicMembers', () => ({ topicMembersAsViewer: reads.members }))

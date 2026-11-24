@@ -91,10 +91,11 @@ export function usePlaceFollow(target: FollowTarget | undefined): PlaceFollow {
     if (!target || !RELAY_URL || !token) return
     const mine = ++started.current
     try {
-      // Everyone with a profile, so only the changes naming someone are read (ALL-5, as the Members list). No directory,
-      // or an empty one, is no answer: every change, or Who follows would miss everyone but the viewer.
+      // Everyone with a profile, so only the changes naming someone are read (ALL-5, as the Members list). No directory
+      // is a failed read, never an answer: Who follows would miss everyone but the viewer.
       const people = await workspaceKeys(RELAY_URL, token)
-      const read = await readPlaceAsViewer(target.place, RELAY_URL, token, people?.length ? people : undefined)
+      if (!people) throw new Error('the people directory could not be read')
+      const read = await readPlaceAsViewer(target.place, RELAY_URL, token, people)
       if (mine === started.current) setHeld({ key, read, failed: false })
     } catch (error) {
       console.warn('[places] could not read the place:', error)

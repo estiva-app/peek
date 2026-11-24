@@ -494,7 +494,7 @@ export function ArchiveTreeView({
   expandSelected = false,
   menuFor,
   onControl,
-  deleted = 'unavailable',
+  deleted,
   teamOf = () => undefined,
   onRestore = async () => undefined,
   onRetryDeleted = async () => undefined,
@@ -514,7 +514,7 @@ export function ArchiveTreeView({
   /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
   menuFor?: (folder: FolderSummary) => ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
-  /** Every deleted project the viewer can see (`useDeletedProjects`); `'unavailable'` draws no Deleted tab. */
+  /** Every deleted project the viewer can see (`useDeletedProjects`); left out, no Deleted tab is drawn. */
   deleted?: DeletedProjectsState
   teamOf?: (file: ForeignObject) => string | undefined
   onRestore?: (file: ForeignObject, actionId: string, prev: string | undefined) => Promise<void>
@@ -547,11 +547,11 @@ export function ArchiveTreeView({
 
   // Alphabetical: the relay's order is arrival order, which tells the person nothing.
   const ordered = [...folders].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
-  const tab = deleted === 'unavailable' ? 'archived' : shown
+  const tab = deleted === undefined ? 'archived' : shown
 
   return (
     <>
-      {deleted !== 'unavailable' && (
+      {deleted !== undefined && (
         <Tabs
           size="small"
           aria-label="Show"
@@ -565,7 +565,7 @@ export function ArchiveTreeView({
           onChange={setShown}
         />
       )}
-      {tab === 'deleted' && deleted !== 'unavailable' ? (
+      {tab === 'deleted' && deleted !== undefined ? (
         <DeletedProjects state={deleted} teamOf={teamOf} selectedRef={selectedRef} onRestore={onRestore} onRetry={onRetryDeleted} />
       ) : (
         /* The package's tree, each Folder a section of it that reads its own rows. Given the open file, it scrolls to its row (ui 0.94);
