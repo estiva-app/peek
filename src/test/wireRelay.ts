@@ -26,7 +26,7 @@
 import { createHash } from 'node:crypto'
 import { vi } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { filesOf } from '@estiva-app/interop'
+import { listAnswer } from './listRead'
 
 export const RELAY = 'https://relay.test'
 export const ID = 'https://id.estiva.app'
@@ -98,19 +98,6 @@ function matches(filter: Filter, event: SignedEvent): boolean {
   return true
 }
 
-/**
- * The relay's list and open reads (SPEC §6.13, `"fields": "newest"`): each first record the filter picks, with its
- * fields' current changes, the text only with `"text": true`; a file whose `deleted` field is set is left out.
- */
-function listAnswer(held: readonly SignedEvent[], filter: Filter): SignedEvent[] {
-  const { fields: _fields, text, limit, ...rest } = filter
-  const roots = held.filter((event) => event.kind >= 30000 && matches(rest, event)).sort((a, b) => b.created_at - a.created_at)
-  const picked = new Set(typeof limit === 'number' ? roots.slice(0, limit) : roots)
-  return filesOf(held as SignedEvent[], { withText: text === true }).flatMap((file) =>
-    picked.has(file.root) && file.fields.deleted?.value !== 'true' ? file.events : [],
-  )
-}
-
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -178,7 +165,8 @@ export function installWireRelay(): WireRelay {
         const answer = new Map<string, SignedEvent>()
         for (const filter of filters) {
           if (filter.fields === 'newest') {
-            for (const event of listAnswer(held, filter)) answer.set(event.id, event)
+            // The relay's list and open reads (SPEC §6.13), as every fake relay answers them.
+            for (const event of listAnswer(held, filter, (e, f) => matches(f, e))) answer.set(event.id, event)
             continue
           }
           const hits = held.filter((event) => matches(filter, event)).sort((a, b) => b.created_at - a.created_at)

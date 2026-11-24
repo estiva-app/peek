@@ -2521,8 +2521,9 @@ async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string
   if (!resolved) return null
   const declared = resolved.manifest.actions?.find((action) => action.id === actionId)
   if (!declared) return undefined
-  // An older listing's `kind:5` Delete is the `deleted` change on every file (SPEC §6.5).
-  if (declared.emits.kind === KIND.DELETION) return DELETED_FIELD
+  // An older listing's `kind:5` Delete is the `deleted` change on every file (SPEC §6.5); on anything else it is still
+  // the `kind:5`, unlisted after it.
+  if (declared.emits.kind === KIND.DELETION) return FILE_KINDS.includes(pointer.kind) ? DELETED_FIELD : undefined
   return declared.emits.field
 }
 

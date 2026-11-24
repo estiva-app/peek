@@ -159,6 +159,26 @@ describe('a Delete a listing still declares as a kind:5 (ALL-8, SPEC §6.13)', (
     expect(wire()).toEqual([[1851, 'deleted', 'true', issue.id]])
   })
 
+  it('still deletes another app’s object, not a file, by its kind:5, and takes it off its team’s list', async () => {
+    // A calendar event (kind:31922) another app lists in a team: no file kind, so no `deleted` field to mark.
+    const EVENT = `31922:${AUTHOR}:e1`
+    const calendar = event({
+      kind: 31990,
+      tags: [['d', 'calendar'], ['k', '31922']],
+      content: JSON.stringify({
+        name: 'Calendar',
+        projections: { 31922: { widget: 'row', slots: { title: { tag: 'title' } } } },
+        actions: [{ id: 'delete-event', label: 'Delete', appliesTo: '31922', emits: { kind: 5 } }],
+      }),
+    })
+    const meeting = event({ kind: 31922, tags: [['d', 'e1'], ['title', 'Standup'], ['h', FOLDER]] })
+    queryRelay.mockImplementation(relayOver([calendar, meeting, channel(FOLDER), state(FOLDER, [EVENT])]))
+    const result = await deleteFileAsViewer({ naddr: EVENT, actionId: 'delete-event', address: EVENT, folder: FOLDER, hasState: true }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: true })
+    expect(published()).toEqual(['5', `1852 remove ${FOLDER}`])
+  })
+
   it('hands back a refused change as what the person reads, and sends nothing after it', async () => {
     queryRelay.mockImplementation(relayOver(world))
     publishSigned.mockImplementationOnce(async () => ({ ok: false, reason: 'blocked: not the author' }))
