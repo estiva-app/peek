@@ -62,7 +62,13 @@ import {
   type FileComment,
   type FileThreads,
 } from '@/nostr/foreign'
-import { relayFailureKind } from '@/nostr/relayRead'
+import { relayFailureKind as relayFailureKindOf } from '@/nostr/relayRead'
+
+/** The launcher's four kinds: a relay that never answered says "could not reach" there, as it did before 5cd7579f. */
+function relayFailureKind(error: unknown) {
+  const kind = relayFailureKindOf(error)
+  return kind === 'silent' ? 'unreachable' : kind
+}
 export { isFromCopy } from '@/nostr/foreign'
 import type { ReadSource } from '@/nostr/readFrom'
 import { commentAsViewer, fileThreadsAsViewer } from '@/nostr/fileConversation'

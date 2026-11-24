@@ -156,7 +156,7 @@ export interface FreshnessObservation {
    * backfill is only worth announcing between them.
    */
   backfillSince: number | null
-  /** When an HTTP backfill last completed successfully. */
+  /** When the relay last answered a read (`recordReadAnswered`), or an HTTP backfill last completed. */
   lastSyncAt: number | null
   /**
    * The most recent relay read failure that says something about reachability.
@@ -209,6 +209,21 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
     (o.relayStateSince === null || o.now - o.relayStateSince < CONNECTING_GRACE_MS)
   ) {
     return { kind: 'idle' }
+  }
+
+  // A relay that took a read and never answered it, with nothing answered since (5cd7579f). Above `live`: its
+  // socket is up and authenticated, so the state it reports is exactly the "looks current forever" this is for.
+  // It ends with the next answer, not after a while — a silent relay stays silent however long ago it began.
+  if (
+    o.lastReadFailure?.kind === 'silent' &&
+    (o.lastSyncAt === null || o.lastSyncAt < o.lastReadFailure.at)
+  ) {
+    return {
+      kind: 'polling',
+      lastSyncAt: o.lastSyncAt,
+      stale: o.lastSyncAt === null || o.now - o.lastSyncAt >= STALE_AFTER_MS,
+      failure: 'silent',
+    }
   }
 
   const backfillAge = o.backfillSince === null ? null : o.now - o.backfillSince
@@ -343,6 +358,19 @@ export function recordReadFailure(kind: RelayFailureKind, at = Date.now()): void
   emit()
 }
 
+/**
+ * The relay answered a read, over the socket or HTTP — any answer, a refusal included (5cd7579f).
+ *
+ * It is what ends a `silent` failure, so the rail's amber dot goes with the first answer once the relay is back.
+ * Told to the listeners only when it ends one: a reopen answers about 170 reads, and the dot has nothing to redraw
+ * for the rest.
+ */
+export function recordReadAnswered(at = Date.now()): void {
+  const ends = observation.lastReadFailure?.kind === 'silent' && (observation.lastSyncAt ?? -Infinity) < observation.lastReadFailure.at
+  observation = { ...observation, lastSyncAt: at }
+  if (ends) emit()
+}
+
 /** The browser's `online`/`offline` events. See {@link FreshnessObservation.online}. */
 export function recordOnline(online: boolean): void {
   if (observation.online === online) return
@@ -439,10 +467,13 @@ export function describeFreshness(state: Freshness, now: number): string {
     case 'polling':
       // "Refused" and "could not reach" are different sentences on purpose:
       // one is worth waiting out, the other is worth telling somebody about.
+      // "Isn't answering" is a third (5cd7579f): Peek is connected, and the relay took the read and said nothing.
       return `${
         state.failure === 'refused'
           ? 'The relay refused the last read.'
-          : 'Not connected to the relay.'
+          : state.failure === 'silent'
+            ? "The relay isn't answering."
+            : 'Not connected to the relay.'
       } Showing saved data, ${describeAge(state.lastSyncAt, now)}.`
     case 'session_ended':
       return SHELL_COPY[state.reason]

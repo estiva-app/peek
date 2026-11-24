@@ -27,6 +27,8 @@ import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
 export type RelayFailureKind =
   /** No answer: the network, DNS, the origin. Retrying may work. */
   | 'unreachable'
+  /** The relay took the read and never answered it, within `READ_ANSWER_TIMEOUT_MS` (5cd7579f). Retrying may work. */
+  | 'silent'
   /** The relay answered, and said no. Retrying will not help by itself. */
   | 'refused'
   /** The relay answered, said no *for now*, and said when to ask again. */
@@ -61,6 +63,18 @@ export class RelayReadError extends Error {
  * `unreachable`, which is the recoverable reading — the one that keeps retrying
  * and does not tell anybody something is permanently wrong.
  */
+/**
+ * How long a read over HTTP waits for the relay's first answer, its headers, before it gives up (5cd7579f).
+ *
+ * Measured as Miky on 24 Nov, a cold open and a reopen of the Desk: the slowest read answered in 4.8 s, p95 1.4–2.4 s.
+ * With the socket's 10 s before a read falls back here, a silent relay shows at most about 25 s after a reopen (Miky
+ * chose that, in the kickoff). The body is not timed: a big answer that has started is an answer.
+ */
+export const READ_ANSWER_TIMEOUT_MS = 15_000
+
+/** The start of the reason a read that was never answered fails with; Peek's own words, never the relay's. */
+export const NO_ANSWER = 'no answer:'
+
 export function classifyRelayFailure(reason: string): RelayFailureKind {
   const text = reason.toLowerCase()
   if (text.includes('relay_membership_required') || text.includes('membership required')) {
@@ -83,6 +97,7 @@ export function classifyRelayFailure(reason: string): RelayFailureKind {
   if (text.includes('restricted') || text.includes('auth-required') || text.includes('forbidden')) {
     return 'refused'
   }
+  if (text.startsWith(NO_ANSWER)) return 'silent'
   return 'unreachable'
 }
 
@@ -284,5 +299,7 @@ export function describeRelayFailure(kind: RelayFailureKind): string {
       return 'The relay is busy right now. Showing what was already saved, and asking again shortly.'
     case 'unreachable':
       return 'Could not reach the relay. Showing what was already saved.'
+    case 'silent':
+      return "The relay isn't answering. Showing what was already saved."
   }
 }
