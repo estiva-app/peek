@@ -87,8 +87,9 @@ export function RowNewsCard({ items: held, fileRef, placeHref, place, onOpen, op
   // DM's message that answers nothing: that one is in the place itself, at the bottom, where it opens.
   const thread = (item: RowNewsItem) => `?thread=${encodeURIComponent(item.root)}`
   // A reaction opens where the message it reacts to was said (ACT-7).
+  // A file with no link (an id no file can have) opens the place the line was said in.
   const hrefOf = (item: RowNewsItem) =>
-    item.file
+    item.file && filePath(item.file)
       ? `${filePath(item.file)}${thread(item)}`
       : place === 'topic' || item.root !== (item.reaction?.target ?? item.id)
         ? `${placeHref}${thread(item)}`

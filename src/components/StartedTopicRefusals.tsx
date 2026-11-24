@@ -79,7 +79,8 @@ export function StartedTopicRefusals() {
         }
         // Its row beside, once it is written this time (T-12).
         showStartedTopicWhenWritten(result.address)
-        navigate(filePath(result.address, title))
+        const path = filePath(result.address, title)
+        if (path) navigate(path)
         return true
       }}
     />

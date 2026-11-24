@@ -83,7 +83,9 @@ export interface PageDot {
 /** Where a line opens (as a row card's): a listed file's at its thread, a topic's at its thread, a chat's or DM's reply at its thread, a chat message in the place. */
 function hrefOf(item: Pick<RowNewsItem, 'id' | 'root' | 'file' | 'reaction'>, placeHref: string, place: 'topic' | 'chat' | 'dm'): string {
   const thread = `?thread=${encodeURIComponent(item.root)}`
-  if (item.file) return `${filePath(item.file)}${thread}`
+  // A file with no link (an id no file can have) opens the place the line was said in.
+  const path = item.file ? filePath(item.file) : null
+  if (path) return `${path}${thread}`
   // A reaction opens where the message it reacts to was said (ACT-7).
   return place === 'topic' || item.root !== (item.reaction?.target ?? item.id) ? `${placeHref}${thread}` : placeHref
 }
@@ -185,7 +187,10 @@ export function useTeamPageDot(
     const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
     const held = [
       ...asLines(chat.news[team.id] ?? NO_LINES, chatHref, 'chat', chatWhere),
-      ...files.flatMap((file) => asLines(badges.news[file.ref] ?? NO_LINES, filePath(file.address!, file.slots.title?.value), 'topic', titleOf(file))),
+      ...files.flatMap((file) => {
+        const href = filePath(file.address!, file.slots.title?.value)
+        return href ? asLines(badges.news[file.ref] ?? NO_LINES, href, 'topic', titleOf(file)) : []
+      }),
     ]
     /*
       The list reads once the places are judged, so none is left out as having nothing. They are judged together, once
@@ -205,16 +210,12 @@ export function useTeamPageDot(
         me && judged
           ? [
               ...chatSource(team, me, chatHref, chatWhere),
-              ...files.filter((file) => badges.judges[file.ref]).map(
-                (file): PageSource => ({
-                  type: 'topic',
-                  address: file.address!,
-                  href: filePath(file.address!, file.slots.title?.value),
-                  where: titleOf(file),
-                  judges: badges.judges[file.ref]!,
-                  listed: listed.get(file.address!),
-                }),
-              ),
+              ...files.filter((file) => badges.judges[file.ref]).flatMap((file): PageSource[] => {
+                const href = filePath(file.address!, file.slots.title?.value)
+                return href
+                  ? [{ type: 'topic', address: file.address!, href, where: titleOf(file), judges: badges.judges[file.ref]!, listed: listed.get(file.address!) }]
+                  : []
+              }),
             ]
           : undefined,
     }

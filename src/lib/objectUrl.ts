@@ -1,120 +1,48 @@
 /**
  * Object URLs — an address bar somebody else can resolve (PEE-14).
  *
- * Peek already had path routing and a per-topic URL before this ticket; what it
- * did not have is a URL that means anything *outside* Peek. `/topics/<id>`
- * carries a Convex `seedKey` — Peek-private, and for seeded data literally
- * `'1'`..`'9'`. No other app can resolve one, and neither can a second Peek
- * deployment.
+ * The grammar is SPEC §7: `/<word>/<slug>-<d>` for one file, where `d` is its
+ * protocol identifier and the slug is decoration, and `/o/<naddr>` for a file
+ * whose type has no word. The path names the file and the host names the
+ * perspective, so `peek.estiva.app/project/<slug>-<d>` and
+ * `ship.estiva.app/project/<slug>-<d>` are one file (FOL-39, §7.7).
  *
- * The grammar is RFC 0.5 §7:
+ * **Writing a link is the shared package's** (LIN-3): interop's
+ * `fileLinkWordsOf` / `filePathOf` / `fileUrlOf`, the same code Ship, Leaf and
+ * the agent write with. The word is the kind's owner's (§7.7 rule 1), read off
+ * the manifests on the relay — never a table of Peek's, not even for its own
+ * `topic`: until the manifests are read a link is the file's `/o/<naddr>`,
+ * which Peek opens like any other app does. A `d` that is not a random
+ * lowercase uuid gets no link, since the relay refuses any such file.
  *
- *     /<type>s              a directory of that kind
- *     /<type>/<slug>-<d>    one object
+ * What stays here is Peek's own: the words its `/<word>/` route reads back
+ * with (`routeWordsOf`), the registry links are drawn from in render, the old
+ * long link it still reads until the stored ones are rewritten
+ * (`addressFromRef`), and the Convex topics' `/topic-old/` and messages'
+ * `/message/` paths.
  *
- * where `d` is the object's protocol identifier. For a Topic that is its NIP-29
- * channel uuid, which is exactly the `d` of the relay's `kind:39000` — measured
- * across all 50 production channels (RFC 0.4 §5.2), so nothing new has to be
- * minted to put a resolvable identity in the URL.
- *
- * Two properties from §7.2 do all the work here:
- *
- *   - **The uuid is the whole identity, and it is not truncated.** A consumer
- *     resolves `{kinds: [39000], "#d": ["<uuid>"]}` — one query, no index, and
- *     no service that can go down and take every published link with it.
- *   - **The slug is decorative.** Renaming a topic changes it and the old link
- *     still resolves, because a reader MUST ignore everything before the final
- *     uuid. That is why `identifierFromRef` reads the tail rather than trying
- *     to parse the ref into parts.
- *
- * Kept free of React and of `@/api` so the grammar can be tested on its own;
- * the hook that needs a topic lookup is `useTopicPath`.
- *
- * Since FOL-37 the short form belongs to what is being built: `/topic/<slug>-<d>`
- * is a bare file in a Folder, and the Convex channel topics — being retired —
- * live at `/topic-old/<slug>-<uuid>`.
- *
- * Since FOL-39 (RFC 0.5 §7.7) **every declared shape is served here**: the
- * path names the file and the host names the perspective, so
- * `peek.estiva.app/project/<slug>-<d>` and `ship.estiva.app/project/<slug>-<d>`
- * are one file. The words — `project`, `issue`, `topic` — come off the
- * manifests on the relay (`routeWordsOf`), never off a table in Peek, and
- * Peek's own pages moved under `/app/` to leave the root to files.
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-a-random-uuid-the-same-rule-as-a-teams-id.md
  */
-import { KIND_BARE_FILE, type UrlPattern } from '@estiva-app/interop'
+import { fileLinkWordsOf, filePathOf, fileUrlOf, identifierFromRef, objectRef, urlPatternsOf, type LinkManifest } from '@estiva-app/interop'
 
 /**
- * A v4 uuid at the very end of a ref.
+ * A NIP-33 address — `<kind>:<pubkey>:<d>` — as Peek's old long link,
+ * `/topic/<kind>:<pubkey>:<d>`, carried it.
  *
- * Anchored at the end rather than searched for, because §7.2's rule is
- * positional: the identity is the tail, and everything before it is a human
- * label that may itself contain hyphens, digits and hex.
- */
-const TRAILING_UUID_RE =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-/**
- * Slugs are cut here. Long enough to stay recognisable in a chat client's link
- * preview, short enough that the uuid is not pushed off the end of a rendered
- * URL — which is the only thing in the ref that carries meaning.
- */
-const SLUG_MAX_LENGTH = 60
-
-/**
- * A title reduced to URL-safe words. Decorative by contract: nothing resolves
- * through it, so it is free to be lossy — accents folded, punctuation dropped,
- * runs collapsed.
- */
-export function slugify(title: string): string {
-  return title
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX_LENGTH)
-    .replace(/-+$/g, '')
-}
-
-/** `<slug>-<identifier>`, or the bare identifier when the title slugs to nothing. */
-export function objectRef(identifier: string, title?: string): string {
-  const slug = title ? slugify(title) : ''
-  return slug ? `${slug}-${identifier}` : identifier
-}
-
-/**
- * The identity out of a ref, or `null` if it carries none.
- *
- * Lowercased on the way out: the relay's `d` values are lowercase uuids, and a
- * link that has been through a system which upper-cased it should still resolve
- * rather than silently miss.
- */
-export function identifierFromRef(ref: string): string | null {
-  const match = TRAILING_UUID_RE.exec(ref)
-  return match ? match[0].toLowerCase() : null
-}
-
-/**
- * A NIP-33 address — `<kind>:<pubkey>:<d>` — and nothing else.
- *
- * The `d` is deliberately unconstrained: RFC 0.4 §4.3 says a uuid, Ship writes
- * one, and an app nobody has written may not. What makes this unambiguous
- * against the `<slug>-<uuid>` refs beside it is the two colons, which a slug
- * cannot contain. The `d` is any text, a line break included (`s`): without
- * it a `d` holding one got a link that opened nothing (TES-4).
+ * Peek no longer writes that link (LIN-3) and reads it only until the stored
+ * ones are rewritten, the project's last issue. The two colons make it
+ * unambiguous against the `<slug>-<uuid>` refs beside it, which a slug cannot
+ * contain. The `d` is any text, a line break included (`s`), as written then.
  */
 const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/is
 
 /**
- * The address a `/topic/<ref>` path names, or `null` when it carries a bare
- * `d` instead — FOL-19, FOL-37.
+ * The address an old long link's `/topic/<ref>` names, or `null` when it
+ * carries a bare `d` instead — FOL-19, FOL-37.
  *
- * One route serves two grammars. `/topic/<address>` is **any file**, Peek's or
- * another app's, resolved by address rather than against a listing's peers;
- * `/topic/<slug>-<d>` is a bare file's short form (`filePath`), and this
- * returns null for it so `identifierFromRef` can read the tail. Which one a
- * link is, is readable from the link: an address carries two colons and a slug
- * carries none, so nothing has to be fetched to decide.
+ * Which grammar a ref is, is readable from the ref: an address carries two
+ * colons and a slug carries none, so nothing has to be fetched to decide.
  *
  * The ref as given is tested **first**, because `useParams` has already decoded
  * the path segment and decoding twice would corrupt a `d` containing a literal
@@ -133,19 +61,12 @@ export function addressFromRef(ref: string): string | null {
 }
 
 /**
- * The words a `/<word>/<slug>-<d>` route resolves against — RFC 0.5 §7.7.
- *
- * Read off the `urls` tags of every `kind:31990` on the relay (`routeWordsOf`),
- * so the words are whatever the apps declare today: `project` and `issue`
- * from Ship's manifest, `topic` from Peek's. A word's kinds are the kinds the
- * manifests put under it — one, unless two apps chose the same word — and a
- * kind's word is the first any manifest declared, which is what `filePath`
- * writes.
+ * The words links are written and read with — SPEC §7.7, from the manifests.
  */
 export interface RouteWords {
-  /** The kinds a `/<word>/` route resolves `#d` against. */
+  /** The kinds a `/<word>/` route resolves `#d` against: every shape any manifest declares, for reading. */
   byWord: Readonly<Record<string, readonly number[]>>
-  /** The word `filePath` writes for a kind; a kind with none keeps the long form. */
+  /** The word a kind's link is written with: its owner's (interop's `fileLinkWordsOf`). A kind with none is `/o/`. */
   byKind: Readonly<Record<number, string>>
   /**
    * The origins the shapes are written on — every host some app declares (SPEC
@@ -156,24 +77,12 @@ export interface RouteWords {
 
 /**
  * The root paths that are Peek's own and not a file's word: the Convex-era
- * listing and topic pages, the NIP-89 `web` entry, a message, the sign-in
- * callback, and `/app/`, under which every page of Peek's that is not a file
- * now lives. A manifest shape at one of these — Peek's own `/topic-old/` and
- * `/message/` — is a page, not a `#d` route, and stays out of the words.
+ * listing and topic pages, the `naddr` form, a message, the sign-in callback,
+ * and `/app/`, under which every page of Peek's that is not a file lives. A
+ * manifest shape at one of these — Peek's own `/topic-old/` and `/message/` —
+ * is a page, not a `#d` route, and stays out of the words.
  */
 export const PEEK_ROOT_PATHS: readonly string[] = ['app', 'auth', 'topics', 'topic-old', 'o', 'message']
-
-/**
- * Peek's own shape, known without the relay: a bare file at `/topic/<slug>-<d>`
- * (FOL-37). It is the tag `scripts/publish-manifest.ts` writes for
- * `KIND_BARE_FILE`, so the manifest and the app agree by construction, and it
- * is the floor the registry starts at — signed out, or before the manifests
- * have been read, a bare file's link is still the short one.
- */
-const PEEK_OWN_WORDS: RouteWords = {
-  byWord: { topic: [KIND_BARE_FILE] },
-  byKind: { [KIND_BARE_FILE]: 'topic' },
-}
 
 /** A declared shape's URL taken apart: the path and the query, host dropped. */
 const PATTERN_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)?(\?[^#]*)?/i
@@ -181,19 +90,22 @@ const PATTERN_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)?(\?[^#]*)?/i
 const WORD_RE = /^[a-z][a-z0-9-]*$/i
 
 /**
- * The route words a set of declared shapes gives Peek — §7.7 rule 1, read
- * rather than written.
+ * The words the manifests give Peek — §7.7, read and written.
  *
- * A shape counts when its path is exactly `/<word>/<slug>-<d>` or
- * `/<word>/<d>`, its query names nothing (a `?thread=<id>` shape is about the
- * comment, not the file — FOL-38), it says which kind it is, and the word is
- * not one of Peek's own root paths. Ship's hash form, `/#/issue/<d>`, has no
- * path word and is skipped; Ship declares the path form beside it. Peek's own
- * shape is merged in underneath, so the answer is never empty.
+ * `byKind`, the word a link is **written** with, is the shared writer's
+ * (`fileLinkWordsOf`): the owner's word, and none where two apps' claims would
+ * make the link read back as another file. `byWord`, what Peek's `/<word>/`
+ * route **reads** a `d` against, is every declared shape: a shape counts when
+ * its path is exactly `/<word>/<slug>-<d>` or `/<word>/<d>`, its query names
+ * nothing (a `?thread=<id>` shape is about the comment, not the file —
+ * FOL-38), it says which kind it is, and the word is not one of Peek's own
+ * root paths. Ship's hash form, `/#/issue/<d>`, has no path word and is
+ * skipped; Ship declares the path form beside it. Nothing of Peek's own is
+ * merged in: its `topic` is in its manifest like every other app's word.
  */
-export function routeWordsOf(patterns: readonly UrlPattern[]): RouteWords {
+export function routeWordsOf(manifests: readonly LinkManifest[]): RouteWords {
+  const patterns = manifests.flatMap((manifest) => urlPatternsOf(manifest))
   const byWord: Record<string, number[]> = {}
-  const byKind: Record<number, string> = {}
   const origins = new Set<string>()
   for (const { pattern } of patterns) {
     try {
@@ -202,12 +114,6 @@ export function routeWordsOf(patterns: readonly UrlPattern[]): RouteWords {
       // Not a URL: it declares no host.
     }
   }
-  const declare = (word: string, kind: number) => {
-    const kinds = (byWord[word] ??= [])
-    if (!kinds.includes(kind)) kinds.push(kind)
-    byKind[kind] ??= word
-  }
-  for (const [word, kinds] of Object.entries(PEEK_OWN_WORDS.byWord)) for (const kind of kinds) declare(word, kind)
   for (const { pattern, kind } of patterns) {
     if (kind === undefined) continue
     const match = PATTERN_RE.exec(pattern)
@@ -219,9 +125,10 @@ export function routeWordsOf(patterns: readonly UrlPattern[]): RouteWords {
     const [word, tail] = segments
     if (tail !== '<slug>-<d>' && tail !== '<d>') continue
     if (!WORD_RE.test(word) || PEEK_ROOT_PATHS.includes(word.toLowerCase())) continue
-    declare(word.toLowerCase(), kind)
+    const kinds = (byWord[word.toLowerCase()] ??= [])
+    if (!kinds.includes(kind)) kinds.push(kind)
   }
-  return { byWord, byKind, origins: [...origins] }
+  return { byWord, byKind: fileLinkWordsOf(manifests).byKind, origins: [...origins] }
 }
 
 /** Every kind any word resolves against — what an unknown word falls back to (§7.7 rule 4). */
@@ -232,23 +139,28 @@ export function declaredKinds(words: RouteWords): number[] {
 /*
   The registry `filePath` reads. Module scope, the way the shapes cache in
   `nostr/foreign.ts` is: the words change only when somebody republishes a
-  manifest, and a link is built in render, where nothing can await. `foreign.ts`
-  fills it the first time the manifests are read; `App` subscribes so links
-  drawn before that are drawn again with the words. Between, a link is the long
-  form, which resolves the same.
+  manifest, and a link is built in render, where nothing can await.
+  `foreign.ts` fills it the first time the manifests are read; `App`
+  subscribes so links drawn before that are drawn again with the words.
+  Before, every link is the file's `/o/<naddr>`, which opens the same file.
 */
-let routeWords: RouteWords = PEEK_OWN_WORDS
+const NO_WORDS: RouteWords = { byWord: {}, byKind: {} }
+let routeWords: RouteWords = NO_WORDS
+let wordsKnown = false
 const routeWordListeners = new Set<() => void>()
 
 /** What the manifests declare — from `foreign.ts`, once they have been read. */
 export function rememberRouteWords(words: RouteWords): void {
   routeWords = words
+  wordsKnown = true
   for (const listener of routeWordListeners) listener()
 }
 
-/** Back to Peek's own shape alone — for tests. */
+/** Back to no words, as before the manifests are read — for tests. */
 export function forgetRouteWords(): void {
-  rememberRouteWords(PEEK_OWN_WORDS)
+  routeWords = NO_WORDS
+  wordsKnown = false
+  for (const listener of routeWordListeners) listener()
 }
 
 /** The registry as it stands; the `useSyncExternalStore` pair with `subscribeRouteWords`. */
@@ -261,53 +173,46 @@ export function subscribeRouteWords(listener: () => void): () => void {
   return () => routeWordListeners.delete(listener)
 }
 
-/**
- * A file's short form, `/<word>/<slug>-<d>`, or null when its kind has no
- * declared word — the half of `filePath` that `FilePage` canonicalises to.
- *
- * A `d` gets the short form only when it is a uuid, because the short form's
- * reader (`identifierFromRef`) recovers the identity from the tail by shape;
- * an app that put something else in its `d` keeps the long form, which
- * carries it verbatim.
- */
-export function shortFilePath(address: string, title?: string): string | null {
-  const match = ADDRESS_RE.exec(address)
-  if (!match) return null
-  const [, kind, , identifier] = match
-  const word = routeWords.byKind[Number(kind)]
-  if (!word || !TRAILING_UUID_RE.test(identifier) || identifier.length !== 36) return null
-  return `/${word}/${objectRef(identifier.toLowerCase(), title)}`
+/** Resolves once the manifests have been read, or after `ms` — whichever comes first. */
+function routeWordsWithin(ms: number): Promise<void> {
+  if (wordsKnown) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      unsubscribe()
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    const unsubscribe = subscribeRouteWords(() => {
+      if (wordsKnown) done()
+    })
+  })
 }
 
 /**
- * The path one file opens at — RFC 0.5 §10.7 and the project brief's "one page
- * shape for every file" (FOL-19).
+ * The path one file opens at — interop's `filePathOf` with the words read so
+ * far (LIN-3): `/<word>/<slug>-<d>` when the kind's owner declares a word,
+ * `/o/<naddr>` when it declares none or the manifests are not read yet, and
+ * null for an address no file can have (a `d` that is not a random lowercase
+ * uuid, or a kind that is not a file's).
  *
- * **A kind with a declared word takes §7's short form, `/<word>/<slug>-<d>`**
- * (FOL-37 for a bare file, FOL-39 for every other declared shape). A `d` is a
- * uuid, and RFC 0.5 §7.4 measured that no `(kind, d)` is shared by two
- * authors, so the `d` alone recovers the address with one
- * `{kinds: [<kind>], "#d": [d]}` query — the same reasoning
- * the link reader already rests on for a pasted Ship URL. The slug is
- * decorative, as everywhere in §7: a caller without the title writes the bare
- * uuid and `FilePage` canonicalises once it knows what the file is called.
- *
- * A kind no manifest declares a shape for keeps the long form,
- * `/topic/<kind>:<pubkey>:<d>`: there is no word to write, and inventing one
- * would put a table in front of every link, which is what §7.2 was written to
- * avoid. The colons are left as they are. A colon is a legal path character
- * (RFC 3986 `pchar`), and `%3A` would make the one part of the URL that
- * carries meaning unreadable — §7.3's objection to bech32 in URLs, arrived at
- * from the other side. Only the `d` is escaped, because it is the one segment
- * an app is free to put anything in.
+ * The slug is decorative: a caller without the title writes the bare uuid and
+ * `FilePage` canonicalises once it knows what the file is called.
  */
-export function filePath(address: string, title?: string): string {
-  const short = shortFilePath(address, title)
-  if (short) return short
-  const match = ADDRESS_RE.exec(address)
-  if (!match) return `/topic/${encodeURIComponent(address)}`
-  const [, kind, pubkey, identifier] = match
-  return `/topic/${kind}:${pubkey.toLowerCase()}:${encodeURIComponent(identifier)}`
+export function filePath(address: string, title?: string): string | null {
+  return filePathOf(address, routeWords, title)
+}
+
+/** {@link filePath} at one comment's thread (FOL-36), or null when the file has no link. */
+export function fileThreadPath(address: string, title: string | undefined, thread: string | undefined): string | null {
+  const path = filePath(address, title)
+  if (path === null) return null
+  return thread ? `${path}?${new URLSearchParams({ thread })}` : path
+}
+
+/** Whether a path {@link filePath} wrote is the `naddr` form rather than a word's. */
+export function isNaddrPath(path: string): boolean {
+  return path.startsWith('/o/')
 }
 
 /**
@@ -336,32 +241,43 @@ export function fileRouteFromPath(pathname: string): { word: string; ref: string
 }
 
 /**
- * A file's shareable URL — what "Copy link" on its page hands out (FOL-37).
- *
- * `filePath` with an origin: the short form for a bare file, the address for
- * everything else. Unlike `shareableTopicUrl` this is never null, because an
- * address is a protocol identity by construction — there is no file here
- * whose only link is Peek-private.
+ * A file's shareable URL — what "Copy link" hands out (FOL-37): interop's
+ * `fileUrlOf` with the words read so far, or null for an address no file can
+ * have.
  */
-export function shareableFileUrl(address: string, title: string | undefined, origin: string): string {
-  return `${origin.replace(/\/+$/, '')}${filePath(address, title)}`
+export function shareableFileUrl(address: string, title: string | undefined, origin: string): string | null {
+  return fileUrlOf(address, routeWords, origin, title)
 }
+
+/**
+ * How long Copy link waits for the manifests before it hands out the `/o/`
+ * link. A copied link is stored as written once pasted, so the word is worth
+ * a moment; the words are read at sign-in, so this is almost never waited.
+ */
+const COPY_WAITS_FOR_WORDS_MS = 2000
 
 /**
  * Copy link (FOL-37), from a file's page or its row (TOPI-7): {@link shareableFileUrl} on the clipboard, and the link
  * in a prompt for a browser that refuses the clipboard off a menu. Resolves `true` once the clipboard holds it, so
- * the caller can say "Link copied" only then.
+ * the caller can say "Link copied" only then; `false` for an address no file can have.
+ *
+ * Before the manifests are read it waits for them (at most {@link COPY_WAITS_FOR_WORDS_MS}), so the link copied is
+ * the short one rather than `/o/`. With the words already read — nearly always — nothing is awaited before the
+ * write, which keeps the click's user activation for the browsers that ask for it.
  */
 export function copyFileLink(address: string, title: string | undefined): Promise<boolean> {
-  const link = shareableFileUrl(address, title, window.location.origin)
-  if (!navigator.clipboard) return Promise.resolve(false)
-  return navigator.clipboard.writeText(link).then(
-    () => true,
-    () => {
-      window.prompt('Copy this link:', link)
-      return false
-    },
-  )
+  const write = (): Promise<boolean> => {
+    const link = shareableFileUrl(address, title, window.location.origin)
+    if (!link || !navigator.clipboard) return Promise.resolve(false)
+    return navigator.clipboard.writeText(link).then(
+      () => true,
+      () => {
+        window.prompt('Copy this link:', link)
+        return false
+      },
+    )
+  }
+  return wordsKnown ? write() : routeWordsWithin(COPY_WAITS_FOR_WORDS_MS).then(write)
 }
 
 /**
@@ -387,8 +303,8 @@ export function copyPageLink(path: string): Promise<boolean> {
  * Whether a `/<word>/<ref>` names this file, in either grammar — the launcher's
  * "the page you are on is not somewhere to go" (FOL-37).
  *
- * The short form carries only the `d`, so a bare file is matched on its
- * identifier; the long form is matched on the whole address.
+ * The short form carries only the `d`, so a file is matched on its
+ * identifier; the old long form is matched on the whole address.
  */
 export function refNamesFile(ref: string, address: string): boolean {
   const asAddress = addressFromRef(ref)

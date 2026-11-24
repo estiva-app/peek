@@ -141,8 +141,9 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
       .then((found) => {
         if (cancelled) return
         const project = found?.project
-        if (project?.address) {
-          navigate(filePath(project.address, project.slots.title?.value), { replace: true, state: { expandSelected: true, column: 'folders' } })
+        const path = project?.address ? filePath(project.address, project.slots.title?.value) : null
+        if (path) {
+          navigate(path, { replace: true, state: { expandSelected: true, column: 'folders' } })
         } else setProjectCheck({ id, found: false })
       })
       .catch(() => {
@@ -209,7 +210,7 @@ export function FoldersPage({ chat = false }: { chat?: boolean } = {}) {
         withWhat={archivedWith ? (kindNoun(Number(archivedWith.split(':')[0])) ?? 'parent') : undefined}
         // The write itself, not a fire-and-forget: the card's Unarchive stays greyed until it lands, so a second click sends nothing.
         onUnarchive={archivedWith || !canUnarchive ? undefined : unarchive}
-        onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
+        onOpenParent={archivedWith && filePath(archivedWith) ? () => navigate(filePath(archivedWith)!) : undefined}
       />
     ) : undefined
 

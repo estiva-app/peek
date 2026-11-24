@@ -69,7 +69,7 @@ describe('app smoke (seam wiring)', () => {
   describe('old topic links land on files (FOL-26)', () => {
     const CHANNEL = 'e83471a7-cd98-4a62-ac5a-f21e0daedd24'
     const FILE = '/topic/folders-universal-navigation-concept-620929ad-2985-479b-a4b3-5d5d9cae9705'
-    const PROJECT = '/topic/30850:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:2a5b8f13-0364-4a84-bdd4-fc0a6ddc259c'
+    const PROJECT = '/project/feedback-on-peek-2a5b8f13-0364-4a84-bdd4-fc0a6ddc259c'
 
     it.each([
       ['/topics/<seedKey>', '/topics/t_1787038103126_1', FILE],

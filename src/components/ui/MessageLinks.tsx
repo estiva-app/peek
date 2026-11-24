@@ -86,7 +86,8 @@ function useConversationOf(file: ForeignObject | null | undefined | 'loading'): 
   const count = counted ? counts[counted.ref] : undefined
   if (!counted?.address || count === undefined) return undefined
   const title = counted.slots.title && !counted.slots.title.isPubkey ? counted.slots.title.value : undefined
-  return { count, href: filePath(counted.address, title), unread: unread[counted.ref] === true }
+  const href = filePath(counted.address, title)
+  return href ? { count, href, unread: unread[counted.ref] === true } : undefined
 }
 
 /** A file's link state, opening at the block a link to one block was written for (§13.6.1). */

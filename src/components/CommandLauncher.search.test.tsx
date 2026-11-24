@@ -231,7 +231,7 @@ describe('Cmd+K finds a file by its title, with its summary (SUM-7)', () => {
     fileSearch.mockReturnValue({
       state: { kind: 'done', count: 5 },
       hits: [
-        fileHit('a', 30851, 'Ledger reconciliation plan', 'Finance'),
+        fileHit('1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d', 30851, 'Ledger reconciliation plan', 'Finance'),
         fileHit('b', 30851, 'Ledger reconciliation plan B', 'Finance'),
         fileHit('s', 30842, 'Quarter close', '', 'The ledger reconciliation plan is in here.'),
         fileHit('c', 30842, 'Ledger reconciliation plan notes', ''),
@@ -249,15 +249,15 @@ describe('Cmd+K finds a file by its title, with its summary (SUM-7)', () => {
     expect(listed.join(' ')).not.toContain('Old ledger')
 
     fireEvent.click(optionNamed('Ledger reconciliation plan'))
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(`30851:${AUTHOR}:a`))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/issue/ledger-reconciliation-plan-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'))
   })
 
   it('opens the file a hit names', async () => {
-    fileSearch.mockReturnValue({ state: { kind: 'done', count: 1 }, hits: [fileHit('a', 30851, 'Ledger reconciliation', 'Finance', SUMMARY)] })
+    fileSearch.mockReturnValue({ state: { kind: 'done', count: 1 }, hits: [fileHit('1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d', 30851, 'Ledger reconciliation', 'Finance', SUMMARY)] })
     open()
     await type('ledger')
     fireEvent.click(optionNamed('Ledger reconciliation'))
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(`30851:${AUTHOR}:a`))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/issue/ledger-reconciliation-1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'))
   })
 
   it('says files are missing when the relay was too busy to search them', async () => {

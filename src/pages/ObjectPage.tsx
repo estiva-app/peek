@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react'
 import { eventIdFromRef } from '@estiva-app/interop'
+import { naddrToAddr } from '@estiva-app/protocol'
 import { Navigate, useParams } from 'react-router-dom'
-import { useForeignObjects } from '@/api'
+import { useForeignObjects, useRouteWords } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
-import { filePath } from '@/lib/objectUrl'
+import { fileThreadPath, isNaddrPath } from '@/lib/objectUrl'
+import { FilePage } from '@/pages/FilePage'
+
+/** The address an `/o/<naddr>` ref names, lowercased — compared by address, since one address has several `naddr` spellings. */
+function reachedAt(ref: string | undefined): string | null {
+  if (!ref) return null
+  try {
+    return naddrToAddr(decodeURIComponent(ref)).toLowerCase()
+  } catch {
+    return null
+  }
+}
 import { channelDestination } from '@/lib/legacyTopicLinks'
 import { EmptyState } from '@estiva-app/ui'
 
@@ -31,6 +43,8 @@ export function ObjectPage() {
   const { ref } = useParams<{ ref: string }>()
   const { placeForReference } = useForeignObjects()
   const { setPendingTopicMessage } = useLastSelection()
+  // Drawn again when the manifests' words arrive: a file drawn here then moves to its word's link.
+  useRouteWords()
   const [state, setState] = useState<ReferencePlace | 'looking' | 'unopenable'>('looking')
 
   useEffect(() => {
@@ -98,8 +112,19 @@ export function ObjectPage() {
       to scroll. Before this, a comment's link landed by `h` on the team's
       channel, which is not where the comment is.
     */
-    const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
-    return <Navigate to={`${filePath(state.file)}${thread}`} replace />
+    const path = fileThreadPath(state.file, undefined, state.thread)
+    // An address no file can have (LIN-3) has no page to open.
+    if (!path) return <ObjectPageView state="unopenable" />
+    /*
+      A file whose link is its `naddr` form — its kind's owner declares no
+      word, or the manifests are not read yet — is drawn here, at the address
+      it was reached at (§7.7 rule 4), rather than sent to `/o/` again, which
+      is this page (LIN-3). Once a word is known, `path` is the word's link and
+      the page moves there. Reached some other way (a comment's `nevent`, a
+      `/message/` link), it goes to the file's own `/o/` link first.
+    */
+    if (isNaddrPath(path) && reachedAt(ref) === state.file.toLowerCase()) return <FilePage address={state.file} />
+    return <Navigate to={path} replace />
   }
   /*
     Something said in a DM opens the DM, with the one-shot above opening its

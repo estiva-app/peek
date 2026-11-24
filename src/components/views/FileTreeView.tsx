@@ -245,7 +245,7 @@ export function TreeRow({
   const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
   const hasMenu = offers || renames || copies || moves || !!space || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
-  const href = file.address ? filePath(file.address, file.slots.title?.value) : '#'
+  const href = (file.address && filePath(file.address, file.slots.title?.value)) || '#'
   // A lit row says why (ACT-3): its card lists what lit the dot. Nothing new, no dot and no card.
   const lines = isUnread ? news?.[file.ref] : undefined
   // Leaving its card, or opening the row on a touch screen, sees the reactions to you it listed (ACT-7).

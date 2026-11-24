@@ -186,7 +186,7 @@ export function useExploreTopics(tab: ExploreTab): { state: ExploreState; retry:
         address,
         title,
         ...(summary ? { summary } : {}),
-        href: filePath(address, topic.slots.title?.value),
+        href: filePath(address, topic.slots.title?.value) ?? '#',
         ...(team ? { team } : {}),
         ...(members !== undefined ? { members } : {}),
         ...(people ? { people } : {}),

@@ -307,9 +307,10 @@ export function forgetUrlShapes(): void {
 function urlManifests(query: QueryFn): Promise<SignedEvent[]> {
   if (manifestsRead) return manifestsRead
   const read = query([{ kinds: [31990], limit: 100 }]).then((found) => {
-    // The same read answers which words Peek routes (FOL-39); `filePath` reads
-    // the registry in render, where it cannot await this.
-    rememberRouteWords(routeWordsOf(found.flatMap((manifest) => urlPatternsOf(manifest))))
+    // The same read answers which words Peek writes and routes (FOL-39, LIN-3);
+    // `filePath` reads the registry in render, where it cannot await this. An
+    // empty read is asked again (below), so it is not remembered as the words.
+    if (found.length > 0) rememberRouteWords(routeWordsOf(found))
     return found
   })
   manifestsRead = read
@@ -360,7 +361,7 @@ export function linkReaderAsViewer(relayUrl: string, token: StoredToken): LinkRe
  * after it. Throws for an outage the way every viewer read does.
  */
 export async function routeWordsAsViewer(relayUrl: string, token: StoredToken): Promise<RouteWords> {
-  return routeWordsOf(await urlShapes(viewerQuery(relayUrl, token)))
+  return routeWordsOf(await urlManifests(viewerQuery(relayUrl, token)))
 }
 
 /**
@@ -387,7 +388,7 @@ export async function fileAddressAsViewer(
   token: StoredToken,
 ): Promise<string | null> {
   const query = viewerQuery(relayUrl, token)
-  const words = routeWordsOf(await urlShapes(query))
+  const words = routeWordsOf(await urlManifests(query))
   const kinds = words.byWord[word.toLowerCase()] ?? declaredKinds(words)
   // Asks for two: a `d` two authors (or two kinds) hold names nothing (§13.1, OPT-19), as the pasted-link readers
   // below — `limit: 1` would open whichever answered first, so a member who published the same `(kind, d)` later

@@ -104,6 +104,10 @@ vi.mock('@/nostr/foreign', async (original) => ({
 const topic = { ref: TOPIC, address: TOPIC, kind: 30840, folder: 'team-1', slots: { title: { value: 'Pitch' } } } as unknown as ForeignObject
 
 async function mount() {
+  // The modules are fresh each case (`resetModules`), so the manifests' words are read into this copy of the registry.
+  const { rememberRouteWords, routeWordsOf } = await import('@/lib/objectUrl')
+  const { PRODUCTION_MANIFESTS } = await import('@/test/manifests')
+  rememberRouteWords(routeWordsOf(PRODUCTION_MANIFESTS))
   const { useTopicPageDot } = await import('@/api')
   const { PageDot } = await import('./PageListDot')
   function TopicTitle() {
@@ -246,7 +250,7 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
   })
 
   it('opens a mention said on a file the topic lists at that file’s thread, not the topic’s', async () => {
-    const ISSUE = `30851:${KATERINA}:launch-checklist`
+    const ISSUE = `30851:${KATERINA}:5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b`
     const onIssue = {
       id: 'd'.repeat(64),
       pubkey: KATERINA,
@@ -264,7 +268,7 @@ describe('the dot beside a topic’s title (ACT-4)', () => {
     await openList()
     const said = await screen.findByText(/Can you take the launch checklist/)
     const link = said.closest('a')
-    expect(link?.getAttribute('href')).toBe(`/topic/${ISSUE}?thread=${onIssue.id}`)
+    expect(link?.getAttribute('href')).toBe(`/issue/5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b?thread=${onIssue.id}`)
   })
 })
 
