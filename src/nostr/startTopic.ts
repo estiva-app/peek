@@ -1,10 +1,9 @@
-import { buildBareFile, buildDeletion, encodeNaddr, type UnsignedEvent } from '@estiva-app/protocol'
+import { buildBareFile, encodeNaddr, type UnsignedEvent } from '@estiva-app/protocol'
 import { KIND_BARE_FILE, SUMMARY_FIELD, planMarkSpace, planPlaceFile } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { summaryText } from '@/lib/summary'
 import { publishConfirmed } from './fileConversation'
 import { applyActionAsViewer } from './foreign'
-import { topicFields } from './projectFields'
 
 /** The bare file's own Delete, by its id in interop's built-in listing. */
 const BARE_DELETE = 'delete'
@@ -106,18 +105,14 @@ export async function publishTopicAsViewer(
     const placed = await publishConfirmed(command, relayUrl, token, 'The team refused to list the topic.')
     if (placed.ok) continue
     /*
-      Where topics are kept in order the relay refuses a `kind:5` on one and a first record is written once (ALL-5),
-      so the topic nobody lists is marked deleted, after its first record: the bare file's Delete, as that change.
+      The relay refuses a `kind:5` on a topic and a first record is written once (SPEC §6.13), so the topic nobody
+      lists is marked deleted, after its first record: the bare file's Delete, as that change.
       why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
     */
-    const deleted = (await topicFields())
-      ? await applyActionAsViewer({ naddr: planned.naddr, actionId: BARE_DELETE, value: 'true' }, relayUrl, token).then(
-          (marked) => (marked.ok ? { ok: true as const } : { ok: false as const, reason: marked.reason ?? 'not marked deleted' }),
-          (error: unknown) => ({ ok: false as const, reason: String(error) }),
-        )
-      : file.id
-        ? await publishConfirmed(buildDeletion(token.pubkey, Date.now(), { targetEventId: file.id }), relayUrl, token, '')
-        : { ok: false as const, reason: 'no event id' }
+    const deleted = await applyActionAsViewer({ naddr: planned.naddr, actionId: BARE_DELETE, value: 'true' }, relayUrl, token).then(
+      (marked) => (marked.ok ? { ok: true as const } : { ok: false as const, reason: marked.reason ?? 'not marked deleted' }),
+      (error: unknown) => ({ ok: false as const, reason: String(error) }),
+    )
     // Deleted, its `d` is spent: started again, it is a new file (a file's id is never reused, deleted files included).
     if (deleted.ok) return { ...placed, deleted: true }
     // Not deleted, it is still there unlisted: started again at the same `d`, it is replaced and listed after all.

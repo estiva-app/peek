@@ -26,6 +26,7 @@
 import { createHash } from 'node:crypto'
 import { vi } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
+import { listAnswer } from './listRead'
 
 export const RELAY = 'https://relay.test'
 export const ID = 'https://id.estiva.app'
@@ -163,6 +164,11 @@ export function installWireRelay(): WireRelay {
         asked.push(...filters)
         const answer = new Map<string, SignedEvent>()
         for (const filter of filters) {
+          if (filter.fields === 'newest') {
+            // The relay's list and open reads (SPEC §6.13), as every fake relay answers them.
+            for (const event of listAnswer(held, filter, (e, f) => matches(f, e))) answer.set(event.id, event)
+            continue
+          }
           const hits = held.filter((event) => matches(filter, event)).sort((a, b) => b.created_at - a.created_at)
           const limited = typeof filter.limit === 'number' ? hits.slice(0, filter.limit) : hits
           for (const event of limited) answer.set(event.id, event)

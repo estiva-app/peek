@@ -40,10 +40,4 @@ describe('what opening a place reads of its changes', () => {
     await readPlace(place, ME, query, noDecrypt, [])
     expect(changeFilters()).toEqual([{ kinds: [1851], '#a': [TOPIC], '#p': [ME] }])
   })
-
-  it('asks for every change when there is no people directory', async () => {
-    const { query, changeFilters } = relay()
-    await readPlace(place, ME, query, noDecrypt)
-    expect(changeFilters()).toEqual([{ kinds: [1851], '#a': [TOPIC] }])
-  })
 })

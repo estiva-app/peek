@@ -48,6 +48,8 @@ const sent = () => signViaEstivaId.mock.calls.map(([event]) => event as {
   kind: number
   tags: string[][]
 })
+/** A Folder command names a file by its id (SPEC §7.3). */
+const idOf = (address: string) => address.split(':')[2]
 const tag = (event: { tags: string[][] }, name: string) =>
   event.tags.filter((t) => t[0] === name).map((t) => t[1])
 
@@ -119,13 +121,13 @@ describe('moving a file', () => {
   it('sends one move: into the destination, naming the Folder it leaves (TEA-3)', async () => {
     await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
 
-    expect(sent().map((e) => [e.kind, tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'a')])).toEqual([[1852, 'move', OTHER, FOLDER, [ADDRESS]]])
+    expect(sent().map((e) => [e.kind, tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'o')])).toEqual([[1852, 'move', OTHER, FOLDER, [idOf(ADDRESS)]]])
   })
 
   it('moves a file its Folder lists by address in its state even when the listing read left it out', async () => {
     await moveFileAsViewer(file, new Map([[FOLDER, []]]), [{ ...here, addresses: [ADDRESS] }], there, 'https://relay.test', token)
 
-    expect(sent().map((e) => [tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'a')])).toEqual([['move', OTHER, FOLDER, [ADDRESS]]])
+    expect(sent().map((e) => [tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'o')])).toEqual([['move', OTHER, FOLDER, [idOf(ADDRESS)]]])
   })
 
   /*
@@ -200,12 +202,12 @@ describe('moving a file', () => {
   })
 
   it('moves what is listed under the file with it: one move naming the set (FOL-45, MAN-17)', async () => {
-    const SUB = `${ADDRESS}-sub`
+    const SUB = `30850:${AUTHOR}:0ebd5fdd-c58a-416e-b8a7-00000000005b`
     const sub = { ref: SUB, address: SUB, folder: FOLDER, parentRef: ADDRESS }
     await moveFileAsViewer(file, new Map([[FOLDER, [file, sub]]]), [here], there, 'https://relay.test', token)
 
-    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'from')[0], tag(event, 'a')])).toEqual([
-      ['move', OTHER, FOLDER, [ADDRESS, SUB]],
+    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'from')[0], tag(event, 'o')])).toEqual([
+      ['move', OTHER, FOLDER, [ADDRESS, SUB].map(idOf)],
     ])
   })
 
@@ -243,17 +245,17 @@ describe('moving a file', () => {
   */
   it('out of two folders: one move from each, naming what that Folder lists under it', async () => {
     const THIRD = '33333333-3333-4333-8333-333333333333'
-    const subHere = { ref: `${ADDRESS}-a`, address: `${ADDRESS}-a`, folder: FOLDER, parentRef: ADDRESS }
-    const subThird = { ref: `${ADDRESS}-b`, address: `${ADDRESS}-b`, folder: FOLDER, parentRef: ADDRESS }
+    const subHere = { ref: `30850:${AUTHOR}:0ebd5fdd-c58a-416e-b8a7-00000000000a`, address: `30850:${AUTHOR}:0ebd5fdd-c58a-416e-b8a7-00000000000a`, folder: FOLDER, parentRef: ADDRESS }
+    const subThird = { ref: `30850:${AUTHOR}:0ebd5fdd-c58a-416e-b8a7-00000000000b`, address: `30850:${AUTHOR}:0ebd5fdd-c58a-416e-b8a7-00000000000b`, folder: FOLDER, parentRef: ADDRESS }
     const listings = new Map([
       [FOLDER, [file, subHere]],
       [THIRD, [file, subThird]],
     ])
     await moveFileAsViewer(file, listings, [here, { id: THIRD, hasState: true }], there, 'https://relay.test', token)
 
-    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'from')[0], tag(event, 'a')])).toEqual([
-      ['move', OTHER, FOLDER, [ADDRESS, subHere.address]],
-      ['move', OTHER, THIRD, [ADDRESS, subThird.address]],
+    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'from')[0], tag(event, 'o')])).toEqual([
+      ['move', OTHER, FOLDER, [ADDRESS, subHere.address].map(idOf)],
+      ['move', OTHER, THIRD, [ADDRESS, subThird.address].map(idOf)],
     ])
   })
 
@@ -306,20 +308,20 @@ describe('moving a file', () => {
     const TOPIC = `30840:${AUTHOR}:6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f`
     const send = (topic: { scopedTo: string }, to: { id: string; hasState: boolean; company?: boolean }) =>
       moveFileAsViewer({ ref: TOPIC, address: TOPIC, ...topic }, new Map([[FOLDER, []]]), [here], to, 'https://relay.test', token)
-    const commands = () => sent().map((e) => [tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'a')])
+    const commands = () => sent().map((e) => [tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'from')[0], tag(e, 'o')])
 
     it('goes to the team it was started in: one add there', async () => {
       const result = await send({ scopedTo: OTHER }, there)
 
       expect(result).toEqual({ ok: true })
-      expect(commands()).toEqual([['add', OTHER, undefined, [TOPIC]]])
+      expect(commands()).toEqual([['add', OTHER, undefined, [idOf(TOPIC)]]])
     })
 
     it('goes to the company’s Folder: one add there', async () => {
       const result = await send({ scopedTo: FOLDER }, { ...there, company: true })
 
       expect(result).toEqual({ ok: true })
-      expect(commands()).toEqual([['add', OTHER, undefined, [TOPIC]]])
+      expect(commands()).toEqual([['add', OTHER, undefined, [idOf(TOPIC)]]])
     })
 
     it('is not sent to another team, and says where it can go', async () => {

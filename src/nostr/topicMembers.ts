@@ -80,7 +80,8 @@ async function readWhole(query: (filters: Filter[]) => Promise<SignedEvent[]>, f
  *
  * One read for every topic asked, each topic's `placeFilters` merged by
  * shape, paged past the relay's cap where it is reached. A topic whose team
- * is no team id maps to `undefined`.
+ * is no team id maps to `undefined`. `people`: everyone with a profile — a
+ * place's changes are read only where they name one of them (SPEC §11.8).
  *
  * **Throws when the read failed**: a failed read is not "nobody".
  */
@@ -88,8 +89,9 @@ export async function topicMemberCountsAsViewer(
   topics: readonly { address: string; folder: string }[],
   relayUrl: string,
   token: StoredToken,
+  people: readonly string[],
 ): Promise<Map<string, number | undefined>> {
-  const lists = await topicMembersAsViewer(topics, relayUrl, token)
+  const lists = await topicMembersAsViewer(topics, relayUrl, token, people)
   return new Map([...lists].map(([address, people]): [string, number | undefined] => [address, people?.length]))
 }
 
@@ -103,12 +105,13 @@ export async function topicMembersAsViewer(
   topics: readonly { address: string; folder: string }[],
   relayUrl: string,
   token: StoredToken,
+  people: readonly string[],
 ): Promise<Map<string, string[] | undefined>> {
   if (topics.length === 0) return new Map()
   const asked = topics.map((topic) => {
     const place = { address: topic.address, team: topic.folder }
     try {
-      const filters = (placeFilters(place, token.pubkey) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
+      const filters = (placeFilters(place, token.pubkey, people) as Filter[]).filter((filter) => !(filter.kinds as number[]).includes(KIND_APP_DATA))
       return { topic, place, filters }
     } catch {
       return { topic, place, filters: undefined }

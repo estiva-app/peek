@@ -4,7 +4,7 @@ import { topicActivityAsViewer, topicListsAsViewer } from '@/nostr/foreign'
 import { topicMembersAsViewer } from '@/nostr/topicMembers'
 import { filePath } from '@/lib/objectUrl'
 import { launcherMatch } from '@/lib/launcherSearch'
-import { useRelayViewer } from './foreign'
+import { useRelayViewer, workspaceKeys } from './foreign'
 import { useFolders } from './useFolderContents'
 import { readTopicsAgain, useTopicsColumn, useTopicTimes } from './useTopicsColumn'
 import { initiativesOf } from './initiatives'
@@ -70,10 +70,14 @@ type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 async function readMembers(viewer: Viewer, topics: readonly ForeignObject[]) {
   const pubkey = viewer.token.pubkey
   try {
+    // Everyone with a profile: a topic's members are the changes naming one of them (SPEC §11.8). None read is a failed read.
+    const people = await workspaceKeys(viewer.relayUrl, viewer.token)
+    if (!people) throw new Error('the people directory could not be read')
     const lists = await topicMembersAsViewer(
       topics.map((topic) => ({ address: topic.address!, folder: topic.folder ?? '' })),
       viewer.relayUrl,
       viewer.token,
+      people,
     )
     if (facts.pubkey !== pubkey) return
     const counts = [...lists].map(([address, people]): [string, number | undefined] => [address, people?.length])

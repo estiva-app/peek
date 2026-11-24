@@ -47,6 +47,7 @@ import {
   type UnsignedEvent,
   RELAY_BUSY_MESSAGE,
   toRenderTree,
+  FILE_KINDS,
 } from '@estiva-app/protocol'
 import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 import {
@@ -119,37 +120,13 @@ import {
   type OwnPlace,
   openFile,
   listsField,
-  prevsAfterSwitch,
   prevOf,
   writeChange,
   createFile,
-  isSwitchRefusal,
-  refusalCode,
-  type WriteChangeArgs,
   TEXT_FIELD,
 } from '@estiva-app/interop'
-import {
-  fieldsFor,
-  forgetProjectFields,
-  inOrderTypes,
-  ISSUE_KIND,
-  issueFields,
-  isSwitchedKind,
-  listReadOffered,
-  listReadOption,
-  projectFields,
-  PROJECT_KIND,
-  DOCUMENT_KIND,
-  documentFields,
-  TOPIC_KIND,
-  topicFields,
-  timesOffered,
-  withOpenRead,
-} from './projectFields'
+import { DOCUMENT_KIND, ISSUE_KIND, PROJECT_KIND, searchedKinds, TOPIC_KIND } from './projectFields'
 import type { ReferenceCandidate } from '@estiva-app/conversation'
-
-/** A project change the relay refused for naming no change it follows, said in Peek's words (ALO-8). */
-const NOT_SAVED_RELOAD = 'This was not saved. Reload and try again.'
 
 export interface ActResult {
   ok: boolean
@@ -432,8 +409,8 @@ export function linkTagsAsViewer(
   token: StoredToken,
   options: { edit?: boolean; waitMs?: number } = {},
 ): Promise<string[][]> {
-  // A file the relay keeps in order is named by its id (SPEC §6.4): a mention or a block link of a project.
-  return inOrderOption().then((inOrder) => linkReaderAsViewer(relayUrl, token).tagsFor(toRenderTree(body, 'marker'), own, { ...options, ...inOrder }))
+  // A file of a base type is named by its id as well (SPEC §6.4): a mention or a block link of a project.
+  return linkReaderAsViewer(relayUrl, token).tagsFor(toRenderTree(body, 'marker'), own, options)
 }
 
 /**
@@ -502,7 +479,7 @@ export async function resolveObjectAsViewer(
         )
       if (!value) return null
       if (!value.includes(':')) return await resolveForeignEvent(value, query, cachedPeople(query), manifests)
-      return await resolveForeignObject(value, query, cachedPeople(query), 0, manifests, await withOpenRead(options))
+      return await resolveForeignObject(value, query, cachedPeople(query), 0, manifests, options)
     }
     /*
       A message is an event, not an address (RIC-11).
@@ -519,9 +496,9 @@ export async function resolveObjectAsViewer(
     if (isEventReference(reference)) {
       return await resolveForeignEvent(reference, query, cachedPeople(query), manifests)
     }
-    // A file is opened by the relay's open read where it offers one: its current fields and text, not its history (ALO-6, ALO-13).
+    // A file is opened by the relay's open read: its current fields and text, not its history (ALO-6, ALO-13).
     // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/opening-a-file-reads-its-current-text-not-its-history.md
-    return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests, await withOpenRead(options))
+    return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests, options)
   } catch (error) {
     if (error instanceof RelayReadError && lane !== 'ahead') return null
     throw error
@@ -605,28 +582,15 @@ export async function resolveObjectFromCopy(
  */
 export async function searchFileReferencesAsViewer(text: string, relayUrl: string, token: StoredToken): Promise<ReferenceCandidate[]> {
   /*
-    Projects, once switched, are read by the list read and found by a word in their current fields, as Ship's and
-    Leaf's `[` find them (ALO-6); a deleted one is in no answer. Issues the same, once theirs is switched (ISS-6).
+    Files are read by the list read and found by a word in their current fields, as Ship's and Leaf's `[` find them;
+    a deleted one is in no answer. A page by a word of its current title, summary or text.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/search-finds-a-file-by-the-words-of-its-current-fields.md
   */
-  // Topics and pages the same, once theirs is (ALL-5): a page by a word of its current title, summary or text.
-  const [projects, issues, topics, documents] = await Promise.all([projectFields(), issueFields(), topicFields(), documentFields()])
-  const fields = projects ?? issues ?? topics ?? documents
-  const searched = [
-    ...(projects?.search ? [PROJECT_KIND] : []),
-    ...(issues?.search ? [ISSUE_KIND] : []),
-    ...(topics?.search ? [TOPIC_KIND] : []),
-    ...(documents?.search ? [DOCUMENT_KIND] : []),
-  ]
+  const searched = await searchedKinds()
   const byFields = searched.length
-    ? { kinds: searched, query: (filters: Record<string, unknown>[]) => queryRelayWithMatches(relayUrl, filters, token.accessToken, token.pubkey) }
+    ? { kinds: [...searched], query: (filters: Record<string, unknown>[]) => queryRelayWithMatches(relayUrl, filters, token.accessToken, token.pubkey) }
     : undefined
-  const inOrder = fields ? await inOrderOption() : {}
-  return searchFileReferences(text, viewerQuery(relayUrl, token), {
-    cache: manifests,
-    ...(fields ? { listRead: true, ...inOrder } : {}),
-    ...(byFields ? { byFields } : {}),
-  })
+  return searchFileReferences(text, viewerQuery(relayUrl, token), { cache: manifests, ...(byFields ? { byFields } : {}) })
 }
 
 /**
@@ -642,14 +606,11 @@ export async function fileCandidatesAsViewer(
   token: StoredToken,
 ): Promise<ReferenceCandidate[]> {
   const query = viewerQuery(relayUrl, token)
-  // Once switched, projects are read by the list read: a deleted one is in no list (ALO-6). A card picked from here
-  // names a project the relay keeps in order by its id.
-  const listRead = await listReadOption()
-  const inOrder = listRead.listRead ? await inOrderOption() : {}
+  // Files are read by the list read: a deleted one is in no list. A card picked from here names its file by its id.
   // A deleted file is offered nowhere (SPEC §6.5).
-  if (!('addresses' in files)) return fileCandidates(files.filter(live), tier, query, { cache: manifests, ...listRead, ...inOrder })
-  const objects = await resolveForeignRoots(files.addresses, query, manifests, listRead.listRead ? listRead : undefined)
-  return fileCandidates(objects.filter(live), tier, query, { cache: manifests, at: files.at, ...listRead, ...inOrder })
+  if (!('addresses' in files)) return fileCandidates(files.filter(live), tier, query, { cache: manifests })
+  const objects = await resolveForeignRoots(files.addresses, query, manifests)
+  return fileCandidates(objects.filter(live), tier, query, { cache: manifests, at: files.at })
 }
 
 /**
@@ -706,10 +667,9 @@ export async function resolveObjectsAsViewer(
     return Object.fromEntries(Object.entries(all).map(([reference, object]) => [reference, drawOnly(object)]))
   }
   const query = viewerQuery(relayUrl, token)
-  // Every card on the screen in one read still; a project once switched by the open read (ALO-6).
-  const opening = addresses.length ? await withOpenRead(options) : options
+  // Every card on the screen in one read still, each file by the open read.
   const [pooled, singles] = await Promise.all([
-    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests, opening) : {},
+    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests, options) : {},
     Promise.all(
       references
         .filter(single)
@@ -799,9 +759,7 @@ export async function resolveRootsAsViewer(
     const byAddress = new Map(objects.map((object) => [object.address, drawOnly(object)]))
     return Object.fromEntries(asked.flatMap(([reference, address]) => (byAddress.has(address) ? [[reference, byAddress.get(address)!]] : [])))
   }
-  // The list read as the full read takes it: offered is enough with `archivedWith` (`withOpenRead`), else once switched.
-  const listRead = (options?.archivedWith ? await listReadOffered() : (await listReadOption()).listRead) ? { listRead: true } : {}
-  const objects = await resolveForeignRoots(addresses, viewerQuery(relayUrl, token), manifests, { ...options, ...listRead })
+  const objects = await resolveForeignRoots(addresses, viewerQuery(relayUrl, token), manifests, options)
   const byAddress = new Map(objects.map((object) => [object.address, object]))
   return Object.fromEntries(references.map((reference) => [reference, byAddress.get(addressOf(reference) ?? '') ?? null]))
 }
@@ -823,10 +781,8 @@ export async function resolveParentsAsViewer(
   token: StoredToken,
   lane: ReadLane = 'click',
 ): Promise<Record<string, string | null>> {
-  // Each file by the list read as soon as the relay offers it, switched or not: its current values, not every change
-  // (ALO-15). why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
-  const listRead = await listReadOffered()
-  return resolveParents(references, viewerQuery(relayUrl, token, lane), manifests, listRead ? { listRead } : undefined)
+  // Each file by the list read: its current values, not every change (ALO-15).
+  return resolveParents(references, viewerQuery(relayUrl, token, lane), manifests)
 }
 
 /** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */
@@ -1027,22 +983,12 @@ export async function topicFilesAsViewer(
 }
 
 /**
- * The whole list, in the topic's order, each with its place and look (TOPI-5): interop sorts them. Once the relay
- * offers it, by the list read. Files this viewer cannot read are in it, with no address: a move is planned on all of
- * them, so a file only others can see keeps its place.
+ * The whole list, in the topic's order, each with its place and look (TOPI-5): interop sorts them, by the list read.
+ * Files this viewer cannot read are in it, with no address: a move is planned on all of them, so a file only others
+ * can see keeps its place.
  */
 export async function topicListAsViewer(topic: string, relayUrl: string, token: StoredToken): Promise<ListedFile[]> {
-  return topicList(viewerQuery(relayUrl, token), topic, await topicListRead())
-}
-
-/**
- * The list read for a topic's list, as soon as the relay offers it, switched or not (ALL-5): each entry's current
- * change, never every change the topic ever had. Before, it waited on the projects' switch.
- *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
- */
-async function topicListRead(): Promise<{ listRead?: true }> {
-  return (await listReadOffered()) ? { listRead: true } : {}
+  return topicList(viewerQuery(relayUrl, token), topic)
 }
 
 /**
@@ -1072,16 +1018,11 @@ export async function arrangeTopicAsViewer(
 }
 
 /**
- * The change Undo's listing follows, where topics are kept in order (ALL-5): the file's entry on the topic as the
- * relay has it now, which is the Remove being undone. Undefined where they are not, and the listing names none;
- * `null` when it could not be read, and nothing is put back.
+ * The change Undo's listing follows (SPEC §6.14): the file's entry on the topic as the relay has it now, which is
+ * the Remove being undone. `null` when it could not be read, and nothing is put back.
  */
-export async function listsPrevAsViewer(topic: string, file: string, relayUrl: string, token: StoredToken): Promise<string | undefined | null> {
-  if (!(await topicFields())) return undefined
-  const [kind, author, ...d] = topic.split(':')
-  const field = listsField(file)
-  const prevs = await prevsAfterSwitch(viewerQuery(relayUrl, token), { kind: Number(kind), pubkey: author!, d: d.join(':') }, [field]).catch(() => undefined)
-  return prevs?.[field] ?? null
+export async function listsPrevAsViewer(topic: string, file: string, relayUrl: string, token: StoredToken): Promise<string | null> {
+  return (await currentPrev(viewerQuery(relayUrl, token), pointerOf(topic), listsField(file))) ?? null
 }
 
 /** Put one change on the relay as the viewer, signed: Undo's listing again before its move (TOPI-5). */
@@ -1122,7 +1063,7 @@ export async function topicAddressesAsViewer(relayUrl: string, token: StoredToke
  * **Throws {@link RelayReadError} when the read failed.**
  */
 export async function topicListsAsViewer(topics: readonly string[], relayUrl: string, token: StoredToken): Promise<Map<string, ActivityFile[]>> {
-  const lists = await topicLists(viewerQuery(relayUrl, token), topics, await topicListRead())
+  const lists = await topicLists(viewerQuery(relayUrl, token), topics)
   return new Map([...lists].map(([topic, listed]) => [topic, listed.flatMap((entry) => (entry.address ? [{ address: entry.address, folder: entry.folder }] : []))]))
 }
 
@@ -1133,10 +1074,10 @@ export async function topicListsAsViewer(topics: readonly string[], relayUrl: st
  * **Throws {@link RelayReadError} when the read failed.**
  */
 export async function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
-  // Where the relay offers it, listed files' changes and the files under them are learnt as times, not read whole.
+  // Listed files' changes and the files under them are learnt as times, not read whole.
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
-  const times = (await timesOffered()) ? { times: (filters: Record<string, unknown>[]) => waitingOut(() => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey)) } : {}
-  return readTopicActivity(viewerQuery(relayUrl, token), topics, times)
+  const times = (filters: Record<string, unknown>[]) => waitingOut(() => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey))
+  return readTopicActivity(viewerQuery(relayUrl, token), topics, { times })
 }
 
 /**
@@ -1153,38 +1094,43 @@ export async function setTopicFileAsViewer(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const plan = args.listed ? planListInTopic : planRemoveFromTopic
   /*
-    Where topics are kept in order (SPEC §6.14, ALL-5): the entry follows the file's current entry on this topic, or
-    the topic's first record for a file never listed, read now. Each file is its own field, so two people adding
-    different files never clash, and a stale entry is written again after the newer one.
+    Topics are kept in order (SPEC §6.14): the entry follows the file's current entry on this topic, or the topic's
+    first record for a file never listed, read now. Each file is its own field, so two people adding different files
+    never clash, and a stale entry is written again after the newer one.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
   */
-  if (await topicFields()) {
-    const query = viewerQuery(relayUrl, token)
-    const [kind, author, ...d] = args.topic.split(':')
-    const pointer = { kind: Number(kind), pubkey: author!, d: d.join(':') }
-    const field = listsField(args.file)
-    const prev = (await prevsAfterSwitch(query, pointer, [field]).catch(() => undefined))?.[field]
-    if (!prev) return { ok: false, reason: 'The topic could not be read just now, so nothing was changed. Try again.' }
-    const written = await writeChange({
-      field,
-      value: args.listed ? 'true' : 'false',
-      prev,
-      build: (input) => plan(token.pubkey, input.createdAtMs, { topic: { address: args.topic, folder: args.folder }, file: args.file, prev: input.prev })[0]!,
-      sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
-      publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
-      query,
-      current: async (asked) => (await openFile(query, pointer, { text: false }))?.fields[asked]?.event,
-    }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
-    if (written.ok) return { ok: true }
-    return { ok: false, reason: 'refused' in written ? written.refused : 'The topic changed at the same time. Try again.' }
-  }
-  const result = await publishInOrder(
-    plan(token.pubkey, Date.now(), { topic: { address: args.topic, folder: args.folder }, file: args.file }),
-    relayUrl,
-    token,
-  )
-  if (result.ok) return { ok: true }
-  return { ok: false, reason: result.reason ?? (args.listed ? 'The relay refused to add the file.' : 'The relay refused to remove the file.') }
+  const query = viewerQuery(relayUrl, token)
+  const pointer = pointerOf(args.topic)
+  const field = listsField(args.file)
+  const prev = await currentPrev(query, pointer, field)
+  if (!prev) return { ok: false, reason: 'The topic could not be read just now, so nothing was changed. Try again.' }
+  const written = await writeChange({
+    field,
+    value: args.listed ? 'true' : 'false',
+    prev,
+    build: (input) => plan(token.pubkey, input.createdAtMs, { topic: { address: args.topic, folder: args.folder }, file: args.file, prev: input.prev })[0]!,
+    sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
+    publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
+    query,
+    current: async (asked) => (await openFile(query, pointer, { text: false }))?.fields[asked]?.event,
+  }).catch((error: unknown) => ({ ok: false as const, refused: error instanceof Error ? error.message : String(error) }))
+  if (written.ok) return { ok: true }
+  return { ok: false, reason: 'refused' in written ? written.refused : 'The topic changed at the same time. Try again.' }
+}
+
+/** `<kind>:<pubkey>:<d>` as the pointer interop opens a file by. */
+function pointerOf(address: string): { kind: number; pubkey: string; d: string } {
+  const [kind, author, ...d] = address.split(':')
+  return { kind: Number(kind), pubkey: author!, d: d.join(':') }
+}
+
+/**
+ * The change a new value of `field` follows (SPEC §6.13): the field's current change, or the file's first record
+ * when it never changed, read now by the open read without the text. Undefined when the file cannot be read.
+ */
+async function currentPrev(query: QueryFn, pointer: { kind: number; pubkey: string; d: string }, field: string): Promise<string | undefined> {
+  const opened = await openFile(query, pointer, { text: false }).catch(() => undefined)
+  return opened ? (opened.fields[field]?.id ?? opened.root.id) : undefined
 }
 
 /** {@link folderDeletableOf} as the viewer — whether Delete may be offered (FOL-9). */
@@ -1298,8 +1244,6 @@ export async function moveFileAsViewer(
     to,
     listings,
     ...(keepSpace ? { keepSpace } : {}),
-    // A moved project is named by its id once the relay keeps projects in order (ALO-6, SPEC §3.3).
-    ...(await inOrderOption()),
   })
   if (!plan.ok) {
     return {
@@ -1397,10 +1341,9 @@ export async function resolveFolderContentsAsViewer(
     return { ...contents, files: contents.files.filter(live).map((file) => drawOnly(file)!) }
   }
   const query = read ?? folderLoadAsViewer(relayUrl, token, source)
-  // Once switched, each project by the relay's list read: its current fields, not its history (ALO-6).
+  // Each file by the relay's list read: its current fields, not its history (ALO-6).
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
-  const { listRead } = await listReadOption()
-  const contents = await resolveFolderContents(folder, query, cachedPeople(query), manifests, listRead ? { ...options, listRead } : options)
+  const contents = await resolveFolderContents(folder, query, cachedPeople(query), manifests, options)
   return contents.files.every(live) ? contents : { ...contents, files: contents.files.filter(live) }
 }
 
@@ -1417,16 +1360,13 @@ export async function resolveFolderContentsAsViewer(
  * list read would cost every issue's current changes, about 5 MB as Miky on 19 Nov (ISS-6). Where the relay has no
  * times read, no issue is listed here.
  *
- * Topics and pages are found with the issues, in the same times read, in a tab that keeps them in order (ALL-5):
- * only there is one deleted by its field. A tab that does not reads exactly what it read before.
- *
- * `null` where the relay has no list read: there, finding them means reading every project's whole history.
+ * Topics and pages are found with the issues, in the same times read: each is deleted by the same field. One deleted
+ * for good before every relay kept them in order (a NIP-09 delete) has no `deleted` change, and is offered nowhere.
  *
  * **Throws {@link RelayReadError} when a read failed.**
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
  */
-export async function deletedProjectsAsViewer(relayUrl: string, token: StoredToken): Promise<ForeignObject[] | null> {
-  if (!(await listReadOffered())) return null
+export async function deletedProjectsAsViewer(relayUrl: string, token: StoredToken): Promise<ForeignObject[]> {
   const query = folderLoadAsViewer(relayUrl, token, 'relay')
   const [roots, listed, issues] = await Promise.all([
     query([{ kinds: [PROJECT_KIND] }]),
@@ -1453,16 +1393,11 @@ const TIMES_PAGE = 500
 /**
  * The addresses of the issues whose `deleted` field anyone ever changed, from the times read of every issue the viewer
  * can read, page by page until its cursor stops (SPEC §6.5, §6.13), as Ship's `deletedIssueEvents` finds them. A
- * restored issue is among them: reading it whole says it is not deleted. Empty where the relay has no times read.
- *
- * Topics and pages with them (ALL-5), each where this tab keeps its type in order: deleted by the same field, and
- * found the same way. Left out otherwise, so the read grows with a workspace's topics and pages only where one of
- * them can have been deleted by its field.
+ * restored issue is among them: reading it whole says it is not deleted. Topics and pages with them (ALL-5): deleted
+ * by the same field, and found the same way.
  */
 async function deletedFileCandidates(relayUrl: string, token: StoredToken): Promise<string[]> {
-  if (!(await timesOffered())) return []
-  const [topics, documents] = await Promise.all([topicFields(), documentFields()])
-  const kinds = [ISSUE_KIND, ...(topics ? [TOPIC_KIND] : []), ...(documents ? [DOCUMENT_KIND] : [])]
+  const kinds = [ISSUE_KIND, TOPIC_KIND, DOCUMENT_KIND]
   const named = new Set<string>()
   let until: number | undefined
   for (;;) {
@@ -1484,7 +1419,7 @@ async function deletedFileCandidates(relayUrl: string, token: StoredToken): Prom
 
 /**
  * Not deleted (SPEC §6.5): a deleted file stays listed in its Folder, and every reader hides it from lists and search
- * — the list read leaves it out, and with the switch off it is folded with `deleted` set, so it is left out here. A
+ * — the list read leaves it out, and a file read by its changes is folded with `deleted` set, so it is left out here. A
  * link or a card to it still opens, and says who deleted it.
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
  */
@@ -1510,7 +1445,7 @@ export async function archivedChildrenAsViewer(
 ): Promise<ForeignObject[]> {
   if (parents.length === 0) return []
   const query = read ?? folderLoadAsViewer(relayUrl, token, 'relay')
-  const objects = await resolveForeignObjects(parents, query, cachedPeople(query), manifests, await withOpenRead({ archivedChildren: true }))
+  const objects = await resolveForeignObjects(parents, query, cachedPeople(query), manifests, { archivedChildren: true })
   return Object.values(objects).flatMap((parent) => parent?.children?.filter((child) => !!child.archived) ?? [])
 }
 
@@ -1670,15 +1605,14 @@ export async function listFoldersAsViewer(
 ): Promise<FolderSummary[]> {
   // From the copy, it throws when the copy has not seen the listing's reads (PEE-4).
   if (source === 'copy') return listFolders(copyQuery(relayUrl, token))
-  // Once switched, the projects it names by the relay's list read (ALO-6).
-  const { listRead } = await listReadOption()
+  // The projects it names by the relay's list read (ALO-6).
   /*
     The navigation's own listing (no load given) is the first thing every screen draws, Teams' text waits on it, and
     its first reads are a REQ each: the first-page lane, rather than behind a second's twelve frames of other reads
     (ALO-14: they went out 1.0–1.4 s after they were asked). Its wider reads take a slot (`firstReadQuery`).
   */
   const query = read ?? (source === 'relay' ? createLoadQuery(firstReadQuery(relayUrl, token)) : folderLoadAsViewer(relayUrl, token, source))
-  return listRead ? listFolders(query, { listRead }) : listFolders(query)
+  return listFolders(query)
 }
 
 /**
@@ -1919,7 +1853,7 @@ export async function creatableUnderAsViewer(
     const address = pointerToAddress(pointer)
     if (!resolved) {
       // The one resolve. Its projection is the kind's, not this object's.
-      const object = await resolveForeignObject(address, query, people, 0, manifests, await withOpenRead(undefined))
+      const object = await resolveForeignObject(address, query, people, 0, manifests)
       if (!object) continue
       // Already memoised by the resolve above; asked for its address alone.
       const owner = await resolveManifest(pointer, query, manifests)
@@ -2031,8 +1965,6 @@ export async function buildCommentAsViewer(
     replyTo: args.replyTo,
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
-    // A project kept in order is named by its id as well (SPEC §6.4).
-    ...(await inOrderOption()),
   })
   if (typeof built === 'string') return { ok: false, reason: built }
   return { ok: true, event: transform(built[0]) }
@@ -2107,21 +2039,12 @@ export async function applyActionAsViewer(
      */
     declaredBy?: string
     /**
-     * The change this one follows, as the caller read the file (`prevOf`), for a project read by its fields whose
-     * open read no longer answers it — a deleted one, restored from its card (ALO-6). A fresh read wins when there
-     * is one; with the switch off it is never sent.
+     * The change this one follows, as the caller read the file (`prevOf`), for a file whose open read no longer
+     * answers it — a deleted one, restored from its card (ALO-6). A fresh read wins when there is one.
      */
     prev?: string
-    /**
-     * A Restore (ALL-5): a Delete declared as a `kind:5` is then written as the `deleted` change set back to empty,
-     * after the change it follows, whether or not this tab is switched for the file's type. Never a `kind:5`.
-     */
+    /** A Restore (ALL-5): a Delete declared as a `kind:5` is then written as the `deleted` change set back to empty. */
     restores?: true
-    /**
-     * For a project's text: the text the caller loaded and edited from. Used only when the change is written again
-     * after the relay switched (ALO-8), so words saved since are merged onto, never written over.
-     */
-    base?: WriteChangeArgs['base']
   },
   relayUrl: string,
   token: StoredToken,
@@ -2138,8 +2061,6 @@ export async function applyActionAsViewer(
    * A reply's parent is not this seam's: that is `replyTo`.
    */
   transform?: (event: UnsignedActionEvent) => UnsignedActionEvent,
-  /** Set on the one write again after the relay's switch refusal (ALO-8), so it is never tried a third time. */
-  afterSwitch = false,
 ): Promise<
   ActResult & {
     created?: string
@@ -2182,35 +2103,27 @@ export async function applyActionAsViewer(
 
   const found = resolved.manifest.actions?.find((action) => action.id === args.actionId)
   /*
-    A Delete declared as a `kind:5` on a file whose type is kept in order (a topic, a page; SPEC §7.3, §6.5, ALL-5):
-    the relay refuses the `kind:5`, and the delete is the file's `deleted` change, `true` to delete and empty to
-    restore, after the change it follows. Read here as that change, so it is written like any other field: nothing
-    is taken off a team's list, and Restore brings back exactly what was there.
+    A Delete declared as a `kind:5` on a file (SPEC §7.3, §6.5): the relay refuses the `kind:5` on every file, and the
+    delete is the file's `deleted` change, `true` to delete and empty to restore, after the change it follows. Read
+    here as that change, so it is written like any other field: nothing is taken off a team's list, and Restore brings
+    back exactly what was there.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
   */
-  // A Restore is always that change: a file that reads as deleted was marked by it, whatever this tab is switched to.
-  // So is a Delete written again after the relay refused its `kind:5` (`afterSwitch`): the refusal says the type is kept.
-  const marks =
-    found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && (!!args.restores || afterSwitch || !!(await fieldsFor(pointer.kind)))
+  const marks = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && FILE_KINDS.includes(pointer.kind)
   const declared = found && marks ? { ...found, emits: { kind: KIND_CHANGE, field: DELETED_FIELD }, input: { type: 'string' as const } } : found
   const manifest =
     found && marks ? { ...resolved.manifest, actions: (resolved.manifest.actions ?? []).map((action) => (action === found ? declared! : action)) } : resolved.manifest
   /*
-    A change to a project read by its fields (ALO-6, SPEC §6.2): written after
-    the change it follows, through interop's `writeChange`. The relay's open
-    read answers the first record and each field's current change in one go, so
-    it stands in for the root read below and hands over the `prev` too.
+    A change to a file (SPEC §6.2, §6.13): written after the change it follows, through interop's `writeChange`. The
+    relay's open read answers the first record and each field's current change in one go, so it stands in for the
+    root read below and hands over the `prev` too.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
   */
   const changedField =
     declared?.emits.field && declared.emits.kind !== KIND.DELETION && typeof args.value === 'string' ? declared.emits.field : undefined
-  // Projects' switch or issues', each on its own (ISS-6): a status, assign, rename or move lands after the current change.
-  const fields = changedField ? await fieldsFor(pointer.kind) : undefined
-  // Written after the change it follows: where this tab is switched for the kind, a Restore anywhere, and the one
-  // write again after the relay said the file is kept in order.
-  const inOrderWrite = !!fields || (marks && !!args.restores) || (afterSwitch && !!changedField)
+  const inOrderWrite = !!changedField && FILE_KINDS.includes(pointer.kind)
   const open = async (field: string) =>
-    openFile(query, { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }, { text: field === TEXT_FIELD && !!fields?.text })
+    openFile(query, { kind: pointer.kind, pubkey: pointer.pubkey, d: pointer.identifier }, { text: field === TEXT_FIELD })
   const opened = inOrderWrite && changedField ? await open(changedField).catch(() => undefined) : undefined
 
   // The Folder has to come off the object itself: it is required on the event
@@ -2314,12 +2227,8 @@ export async function applyActionAsViewer(
     }
   }
 
-  /*
-    The types the relay keeps in order (NIP-11): a comment, a Folder command
-    and a reference to a project then name it by its id as well (SPEC §6.4).
-    why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-named-by-its-id-in-a-capital-and-small-tag.md
-  */
-  const inOrder = await inOrderTypes()
+  // A comment, a Folder command and a reference to a file name it by its id as well (SPEC §6.4): interop's builders do.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-named-by-its-id-in-a-capital-and-small-tag.md
   const common = {
     manifest,
     kind: pointer.kind,
@@ -2331,7 +2240,6 @@ export async function applyActionAsViewer(
     replyTo: args.replyTo,
     ...(args.note ? { note: args.note } : {}),
     pubkey: token.pubkey,
-    ...(inOrder.length > 0 ? { inOrder } : {}),
     ...listing,
   }
 
@@ -2352,7 +2260,6 @@ export async function applyActionAsViewer(
       value,
       ...(args.contentFormat ? { format: args.contentFormat } : {}),
       prev,
-      ...(afterSwitch && args.base ? { base: args.base } : {}),
       // The manifest decides the change's shape: `buildActionEvents` bound to this action, the same tags each try.
       build: (input) => {
         const one = buildActionEvents({ ...common, value: input.value, contentFormat: input.format ?? args.contentFormat, prev: input.prev, createdAtMs: input.createdAtMs })
@@ -2368,16 +2275,16 @@ export async function applyActionAsViewer(
     // Said of the field changed: a crossed title or status is not "this text".
     const what = changedField === TEXT_FIELD ? 'this text' : 'this'
     if (!('refused' in written)) return fail(`Someone changed ${what} at the same time. Reload and try again.`)
-    return fail(isSwitchRefusal(written.refused) ? NOT_SAVED_RELOAD : written.refused)
+    return fail(written.refused)
   }
 
   /*
-    A new issue, once issues are switched (ISS-6, SPEC §6.1): its first record carries no text, and the text it was
-    filed with is its first change, after the record — interop's `createFile`. A text that did not land leaves the
-    issue made and says so, never "created" with its words lost.
+    A new issue (ISS-6, SPEC §6.1): its first record carries no text, and the text it was filed with is its first
+    change, after the record — interop's `createFile`. A text that did not land leaves the issue made and says so,
+    never "created" with its words lost.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-new-files-text-is-its-first-change.md
   */
-  if (declared?.emits.kind === ISSUE_KIND && typeof value !== 'string' && newId && (await issueFields())) {
+  if (declared?.emits.kind === ISSUE_KIND && typeof value !== 'string' && newId) {
     const { [TEXT_FIELD]: text = '', ...rest } = value
     const first = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })
     if (typeof first === 'string') return fail(first)
@@ -2392,7 +2299,6 @@ export async function applyActionAsViewer(
     const made = await createFile({
       root: transform ? transform(first[0]) : first[0],
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
-      inOrder,
       build: (input) => {
         const one = buildActionEvents({
           ...common,
@@ -2429,31 +2335,7 @@ export async function applyActionAsViewer(
     token.pubkey,
   )
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  if (!result.ok) {
-    /*
-      The relay switched since this tab read its NIP-11 and now keeps projects in order (ALO-8): read it again, and
-      write the change again once through the switched path above, after each field's current change. The person
-      sees nothing. A text is written again only with the text it was edited from (`base`), so words saved since are
-      merged, never written over. A second refusal, or a relay still not switched, asks for a reload in Peek's words.
-      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-its-fields-each-kept-in-order-by-the-relay.md
-    */
-    const switching = !!changedField && isSwitchedKind(pointer.kind) && isSwitchRefusal(result.reason)
-    /*
-      A topic or a page (ALL-5): the relay keeps them in order for one team and announces nothing, so a tab that did
-      not opt in learns it from this refusal alone. The change is written again once, after the change it follows;
-      a `kind:5` the relay refused as `delete-by-field` is written again as the file's `deleted` change.
-      why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/every-file-type-is-kept-in-order-and-a-delete-only-marks-the-file.md
-    */
-    const unannounced = pointer.kind === TOPIC_KIND || pointer.kind === DOCUMENT_KIND
-    if (switching && !afterSwitch && unannounced && changedField !== TEXT_FIELD) return applyActionAsViewer(args, relayUrl, token, transform, true)
-    if (switching && !afterSwitch && !unannounced && (changedField !== TEXT_FIELD || args.base)) {
-      forgetProjectFields()
-      if (await fieldsFor(pointer.kind)) return applyActionAsViewer(args, relayUrl, token, transform, true)
-    }
-    const byField = found?.emits.kind === KIND.DELETION && typeof args.value === 'string' && refusalCode(result.reason) === 'delete-by-field'
-    if (byField && !afterSwitch) return applyActionAsViewer(args, relayUrl, token, transform, true)
-    return fail(switching ? NOT_SAVED_RELOAD : (result.reason ?? 'The relay rejected the change.'))
-  }
+  if (!result.ok) return fail(result.reason ?? 'The relay rejected the change.')
 
   /*
     The Folder commands, in order, stopping at the first refusal (SPEC §7.3).
@@ -2605,7 +2487,7 @@ export async function deleteFileAsViewer(
       : { ok: true }
   }
   const removed = await publishInOrder(
-    planUnlistFile(token.pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: args.hasState, ...(await inOrderOption()) }),
+    planUnlistFile(token.pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: args.hasState }),
     relayUrl,
     token,
   )
@@ -2621,14 +2503,8 @@ export async function deleteFileAsViewer(
 /** A `kind:1851`: a change to one of a file's fields (SPEC §6.7). */
 const KIND_CHANGE = 1851
 
-/** What Peek calls a file of each switched kind when it could not be read. */
+/** What Peek calls a file of each base kind when it could not be read. */
 const FILE_NOUN: Record<number, string> = { [PROJECT_KIND]: 'project', [ISSUE_KIND]: 'issue', [TOPIC_KIND]: 'topic', [DOCUMENT_KIND]: 'page' }
-
-/** interop's `inOrder`, only when the relay keeps a type in order: absent otherwise, as before. */
-async function inOrderOption(): Promise<{ inOrder?: readonly string[] }> {
-  const inOrder = await inOrderTypes()
-  return inOrder.length > 0 ? { inOrder } : {}
-}
 
 /**
  * The field the declared action sets, undefined for one that sets none (a `kind:5`, a comment), or `null` when the
@@ -2645,8 +2521,9 @@ async function declaredFieldOf(naddr: string, actionId: string, relayUrl: string
   if (!resolved) return null
   const declared = resolved.manifest.actions?.find((action) => action.id === actionId)
   if (!declared) return undefined
-  // A `kind:5` Delete on a type kept in order is the `deleted` change (ALL-5); elsewhere it is still the `kind:5`.
-  if (declared.emits.kind === KIND.DELETION) return (await fieldsFor(pointer.kind)) ? DELETED_FIELD : undefined
+  // An older listing's `kind:5` Delete is the `deleted` change on every file (SPEC §6.5); on anything else it is still
+  // the `kind:5`, unlisted after it.
+  if (declared.emits.kind === KIND.DELETION) return FILE_KINDS.includes(pointer.kind) ? DELETED_FIELD : undefined
   return declared.emits.field
 }
 

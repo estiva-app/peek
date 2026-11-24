@@ -1,11 +1,9 @@
 /**
  * Finding a file's parents, and whether one of them is archived, reads each parent project's current values, not
- * every change ever made to it (ALO-15, SPEC §6.13) — as soon as the relay offers the list read, whether or not this
- * tab is switched. A relay that does not offer it is read as before. Asserted on the filters that reach the relay.
- *
- * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-advertises-the-list-read-apart-from-the-switch.md
+ * every change ever made to it (ALO-15, ALL-8, SPEC §6.13): the relay's list read, the one way files are read.
+ * Asserted on the filters that reach the relay.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Event = { id: string; kind: number; pubkey: string; created_at: number; tags: string[][]; content: string; sig: string }
 
@@ -20,37 +18,16 @@ const { queryRelay, events } = vi.hoisted(() => {
       if (key === 'ids') return values.includes(event.id)
       return event.tags.some((t) => t[0] === key.slice(1) && values.includes(t[1]))
     })
-  const addressOf = (e: Event) => `${e.kind}:${e.pubkey}:${e.tags.find((t) => t[0] === 'd')?.[1]}`
-  const tag = (e: Event, name: string) => e.tags.find((t) => t[0] === name)?.[1]
-  /** The list read (SPEC §6.13): each file it names, with each field's newest change aimed at it. */
-  const listed = (filter: Record<string, unknown>) =>
-    events
-      .filter((root) => matches(root, filter))
-      .flatMap((root) => {
-        const newest = new Map<string, Event>()
-        for (const change of events.filter((e) => e.kind === 1851 && tag(e, 'a') === addressOf(root))) {
-          const held = newest.get(tag(change, 'field') ?? '')
-          if (!held || held.created_at < change.created_at) newest.set(tag(change, 'field') ?? '', change)
-        }
-        return [root, ...newest.values()]
-      })
-  const queryRelay = vi.fn(async (_url: string, filters: Record<string, unknown>[]) => ({
-    ok: true,
-    events: [
-      ...new Set([
-        ...events.filter((event) => filters.some((filter) => filter.fields !== 'newest' && matches(event, filter))),
-        ...filters.filter((filter) => filter.fields === 'newest').flatMap(listed),
-      ]),
-    ],
-  }))
+  const queryRelay = vi.fn(async (_url: string, filters: Record<string, unknown>[]) => {
+    // The list read (SPEC §6.13): each file it names, with each field's current change.
+    const { relayAnswer } = await import('@/test/listRead')
+    return { ok: true, events: relayAnswer(events, filters, matches) }
+  })
   return { queryRelay, events }
 })
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
-// A build with a relay, so the relay's NIP-11 is asked; tests have none by default.
-vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import { forgetUrlShapes, resolveObjectAsViewer, resolveObjectsAsViewer, resolveParentsAsViewer } from './foreign'
-import { forgetProjectFields } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
@@ -69,12 +46,6 @@ const event = (kind: number, created_at: number, tags: string[][]): Event => ({
   sig: '',
 })
 
-/** The relay's NIP-11: production on 6 Nov offers the list read with the switch off (`'list'`); `false` says nothing. */
-function relayInfo(offered: boolean | 'list') {
-  const info = offered === 'list' ? { file_list: { newest: true, text: true } } : { supported_nips: [1, 11] }
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
-}
-
 /** Every filter that asks for the project's changes without `since` or the list read: its whole history. */
 const projectHistoryReads = () =>
   queryRelay.mock.calls
@@ -91,7 +62,6 @@ beforeEach(() => {
   events.length = 0
   queryRelay.mockClear()
   forgetUrlShapes()
-  forgetProjectFields()
   // Ship's manifest, a project renamed a few times and then archived, and a page under it.
   events.push(
     {
@@ -116,13 +86,7 @@ beforeEach(() => {
   )
 })
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
-
-describe('where the relay offers the list read, with the switch off', () => {
-  beforeEach(() => relayInfo('list'))
-
+describe('a parent read by the list read', () => {
   it('the page a link opens reads as archived with its project, without reading the project’s every change', async () => {
     const page = await resolveObjectAsViewer(PAGE, 'https://relay.test', token, { archivedWith: true })
 
@@ -142,23 +106,5 @@ describe('where the relay offers the list read, with the switch off', () => {
 
     expect(parents[PROJECT]).toBeNull()
     expect(projectHistoryReads()).toEqual([])
-  })
-})
-
-describe('where the relay does not offer the list read', () => {
-  beforeEach(() => relayInfo(false))
-
-  it('the page still reads as archived with its project, by the project’s changes as before', async () => {
-    const page = await resolveObjectAsViewer(PAGE, 'https://relay.test', token, { archivedWith: true })
-
-    expect(page?.archived?.with).toBe(PROJECT)
-    expect(projectHistoryReads().length).toBeGreaterThan(0)
-  })
-
-  it('a project card’s parent is still found, by the project’s changes as before', async () => {
-    const parents = await resolveParentsAsViewer([PROJECT], 'https://relay.test', token)
-
-    expect(parents[PROJECT]).toBeNull()
-    expect(projectHistoryReads().length).toBeGreaterThan(0)
   })
 })

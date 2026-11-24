@@ -1,9 +1,9 @@
 /**
  * An action followed by a Folder command — SPEC §7.3's `listed` (MAN-4).
  *
- * Ship's `delete-project` is a `kind:5` and then a `kind:1852 remove` from
- * every Folder whose state names the project; `add-project` is the record and
- * then an `add` when its Folder has state. interop's single-event builder
+ * `add-project` is the record and then an `add` when its Folder has state. A
+ * Delete a listing still declares as a `kind:5`, listed or not, is the file's
+ * `deleted` change since ALL-8, and takes it off no Folder's list. interop's single-event builder
  * refuses both rather than build the first half alone, so before this Peek's
  * Delete on a project would have failed with the runtime's sentence the day
  * Ship declared it. These pin that Peek reads the Folders, builds every event,
@@ -20,12 +20,12 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 
 import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes } from './foreign'
+import { relayAnswer } from '@/test/listRead'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const RELAY = 'cd'.repeat(32)
 const FOLDER = '9c69f247-0000-4000-8000-000000000000'
 const OTHER = '9c69f247-0000-4000-8000-000000000001'
-const UNRELATED = '9c69f247-0000-4000-8000-000000000002'
 const PROJECT = 30850
 const ISSUE = 30851
 const ADDRESS = `${PROJECT}:${AUTHOR}:p1`
@@ -99,23 +99,9 @@ const channel = (id: string) => event({ kind: 39000, pubkey: RELAY, tags: [['d',
 const state = (id: string, addresses: string[], pubkey = RELAY) =>
   event({ kind: 30890, pubkey, tags: [['d', id], ...addresses.map((a) => ['a', a])] })
 
-/** A relay answering from `world`, honouring kinds/authors/#-tags. */
+/** A relay answering from `world`: files by the list and open reads, the rest by a plain match. */
 function relayOver(world: TestEvent[]) {
-  return vi.fn(async (_url: string, filters: Record<string, unknown>[]) => ({
-    ok: true as const,
-    events: world.filter((e) =>
-      filters.some((f) => {
-        if (f.kinds && !(f.kinds as number[]).includes(e.kind)) return false
-        if (f.authors && !(f.authors as string[]).includes(e.pubkey)) return false
-        for (const [key, want] of Object.entries(f)) {
-          if (!key.startsWith('#')) continue
-          const held = e.tags.filter((t) => t[0] === key.slice(1)).map((t) => t[1])
-          if (!(want as string[]).some((v) => held.includes(v))) return false
-        }
-        return true
-      }),
-    ),
-  }))
+  return vi.fn(async (_url: string, filters: Record<string, unknown>[]) => ({ ok: true as const, events: relayAnswer(world, filters) }))
 }
 
 const tag = (e: { tags: string[][] }, name: string) => e.tags.find((t) => t[0] === name)?.[1]
@@ -132,30 +118,24 @@ beforeEach(() => {
   signViaEstivaId.mockClear()
 })
 
-describe('a listed deletion', () => {
-  const world = [
-    manifest,
-    project,
-    channel(FOLDER),
-    channel(OTHER),
-    channel(UNRELATED),
-    state(FOLDER, [ADDRESS]),
-    state(OTHER, [ADDRESS]),
-    state(UNRELATED, []),
-    // Not the relay's: a state signed by somebody else is no Folder's listing.
-    event({ kind: 30890, pubkey: AUTHOR, tags: [['d', UNRELATED], ['a', ADDRESS]] }),
-  ]
+describe('a Delete a listing still declares as a kind:5 (ALL-8, SPEC §6.13)', () => {
+  const world = [manifest, project, channel(FOLDER), channel(OTHER), state(FOLDER, [ADDRESS]), state(OTHER, [ADDRESS])]
+  /** What was signed, as `kind field value prev`. */
+  const wire = () =>
+    signViaEstivaId.mock.calls.map(([e]) => {
+      const sent = e as { kind: number; tags: string[][] }
+      return [sent.kind, tag(sent, 'field'), tag(sent, 'value'), tag(sent, 'prev')]
+    })
 
-  it('deletes, then removes it from every Folder whose state names it, and from no other', async () => {
+  it('marks a listed project deleted after its first record: no kind:5, and no Folder takes it off its list', async () => {
     queryRelay.mockImplementation(relayOver(world))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'delete-project', value: '' }, 'https://relay.test', token)
 
-    expect(result).toMatchObject({ ok: true, listed: true })
-    expect(result.incomplete).toBeUndefined()
-    expect(published()).toEqual(['5', `1852 remove ${FOLDER}`, `1852 remove ${OTHER}`])
+    expect(result.ok).toBe(true)
+    expect(wire()).toEqual([[1851, 'deleted', 'true', project.id]])
   })
 
-  it('through deleteFileAsViewer, unlists once — the declaration’s commands, not a second remove', async () => {
+  it('through deleteFileAsViewer, writes the same one change and unlists nothing', async () => {
     queryRelay.mockImplementation(relayOver(world))
     const result = await deleteFileAsViewer(
       { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
@@ -164,27 +144,10 @@ describe('a listed deletion', () => {
     )
 
     expect(result).toEqual({ ok: true })
-    expect(published()).toEqual(['5', `1852 remove ${FOLDER}`, `1852 remove ${OTHER}`])
+    expect(wire()).toEqual([[1851, 'deleted', 'true', project.id]])
   })
 
-  it('stops at a refused remove, and says the project is gone but still listed', async () => {
-    queryRelay.mockImplementation(relayOver(world))
-    publishSigned
-      .mockImplementationOnce(async () => ({ ok: true }))
-      .mockImplementationOnce(async () => ({ ok: false, reason: 'restricted: not a channel member' }))
-    const result = await deleteFileAsViewer(
-      { naddr: ADDRESS, actionId: 'delete-project', address: ADDRESS, folder: FOLDER, hasState: true },
-      'https://relay.test',
-      token,
-    )
-
-    expect(result.ok).toBe(false)
-    expect(!result.ok && result.reason).toMatch(/deleted but is still listed/)
-    // The second remove is never sent: each command assumes the one before it landed.
-    expect(published()).toEqual(['5', `1852 remove ${FOLDER}`])
-  })
-
-  it('leaves an unlisted deletion to deleteFileAsViewer’s own unlist, as before', async () => {
+  it('marks an issue deleted the same way, its Folder’s list untouched', async () => {
     queryRelay.mockImplementation(relayOver([manifest, issue, channel(FOLDER), state(FOLDER, [ISSUE_ADDRESS])]))
     const result = await deleteFileAsViewer(
       { naddr: ISSUE_ADDRESS, actionId: 'delete-issue', address: ISSUE_ADDRESS, folder: FOLDER, hasState: true },
@@ -193,16 +156,36 @@ describe('a listed deletion', () => {
     )
 
     expect(result).toEqual({ ok: true })
+    expect(wire()).toEqual([[1851, 'deleted', 'true', issue.id]])
+  })
+
+  it('still deletes another app’s object, not a file, by its kind:5, and takes it off its team’s list', async () => {
+    // A calendar event (kind:31922) another app lists in a team: no file kind, so no `deleted` field to mark.
+    const EVENT = `31922:${AUTHOR}:e1`
+    const calendar = event({
+      kind: 31990,
+      tags: [['d', 'calendar'], ['k', '31922']],
+      content: JSON.stringify({
+        name: 'Calendar',
+        projections: { 31922: { widget: 'row', slots: { title: { tag: 'title' } } } },
+        actions: [{ id: 'delete-event', label: 'Delete', appliesTo: '31922', emits: { kind: 5 } }],
+      }),
+    })
+    const meeting = event({ kind: 31922, tags: [['d', 'e1'], ['title', 'Standup'], ['h', FOLDER]] })
+    queryRelay.mockImplementation(relayOver([calendar, meeting, channel(FOLDER), state(FOLDER, [EVENT])]))
+    const result = await deleteFileAsViewer({ naddr: EVENT, actionId: 'delete-event', address: EVENT, folder: FOLDER, hasState: true }, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: true })
     expect(published()).toEqual(['5', `1852 remove ${FOLDER}`])
   })
 
-  it('sends nothing after a refused kind:5', async () => {
+  it('hands back a refused change as what the person reads, and sends nothing after it', async () => {
     queryRelay.mockImplementation(relayOver(world))
     publishSigned.mockImplementationOnce(async () => ({ ok: false, reason: 'blocked: not the author' }))
     const result = await applyActionAsViewer({ naddr: ADDRESS, actionId: 'delete-project', value: '' }, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: false, reason: 'blocked: not the author' })
-    expect(published()).toEqual(['5'])
+    expect(wire()).toHaveLength(1)
   })
 })
 
@@ -223,7 +206,8 @@ describe('a listed creation', () => {
     expect(record.kind).toBe(PROJECT)
     expect(tag(record, 'buzz-channel')).toBe(FOLDER)
     expect(tag(listing, 'op')).toBe('add')
-    expect(tag(listing, 'a')).toBe(result.created)
+    // A Folder command names a file by its id (SPEC §7.3).
+    expect(tag(listing, 'o')).toBe(result.created?.split(':')[2])
   })
 
   it('into a Folder without state: the record alone', async () => {

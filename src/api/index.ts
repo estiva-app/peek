@@ -70,7 +70,7 @@ export {
   type FolderContentsState,
 } from './useFolderContents'
 export { useDeletedProjects, type DeletedProjectsState } from './useDeletedProjects'
-export { useRestorableDelete } from './useRestorableDelete'
+export { isRestorableDelete } from './restorableDelete'
 export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
 export type { StartTopicArgs } from './startTopic'
 export { showStartedTopicWhenWritten } from './topicStarted'

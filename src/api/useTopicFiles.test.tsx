@@ -45,7 +45,6 @@ vi.mock('./foreign', async () => ({
 }))
 
 import { useTopicFiles } from './useTopicFiles'
-import { forgetProjectFields } from '@/nostr/projectFields'
 
 const FOLDER = '05bebd5b-b699-4bd4-af50-f5377df0fd67'
 const TOPIC_D = '7a384136-31a6-4d91-80ac-1d599464d2f2'
@@ -230,34 +229,26 @@ describe('useTopicFiles arranging (TOPI-5)', () => {
     expect(files[0]?.listed.look).toBe('row')
   })
 
-  it('Undo of Remove on a topic kept in order lists the file again after the Remove it undoes, and puts nothing back when that cannot be read (ALL-5)', async () => {
-    const info = { files: { requires_prev: ['osnova.topic'] }, file_list: { newest: true, text: true } }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
-    forgetProjectFields()
-    try {
-      const { result } = await listedTwo()
-      const gone = (result.current.state as unknown as { files: Array<{ file: string; listed: never }> }).files.find((f) => f.file === ISSUE_D)!.listed
-      await act(async () => void (await result.current.setListed(ISSUE_D, false)))
-      const removing = relay.entries.findLastIndex((e) => fieldsOf(e).includes(`lists:${ISSUE_D}`))
-      expect(tag(relay.entries[removing]!, 'value')).toBe('false')
-      const before = relay.entries.length
+  it('Undo of Remove lists the file again after the Remove it undoes, and puts nothing back when that cannot be read (ALL-5)', async () => {
+    const { result } = await listedTwo()
+    const gone = (result.current.state as unknown as { files: Array<{ file: string; listed: never }> }).files.find((f) => f.file === ISSUE_D)!.listed
+    await act(async () => void (await result.current.setListed(ISSUE_D, false)))
+    const removing = relay.entries.findLastIndex((e) => fieldsOf(e).includes(`lists:${ISSUE_D}`))
+    expect(tag(relay.entries[removing]!, 'value')).toBe('false')
+    const before = relay.entries.length
 
-      relay.refuse = true
-      let answer: { ok: boolean; reason?: string } | undefined
-      await act(async () => void (answer = await result.current.putBack(gone, null)))
-      expect(answer).toEqual({ ok: false, reason: 'Couldn’t put the file back.' })
-      expect(relay.entries.length).toBe(before)
+    relay.refuse = true
+    let answer: { ok: boolean; reason?: string } | undefined
+    await act(async () => void (answer = await result.current.putBack(gone, null)))
+    expect(answer).toEqual({ ok: false, reason: 'Couldn’t put the file back.' })
+    expect(relay.entries.length).toBe(before)
 
-      relay.refuse = false
-      await act(async () => void (await result.current.putBack(gone, null)))
-      const relisted = relay.entries[before]!
-      expect(fieldsOf(relisted)).toEqual([`lists:${ISSUE_D}`])
-      expect(tag(relisted, 'value')).toBe('true')
-      expect(tag(relisted, 'prev')).toBe(hexId(removing))
-    } finally {
-      vi.unstubAllGlobals()
-      forgetProjectFields()
-    }
+    relay.refuse = false
+    await act(async () => void (await result.current.putBack(gone, null)))
+    const relisted = relay.entries[before]!
+    expect(fieldsOf(relisted)).toEqual([`lists:${ISSUE_D}`])
+    expect(tag(relisted, 'value')).toBe('true')
+    expect(tag(relisted, 'prev')).toBe(hexId(removing))
   })
 
   it('a move among unplaced files places a file this viewer cannot see too, so it keeps its place for those who can', async () => {

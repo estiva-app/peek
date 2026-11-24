@@ -1,5 +1,5 @@
 /**
- * Peek's reads of projects once the relay keeps them in order (ALO-6, SPEC §6.13): a team's list and the files `[`
+ * Peek's reads of projects, files kept in order like every file (ALO-6, ALL-8, SPEC §6.13): a team's list and the files `[`
  * offers by the relay's list read, the cards under messages by its open read — all of a screen's cards in one read —
  * and `[` finding a project by a word in its current fields. Asserted on the filters that reach the relay.
  */
@@ -14,7 +14,7 @@ const { queryRelay, queryRelayTimes, queryRelayWithMatches, publishSigned, signV
 }))
 
 vi.mock('./bridge', () => ({ queryRelay, queryRelayTimes, queryRelayWithMatches, publishSigned, signViaEstivaId }))
-// A build with a relay, so the switch asks it; tests have none by default.
+// A build with a relay, so its NIP-11 is asked; tests have none by default.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import {
@@ -25,7 +25,7 @@ import {
   resolveObjectsAsViewer,
   searchFileReferencesAsViewer,
 } from './foreign'
-import { forgetProjectFields, topicFieldsOptIn } from './projectFields'
+import { forgetSearchedKinds } from './projectFields'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '9c69f247-0000-4000-8000-000000000000'
@@ -33,21 +33,9 @@ const A = `30850:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000aaaa`
 const B = `30850:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000bbbb`
 const token = { accessToken: 't', pubkey: AUTHOR } as never
 
-/**
- * The relay's NIP-11: keeping projects in order and finding them by their words (on), or saying nothing (off), or —
- * as production on 6 Nov — offering the list read without keeping projects in order (`'list'`).
- */
-function relayInfo(on: boolean | 'list') {
-  const info =
-    on === 'list'
-      ? { file_list: { newest: true, text: true } }
-      : on
-        ? {
-            files: { requires_prev: ['osnova.project'] },
-            file_list: { newest: true, text: true },
-            file_search: { types: ['osnova.project'] },
-          }
-        : { supported_nips: [1, 11] }
+/** The relay's NIP-11 saying it finds projects by a word in their current fields (`file_search`, SPEC §6.13). */
+function relaySearchesProjects() {
+  const info = { file_search: { types: ['osnova.project'] } }
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
 }
 
@@ -119,23 +107,21 @@ beforeEach(() => {
   queryRelay.mockImplementation(answer)
   queryRelayWithMatches.mockClear()
   forgetUrlShapes()
-  forgetProjectFields()
+  forgetSearchedKinds()
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('with the switch on', () => {
+describe('a team’s projects', () => {
   it('reads a team’s projects by the relay’s list read', async () => {
-    relayInfo(true)
     await resolveFolderContentsAsViewer(FOLDER, 'https://relay.test', token).catch(() => undefined)
 
     expect(listReads().length).toBeGreaterThan(0)
   })
 
   it('opens every project card on a screen by the open read, in one request', async () => {
-    relayInfo(true)
     await resolveObjectsAsViewer([A, B], 'https://relay.test', token).catch(() => undefined)
 
     const opening = requests().filter((filters) => filters.some((f) => f.fields === 'newest' && f.text === true))
@@ -145,7 +131,6 @@ describe('with the switch on', () => {
   })
 
   it('opens the Screener’s files without their text, which its rows never draw (APP-11)', async () => {
-    relayInfo(true)
     const { ARCHIVED_WITH } = await import('@/api/internal/screener')
     await resolveObjectsAsViewer([A, B], 'https://relay.test', token, 'relay', ARCHIVED_WITH).catch(() => undefined)
 
@@ -155,7 +140,7 @@ describe('with the switch on', () => {
   })
 
   it('`[` finds a project by a word in its current fields', async () => {
-    relayInfo(true)
+    relaySearchesProjects()
     await searchFileReferencesAsViewer('roadmap', 'https://relay.test', token).catch(() => undefined)
 
     const asked = queryRelayWithMatches.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
@@ -163,21 +148,19 @@ describe('with the switch on', () => {
   })
 })
 
-describe('a deleted project, whichever way the switch is', () => {
+describe('a deleted project', () => {
   // B's newest `deleted` change is `true`: deleted, still listed in its team's state (SPEC §6.5).
   const deleting = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]])
   const withDeleted = [...world, deleting]
 
-  it('is gone from its team’s list, with the switch off', async () => {
-    relayInfo(false)
+  it('is gone from its team’s list', async () => {
     queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
     const contents = await resolveFolderContentsAsViewer(FOLDER, 'https://relay.test', token)
 
     expect(contents.files.map((file) => file.address)).toEqual([A])
   })
 
-  it('is gone from the files `[` offers from a team, with the switch off', async () => {
-    relayInfo(false)
+  it('is gone from the files `[` offers from a team', async () => {
     queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
     const read = await resolveObjectsAsViewer([A, B], 'https://relay.test', token)
     const offered = await fileCandidatesAsViewer([read[A]!, read[B]!], 0, 'https://relay.test', token)
@@ -186,7 +169,6 @@ describe('a deleted project, whichever way the switch is', () => {
   })
 
   it('is on Archive’s Deleted tab — one list across teams, each with its team, who deleted it and when, newest first', async () => {
-    relayInfo('list')
     // C is in another team, which lists nothing; it was deleted before B, by somebody else: the order is B, then C.
     const OTHER = 'ef'.repeat(32)
     const SECOND = '9c69f247-0000-4000-8000-000000000002'
@@ -210,8 +192,6 @@ describe('a deleted project, whichever way the switch is', () => {
   })
 
   it('lists a deleted issue beside the deleted projects, found by the times read and never by every issue’s changes (ISS-6)', async () => {
-    const info = { file_list: { newest: true, text: true, times: true } }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
     const issueAt = (d: string) => `30851:${AUTHOR}:6f1c2b3a-0000-4000-8000-0000000${d}`
     const [GONE, RESTORED, OPEN] = [issueAt('0dddd'), issueAt('0eeee'), issueAt('0ffff')]
     const issue = (address: string, title: string) => event(30851, [['d', address.split(':')[2]], ['title', title], ['h', FOLDER]])
@@ -247,15 +227,13 @@ describe('a deleted project, whichever way the switch is', () => {
       [GONE, 30851, AUTHOR],
       [B, 30850, AUTHOR],
     ])
-    // Issues are asked of the relay by the times read, and only the ones it names read whole: no issue's list read.
+    // Issues are asked of the relay by the times read, and only the ones it names opened: no list read of every issue.
     const asked = queryRelay.mock.calls.flatMap(([, filters]) => filters as Record<string, unknown>[])
-    expect(asked.some((f) => f.fields === 'newest' && (f.kinds as number[] | undefined)?.includes(30851))).toBe(false)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500 }])
+    expect(asked.some((f) => f.fields === 'newest' && (f.kinds as number[] | undefined)?.includes(30851) && !f['#d'])).toBe(false)
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500 }])
   })
 
   it('lists an issue deleted before the newest 500 issues changed, from the times read’s next page (ISS-6)', async () => {
-    const info = { file_list: { newest: true, text: true, times: true } }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
     const GONE = `30851:${AUTHOR}:6f1c2b3a-0000-4000-8000-000000000aaa`
     const gone = event(30851, [['d', GONE.split(':')[2]], ['title', 'Old broken link'], ['h', FOLDER]])
     const deletingIssue = { ...event(1851, [['a', GONE], ['O', GONE.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]]), created_at: gone.created_at + 5 }
@@ -276,28 +254,17 @@ describe('a deleted project, whichever way the switch is', () => {
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     expect(deleted?.map((file) => file.address)).toContain(GONE)
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851], limit: 500, until: newest }])
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => filters)).toContainEqual([{ fields: 'times', kinds: [30851, 30840, 30842], limit: 500, until: newest }])
   })
 
   it('is not on the Deleted tab once restored', async () => {
-    relayInfo('list')
     const restoring = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', ''], ['h', FOLDER]])
     queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, restoring], filters))
 
     expect(await deletedProjectsAsViewer('https://relay.test', token)).toEqual([])
   })
 
-  it('has no Deleted tab where the relay has no list read to find it by', async () => {
-    relayInfo(false)
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
-
-    expect(await deletedProjectsAsViewer('https://relay.test', token)).toBeNull()
-  })
-
-  it('lists a deleted topic in a tab that keeps topics in order, and asks only for issues in one that does not (ALL-5)', async () => {
-    // As production: the list read and the times read, and no word of a type kept in order.
-    const info = { file_list: { newest: true, text: true, times: true } }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => info })))
+  it('lists a deleted topic beside the deleted issues, found by the same times read of issues, topics and pages', async () => {
     const TOPIC =`30840:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000dddd`
     const topic = event(30840, [['d', TOPIC.split(':')[2]], ['title', 'Launch'], ['h', FOLDER]])
     const deletingTopic = event(1851, [['a', TOPIC], ['O', TOPIC.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]])
@@ -309,23 +276,14 @@ describe('a deleted project, whichever way the switch is', () => {
         : [],
     )
     queryRelayTimes.mockClear()
-    const kept = new Map<string, string>()
-    vi.stubGlobal('window', {
-      sessionStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
-    })
-    try {
-      const before = await deletedProjectsAsViewer('https://relay.test', token)
-      topicFieldsOptIn('?topicFields=on')
-      forgetProjectFields()
-      const after = await deletedProjectsAsViewer('https://relay.test', token)
+    const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
-      // The first tab's one page, then the opted-in tab's page and the page after it.
-      expect(queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds)).toEqual([[30851], [30851, 30840], [30851, 30840]])
-      expect(before?.map((file) => file.address)).not.toContain(TOPIC)
-      expect(after?.map((file) => [file.address, file.deleted?.by])).toContainEqual([TOPIC, AUTHOR])
-    } finally {
-      topicFieldsOptIn('?topicFields=off')
-    }
+    // One page naming the topic, then the page after it, which ends the walk; each asks for issues, topics and pages.
+    expect(queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds)).toEqual([
+      [30851, 30840, 30842],
+      [30851, 30840, 30842],
+    ])
+    expect(deleted.map((file) => [file.address, file.deleted?.by])).toContainEqual([TOPIC, AUTHOR])
   })
 })
 
@@ -368,7 +326,6 @@ describe('an issue or a topic on screen, before they are kept in order', () => {
       .filter((f) => (f.kinds as number[] | undefined)?.includes(1851) && ((f['#a'] as string[] | undefined) ?? []).some((a) => a === ISSUE || a === TOPIC))
 
   it('opens them by the relay’s open read, with each field’s current value and none of their older changes', async () => {
-    relayInfo('list')
     queryRelay.mockImplementation(answerFiles)
 
     const objects = await resolveObjectsAsViewer([ISSUE, TOPIC], 'https://relay.test', token)
@@ -380,14 +337,4 @@ describe('an issue or a topic on screen, before they are kept in order', () => {
     expect(historyReads()).toEqual([])
   })
 
-  it('reads every change, as before, where the relay has no open read', async () => {
-    relayInfo(false)
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(filesWorld, filters))
-
-    const objects = await resolveObjectsAsViewer([ISSUE, TOPIC], 'https://relay.test', token)
-
-    expect(objects[ISSUE]?.slots.title?.value).toBe('Peek opens fast')
-    expect(listReads()).toEqual([])
-    expect(historyReads().length).toBeGreaterThan(0)
-  })
 })

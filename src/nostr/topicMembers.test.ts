@@ -64,7 +64,7 @@ beforeEach(() => {
 describe('topicMemberCountsAsViewer (Explore topics’ Members)', () => {
   it('counts each topic’s own people only, though one read asks for every topic', async () => {
     relay.events = [levelOn(ALICE, TOPIC_A), levelOn(BOB, TOPIC_A)]
-    const counts = await topicMemberCountsAsViewer([topic(TOPIC_A), topic(TOPIC_B)], 'https://relay.test', token)
+    const counts = await topicMemberCountsAsViewer([topic(TOPIC_A), topic(TOPIC_B)], 'https://relay.test', token, [ALICE, BOB])
     // The two who chose a level on A; nobody on B, though the read brought A's changes back for both.
     expect(counts.get(TOPIC_A)).toBe(2)
     expect(counts.get(TOPIC_B)).toBe(0)
@@ -72,20 +72,20 @@ describe('topicMemberCountsAsViewer (Explore topics’ Members)', () => {
   })
 
   it('asks the relay for no more filters than one topic does, however many topics', async () => {
-    await topicMemberCountsAsViewer([topic(TOPIC_A), topic(TOPIC_B)], 'https://relay.test', token)
-    const one = placeFilters({ address: TOPIC_A, team: TEAM }, VIEWER).filter((filter) => !(filter.kinds as number[]).includes(30078))
+    await topicMemberCountsAsViewer([topic(TOPIC_A), topic(TOPIC_B)], 'https://relay.test', token, [ALICE])
+    const one = placeFilters({ address: TOPIC_A, team: TEAM }, VIEWER, [ALICE]).filter((filter) => !(filter.kinds as number[]).includes(30078))
     expect(relay.asked[0]!.length).toBe(one.length)
   })
 
   it('counts everyone past the relay’s 2000-event answer, the oldest joins included', async () => {
     const people = Array.from({ length: CAP + 1 }, (_, n) => (n + 1).toString(16).padStart(64, '0'))
     relay.events = people.map((person) => levelOn(person, TOPIC_A))
-    const counts = await topicMemberCountsAsViewer([topic(TOPIC_A)], 'https://relay.test', token)
+    const counts = await topicMemberCountsAsViewer([topic(TOPIC_A)], 'https://relay.test', token, people)
     expect(counts.get(TOPIC_A)).toBe(CAP + 1)
   })
 
   it('throws when the relay refuses, so a failed read is never drawn as nobody', async () => {
     relay.ok = false
-    await expect(topicMemberCountsAsViewer([topic(TOPIC_A)], 'https://relay.test', token)).rejects.toThrow()
+    await expect(topicMemberCountsAsViewer([topic(TOPIC_A)], 'https://relay.test', token, [])).rejects.toThrow()
   })
 })

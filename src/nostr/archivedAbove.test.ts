@@ -27,10 +27,11 @@ const { queryRelay, events } = vi.hoisted(() => {
       if (key.startsWith('#')) return event.tags.some((t) => t[0] === key.slice(1) && values.includes(t[1]))
       return true
     })
-  const queryRelay = vi.fn(async (_url: string, filters: Record<string, unknown>[]) => ({
-    ok: true,
-    events: events.filter((event) => filters.some((filter) => matches(event, filter))),
-  }))
+  const queryRelay = vi.fn(async (_url: string, filters: Record<string, unknown>[]) => {
+    // Files are read by the relay's list read (SPEC §6.13).
+    const { relayAnswer } = await import('@/test/listRead')
+    return { ok: true, events: relayAnswer(events, filters, matches) }
+  })
   return { queryRelay, events }
 })
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
