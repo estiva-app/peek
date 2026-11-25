@@ -187,6 +187,9 @@ const COPY_COUNT = `new Promise((done) => { const open = indexedDB.open('peek-de
     for (const n of names) tx.objectStore(n).getAll().onsuccess = (e) => { const text = JSON.stringify(e.target.result); bytes += text.length;
       events += text.split('"sig":"').length - 1; if (!--left) done(JSON.stringify({ events, mb: bytes / 1e6 })) } } })`
 
+// What the reopen caught up from the copy with NIP-77 and what it asked plainly (THE-6); nothing on a build before it.
+const CATCH_UPS = `JSON.stringify({ catchUps: typeof __catchUps === 'function' ? __catchUps() : null })`
+
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
   'weekly-from-peek': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${WEEKLY.address}`,
@@ -214,7 +217,8 @@ const LEGS = {
   // comes back to Peek. The report is the reopen's alone; the copy is counted before and after it.
   // Peek saves the copy behind the reads (deviceCopy.ts queues them): 5 s more before the count and the reopen.
   'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
-    '--wait', '5000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT, ...report('desk-reopen')],
+    '--wait', '5000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
+    '--eval', CATCH_UPS, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
   ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
@@ -240,7 +244,11 @@ async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
   const failure = out.failure ?? (out.steps ?? []).filter((s) => s.error).map((s) => s.error).join('; ')
   // desk-reopen: what the copy on the device held before and after the reopen (COPY_COUNT's answers).
   const copy = (out.steps ?? []).filter((s) => typeof s.result === 'string' && /^\{"(events|error)"/.test(s.result)).map((s) => JSON.parse(s.result))
-  return step ? { ...JSON.parse(step.result), ...(copy.length ? { copy } : {}), failure: failure || undefined } : { label: leg, failure: failure || died || 'no report' }
+  const caught = (out.steps ?? []).find((s) => typeof s.result === 'string' && s.result.startsWith('{"catchUps"'))
+  const catchUps = caught ? JSON.parse(caught.result).catchUps : undefined
+  return step
+    ? { ...JSON.parse(step.result), ...(copy.length ? { copy } : {}), ...(catchUps ? { catchUps } : {}), failure: failure || undefined }
+    : { label: leg, failure: failure || died || 'no report' }
 }
 
 /** One MCP tool call on a fresh server: what it read from the relay and what it handed back. */

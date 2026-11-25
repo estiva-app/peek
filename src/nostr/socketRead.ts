@@ -32,7 +32,7 @@ import {
   type RelayBudget,
   type SnapshotFilter,
 } from '@estiva-app/platform'
-import type { SignedEvent } from '@estiva-app/protocol'
+import type { ReconcileOutcome, SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
 import type { QueryLane, SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
@@ -449,7 +449,36 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     }
     return { ok: true, events } satisfies Answer
   }
+  /*
+    NIP-77 (THE-6): one NEG-OPEN, which the relay meters as one REQ, and its NEG-MSG rounds, which it does not. So it
+    waits for a pacer slot and a slot on the wire like a REQ, and never spills: asking plainly is the fallback, and
+    the caller does that itself on `ok: false`.
+  */
+  const reconcile: NonNullable<SocketReader['reconcile']> = async (relayUrl, filter, held, pubkey, { lane = 'click' } = {}) => {
+    const unsupported = (message: string): ReconcileOutcome => ({ ok: false, reason: 'unsupported', message })
+    if (options.budget.pausedForMs() > 0) return unsupported('socket paused')
+    const socketPubkey = options.currentPubkey()
+    if (!socketPubkey || pubkey !== socketPubkey) return unsupported('other pubkey')
+    const client = options.getClient(relayUrl)
+    if (!client) return unsupported('other relay')
+    if (!(await waitForLive(client))) return unsupported('not live')
+    const readLane = lane === 'ahead' ? 'ahead' : 'click'
+    await pacer.take(1, { lane: readLane })
+    const release = await inFlight.acquire(readLane)
+    let outcome: ReconcileOutcome
+    try {
+      if (client.state() !== 'live') return unsupported('not live')
+      outcome = await sendingAsRead(() => client.relay.reconcile(filter, held))
+    } finally {
+      release()
+    }
+    recordRelayRequest('NEG-OPEN', [filter], outcome.ok ? null : refusalOf(0, outcome.message))
+    if (!outcome.ok && /quota exceeded/.test(outcome.message)) options.budget.noteRateLimited(outcome.message)
+    return outcome
+  }
+
   return Object.assign(read, {
+    reconcile,
     promoteAhead: () => {
       for (const waiting of packs) waiting.promoted = true
       pacer.promote()

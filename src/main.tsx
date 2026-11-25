@@ -22,6 +22,7 @@ import './index.css'
 import App from './App.tsx'
 import { StartedTopicRefusals } from './components/StartedTopicRefusals'
 import { setSocketReader } from './nostr/bridge'
+import { catchUps } from './nostr/catchUpFromCopy'
 import { relayLog } from './nostr/liveTopics'
 import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
 import { CrashOnPurpose, ScreenSteps, startErrorReports } from './lib/errorReports'
@@ -31,6 +32,8 @@ import { startPageTimings } from './lib/pageTimings'
 // than in `@/api`, which tests import, so a test keeps the HTTP path.
 setSocketReader(createAppSocketReader(relayLog))
 installSocketReadsDiagnostic()
+// `window.__catchUps()`: what a reopen caught up from the copy with NIP-77, and what it asked plainly (THE-6).
+;(window as unknown as Record<string, unknown>).__catchUps = catchUps
 // A crash anywhere in Peek is reported to Estiva ID, built from a fixed list (PROD-2).
 startErrorReports()
 // How long each page took to open until the live page was there, the saved picture apart (72036dd4).

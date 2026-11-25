@@ -57,7 +57,7 @@ import {
 import type { ReadLane } from '@estiva-app/platform'
 import { recordReadAnswered, recordReadFailure } from './freshness'
 import { NO_ANSWER, READ_ANSWER_TIMEOUT_MS } from './relayRead'
-import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import type { PublishResult, ReconcileOutcome, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 
 /**
  * The pacer's lanes, and `first`: a file's first page while the person waits on
@@ -71,7 +71,8 @@ import { heardRefusal } from '@/lib/failureReports'
 import { heardFailure } from '@/lib/heardFailures'
 import { relayBudget } from './relayBudget'
 import { RelayReadError } from './relayRead'
-import { keepRelayAnswer } from './deviceCopy'
+import { copyToCatchUp, keepRelayAnswer } from './deviceCopy'
+import { catchUpFromCopy } from './catchUpFromCopy'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 
 /**
@@ -243,24 +244,43 @@ export async function queryRelay(
   const click = asked !== 'ahead'
   if (click) clickReads.open += 1
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
-  try {
-    answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
+  let kept = false
+  const ask = async (asking: Record<string, unknown>[]) => {
+    let answered = socketReader ? await socketReader(relayUrl, asking, pubkey, { lane: asked }) : null
     // Answered over the socket: that ends a silent relay as an HTTP answer does (5cd7579f).
-    if (answer) recordReadAnswered(answer.ok)
-    if (!answer) {
+    if (answered) recordReadAnswered(answered.ok)
+    if (!answered) {
       const release = asked === 'ahead' ? await aheadPost(() => laneNow() !== 'ahead') : null
       try {
         // An ahead read asks once: it holds the one ahead slot while it waits, and a busy relay is the moment
         // to leave it alone, not to keep it for seconds of quiet retries. A read the person has joined is theirs.
         const post = laneNow() === 'ahead' ? bridgePostOnce : bridgePost
-        const { status, text } = await post(relayUrl, '/query', filters, token, pubkey)
-        answer = isRelayBusyResponse(status, text)
+        const { status, text } = await post(relayUrl, '/query', asking, token, pubkey)
+        answered = isRelayBusyResponse(status, text)
           ? { ok: false, events: [], reason: RELAY_BUSY_MESSAGE }
           : parseQueryResponse(status, text)
       } finally {
         release?.()
       }
     }
+    return answered
+  }
+  try {
+    // A question the copy already holds is brought up to date with NIP-77, fetching only what changed (THE-6).
+    // A file's first page is a click waiting on one round trip, so it is asked as before.
+    const reader = socketReader
+    const copy = asked !== 'first' && reader?.reconcile && pubkey ? await copyToCatchUp(relayUrl, pubkey) : null
+    answer =
+      copy && reader?.reconcile && pubkey
+        ? await catchUpFromCopy(copy, filters, {
+            relayUrl,
+            reconcile: (filter, held) => reader.reconcile!(relayUrl, filter, held, pubkey, { lane: laneNow() === 'ahead' ? 'ahead' : 'click' }),
+            ask,
+            keep: (asking, events) => keepRelayAnswer(relayUrl, asking, pubkey, events),
+          })
+        : null
+    if (answer) kept = true
+    else answer = await ask(filters)
   } catch (error) {
     // Never answered: Estiva ID would not sign, or the relay was not reached. Said for the failure a screen draws next (34396209).
     heardFailure(error)
@@ -272,7 +292,7 @@ export async function queryRelay(
     }
   }
   // Every answer is also the copy a reload draws from, and its correction (PEE-2).
-  if (answer.ok) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
+  if (answer.ok && !kept) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
   // Why a read failed, for the report of the failure it becomes: the relay's prefix, never its sentence.
   else heardFailure(answer.reason ?? '')
   return answer
@@ -332,6 +352,17 @@ export type SocketReader = ((
 ) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>) & {
   /** Move the `ahead` reads still waiting into the click lane (PEE-5): the person just acted. */
   promoteAhead?(): void
+  /**
+   * NIP-77 over the tab's connection (THE-6): what the relay has for `filter` that the copy lacks, and what the copy
+   * holds that the relay no longer returns. Paced as one REQ. Never rejects: `ok: false` means ask plainly.
+   */
+  reconcile?(
+    relayUrl: string,
+    filter: Record<string, unknown>,
+    held: readonly { id: string; created_at: number }[],
+    pubkey: string,
+    options?: { lane?: QueryLane },
+  ): Promise<ReconcileOutcome>
 }
 
 let socketReader: SocketReader | null = null
