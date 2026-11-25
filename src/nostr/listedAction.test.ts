@@ -87,7 +87,14 @@ const manifest = event({
         label: 'New project',
         appliesTo: '39000',
         emits: { kind: PROJECT, placement: 'buzz-channel', listed: true },
-        input: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+        input: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string', target: 'content' } }, required: ['name'] },
+      },
+      {
+        id: 'describe-project',
+        label: 'Edit description',
+        appliesTo: String(PROJECT),
+        emits: { kind: 1851, field: 'description' },
+        input: { type: 'string' },
       },
     ],
   }),
@@ -210,6 +217,70 @@ describe('a listed creation', () => {
     expect(tag(listing, 'op')).toBe('add')
     // A Folder command names a file by its id (SPEC §7.3).
     expect(tag(listing, 'o')).toBe(result.created?.split(':')[2])
+  })
+
+  it('with a description: the record with no text, its description as its first change, then the add (KIN-11)', async () => {
+    queryRelay.mockImplementation(relayOver([manifest, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch', description: 'What the launch needs.' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result).toMatchObject({ ok: true, listed: true })
+    expect(result.textNotSaved).toBeUndefined()
+    const [record, text, listing] = signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; tags: string[][]; content: string })
+    // The relay refuses a project's first record carrying text (`text-is-a-change`).
+    expect(record.kind).toBe(PROJECT)
+    expect(record.content).toBe('')
+    expect(text.kind).toBe(1851)
+    expect(tag(text, 'field')).toBe('description')
+    expect(tag(text, 'a')).toBe(result.created)
+    expect(`${text.content} ${tag(text, 'value') ?? ''}`).toContain('What the launch needs.')
+    expect(tag(listing, 'op')).toBe('add')
+    expect(tag(listing, 'o')).toBe(result.created?.split(':')[2])
+  })
+
+  it('with a description a listing names as another kind than a file change: nothing is signed (KIN-11)', async () => {
+    const content = JSON.parse(manifest.content) as { actions: { id: string; emits: { kind: number } }[] }
+    content.actions.find((a) => a.id === 'describe-project')!.emits.kind = 1111
+    const planted = { ...manifest, content: JSON.stringify(content) }
+    queryRelay.mockImplementation(relayOver([planted, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch', description: 'What the launch needs.' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(published()).toEqual([])
+  })
+
+  it('with a description, when another app claims projects: nothing is signed with that app’s action (KIN-11)', async () => {
+    const content = JSON.parse(manifest.content) as { actions: { id: string }[] }
+    content.actions = content.actions.filter((a) => a.id !== 'describe-project')
+    const ship = { ...manifest, content: JSON.stringify(content) }
+    // Newer, and claiming the project's kind: the owner a read of projects resolves to.
+    const other = event({
+      kind: 31990,
+      pubkey: 'ef'.repeat(32),
+      tags: [['d', 'other-app'], ['k', String(PROJECT)]],
+      content: JSON.stringify({
+        name: 'Other',
+        records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
+        projections: { [PROJECT]: { widget: 'card', slots: { title: { tag: 'name' } } } },
+        actions: [{ id: 'describe-project', label: 'Edit description', appliesTo: String(PROJECT), emits: { kind: 1851, field: 'description' }, input: { type: 'string' } }],
+      }),
+    })
+    queryRelay.mockImplementation(relayOver([ship, other, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch', description: 'What the launch needs.' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(published()).toEqual([])
   })
 
   it('into a Folder without state: the record alone', async () => {
