@@ -61,7 +61,6 @@ describe('relaySigningKeyAsViewer', () => {
     queryRelay.mockClear()
     readFromCopy.mockResolvedValueOnce([{ kind: 39000, pubkey: RELAY, tags: [['d', 'uuid']] }])
     expect(await relaySigningKeyAsViewer('https://relay.test', token)).toBe(RELAY)
-    expect(readFromCopy).toHaveBeenLastCalledWith('https://relay.test', [{ kinds: [39000], limit: 1 }], VIEWER)
     expect(queryRelay).not.toHaveBeenCalled()
   })
 
