@@ -2288,45 +2288,75 @@ export async function applyActionAsViewer(
     never "created" with its words lost.
     why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-new-files-text-is-its-first-change.md
   */
-  if (declared?.emits.kind === ISSUE_KIND && typeof value !== 'string' && newId) {
+  /*
+    A new project is the same (KIN-11): the relay refuses a project's first record carrying text
+    (`text-is-a-change`), so a description typed into New project goes out as its first change too, and the
+    team listing follows once the project exists.
+  */
+  const fileKind = declared?.emits.kind
+  if ((fileKind === ISSUE_KIND || fileKind === PROJECT_KIND) && typeof value !== 'string' && newId) {
     const { [TEXT_FIELD]: text = '', ...rest } = value
     const first = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })
     if (typeof first === 'string') return fail(first)
-    const issue = { kind: ISSUE_KIND, pubkey: token.pubkey, d: newId }
-    const textAction = resolved.manifest.actions?.find(
-      (candidate) =>
-        candidate.emits.field === TEXT_FIELD &&
-        candidate.emits.kind !== KIND.DELETION &&
-        [candidate.appliesTo].flat().includes(String(ISSUE_KIND)),
-    )
-    if (text && !textAction) return fail('Its app does not take an issue’s text from Peek yet, so nothing was created.')
+    const [root, ...commands] = first
+    const file = { kind: fileKind, pubkey: token.pubkey, d: newId }
+    const textOf = (manifest: typeof resolved.manifest) =>
+      manifest.actions?.find(
+        (candidate) =>
+          candidate.emits.field === TEXT_FIELD &&
+          candidate.emits.kind !== KIND.DELETION &&
+          [candidate.appliesTo].flat().includes(String(fileKind)),
+      )
+    // A creation borrowed on a team (New project) comes with only itself (interop's resolveActingManifest), so its
+    // text action is read from its app's whole manifest, and only from the same app that offered the creation.
+    let textManifest = resolved.manifest
+    let textAction = textOf(textManifest)
+    if (text && !textAction) {
+      const owner = await resolveManifest({ kind: fileKind, pubkey: token.pubkey, identifier: newId, relays: [] }, query, manifests).catch(() => null)
+      if (owner && owner.address === resolved.address) {
+        textManifest = owner.manifest
+        textAction = textOf(textManifest)
+      }
+    }
+    if (text && !textAction) return fail(`Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s text from Peek yet, so nothing was created.`)
     const made = await createFile({
-      root: transform ? transform(first[0]) : first[0],
+      root: transform ? transform(root) : root,
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
       build: (input) => {
         const one = buildActionEvents({
           ...common,
-          kind: ISSUE_KIND,
-          address: `${ISSUE_KIND}:${token.pubkey}:${newId}`,
+          manifest: textManifest,
+          kind: fileKind,
+          address: `${fileKind}:${token.pubkey}:${newId}`,
           objectAuthor: token.pubkey,
           actionId: textAction!.id,
           newId: undefined,
+          folderHasState: undefined,
           value: input.value,
           contentFormat: input.format,
           prev: input.prev,
           createdAtMs: input.createdAtMs,
         })
-        return typeof one === 'string' ? one : one[0]
+        if (typeof one === 'string') return one
+        // Built by the action's id, so the event is checked too: a listing naming two actions by one id never makes
+        // Peek sign another kind than the text action found.
+        return one[0].kind === textAction!.emits.kind ? one[0] : 'Its app does not take this text from Peek yet.'
       },
       sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
       publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
       query,
-      current: async (field) => (await openFile(query, issue, { text: field === TEXT_FIELD }).catch(() => undefined))?.fields[field]?.event,
+      current: async (field) => (await openFile(query, file, { text: field === TEXT_FIELD }).catch(() => undefined))?.fields[field]?.event,
     })
-    if (made.ok) return { ok: true, id: made.root.id, created: made.address }
-    if (!made.created) return fail(made.refused)
-    // The issue exists: it is reported as made, so its reference is placed and no second one is filed by a retry.
-    return { ok: true, id: made.root.id, created: made.address, textNotSaved: true }
+    if (!made.ok && !made.created) return fail(made.refused)
+    // The team commands in order once the file exists, stopping at the first refusal: only its listing is behind.
+    let incomplete: string | undefined
+    if (commands.length > 0) {
+      const followed = await publishInOrder(commands, relayUrl, token)
+      if (!followed.ok) incomplete = followed.reason ?? 'The relay refused the team command.'
+    }
+    const listed = isListed ? { listed: true as const, ...(incomplete ? { incomplete } : {}) } : {}
+    // The file exists: it is reported as made, so its reference is placed and no second one is filed by a retry.
+    return { ok: true, id: made.root.id, created: made.address, ...listed, ...(made.ok ? {} : { textNotSaved: true }) }
   }
 
   const built = buildActionEvents({ ...common, value, contentFormat: args.contentFormat, createdAtMs: Date.now() })
