@@ -23,8 +23,14 @@ import { relayInfo } from './relayInfo'
 
 type Answer = { ok: boolean; events: SignedEvent[]; reason?: string }
 
-/** Keys only the relay can answer (SPEC §6.13), and NIP-50's. */
-const QUERY_ONLY = ['fields', 'text', 'search']
+/** Keys only the relay can answer: the open read (SPEC §6.13), and NIP-50's search. */
+const QUERY_ONLY = ['text', 'search']
+
+/**
+ * A list read (SPEC §6.13, `fields`): the copy holds it as its last answer, `null` when it never answered it or a
+ * `limit` could cut it, and the relay compares it against each file's current changes (THE-9, platform 0.14).
+ */
+const isList = (filter: Record<string, unknown>) => 'fields' in filter
 
 export interface CatchUpFromCopyOptions {
   relayUrl: string
@@ -125,8 +131,12 @@ export async function catchUpFromCopy(
   const packs = new Map<string, { base: Record<string, unknown>; tag: string; members: Record<string, unknown>[]; held: number }>()
   const loose: { filter: Record<string, unknown>; held: number }[] = []
   for (const filter of filters) {
-    // The relay's own reads (`fields`, `text`; SPEC §6.13) and a search answer what no set of events says.
-    const judged = QUERY_ONLY.some((key) => key in filter) ? null : heldFor(copy, filter)
+    // The open read and a search answer what no set of events says. A list read is held as its last answer.
+    const judged = QUERY_ONLY.some((key) => key in filter)
+      ? null
+      : isList(filter)
+        ? copy.held(filter as SnapshotFilter)
+        : heldFor(copy, filter)
     if (!judged) {
       plain.push(filter)
       plainHeld.push(-1)
@@ -134,7 +144,8 @@ export async function catchUpFromCopy(
     }
     const tags = Object.keys(filter).filter((key) => key.startsWith('#'))
     const limit = typeof filter.limit === 'number' ? filter.limit : Infinity
-    if (tags.length === 1 && judged.length < limit) {
+    // Lists are never packed: their union is another list, which the copy never answered.
+    if (tags.length === 1 && judged.length < limit && !isList(filter)) {
       const [tag] = tags
       const { [tag]: _values, limit: _limit, ...base } = filter
       const entries = Object.entries(base).map(([name, value]): [string, unknown] => [name, Array.isArray(value) ? [...value].sort() : value])

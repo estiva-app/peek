@@ -11,7 +11,8 @@ function event(kind: number, tags: string[][], created_at: number): SignedEvent 
 }
 
 const newestFirst = (a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at || (a.id < b.id ? -1 : 1)
-const without = ({ limit: _limit, ...rest }: Record<string, unknown>) => rest as SnapshotFilter
+/** What a filter matches: a list read (`fields`) answers its first records, which here have no changes. */
+const without = ({ limit: _limit, fields: _fields, ...rest }: Record<string, unknown>) => rest as SnapshotFilter
 
 /** A relay holding `events`: it answers a plain read, and a catch-up by comparing what the copy holds. */
 function fakeRelay(events: SignedEvent[]) {
@@ -37,7 +38,7 @@ function fakeRelay(events: SignedEvent[]) {
     }),
     reconcile: vi.fn(async (filter: SnapshotFilter, held: readonly { id: string }[]): Promise<ReconcileOutcome> => {
       reconciled.push(filter)
-      const set = new Set(events.filter((e) => matchesSnapshotFilter(filter, e)).map((e) => e.id))
+      const set = new Set(events.filter((e) => matchesSnapshotFilter(without(filter), e)).map((e) => e.id))
       const holds = new Set(held.map((h) => h.id))
       return { ok: true, need: [...set].filter((id) => !holds.has(id)), have: [...holds].filter((id) => !set.has(id)) }
     }),
@@ -164,7 +165,39 @@ describe('a reopen catches a question up from the copy (THE-6)', () => {
     expect(answer?.events).toHaveLength(21)
   })
 
-  it("asks the relay's own list read plainly: no set of events says what it answers", async () => {
+  describe("the workspace's project list (SPEC §6.13), which lists each team's projects (THE-11)", () => {
+    const projectList = { fields: 'newest', kinds: [30850] }
+    const project = (i: number, at: number) => event(30850, [['d', `p${i}`], ['buzz-channel', `team-${i % 3}`]], at)
+
+    it('downloads none of it again on a reopen with nothing new, and answers every project', async () => {
+      const projects = Array.from({ length: 20 }, (_, i) => project(i, 1_000 + i))
+      const copy = await copyHolding([projectList], projects)
+      const relay = fakeRelay(projects)
+
+      const answer = await catchUpFromCopy(copy, [projectList], options(relay))
+
+      expect(relay.asked()).toEqual([])
+      expect(relay.fetchedIds()).toEqual([])
+      expect(relay.reconciled).toEqual([projectList])
+      expect(answer?.events.map((e) => e.id).sort()).toEqual(projects.map((e) => e.id).sort())
+    })
+
+    it('downloads only a project made while Peek was closed, and lists it with the rest', async () => {
+      const projects = Array.from({ length: 20 }, (_, i) => project(i, 1_000 + i))
+      const copy = await copyHolding([projectList], projects)
+      const made = project(20, 2_000)
+      const relay = fakeRelay([...projects, made])
+
+      const answer = await catchUpFromCopy(copy, [projectList], options(relay))
+
+      expect(relay.asked()).toEqual([])
+      expect(relay.fetchedIds()).toEqual([made.id])
+      expect(answer?.events.map((e) => e.id)).toContain(made.id)
+      expect(answer?.events).toHaveLength(21)
+    })
+  })
+
+  it("asks a list read the copy never answered plainly: its events alone do not say what it lists", async () => {
     const before = Array.from({ length: 20 }, (_, i) => event(9, [['h', room]], 1_000 + i))
     const copy = await copyHolding(asked, before)
     const relay = fakeRelay(before)
