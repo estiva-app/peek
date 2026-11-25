@@ -256,6 +256,33 @@ describe('a listed creation', () => {
     expect(published()).toEqual([])
   })
 
+  it('with a description, when another app claims projects: nothing is signed with that app’s action (KIN-11)', async () => {
+    const content = JSON.parse(manifest.content) as { actions: { id: string }[] }
+    content.actions = content.actions.filter((a) => a.id !== 'describe-project')
+    const ship = { ...manifest, content: JSON.stringify(content) }
+    // Newer, and claiming the project's kind: the owner a read of projects resolves to.
+    const other = event({
+      kind: 31990,
+      pubkey: 'ef'.repeat(32),
+      tags: [['d', 'other-app'], ['k', String(PROJECT)]],
+      content: JSON.stringify({
+        name: 'Other',
+        records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
+        projections: { [PROJECT]: { widget: 'card', slots: { title: { tag: 'name' } } } },
+        actions: [{ id: 'describe-project', label: 'Edit description', appliesTo: String(PROJECT), emits: { kind: 1851, field: 'description' }, input: { type: 'string' } }],
+      }),
+    })
+    queryRelay.mockImplementation(relayOver([ship, other, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch', description: 'What the launch needs.' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(published()).toEqual([])
+  })
+
   it('into a Folder without state: the record alone', async () => {
     queryRelay.mockImplementation(relayOver([manifest, channel(FOLDER)]))
     const result = await create()
