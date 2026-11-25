@@ -195,6 +195,37 @@ describe('a reopen catches a question up from the copy (THE-6)', () => {
       expect(answer?.events.map((e) => e.id)).toContain(made.id)
       expect(answer?.events).toHaveLength(21)
     })
+
+    it('leaves out a project deleted while Peek was closed', async () => {
+      const projects = Array.from({ length: 20 }, (_, i) => project(i, 1_000 + i))
+      const copy = await copyHolding([projectList], projects)
+      const [gone, ...kept] = projects
+      const relay = fakeRelay(kept)
+
+      const answer = await catchUpFromCopy(copy, [projectList], options(relay))
+
+      expect(relay.asked()).toEqual([])
+      expect(answer?.events.map((e) => e.id)).not.toContain(gone.id)
+      expect(answer?.events).toHaveLength(19)
+    })
+
+    it("catches each team's file list up as it was asked, never as one list of both teams", async () => {
+      const lists = ['team-a', 'team-b'].map((team) => ({ fields: 'newest', kinds: [30850], '#h': [team] }))
+      const files = lists.flatMap((list) =>
+        Array.from({ length: 20 }, (_, i) => event(30850, [['d', `${list['#h'][0]}-${i}`], ['h', list['#h'][0]]], 1_000 + i)),
+      )
+      const copy = createEventSnapshot({ storage: memorySnapshotStorage(), scope: 'test', version: 1 })
+      await copy.ready
+      for (const list of lists) copy.absorb([list as SnapshotFilter], files.filter((e) => e.tags[1][1] === list['#h'][0]))
+      const relay = fakeRelay(files)
+
+      const answer = await catchUpFromCopy(copy, lists, options(relay))
+
+      expect(relay.asked()).toEqual([])
+      expect(relay.reconciled).toEqual(expect.arrayContaining(lists))
+      expect(relay.reconciled).toHaveLength(2)
+      expect(answer?.events).toHaveLength(40)
+    })
   })
 
   it("asks a list read the copy never answered plainly: its events alone do not say what it lists", async () => {
