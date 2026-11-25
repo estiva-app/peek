@@ -81,7 +81,7 @@ const others: number[] = []
  * started from nothing while the last load's catch-up was still in the relay's window, and one Peek sent 51–54 in
  * 5 s (smoke run, 25 Nov). Timestamps only, gone a window later.
  */
-const SHARED_KEY = 'peek:socket-frames'
+const SHARED_KEY = 'estiva-peek:socket-frames'
 let load = Math.random().toString(36).slice(2)
 
 function sharedStore(): Storage | null {
@@ -101,6 +101,13 @@ function readShared(store: Storage): Record<string, number[]> {
   }
 }
 
+/**
+ * Whether a stored time is in the window that starts at `floor` and ends now. One later than now is the clock having
+ * moved back since it was written: counted, it would hold every frame until the clock caught up, reloads included.
+ */
+const inSpan = (at: unknown, floor: number): at is number =>
+  typeof at === 'number' && at > floor && at <= floor + SHAPED_WINDOW_MS
+
 /** The metered frames the other Peek loads on this device sent after `floor`, oldest first. */
 function elsewhere(floor: number): number[] {
   const store = sharedStore()
@@ -108,18 +115,21 @@ function elsewhere(floor: number): number[] {
   const out: number[] = []
   for (const [id, times] of Object.entries(readShared(store))) {
     if (id === load || !Array.isArray(times)) continue
-    for (const at of times) if (typeof at === 'number' && at > floor) out.push(at)
+    for (const at of times) if (inSpan(at, floor)) out.push(at)
   }
   return out.sort((a, b) => a - b)
 }
 
-/** Writes this load's frames in the window, and drops the loads whose last frame has left it. */
+/**
+ * Writes this load's frames in the window, and drops the loads with none left in it. Two tabs writing at once can
+ * lose one's newest entry until it writes again: an undercount of a frame or two, inside the 8 the cap leaves.
+ */
 function writeShared(floor: number) {
   const store = sharedStore()
   if (!store) return
   const all = readShared(store)
   for (const [id, times] of Object.entries(all)) {
-    if (!Array.isArray(times) || !times.some((at) => at > floor)) delete all[id]
+    if (!Array.isArray(times) || !times.some((at) => inSpan(at, floor))) delete all[id]
   }
   all[load] = sent.slice()
   try {

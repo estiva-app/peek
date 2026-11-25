@@ -487,6 +487,27 @@ describe('socket frames', () => {
     }
   })
 
+  it('does not wait on frames a load stored before the clock moved back (cbad5360)', async () => {
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    })
+    try {
+      const { shaper: before } = shaper()
+      for (let i = 0; i < FRAMES_PER_WINDOW; i++) before.send(`["NEG-OPEN","peek--neg-${i}",{},"61"]`)
+      // The clock is set back ten minutes, and the page reloads.
+      vi.setSystemTime(Date.now() - 10 * 60_000)
+      resetSocketFrames()
+      const out: string[] = []
+      const after = createFrameShaper((data) => out.push(data))
+      for (let i = 0; i < 5; i++) after.send(`["REQ","peek--${i}",{}]`)
+      expect(out).toHaveLength(5)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('sends AUTH at once, ahead of the frames waiting for room', () => {
     const { out, shaper: s } = shaper()
     for (let i = 0; i < FRAMES_PER_SECOND + 1; i++) s.send(`["REQ","peek-${i}",{}]`)
