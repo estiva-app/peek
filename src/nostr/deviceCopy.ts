@@ -16,6 +16,8 @@
  * the copy's, and a store that already has the relay's answer ignores a late
  * copy. The copy never stands in for the relay's answer where the difference
  * matters — a blob drawn from it is `cached`, and nothing publishes over it.
+ * The one value taken from it as settled is the relay's own signing key, read
+ * off a team record only the relay can sign (`relaySigningKeyAsViewer`).
  *
  * A direct message is kept as the relay sends it, in plain text like a topic
  * message (Miky, 13 Oct). Signing out removes every copy.
