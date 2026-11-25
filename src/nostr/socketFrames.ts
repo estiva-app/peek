@@ -34,7 +34,12 @@ export const WINDOW_MS = 5_000
  */
 export const FRAMES_PER_WINDOW = 42
 export const SHAPED_WINDOW_MS = WINDOW_MS + 1_000
-/** And at most this many in any second, so no burst builds that lag in the first place. */
+/**
+ * And at most this many in any second, so no burst builds that lag in the first place. A catch-up's NEG-OPEN
+ * (NIP-77, THE-6) counts in the window, which is the relay's quota, but not here: a reopen sends one per question the
+ * copy holds as the socket comes up, where a REQ carried up to ten, and counted here they held the Desk's next reads
+ * for the rest of that second, ~0.5 s (0efe7c39).
+ */
 export const FRAMES_PER_SECOND = 12
 /**
  * Of each cap, what other frames leave for a file's first page while it is
@@ -63,6 +68,8 @@ const firstAsked: number[] = []
 let firstUntil = 0
 /** Every metered frame sent, across reconnects: the budget is the pubkey's, not the connection's. */
 const sent: number[] = []
+/** The ones the per-second cap counts: a catch-up's NEG-OPEN is in the window, not in the second (0efe7c39). */
+const sentForSecond: number[] = []
 /** The ones the reader's pacer did not grant: not the reader's, or a first page's, which skips it. */
 const others: number[] = []
 
@@ -111,7 +118,8 @@ function waitUnder(at: number, reserve: number): number {
   const perSecond = FRAMES_PER_SECOND - reserve
   let wait = 0
   if (sent.length >= perWindow) wait = sent[sent.length - perWindow] + SHAPED_WINDOW_MS - at
-  if (sent.length >= perSecond) wait = Math.max(wait, sent[sent.length - perSecond] + 1_000 - at)
+  trim(sentForSecond, at - 1_000)
+  if (sentForSecond.length >= perSecond) wait = Math.max(wait, sentForSecond[sentForSecond.length - perSecond] + 1_000 - at)
   return Math.max(0, wait)
 }
 
@@ -188,6 +196,7 @@ export function createFrameShaper(
     if (frame.metered) {
       const at = now()
       sent.push(at)
+      if (!frame.data.startsWith('["NEG-OPEN"')) sentForSecond.push(at)
       if (!frame.read || frame.first) others.push(at)
     }
     transmit(frame.data)
@@ -237,6 +246,7 @@ export function createFrameShaper(
 /** Test seam: forget what was sent. */
 export function resetSocketFrames(): void {
   sent.length = 0
+  sentForSecond.length = 0
   others.length = 0
   firstAsked.length = 0
   firstUntil = 0

@@ -441,6 +441,22 @@ describe('socket frames', () => {
     ])
   })
 
+  it(`leaves a second's room to REQs after a catch-up's NEG-OPENs, but counts them in the window (0efe7c39)`, async () => {
+    const { out, shaper: s } = shaper()
+    // As the socket comes up on a reopen: a NEG-OPEN for each question the copy holds, then the Desk's next read.
+    for (let i = 0; i < FRAMES_PER_SECOND; i++) s.send(`["NEG-OPEN","peek--neg-${i}",{},"61"]`)
+    s.send('["REQ","peek-cards",{"ids":["a"]}]')
+    expect(out.at(-1)).toBe('["REQ","peek-cards",{"ids":["a"]}]')
+    expect(s.waiting()).toBe(0)
+    // The relay meters each NEG-OPEN as a REQ: past the window's room, a REQ still waits for it.
+    for (let i = FRAMES_PER_SECOND; i < FRAMES_PER_WINDOW - 1; i++) s.send(`["NEG-OPEN","peek--neg-${i}",{},"61"]`)
+    expect(out).toHaveLength(FRAMES_PER_WINDOW)
+    s.send('["REQ","peek-later",{}]')
+    expect(s.waiting()).toBe(1)
+    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS + 1)
+    expect(out.at(-1)).toBe('["REQ","peek-later",{}]')
+  })
+
   it('sends AUTH at once, ahead of the frames waiting for room', () => {
     const { out, shaper: s } = shaper()
     for (let i = 0; i < FRAMES_PER_SECOND + 1; i++) s.send(`["REQ","peek-${i}",{}]`)
