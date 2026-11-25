@@ -11,6 +11,7 @@
 import {
   CATCH_UP_SMALLEST_HELD,
   catchUp,
+  matchesSnapshotFilter,
   relaySpeaksNip77,
   type CatchUpResult,
   type EventSnapshot,
@@ -73,9 +74,28 @@ class AskFailed extends Error {
   }
 }
 
+const JUDGED = new Set(['ids', 'kinds', 'authors', 'since', 'until'])
+
 function withoutLimit(filter: Record<string, unknown>): SnapshotFilter {
   const { limit: _limit, ...rest } = filter
   return rest as SnapshotFilter
+}
+
+/**
+ * What the copy holds for `filter`, the same as `copy.held(withoutLimit(filter))`, looked up by its one-letter tag
+ * alone when it has one. The copy builds a set of every held event of each list a filter names before it picks the
+ * smallest, and a reopen judges about 500 filters, each naming a kind with thousands held: half a second of the
+ * main thread, which delayed the Desk's later reads (THE-6 /land).
+ */
+function heldFor(copy: EventSnapshot, filter: Record<string, unknown>): SignedEvent[] | null {
+  const whole = withoutLimit(filter)
+  const keys = Object.keys(whole)
+  const tag = keys.find((key) => key.startsWith('#') && key.length === 2)
+  // Only what the copy can judge: one-letter tags and these (`answerable` in platform's event snapshot).
+  const judgeable = keys.every((key) => JUDGED.has(key) || (key.startsWith('#') && key.length === 2))
+  if (!tag || !judgeable) return copy.held(whole)
+  const byTag = copy.held({ [tag]: (whole as Record<string, unknown>)[tag] } as SnapshotFilter)
+  return byTag && byTag.filter((event) => matchesSnapshotFilter(whole, event))
 }
 
 /** Peek's relay's NIP-11 says NIP-77; another relay, or one whose document cannot be read, is asked plainly. */
@@ -106,7 +126,7 @@ export async function catchUpFromCopy(
   const loose: { filter: Record<string, unknown>; held: number }[] = []
   for (const filter of filters) {
     // The relay's own reads (`fields`, `text`; SPEC §6.13) and a search answer what no set of events says.
-    const judged = QUERY_ONLY.some((key) => key in filter) ? null : copy.held(withoutLimit(filter))
+    const judged = QUERY_ONLY.some((key) => key in filter) ? null : heldFor(copy, filter)
     if (!judged) {
       plain.push(filter)
       plainHeld.push(-1)
@@ -214,7 +234,7 @@ export async function catchUpFromCopy(
         // Each member's answer is its window of what the copy now holds for the pack.
         const out: SignedEvent[] = []
         for (const member of members) {
-          const held = (copy.held(withoutLimit(member)) ?? []).sort(byRelayOrder)
+          const held = (heldFor(copy, member) ?? []).sort(byRelayOrder)
           out.push(...(typeof member.limit === 'number' ? held.slice(0, member.limit) : held))
         }
         return { ok: true, events: out }
