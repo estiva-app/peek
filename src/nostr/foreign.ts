@@ -2304,7 +2304,8 @@ export async function applyActionAsViewer(
       manifest.actions?.find(
         (candidate) =>
           candidate.emits.field === TEXT_FIELD &&
-          candidate.emits.kind !== KIND.DELETION &&
+          // Only a file change (`kind:1851`): Peek signs nothing else as a new file's text, whatever a listing names.
+          candidate.emits.kind === KIND_CHANGE &&
           [candidate.appliesTo].flat().includes(String(fileKind)),
       )
     // A creation borrowed on a team (New project) comes with only itself (interop's resolveActingManifest), so its
@@ -2318,7 +2319,7 @@ export async function applyActionAsViewer(
         textAction = textOf(textManifest)
       }
     }
-    if (text && !textAction) return fail(`Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s text from Peek yet, so nothing was created.`)
+    if (text && !textAction) return fail(`Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s description from Peek yet, so nothing was created.`)
     const made = await createFile({
       root: transform ? transform(root) : root,
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
@@ -2340,7 +2341,7 @@ export async function applyActionAsViewer(
         if (typeof one === 'string') return one
         // Built by the action's id, so the event is checked too: a listing naming two actions by one id never makes
         // Peek sign another kind than the text action found.
-        return one[0].kind === textAction!.emits.kind ? one[0] : 'Its app does not take this text from Peek yet.'
+        return one[0].kind === KIND_CHANGE ? one[0] : `Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s description from Peek yet.`
       },
       sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
       publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),

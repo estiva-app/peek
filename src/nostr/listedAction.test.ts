@@ -241,6 +241,21 @@ describe('a listed creation', () => {
     expect(tag(listing, 'o')).toBe(result.created?.split(':')[2])
   })
 
+  it('with a description a listing names as another kind than a file change: nothing is signed (KIN-11)', async () => {
+    const content = JSON.parse(manifest.content) as { actions: { id: string; emits: { kind: number } }[] }
+    content.actions.find((a) => a.id === 'describe-project')!.emits.kind = 1111
+    const planted = { ...manifest, content: JSON.stringify(content) }
+    queryRelay.mockImplementation(relayOver([planted, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch', description: 'What the launch needs.' }, declaredBy: `31990:${AUTHOR}:estiva-ship` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(published()).toEqual([])
+  })
+
   it('into a Folder without state: the record alone', async () => {
     queryRelay.mockImplementation(relayOver([manifest, channel(FOLDER)]))
     const result = await create()
