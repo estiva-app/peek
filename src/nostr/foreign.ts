@@ -32,6 +32,7 @@ export const KIND_TOPIC = 39000
 /** NIP-29 channel message — what a Peek message is on the wire. */
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, queryRelayTimes, queryRelayWithMatches, signViaEstivaId, type QueryLane } from './bridge'
+import { readFromCopy } from './deviceCopy'
 import { readFrom, type ReadSource } from './readFrom'
 import { MAX_FILTERS_PER_REQ } from './socketRead'
 import { RelayReadError, waitingOut } from './relayRead'
@@ -835,8 +836,15 @@ export function isEventReference(reference: string): boolean {
  * `null` when the relay serves no channel record this viewer can read, which
  * is a real answer: a mention then falls back to the bracket form, exactly as
  * a person with no key is still mentioned by name.
+ *
+ * Since the key never changes, a copy on the device that holds a channel record
+ * answers it with no read (THE-6). On a reopen the read waited behind the
+ * relay's request allowance for about six seconds, and the reactions to you
+ * waited on it, so a Desk row's orange dot came last.
  */
 export async function relaySigningKeyAsViewer(relayUrl: string, token: StoredToken): Promise<string | null> {
+  const [held] = (await readFromCopy(relayUrl, [{ kinds: [KIND_TOPIC], limit: 1 }], token.pubkey).catch(() => null)) ?? []
+  if (held?.kind === KIND_TOPIC && held.pubkey) return held.pubkey
   const query = viewerQuery(relayUrl, token)
   try {
     const [record] = await query([{ kinds: [KIND_TOPIC], limit: 1 }])

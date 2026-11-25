@@ -96,3 +96,14 @@ describe('reads that come back out of order', () => {
     expect(hook.result.current.teams?.[0].isMember).toBe(true)
   })
 })
+
+describe('a reopen, where the Desk and the rail ask for the teams at once (THE-6)', () => {
+  it('asks the relay once, and draws its answer as soon as it lands', async () => {
+    const desk = renderHook(() => useTeams())
+    const rail = renderHook(() => useTeams())
+    expect(reads).toHaveLength(1)
+    await act(async () => reads[0].resolve(rosterOf(ME)))
+    expect(desk.result.current.teams?.[0].isMember).toBe(true)
+    expect(rail.result.current.teams?.[0].isMember).toBe(true)
+  })
+})
