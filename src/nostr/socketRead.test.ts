@@ -457,6 +457,57 @@ describe('socket frames', () => {
     expect(out.at(-1)).toBe('["REQ","peek-later",{}]')
   })
 
+  it('counts what the last Peek load sent: a reload during a catch-up waits for room instead of being refused (cbad5360)', async () => {
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    })
+    try {
+      const { shaper: before } = shaper()
+      // The last load's catch-up: a NEG-OPEN for each question the copy holds, as the socket came up.
+      const caughtUp = FRAMES_PER_WINDOW - 7
+      for (let i = 0; i < caughtUp; i++) before.send(`["NEG-OPEN","peek--neg-${i}",{},"61"]`)
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      // The page reloads: a new load, its memory empty, the relay's window still holding the last one's frames.
+      resetSocketFrames()
+      const out: string[] = []
+      const after = createFrameShaper((data) => out.push(data))
+      for (let i = 0; i < 10; i++) after.send(`["REQ","peek--${i}",{}]`)
+      expect(out).toHaveLength(7)
+      expect(after.waiting()).toBe(3)
+      expect(otherFramesSince(Date.now() - SHAPED_WINDOW_MS)).toHaveLength(caughtUp + 7)
+
+      // Once the last load's frames leave the window, the rest go, in order.
+      await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
+      expect(out).toEqual(Array.from({ length: 10 }, (_, i) => `["REQ","peek--${i}",{}]`))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not wait on frames a load stored before the clock moved back (cbad5360)', async () => {
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    })
+    try {
+      const { shaper: before } = shaper()
+      for (let i = 0; i < FRAMES_PER_WINDOW; i++) before.send(`["NEG-OPEN","peek--neg-${i}",{},"61"]`)
+      // The clock is set back ten minutes, and the page reloads.
+      vi.setSystemTime(Date.now() - 10 * 60_000)
+      resetSocketFrames()
+      const out: string[] = []
+      const after = createFrameShaper((data) => out.push(data))
+      for (let i = 0; i < 5; i++) after.send(`["REQ","peek--${i}",{}]`)
+      expect(out).toHaveLength(5)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('sends AUTH at once, ahead of the frames waiting for room', () => {
     const { out, shaper: s } = shaper()
     for (let i = 0; i < FRAMES_PER_SECOND + 1; i++) s.send(`["REQ","peek-${i}",{}]`)
