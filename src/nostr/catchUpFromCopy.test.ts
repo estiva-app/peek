@@ -228,6 +228,16 @@ describe('a reopen catches a question up from the copy (THE-6)', () => {
     })
   })
 
+  it('asks a list cut by its limit plainly, though the copy holds the whole list: files past the cut are not its answer', async () => {
+    const whole = { fields: 'newest', kinds: [9], '#h': [room] }
+    const before = Array.from({ length: 20 }, (_, i) => event(9, [['h', room]], 1_000 + i))
+    const copy = await copyHolding([whole], before)
+    const relay = fakeRelay(before)
+
+    expect(await catchUpFromCopy(copy, [{ ...whole, limit: 10 }], options(relay))).toBeNull()
+    expect(relay.reconcile).not.toHaveBeenCalled()
+  })
+
   it("asks a list read the copy never answered plainly: its events alone do not say what it lists", async () => {
     const before = Array.from({ length: 20 }, (_, i) => event(9, [['h', room]], 1_000 + i))
     const copy = await copyHolding(asked, before)
