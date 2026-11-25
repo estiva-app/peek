@@ -26,6 +26,7 @@ import {
   searchFileReferencesAsViewer,
 } from './foreign'
 import { forgetSearchedKinds } from './projectFields'
+import { relayTimes } from '@/test/listRead'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const FOLDER = '9c69f247-0000-4000-8000-000000000000'
@@ -69,7 +70,11 @@ const world = [
 ]
 
 /** A relay answering from the world above: kinds, authors, ids and `#`-tags; the rest of a filter is the relay's. */
-const answer = (_url: string, filters: Record<string, unknown>[]) => answerFrom(world, filters)
+/** The relay over `events`, its times read included: a deleted file is found by its current changes (SPEC §6.5). */
+function answering(events: readonly ReturnType<typeof event>[]) {
+  queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(events, filters))
+  queryRelayTimes.mockImplementation(async (_url: unknown, filters: unknown) => relayTimes(events, filters as Record<string, unknown>[]))
+}
 
 async function answerFrom(events: readonly ReturnType<typeof event>[], filters: Record<string, unknown>[]) {
   // The list read leaves out a file whose newest `deleted` change is `true`, with its changes (SPEC §6.13).
@@ -104,7 +109,8 @@ const listReads = () => requests().flat().filter((f) => f.fields === 'newest')
 
 beforeEach(() => {
   queryRelay.mockReset()
-  queryRelay.mockImplementation(answer)
+  queryRelayTimes.mockReset()
+  answering(world)
   queryRelayWithMatches.mockClear()
   forgetUrlShapes()
   forgetSearchedKinds()
@@ -154,14 +160,14 @@ describe('a deleted project', () => {
   const withDeleted = [...world, deleting]
 
   it('is gone from its team’s list', async () => {
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
+    answering(withDeleted)
     const contents = await resolveFolderContentsAsViewer(FOLDER, 'https://relay.test', token)
 
     expect(contents.files.map((file) => file.address)).toEqual([A])
   })
 
   it('is gone from the files `[` offers from a team', async () => {
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(withDeleted, filters))
+    answering(withDeleted)
     const read = await resolveObjectsAsViewer([A, B], 'https://relay.test', token)
     const offered = await fileCandidatesAsViewer([read[A]!, read[B]!], 0, 'https://relay.test', token)
 
@@ -182,13 +188,15 @@ describe('a deleted project', () => {
       event(30850, [['d', C.split(':')[2]], ['name', 'Elsewhere'], ['h', SECOND]]),
       deletingC,
     ]
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, ...elsewhere], filters))
+    answering([...withDeleted, ...elsewhere])
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     expect(deleted?.map((file) => [file.address, file.folder, file.deleted?.by, file.deleted?.at])).toEqual([
       [B, FOLDER, AUTHOR, deleting.created_at],
       [C, SECOND, OTHER, deletingC.created_at],
     ])
+    // Each is read by its current changes from the times read, never by every change it ever had (aa0ddf0c).
+    expect(requests().flat().filter((f) => (f.kinds as number[] | undefined)?.includes(1851) && f['#a'])).toEqual([])
   })
 
   it('lists a deleted issue beside the deleted projects, found by the times read and never by every issue’s changes (ISS-6)', async () => {
@@ -210,17 +218,8 @@ describe('a deleted project', () => {
       set(OPEN, 'status', 'done', deleting.created_at + 30),
     ]
     const world = [...withDeleted, ...issues]
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom(world, filters))
-    // The times read: each issue's changes by id and the fields each set, never their values.
-    queryRelayTimes.mockImplementation(async () =>
-      issues
-        .filter((e) => e.kind === 30851)
-        .map((root) => {
-          const a = `30851:${AUTHOR}:${root.tags.find((t) => t[0] === 'd')![1]}`
-          const changes = issues.filter((e) => e.kind === 1851 && e.tags.some((t) => t[0] === 'a' && t[1] === a))
-          return { a, created_at: root.created_at, h: FOLDER, changes: changes.map((c) => ({ id: c.id, created_at: c.created_at, fields: [c.tags.find((t) => t[0] === 'field')![1]] })) }
-        }),
-    )
+    // The times read answers each issue's current changes by id and the fields each set, never their values.
+    answering(world)
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     expect(deleted?.map((file) => [file.address, file.kind, file.deleted?.by])).toEqual([
@@ -237,7 +236,7 @@ describe('a deleted project', () => {
     const GONE = `30851:${AUTHOR}:6f1c2b3a-0000-4000-8000-000000000aaa`
     const gone = event(30851, [['d', GONE.split(':')[2]], ['title', 'Old broken link'], ['h', FOLDER]])
     const deletingIssue = { ...event(1851, [['a', GONE], ['O', GONE.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]]), created_at: gone.created_at + 5 }
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, gone, deletingIssue], filters))
+    answering([...withDeleted, gone, deletingIssue])
     // The newest page: 500 issues changed after it, none deleted; the oldest of them is where the next page starts.
     const newest = gone.created_at + 1000
     const busy = Array.from({ length: 500 }, (_, i) => ({
@@ -248,8 +247,10 @@ describe('a deleted project', () => {
     }))
     const older = [{ a: GONE, created_at: gone.created_at, h: FOLDER, changes: [{ id: deletingIssue.id, created_at: deletingIssue.created_at, fields: ['deleted'] }] }]
     queryRelayTimes.mockImplementation(async (...args: unknown[]) => {
-      const until = (args[1] as { until?: number }[])[0].until
-      return until === undefined ? busy : until === newest ? older : []
+      const [filter] = args[1] as { kinds: number[]; until?: number }[]
+      // A deleted file's own times read is the relay's; the issues' walk gets the pages above.
+      if (!filter.kinds.includes(30851)) return relayTimes([...withDeleted, gone, deletingIssue], args[1] as Record<string, unknown>[])
+      return filter.until === undefined ? busy : filter.until === newest ? older : []
     })
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
@@ -259,7 +260,7 @@ describe('a deleted project', () => {
 
   it('is not on the Deleted tab once restored', async () => {
     const restoring = event(1851, [['a', B], ['O', B.split(':')[2]], ['field', 'deleted'], ['value', ''], ['h', FOLDER]])
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, restoring], filters))
+    answering([...withDeleted, restoring])
 
     expect(await deletedProjectsAsViewer('https://relay.test', token)).toEqual([])
   })
@@ -268,18 +269,22 @@ describe('a deleted project', () => {
     const TOPIC =`30840:${AUTHOR}:6f1c2b3a-0000-4000-8000-00000000dddd`
     const topic = event(30840, [['d', TOPIC.split(':')[2]], ['title', 'Launch'], ['h', FOLDER]])
     const deletingTopic = event(1851, [['a', TOPIC], ['O', TOPIC.split(':')[2]], ['field', 'deleted'], ['value', 'true'], ['h', FOLDER]])
-    queryRelay.mockImplementation((_url: string, filters: Record<string, unknown>[]) => answerFrom([...withDeleted, topic, deletingTopic], filters))
+    answering([...withDeleted, topic, deletingTopic])
     // The times read names the topic only when topics are asked for.
-    queryRelayTimes.mockImplementation(async (...args: unknown[]) =>
-      (args[1] as { kinds: number[] }[])[0].kinds.includes(30840)
+    queryRelayTimes.mockImplementation(async (...args: unknown[]) => {
+      const [filter] = args[1] as { kinds: number[] }[]
+      // A deleted file's own times read is the relay's; the issues' walk names the topic.
+      if (!filter.kinds.includes(30851)) return relayTimes([...withDeleted, topic, deletingTopic], args[1] as Record<string, unknown>[])
+      return filter.kinds.includes(30840)
         ? [{ a: TOPIC, created_at: topic.created_at, h: FOLDER, changes: [{ id: deletingTopic.id, created_at: deletingTopic.created_at, fields: ['deleted'] }] }]
-        : [],
-    )
+        : []
+    })
     queryRelayTimes.mockClear()
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     // One page naming the topic, then the page after it, which ends the walk; each asks for issues, topics and pages.
-    expect(queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds)).toEqual([
+    const walk = queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds).filter((kinds) => kinds.includes(30851))
+    expect(walk).toEqual([
       [30851, 30840, 30842],
       [30851, 30840, 30842],
     ])

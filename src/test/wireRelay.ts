@@ -26,7 +26,7 @@
 import { createHash } from 'node:crypto'
 import { vi } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { listAnswer } from './listRead'
+import { listAnswer, relayTimes } from './listRead'
 
 export const RELAY = 'https://relay.test'
 export const ID = 'https://id.estiva.app'
@@ -162,6 +162,10 @@ export function installWireRelay(): WireRelay {
       if (path === '/query') {
         const filters = JSON.parse(body) as Filter[]
         asked.push(...filters)
+        // The times read (SPEC §6.13) answers an object of rows, deleted files included.
+        if (filters.length && filters.every((filter) => filter.fields === 'times')) {
+          return json(200, { times: relayTimes(held, filters, (e, f) => matches(f, e)) })
+        }
         const answer = new Map<string, SignedEvent>()
         for (const filter of filters) {
           if (filter.fields === 'newest') {
