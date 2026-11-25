@@ -10,8 +10,11 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-const { queryRelay } = vi.hoisted(() => ({ queryRelay: vi.fn() }))
+const { queryRelay, readFromCopy } = vi.hoisted(() => ({ queryRelay: vi.fn(), readFromCopy: vi.fn() }))
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
+// The copy's own rules (what it holds, when it answers) are deviceCopy.test.ts's; here only what it answers.
+vi.mock('./deviceCopy', () => ({ readFromCopy }))
+readFromCopy.mockResolvedValue(null)
 
 import { encodeNevent } from '@estiva-app/protocol'
 import { isEventReference, relaySigningKeyAsViewer, resolveObjectAsViewer } from './foreign'
@@ -52,6 +55,21 @@ describe('relaySigningKeyAsViewer', () => {
     queryRelay.mockResolvedValue({ ok: true, events: [{ kind: 39000, pubkey: RELAY, tags: [['d', 'uuid']] }] })
     expect(await relaySigningKeyAsViewer('https://relay.test', token)).toBe(RELAY)
     expect(queryRelay).toHaveBeenLastCalledWith('https://relay.test', [{ kinds: [39000], limit: 1 }], 't', VIEWER, 'click')
+  })
+
+  it('takes the key from a channel record the copy on the device holds, with no read of the relay (THE-6)', async () => {
+    queryRelay.mockClear()
+    readFromCopy.mockResolvedValueOnce([{ kind: 39000, pubkey: RELAY, tags: [['d', 'uuid']] }])
+    expect(await relaySigningKeyAsViewer('https://relay.test', token)).toBe(RELAY)
+    expect(queryRelay).not.toHaveBeenCalled()
+  })
+
+  it('asks the relay when the copy holds no channel record', async () => {
+    queryRelay.mockClear()
+    readFromCopy.mockResolvedValueOnce([])
+    queryRelay.mockResolvedValue({ ok: true, events: [{ kind: 39000, pubkey: RELAY, tags: [['d', 'uuid']] }] })
+    expect(await relaySigningKeyAsViewer('https://relay.test', token)).toBe(RELAY)
+    expect(queryRelay).toHaveBeenCalledTimes(1)
   })
 
   it('answers null, not a throw, when the read is refused or empty', async () => {

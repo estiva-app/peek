@@ -64,6 +64,8 @@ interface Held {
 const FRESH_MS = 60_000
 let held: Held = { key: '', at: 0, failed: false }
 let reading: Promise<void> | null = null
+/** The key `reading` is for. */
+let readingKey = ''
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
@@ -84,6 +86,7 @@ let started = 0
 export function resetTeamsForTests(): void {
   held = { key: '', at: 0, failed: false }
   reading = null
+  readingKey = ''
   lastIds = []
   lastChats = []
 }
@@ -100,8 +103,10 @@ function load(key: string, ids: readonly string[], chats: readonly string[], aga
   if (!RELAY_URL || !token) return Promise.resolve()
   lastIds = ids
   lastChats = chats
+  // The same teams already being read are not read twice: on a reopen the Desk and the rail ask at once, before
+  // any read has landed, and the second read made the first one's answer stale, so the Desk waited for it (THE-6).
   const current = reading
-  if (current && held.key === key && !again) return current
+  if (current && readingKey === key && !again) return current
   const mine = ++started
   const run = readTeamsAsViewer(ids, chats, RELAY_URL, token)
     .then((read) => {
@@ -115,6 +120,7 @@ function load(key: string, ids: readonly string[], chats: readonly string[], aga
       if (reading === run) reading = null
     })
   reading = run
+  readingKey = key
   return run
 }
 
