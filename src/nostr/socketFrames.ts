@@ -38,7 +38,9 @@ export const SHAPED_WINDOW_MS = WINDOW_MS + 1_000
  * And at most this many in any second, so no burst builds that lag in the first place. A catch-up's NEG-OPEN
  * (NIP-77, THE-6) counts in the window, which is the relay's quota, but not here: a reopen sends one per question the
  * copy holds as the socket comes up, where a REQ carried up to ten, and counted here they held the Desk's next reads
- * for the rest of that second, ~0.5 s (0efe7c39).
+ * for the rest of that second, ~0.5 s (0efe7c39). What bounds a burst of them is the reader: every NEG-OPEN is sent
+ * from `socketRead`'s reconcile, inside one of its MAX_REQS_IN_FLIGHT slots, so at most four are open at once. A
+ * caller that reconciles outside the reader must count its NEG-OPENs here again.
  */
 export const FRAMES_PER_SECOND = 12
 /**
