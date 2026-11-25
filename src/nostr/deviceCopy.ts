@@ -171,6 +171,17 @@ export async function readFromCopy(
   return snapshot.answer(filters)
 }
 
+/**
+ * The copy, read and ready, for a read to catch up from (THE-6); `null` while signing out or with nobody signed in.
+ * A copy still loading past {@link READY_WAIT_MS} holds nothing yet, so the read is asked as before.
+ */
+export async function copyToCatchUp(relayUrl: string, pubkey: string | undefined): Promise<EventSnapshot | null> {
+  if (!pubkey || leaving) return null
+  const snapshot = copyFor(relayUrl, pubkey)
+  const ready = await settled(snapshot.ready.then(() => true), READY_WAIT_MS)
+  return ready && !leaving ? snapshot : null
+}
+
 /** Keep the relay's answer: what it sent, and what it no longer has. */
 export function keepRelayAnswer(
   relayUrl: string,

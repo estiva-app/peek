@@ -73,6 +73,9 @@
             sub.bytes += text.length
             sub.events++
           }
+          // A catch-up's rounds (NIP-77, THE-6): its bytes are the question's; an error ends it.
+          if (sub && (verb === 'NEG-MSG' || verb === 'NEG-ERR')) sub.bytes += text.length
+          if (sub && verb === 'NEG-ERR' && sub.done === null) sub.done = now(), (sub.closed = text.slice(0, 160))
           if (sub && verb === 'EOSE' && sub.done === null) sub.done = now()
           // A refused or closed question is over, not answered: the summary counts it as unanswered.
           if (sub && verb === 'CLOSED' && sub.done === null) sub.done = now(), (sub.closed = text.slice(0, 160))
@@ -87,17 +90,33 @@
     }
     send(data) {
       const text = String(data)
-      const type = /^\["(\w+)"/.exec(text)?.[1] ?? '?'
+      // NIP-77's verbs have a hyphen: NEG-OPEN, NEG-MSG, NEG-CLOSE.
+      const type = /^\["([\w-]+)"/.exec(text)?.[1] ?? '?'
       sp.ws.push({ at: now(), dir: 'out', type, bytes: text.length })
       if (this.__spRelay) {
         sp.socket.out += text.length
-        if (type === 'REQ') {
+        if (type === 'REQ' || type === 'NEG-OPEN') {
           try {
             const frame = JSON.parse(text)
-            const filters = JSON.stringify(frame.slice(2))
-            const sub = { via: 'ws', socket: this.__spN, sub: frame[1], at: now(), filter: filters.slice(0, 2000), shape: shapeOf(filters)?.slice(0, 400), out: text.length, bytes: 0, events: 0, done: null }
+            // A NEG-OPEN is one question, the relay meters it as one REQ: its filter, then the client's first message.
+            const filters = JSON.stringify(type === 'REQ' ? frame.slice(2) : [frame[2]])
+            const shape = shapeOf(filters)?.slice(0, 400)
+            const sub = { via: 'ws', socket: this.__spN, sub: frame[1], at: now(), filter: filters.slice(0, 2000), shape: type === 'REQ' ? shape : `NEG ${shape}`, out: text.length, bytes: 0, events: 0, done: null }
             this.__spSubs.set(frame[1], sub)
             sp.subs.push(sub)
+          } catch {}
+        }
+        // The client closes a catch-up once it knows the difference: that is its answer.
+        if (type === 'NEG-CLOSE') {
+          try {
+            const sub = this.__spSubs.get(JSON.parse(text)[1])
+            if (sub && sub.done === null) sub.done = now()
+          } catch {}
+        }
+        if (type === 'NEG-MSG') {
+          try {
+            const sub = this.__spSubs.get(JSON.parse(text)[1])
+            if (sub) sub.out += text.length
           } catch {}
         }
       }

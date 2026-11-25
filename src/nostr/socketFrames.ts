@@ -54,7 +54,8 @@ export const FIRST_HOLD_MS = 3_000
 /** While a first page is still being read, how often a frame held back for it looks again. */
 const FIRST_RECHECK_MS = 100
 
-const METERED = /^\["(REQ|EVENT|COUNT)"/
+// A NEG-OPEN (NIP-77, THE-6) is metered as one REQ; the NEG-MSG rounds inside it are not.
+const METERED = /^\["(REQ|EVENT|COUNT|NEG-OPEN)"/
 let readDepth = 0
 let firstDepth = 0
 /** When each first-page read not answered yet was asked, and until when the room is kept after the last one answered. */
@@ -137,6 +138,13 @@ interface Frame {
   first: boolean
 }
 
+/** A NIP-77 frame's reconciliation id: its second element. */
+function negId(data: string): string | undefined {
+  const start = data.indexOf('","') + 3
+  const end = data.indexOf('"', start)
+  return start > 2 && end > start ? data.slice(start, end) : undefined
+}
+
 function classify(data: unknown): Frame | null {
   if (typeof data !== 'string') return null
   const metered = METERED.test(data)
@@ -199,6 +207,13 @@ export function createFrameShaper(
       // REQs queued on a reconnect would otherwise reach the relay before it.
       // So may a first page's REQ, which opens a subscription of its own.
       if (frame.data.startsWith('["AUTH"') || ((queue.length === 0 || frame.first) && hasRoom(frame))) return put(frame)
+      // A catch-up's round (NIP-77, THE-6) answers the relay, so its NEG-OPEN is already sent: it is not metered and
+      // must not wait behind REQs held for room. Its NEG-CLOSE may go too, unless its NEG-OPEN is still waiting here.
+      if (frame.data.startsWith('["NEG-MSG"')) return put(frame)
+      if (frame.data.startsWith('["NEG-CLOSE"')) {
+        const id = negId(frame.data)
+        if (!queue.some((waiting) => waiting.data.startsWith('["NEG-OPEN"') && negId(waiting.data) === id)) return put(frame)
+      }
       if (frame.first) {
         let at = 0
         while (at < queue.length && queue[at].first) at += 1
