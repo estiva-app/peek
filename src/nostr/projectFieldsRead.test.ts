@@ -247,9 +247,9 @@ describe('a deleted project', () => {
     }))
     const older = [{ a: GONE, created_at: gone.created_at, h: FOLDER, changes: [{ id: deletingIssue.id, created_at: deletingIssue.created_at, fields: ['deleted'] }] }]
     queryRelayTimes.mockImplementation(async (...args: unknown[]) => {
-      const [filter] = args[1] as { kinds: number[]; until?: number }[]
+      const [filter] = args[1] as { kinds: number[]; until?: number; '#d'?: string[] }[]
       // A deleted file's own times read is the relay's; the issues' walk gets the pages above.
-      if (!filter.kinds.includes(30851)) return relayTimes([...withDeleted, gone, deletingIssue], args[1] as Record<string, unknown>[])
+      if (filter['#d']) return relayTimes([...withDeleted, gone, deletingIssue], args[1] as Record<string, unknown>[])
       return filter.until === undefined ? busy : filter.until === newest ? older : []
     })
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
@@ -272,9 +272,9 @@ describe('a deleted project', () => {
     answering([...withDeleted, topic, deletingTopic])
     // The times read names the topic only when topics are asked for.
     queryRelayTimes.mockImplementation(async (...args: unknown[]) => {
-      const [filter] = args[1] as { kinds: number[] }[]
+      const [filter] = args[1] as { kinds: number[]; '#d'?: string[] }[]
       // A deleted file's own times read is the relay's; the issues' walk names the topic.
-      if (!filter.kinds.includes(30851)) return relayTimes([...withDeleted, topic, deletingTopic], args[1] as Record<string, unknown>[])
+      if (filter['#d']) return relayTimes([...withDeleted, topic, deletingTopic], args[1] as Record<string, unknown>[])
       return filter.kinds.includes(30840)
         ? [{ a: TOPIC, created_at: topic.created_at, h: FOLDER, changes: [{ id: deletingTopic.id, created_at: deletingTopic.created_at, fields: ['deleted'] }] }]
         : []
@@ -283,7 +283,7 @@ describe('a deleted project', () => {
     const deleted = await deletedProjectsAsViewer('https://relay.test', token)
 
     // One page naming the topic, then the page after it, which ends the walk; each asks for issues, topics and pages.
-    const walk = queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds).filter((kinds) => kinds.includes(30851))
+    const walk = queryRelayTimes.mock.calls.map(([, filters]) => (filters as { kinds: number[] }[])[0].kinds).filter((_kinds, i) => !(queryRelayTimes.mock.calls[i]![1] as { '#d'?: string[] }[])[0]['#d'])
     expect(walk).toEqual([
       [30851, 30840, 30842],
       [30851, 30840, 30842],

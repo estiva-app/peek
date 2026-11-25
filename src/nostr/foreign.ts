@@ -208,12 +208,13 @@ export function folderLoadAsViewer(relayUrl: string, token: StoredToken, source:
  * what it does not hold the relay answers.
  */
 function copyQuery(relayUrl: string, token: StoredToken): QueryFn {
-  // The times read goes to the relay; a deleted file's changes the copy does not hold throw, and the relay answers.
-  return withTimes(async (filters) => {
+  // No times read: the copy paints without a round trip, offline too. A deleted file or parent reads as not the
+  // copy's there, and the relay read that follows it answers it by its current changes (aa0ddf0c).
+  return async (filters) => {
     const result = await readFrom('copy', relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
     return result.events
-  }, timesAsViewer(relayUrl, token))
+  }
 }
 
 /**
