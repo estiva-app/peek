@@ -269,7 +269,12 @@ export async function queryRelay(
     // A question the copy already holds is brought up to date with NIP-77, fetching only what changed (THE-6).
     // A file's first page is a click waiting on one round trip, so it is asked as before.
     const reader = socketReader
-    const copy = asked !== 'first' && reader?.reconcile && pubkey ? await copyToCatchUp(relayUrl, pubkey) : null
+    // A reader that cannot compare now (paused for quota, another person's socket) asks as before: falling back
+    // through the catch-up would send a pack's whole union over HTTP just when the relay said to back off.
+    const copy =
+      asked !== 'first' && reader?.reconcile && pubkey && (reader.canReconcile?.(relayUrl, pubkey) ?? true)
+        ? await copyToCatchUp(relayUrl, pubkey)
+        : null
     answer =
       copy && reader?.reconcile && pubkey
         ? await catchUpFromCopy(copy, filters, {
@@ -292,7 +297,9 @@ export async function queryRelay(
     }
   }
   // Every answer is also the copy a reload draws from, and its correction (PEE-2).
-  if (answer.ok && !kept) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
+  if (answer.ok) {
+    if (!kept) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
+  }
   // Why a read failed, for the report of the failure it becomes: the relay's prefix, never its sentence.
   else heardFailure(answer.reason ?? '')
   return answer
@@ -363,6 +370,8 @@ export type SocketReader = ((
     pubkey: string,
     options?: { lane?: QueryLane },
   ): Promise<ReconcileOutcome>
+  /** Whether {@link reconcile} could compare now: not paused, this person's socket, this relay. */
+  canReconcile?(relayUrl: string, pubkey: string): boolean
 }
 
 let socketReader: SocketReader | null = null

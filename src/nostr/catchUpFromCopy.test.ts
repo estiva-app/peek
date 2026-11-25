@@ -134,6 +134,22 @@ describe('a reopen catches a question up from the copy (THE-6)', () => {
     expect(answer!.events.filter((e) => e.tags[0][1] === files[1])).toHaveLength(9)
   })
 
+  it('asks a packed file that grew by hundreds while away by its window, never downloading all of it', async () => {
+    const files = [`30851:${ME}:one`, `30851:${ME}:two`]
+    const perFile = files.map((a) => ({ kinds: [1111], '#a': [a], limit: 10 }))
+    const held = files.flatMap((a) => Array.from({ length: 9 }, (_, i) => event(1111, [['a', a]], 1_000 + i)))
+    const copy = await copyHolding(perFile, held)
+    const flood = Array.from({ length: 500 }, (_, i) => event(1111, [['a', files[0]]], 2_000 + i))
+    const relay = fakeRelay([...held, ...flood])
+
+    const answer = await catchUpFromCopy(copy, perFile, options(relay))
+
+    expect(relay.fetchedIds()).toEqual([])
+    const first = answer!.events.filter((e) => e.tags[0][1] === files[0])
+    expect(first.map((e) => e.id)).toEqual(flood.slice(-10).reverse().map((e) => e.id))
+    expect(answer!.events.filter((e) => e.tags[0][1] === files[1])).toHaveLength(9)
+  })
+
   it('asks a question the copy holds too little of as before, beside the catch-up, and keeps its answer', async () => {
     const before = Array.from({ length: 20 }, (_, i) => event(9, [['h', room]], 1_000 + i))
     const profile = { kinds: [0], authors: [ME] }

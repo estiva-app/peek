@@ -117,7 +117,8 @@ export async function catchUpFromCopy(
     if (tags.length === 1 && judged.length < limit) {
       const [tag] = tags
       const { [tag]: _values, limit: _limit, ...base } = filter
-      const key = `${tag} ${JSON.stringify(Object.entries(base).sort(([a], [b]) => (a < b ? -1 : 1)))}`
+      const entries = Object.entries(base).map(([name, value]): [string, unknown] => [name, Array.isArray(value) ? [...value].sort() : value])
+      const key = `${tag} ${JSON.stringify(entries.sort(([a], [b]) => (a < b ? -1 : 1)))}`
       const pack = packs.get(key) ?? { base, tag, members: [], held: 0 }
       pack.members.push(filter)
       pack.held += judged.length
@@ -130,7 +131,12 @@ export async function catchUpFromCopy(
     else if (pack.held < smallest) for (const member of pack.members) loose.push({ filter: member, held: 0 })
     else {
       const values = [...new Set(pack.members.flatMap((member) => member[pack.tag] as unknown[]))]
-      packed.push({ filter: { ...pack.base, [pack.tag]: values } as SnapshotFilter, members: pack.members })
+      // At most what the members ask together: one file that grew by thousands while away is asked by its window,
+      // not fetched whole through the union.
+      const limits = pack.members.map((member) => member.limit)
+      const limit = limits.every((each) => typeof each === 'number') ? (limits as number[]).reduce((a, b) => a + b, 0) : undefined
+      const filter = { ...pack.base, [pack.tag]: values, ...(limit !== undefined ? { limit } : {}) } as SnapshotFilter
+      packed.push({ filter, members: pack.members })
     }
   }
   for (const { filter, held } of loose) {
@@ -159,7 +165,8 @@ export async function catchUpFromCopy(
     })),
   }
   records.push(record)
-  if (records.length > 500) records.splice(0, records.length - 500)
+  // About one reopen's reads: enough to read what a reopen did, little to keep for a tab left open all day.
+  if (records.length > 200) records.splice(0, records.length - 200)
 
   const asked = plain.length
     ? options.ask(plain).then((answer) => {

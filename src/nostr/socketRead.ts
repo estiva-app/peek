@@ -34,12 +34,19 @@ import {
 } from '@estiva-app/platform'
 import type { ReconcileOutcome, SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
+import { recordReadAnswered } from './freshness'
 import type { QueryLane, SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
 import { firstFrameWaitMs, otherFramesSince, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
 
+/**
+ * How long a catch-up's NEG-OPEN waits for the relay's first round (THE-6). Buzz answers in well under a second; a
+ * silent one is asked plainly after this, so the silence still shows within about 30 s (5cd7579f): this, then a REQ's
+ * {@link EOSE_TIMEOUT_MS}, then HTTP's 15 s.
+ */
+export const RECONCILE_WAIT_MS = 5_000
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
 /**
@@ -468,17 +475,23 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     let outcome: ReconcileOutcome
     try {
       if (client.state() !== 'live') return unsupported('not live')
-      outcome = await sendingAsRead(() => client.relay.reconcile(filter, held))
+      outcome = await sendingAsRead(() => client.relay.reconcile(filter, held, { timeoutMs: RECONCILE_WAIT_MS, retryRateLimited: false }))
     } finally {
       release()
     }
+    // The relay answered, whether or not anything was missing: that ends a silent relay as a REQ's answer does (5cd7579f).
+    if (outcome.ok || outcome.reason === 'refused' || outcome.reason === 'blocked') recordReadAnswered(outcome.ok)
     recordRelayRequest('NEG-OPEN', [filter], outcome.ok ? null : refusalOf(0, outcome.message))
     if (!outcome.ok && /quota exceeded/.test(outcome.message)) options.budget.noteRateLimited(outcome.message)
     return outcome
   }
 
+  const canReconcile = (relayUrl: string, pubkey: string) =>
+    options.budget.pausedForMs() === 0 && options.currentPubkey() === pubkey && !!options.getClient(relayUrl)
+
   return Object.assign(read, {
     reconcile,
+    canReconcile,
     promoteAhead: () => {
       for (const waiting of packs) waiting.promoted = true
       pacer.promote()
