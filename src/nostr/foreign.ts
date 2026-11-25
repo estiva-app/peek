@@ -112,6 +112,7 @@ import {
   archiveImpact,
   createLoadQuery,
   withTimes,
+  catchingUpLists,
   type TimesFn,
   type ArchiveImpact,
   type ArchiveReadOptions,
@@ -173,17 +174,21 @@ function timesAsViewer(relayUrl: string, token: StoredToken): TimesFn {
 export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLane | (() => QueryLane) = 'click'): QueryFn {
   // A read loaded ahead is nobody's wait; one the person has joined since (a lane that now answers `click`) is.
   const asked = () => (typeof lane === 'function' ? lane() : lane) !== 'ahead'
-  return withTimes(
-    (filters) =>
-      waitingOut(
-        async () => {
-          const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
-          if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-          return result.events
-        },
-        { waits: asked },
-      ),
-    timesAsViewer(relayUrl, token),
+  // A list read asked again is caught up from the copy (`queryRelay`, platform 0.14), so a Folder finds its projects in
+  // the workspace project list rather than by the relay's own `#buzz-channel` tag (THE-11, SPEC §6.13).
+  return catchingUpLists(
+    withTimes(
+      (filters) =>
+        waitingOut(
+          async () => {
+            const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
+            if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+            return result.events
+          },
+          { waits: asked },
+        ),
+      timesAsViewer(relayUrl, token),
+    ),
   )
 }
 
@@ -209,12 +214,14 @@ export function folderLoadAsViewer(relayUrl: string, token: StoredToken, source:
  */
 function copyQuery(relayUrl: string, token: StoredToken): QueryFn {
   // No times read: the copy paints without a round trip, offline too. A deleted file or parent reads as not the
-  // copy's there, and the relay read that follows it answers it by its current changes (aa0ddf0c).
-  return async (filters) => {
+  // copy's there, and the relay read that follows it answers it by its current changes (aa0ddf0c). Marked as the relay
+  // query is, so a listing asks the same reads of both (THE-11). The copy answers no list read (`fields`) today, as it
+  // answered no `#buzz-channel` before: a team with no state is listed when the relay answers.
+  return catchingUpLists(async (filters) => {
     const result = await readFrom('copy', relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
     return result.events
-  }
+  })
 }
 
 /**
