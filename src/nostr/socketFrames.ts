@@ -30,7 +30,7 @@ export const WINDOW_MS = 5_000
  * so a burst is admitted over the next second or so and its tail lands in the
  * next fixed window: 46 sent in 5 s were refused that way (v5 `--hammer`).
  * Two above the reader's cap, for watches arriving unasked; the other 8 are
- * for Ship and other tabs on the same pubkey (`REQS_PER_WINDOW`).
+ * for Ship and Leaf on the same pubkey (`REQS_PER_WINDOW`). Every Peek load on the device shares the 42 (cbad5360).
  */
 export const FRAMES_PER_WINDOW = 42
 export const SHAPED_WINDOW_MS = WINDOW_MS + 1_000
@@ -74,6 +74,66 @@ const sent: number[] = []
 const sentForSecond: number[] = []
 /** The ones the reader's pacer did not grant: not the reader's, or a first page's, which skips it. */
 const others: number[] = []
+
+/**
+ * Every Peek load on this device writes the metered frames it sent in the last window here, by load, and counts the
+ * other loads' (cbad5360). The relay counts the pubkey, but `sent` is this page's memory: a reload, or a second tab,
+ * started from nothing while the last load's catch-up was still in the relay's window, and one Peek sent 51–54 in
+ * 5 s (smoke run, 25 Nov). Timestamps only, gone a window later.
+ */
+const SHARED_KEY = 'peek:socket-frames'
+let load = Math.random().toString(36).slice(2)
+
+function sharedStore(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+}
+
+function readShared(store: Storage): Record<string, number[]> {
+  try {
+    const parsed: unknown = JSON.parse(store.getItem(SHARED_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number[]>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** The metered frames the other Peek loads on this device sent after `floor`, oldest first. */
+function elsewhere(floor: number): number[] {
+  const store = sharedStore()
+  if (!store) return []
+  const out: number[] = []
+  for (const [id, times] of Object.entries(readShared(store))) {
+    if (id === load || !Array.isArray(times)) continue
+    for (const at of times) if (typeof at === 'number' && at > floor) out.push(at)
+  }
+  return out.sort((a, b) => a - b)
+}
+
+/** Writes this load's frames in the window, and drops the loads whose last frame has left it. */
+function writeShared(floor: number) {
+  const store = sharedStore()
+  if (!store) return
+  const all = readShared(store)
+  for (const [id, times] of Object.entries(all)) {
+    if (!Array.isArray(times) || !times.some((at) => at > floor)) delete all[id]
+  }
+  all[load] = sent.slice()
+  try {
+    store.setItem(SHARED_KEY, JSON.stringify(all))
+  } catch {
+    // A full or refused store only loses the other loads' view of this one.
+  }
+}
+
+/** This load's frames merged with the other loads', oldest first: what the relay's window holds of this device. */
+function inWindow(floor: number, mine: number[]): number[] {
+  const theirs = elsewhere(floor)
+  return theirs.length === 0 ? mine : [...mine, ...theirs].sort((a, b) => a - b)
+}
 
 export function sendingAsRead<T>(send: () => T): T {
   readDepth += 1
@@ -119,7 +179,8 @@ function waitUnder(at: number, reserve: number): number {
   const perWindow = FRAMES_PER_WINDOW - reserve
   const perSecond = FRAMES_PER_SECOND - reserve
   let wait = 0
-  if (sent.length >= perWindow) wait = sent[sent.length - perWindow] + SHAPED_WINDOW_MS - at
+  const counted = inWindow(at - SHAPED_WINDOW_MS, sent)
+  if (counted.length >= perWindow) wait = counted[counted.length - perWindow] + SHAPED_WINDOW_MS - at
   trim(sentForSecond, at - 1_000)
   if (sentForSecond.length >= perSecond) wait = Math.max(wait, sentForSecond[sentForSecond.length - perSecond] + 1_000 - at)
   return Math.max(0, wait)
@@ -135,10 +196,10 @@ export function firstFrameWaitMs(now: () => number = Date.now): number {
   return waitUnder(at, 0)
 }
 
-/** Metered frames this tab sent since `floor` that the reader did not send. */
+/** Metered frames since `floor` that the reader did not send: this load's, and every other Peek load's on the device. */
 export function otherFramesSince(floor: number): number[] {
   trim(others, floor)
-  return others
+  return inWindow(floor, others)
 }
 
 interface Frame {
@@ -197,7 +258,9 @@ export function createFrameShaper(
   function put(frame: Frame) {
     if (frame.metered) {
       const at = now()
+      trim(sent, at - SHAPED_WINDOW_MS)
       sent.push(at)
+      writeShared(at - SHAPED_WINDOW_MS)
       if (!frame.data.startsWith('["NEG-OPEN"')) sentForSecond.push(at)
       if (!frame.read || frame.first) others.push(at)
     }
@@ -245,8 +308,9 @@ export function createFrameShaper(
   }
 }
 
-/** Test seam: forget what was sent. */
+/** Test seam: forget what was sent, and start as a new load (`elsewhere` still holds what earlier ones wrote). */
 export function resetSocketFrames(): void {
+  load = Math.random().toString(36).slice(2)
   sent.length = 0
   sentForSecond.length = 0
   others.length = 0
