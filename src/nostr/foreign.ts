@@ -215,7 +215,8 @@ export function folderLoadAsViewer(relayUrl: string, token: StoredToken, source:
 function copyQuery(relayUrl: string, token: StoredToken): QueryFn {
   // No times read: the copy paints without a round trip, offline too. A deleted file or parent reads as not the
   // copy's there, and the relay read that follows it answers it by its current changes (aa0ddf0c). Marked as the relay
-  // query is, so a listing asks the copy the same reads the relay answered into it (THE-11).
+  // query is, so a listing asks the same reads of both (THE-11). The copy answers no list read (`fields`) today, as it
+  // answered no `#buzz-channel` before: a team with no state is listed when the relay answers.
   return catchingUpLists(async (filters) => {
     const result = await readFrom('copy', relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
