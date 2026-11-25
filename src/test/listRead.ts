@@ -7,7 +7,7 @@
   the one way.
 */
 import { filesOf } from '@estiva-app/interop'
-import type { SignedEvent } from '@estiva-app/protocol'
+import type { FileTimes, SignedEvent } from '@estiva-app/protocol'
 
 type Filter = Record<string, unknown>
 type Matches<E> = (event: E, filter: Filter) => boolean
@@ -38,6 +38,46 @@ export function listAnswer<E extends Pick<SignedEvent, 'id' | 'kind' | 'pubkey' 
   return filesOf(events as unknown as SignedEvent[], { withText: text === true }).flatMap((file) =>
     picked.has(file.root) && file.fields.deleted?.value !== 'true' ? (file.events as unknown as E[]) : [],
   )
+}
+
+/**
+ * The times read's rows for one filter (SPEC §6.13, `"fields": "times"`): each first record it picks, deleted ones
+ * included, with each field's current change by id and the field it set, never its value (§6.5).
+ */
+export function timesAnswer<E extends Pick<SignedEvent, 'id' | 'kind' | 'pubkey' | 'created_at' | 'tags'>>(
+  events: readonly E[],
+  filter: Filter,
+  matches: Matches<E> = plainMatches,
+): FileTimes[] {
+  const { fields: _fields, limit, ...rest } = filter
+  const tag = (event: E, name: string) => event.tags.find((t) => t[0] === name)?.[1]
+  const roots = events.filter((event) => event.kind >= 30000 && matches(event, rest)).sort((a, b) => b.created_at - a.created_at)
+  return (typeof limit === 'number' ? roots.slice(0, limit) : roots).map((root) => {
+    const a = `${root.kind}:${root.pubkey}:${tag(root, 'd')}`
+    const h = tag(root, 'h') ?? null
+    const heads = new Map<string, E>()
+    for (const change of events) {
+      if (change.kind !== 1851 || tag(change, 'a') !== a || (h && tag(change, 'h') !== h)) continue
+      const field = tag(change, 'field')
+      if (!field || field.startsWith('member:')) continue
+      const held = heads.get(field)
+      if (!held || change.created_at > held.created_at) heads.set(field, change)
+    }
+    const under = tag(root, 'a')
+    const changes = [...heads].map(([field, change]) => ({ id: change.id, created_at: change.created_at, fields: [field] }))
+    return { a, created_at: root.created_at, h, ...(under ? { under } : {}), changes } as FileTimes
+  })
+}
+
+/** The times read's answer to `filters` over `events`, each file once. */
+export function relayTimes<E extends Pick<SignedEvent, 'id' | 'kind' | 'pubkey' | 'created_at' | 'tags'>>(
+  events: readonly E[],
+  filters: readonly Filter[],
+  matches: Matches<E> = plainMatches,
+): FileTimes[] {
+  const out = new Map<string, FileTimes>()
+  for (const filter of filters) for (const row of timesAnswer(events, filter, matches)) out.set(row.a, row)
+  return [...out.values()]
 }
 
 /** The relay's answer to `filters` over `events`: the list read for a filter that asks it, the plain match for the rest. */

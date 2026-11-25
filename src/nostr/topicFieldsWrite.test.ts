@@ -6,15 +6,17 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
+const { queryRelay, queryRelayTimes, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
+  queryRelayTimes: vi.fn(),
   publishSigned: vi.fn<(...args: unknown[]) => Promise<{ ok: boolean; reason?: string }>>(async () => ({ ok: true })),
   signViaEstivaId: vi.fn(async (event: unknown) => event),
 }))
 
-vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
+vi.mock('./bridge', () => ({ queryRelay, queryRelayTimes, publishSigned, signViaEstivaId }))
 
 import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes, listsPrevAsViewer, renameFileAsViewer, restoreFileAsViewer, setTopicFileAsViewer } from './foreign'
+import { relayTimes } from '@/test/listRead'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const RELAY = 'cd'.repeat(32)
@@ -66,6 +68,8 @@ function relayOver(world: TestEvent[]) {
     }
     return true
   }
+  // The same world's times read: a deleted topic is found by its current changes (SPEC §6.5).
+  queryRelayTimes.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => relayTimes(world, filters, matches))
   return vi.fn(async (_url: string, filters: Record<string, unknown>[]) => ({
     ok: true as const,
     events: filters.flatMap((f) => {

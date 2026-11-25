@@ -111,6 +111,8 @@ import {
   readTopicActivity,
   archiveImpact,
   createLoadQuery,
+  withTimes,
+  type TimesFn,
   type ArchiveImpact,
   type ArchiveReadOptions,
   type FolderRef,
@@ -156,21 +158,33 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
 export function firstReadQuery(relayUrl: string, token: StoredToken): QueryFn {
   const first = viewerQuery(relayUrl, token, 'first')
   const click = viewerQuery(relayUrl, token)
-  return (filters) => (filters.length <= MAX_FILTERS_PER_REQ ? first : click)(filters)
+  return withTimes((filters) => (filters.length <= MAX_FILTERS_PER_REQ ? first : click)(filters), timesAsViewer(relayUrl, token))
+}
+
+/**
+ * The relay's times read (SPEC §6.13, `"fields": "times"`) as this viewer. It rides on every query Peek hands interop
+ * (`withTimes`), so a file the list read leaves out, a deleted one, is read by its current changes and still says who
+ * deleted it, never by every change it ever had (aa0ddf0c).
+ */
+function timesAsViewer(relayUrl: string, token: StoredToken): TimesFn {
+  return (filters) => waitingOut(() => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey))
 }
 
 export function viewerQuery(relayUrl: string, token: StoredToken, lane: QueryLane | (() => QueryLane) = 'click'): QueryFn {
   // A read loaded ahead is nobody's wait; one the person has joined since (a lane that now answers `click`) is.
   const asked = () => (typeof lane === 'function' ? lane() : lane) !== 'ahead'
-  return (filters) =>
-    waitingOut(
-      async () => {
-        const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
-        if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-        return result.events
-      },
-      { waits: asked },
-    )
+  return withTimes(
+    (filters) =>
+      waitingOut(
+        async () => {
+          const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
+          if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+          return result.events
+        },
+        { waits: asked },
+      ),
+    timesAsViewer(relayUrl, token),
+  )
 }
 
 /** The pacer lane a read from `source` waits in: `ahead` for Desk's loader (PEE-5), every other relay read a click's. */
@@ -194,6 +208,8 @@ export function folderLoadAsViewer(relayUrl: string, token: StoredToken, source:
  * what it does not hold the relay answers.
  */
 function copyQuery(relayUrl: string, token: StoredToken): QueryFn {
+  // No times read: the copy paints without a round trip, offline too. A deleted file or parent reads as not the
+  // copy's there, and the relay read that follows it answers it by its current changes (aa0ddf0c).
   return async (filters) => {
     const result = await readFrom('copy', relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
@@ -329,7 +345,10 @@ export function linkReaderAsViewer(relayUrl: string, token: StoredToken): LinkRe
     return links.reader
   }
   // Each read goes with the newest token handed in.
-  const query: QueryFn = (filters) => viewerQuery(relayUrl, current.token)(filters)
+  const query: QueryFn = withTimes(
+    (filters) => viewerQuery(relayUrl, current.token)(filters),
+    (filters) => timesAsViewer(relayUrl, current.token)(filters),
+  )
   // No retries of the reader's own: `askLinks` (src/api/foreign.ts) rests a failed link and says when to ask again.
   const current = { viewer, token, reader: linkReader({ query, manifests: () => urlManifests(query), retries: 0 }) }
   links = current
@@ -1080,8 +1099,7 @@ export async function topicListsAsViewer(topics: readonly string[], relayUrl: st
 export async function topicActivityAsViewer(topics: readonly ActivityTopic[], relayUrl: string, token: StoredToken): Promise<TopicActivity> {
   // Listed files' changes and the files under them are learnt as times, not read whole.
   // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-relay-may-answer-when-a-file-changed-without-the-change.md
-  const times = (filters: Record<string, unknown>[]) => waitingOut(() => queryRelayTimes(relayUrl, filters, token.accessToken, token.pubkey))
-  return readTopicActivity(viewerQuery(relayUrl, token), topics, { times })
+  return readTopicActivity(viewerQuery(relayUrl, token), topics, { times: timesAsViewer(relayUrl, token) })
 }
 
 /**
