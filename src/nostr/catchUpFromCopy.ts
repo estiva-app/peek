@@ -24,13 +24,13 @@ import { relayInfo } from './relayInfo'
 type Answer = { ok: boolean; events: SignedEvent[]; reason?: string }
 
 /** Keys only the relay can answer: the open read (SPEC §6.13), and NIP-50's search. */
-const QUERY_ONLY = ['text', 'search']
+export const QUERY_ONLY = ['text', 'search']
 
 /**
  * A list read (SPEC §6.13, `fields`): the copy holds it as its last answer, `null` when it never answered it or a
  * `limit` could cut it, and the relay compares it against each file's current changes (THE-9, platform 0.14).
  */
-const isList = (filter: Record<string, unknown>) => 'fields' in filter
+export const isList = (filter: Record<string, unknown>) => 'fields' in filter
 
 export interface CatchUpFromCopyOptions {
   relayUrl: string
@@ -265,6 +265,6 @@ export async function catchUpFromCopy(
 }
 
 /** Newest first, then by id: the order a relay answers in. */
-function byRelayOrder(a: SignedEvent, b: SignedEvent): number {
+export function byRelayOrder(a: SignedEvent, b: SignedEvent): number {
   return b.created_at - a.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }

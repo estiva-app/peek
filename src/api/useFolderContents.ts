@@ -360,6 +360,11 @@ function subscribeListingFromCopy(listener: () => void): () => void {
   return () => listingFromCopyListeners.delete(listener)
 }
 const listingFromCopySnapshot = () => listingFromCopy
+/**
+ * The copy's listing being read: asked once per tab, however many lists mount before it lands. A reopen mounts six,
+ * and each walked every team's file lists through the copy on the page's first frames (THE-13: a 621 ms task).
+ */
+let readingListingFromCopy = false
 
 /** The ids of the Folders this tab's listing holds now (the relay's, else the copy's), with no read: what a live watch names by `#h` on a relay that needs it. */
 export function heldFolderIds(): string[] {
@@ -380,6 +385,7 @@ export function subscribeHeldFolderIds(listener: () => void): () => void {
 export function clearFolderListing(): void {
   folderListing.clear()
   setListingFromCopy(undefined)
+  readingListingFromCopy = false
   listedIn.clear()
 }
 
@@ -435,12 +441,18 @@ export function useFolders(): {
 
   useEffect(() => {
     // Nothing held yet in this tab: the copy on the device draws the listing until the relay answers (PEE-4).
-    if (folderListing.snapshot().value === undefined && listingFromCopy === undefined) {
+    if (folderListing.snapshot().value === undefined && listingFromCopy === undefined && !readingListingFromCopy) {
+      readingListingFromCopy = true
       listFoldersFromDevice()
         .then((folders) => {
-          if (folders && folderListing.snapshot().value === undefined) setListingFromCopy(folders)
+          // No viewer yet: the next list to mount asks again, as whoever signs in.
+          if (!folders) readingListingFromCopy = false
+          else if (folderListing.snapshot().value === undefined) setListingFromCopy(folders)
         })
-        .catch(() => {})
+        // Not in the copy yet, or the copy still opening: the next list to mount asks again.
+        .catch(() => {
+          readingListingFromCopy = false
+        })
     }
     void folderListing.ensure(load)
   }, [load, listFoldersFromDevice])

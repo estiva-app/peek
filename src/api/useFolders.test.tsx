@@ -125,6 +125,28 @@ describe('useFolders', () => {
     expect(result.current.failed).toBe(true)
   })
 
+  it('reads the copy’s listing once however many lists mount before it lands (THE-13)', async () => {
+    // A reopen mounts six; each walked every team's file lists through the copy on the page's first frames.
+    seam.listFolders.mockReturnValueOnce(new Promise(() => {}))
+    seam.listFoldersFromDevice.mockClear()
+    seam.listFoldersFromDevice.mockResolvedValueOnce([TEAM])
+    const lists = [renderHook(() => useFolders()), renderHook(() => useFolders()), renderHook(() => useFolders())]
+    await settle()
+    expect(seam.listFoldersFromDevice).toHaveBeenCalledTimes(1)
+    expect(lists.map(({ result }) => result.current.folders)).toEqual([[TEAM], [TEAM], [TEAM]])
+  })
+
+  it('a copy that could not answer yet is asked again by the next list to mount', async () => {
+    // The copy still opening on a slow disk: its first read rejects, and the relay has not answered either.
+    seam.listFolders.mockReturnValue(new Promise(() => {}))
+    seam.listFoldersFromDevice.mockRejectedValueOnce(new RelayReadError('not in the copy')).mockResolvedValueOnce([TEAM])
+    renderHook(() => useFolders())
+    await settle()
+    const later = renderHook(() => useFolders())
+    await settle()
+    expect(later.result.current.folders).toEqual([TEAM])
+  })
+
   it('negative control: a copy that answers after the relay is not drawn', async () => {
     let copied: (folders: FolderSummary[]) => void = () => {}
     seam.listFolders.mockResolvedValueOnce([TEAM, PLACED])

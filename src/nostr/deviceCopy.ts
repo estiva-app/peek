@@ -31,8 +31,10 @@ import {
   snapshotScope,
   type EventSnapshot,
   type IdbFactoryLike,
+  type SnapshotFilter,
   type SnapshotStorage,
 } from '@estiva-app/platform'
+import { QUERY_ONLY, byRelayOrder, isList } from './catchUpFromCopy'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
 import { clearRailMemory } from '@/lib/railMemory'
@@ -170,7 +172,35 @@ export async function readFromCopy(
   if (!pubkey || leaving) return null
   const snapshot = copyFor(relayUrl, pubkey)
   await settled(snapshot.ready, READY_WAIT_MS)
-  return snapshot.answer(filters)
+  return answerFromCopy(snapshot, filters)
+}
+
+/**
+ * What the copy says for these filters, or `null` when it cannot say for one of them.
+ *
+ * A list read (SPEC §6.13, `fields`) is answered by its last answer, as a catch-up that finds nothing changed answers
+ * it (platform's `catchUp`): which files it lists is the relay's call, and the copy draws the relay's last call until
+ * the relay is asked again. The snapshot's own `answer` refuses list reads, so a reopen's Folder listing, whose files
+ * are list reads, waited for the relay, and every team with it (THE-13: Open work's icons at 5 s, not 2).
+ */
+export function answerFromCopy(
+  snapshot: Pick<EventSnapshot, 'answer' | 'held'>,
+  filters: readonly Record<string, unknown>[],
+): SignedEvent[] | null {
+  const lists = filters.filter(isList)
+  if (lists.length === 0) return snapshot.answer(filters as SnapshotFilter[])
+  const rest = filters.filter((filter) => !isList(filter))
+  const answered = rest.length ? snapshot.answer(rest as SnapshotFilter[]) : []
+  if (!answered) return null
+  const events = new Map(answered.map((event) => [event.id, event]))
+  for (const list of lists) {
+    // An open read or a search says what no held event does.
+    if (QUERY_ONLY.some((key) => key in list)) return null
+    const held = snapshot.held(list as SnapshotFilter)
+    if (!held) return null
+    for (const event of held) events.set(event.id, event)
+  }
+  return [...events.values()].sort(byRelayOrder)
 }
 
 /**
