@@ -78,6 +78,13 @@ export function reopenSummary(report) {
     mbSocket: +(wire.socket.mbIn + wire.socket.mbOut).toFixed(1),
     mbHttp: +mbHttp.toFixed(1),
     copy: report.copy ?? null,
+    firstOpen: report.firstOpen ?? null,
+    // The Desk's own draw from the copy: from Peek starting to read the copy to the live Desk first drawn (under the
+    // saved picture, which stays until it settles; the Desk's texts when no picture showed), and the copy's read alone, in ms.
+    copyRead: ms(report.copyDraw?.ready, report.copyDraw?.read),
+    // With a picture shown, the Desk's texts are the picture's: no `drawn` then means the draw was not seen (the picture
+    // left at its stand-in limit first), never a fast draw.
+    copyToDesk: ms(report.copyDraw?.picture == null ? report.marks?.allTexts : report.copyDraw?.drawn, report.copyDraw?.read),
     // Events that came over the socket for the reopen's questions, against the copy's events (HTTP answers are
     // counted in bytes only).
     socketEvents: wire.asks.reduce((n, a) => n + (a.events ?? 0), 0),
@@ -88,19 +95,22 @@ export function reopenSummary(report) {
   }
 }
 
+const ms = (end, start) => (typeof end === 'number' && typeof start === 'number' ? Math.round(end - start) : null)
+
 const s1 = (ms) => (ms == null ? '–' : `${(ms / 1000).toFixed(1)} s`)
 
 /** The reopen runs as a table: one row per run. */
 export function reopenTable(runs) {
   const lines = [
-    '| Run | Desk on screen | Stores answered | Rows last changed | Relay quiet | Questions (socket + HTTP) | Asked twice | MB (socket + HTTP) | Copy before → after |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Run | Desk on screen | Copy → live Desk (copy read) | Stores answered | Rows last changed | Relay quiet | Questions (socket + HTTP) | Asked twice | MB (socket + HTTP) | Copy at +5 s → +15 s → after |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
   runs.forEach((r, i) => {
     const s = reopenSummary(r)
-    if (!s) return lines.push(`| ${i + 1} | ${r.failure ?? 'no wire'} | | | | | | | |`)
-    const copy = s.copy ? s.copy.map((c) => (c.events === undefined ? c.error : `${c.events} ev`)).join(' → ') : '–'
-    lines.push(`| ${i + 1} | ${s1(s.deskOnScreen)} | ${s.unansweredStores.length ? `never (${s.unansweredStores.join(', ')})` : s1(s.storesAnswered)}${s.missingStores.length ? ` (not asked: ${s.missingStores.join(', ')})` : ''} | ${s1(s.rowsCurrent)} | ${s1(s.quiet)} | ${s.questions} (${s.socketQuestions} + ${s.httpQuestions}) | ${s.askedTwice} | ${s.mb} (${s.mbSocket} + ${s.mbHttp}) | ${copy} |`)
+    if (!s) return lines.push(`| ${i + 1} | ${r.failure ?? 'no wire'} | | | | | | | | |`)
+    const lost = s.firstOpen && (s.firstOpen.refused || s.firstOpen.failed) ? ` (first open: ${s.firstOpen.refused} refused, ${s.firstOpen.failed} failed)` : ''
+    const copy = (s.copy ? s.copy.map((c) => (c.events === undefined ? c.error : `${c.events} ev`)).join(' → ') : '–') + lost
+    lines.push(`| ${i + 1} | ${s1(s.deskOnScreen)} | ${s.copyToDesk ?? '–'} ms (${s.copyRead ?? '–'} ms) | ${s.unansweredStores.length ? `never (${s.unansweredStores.join(', ')})` : s1(s.storesAnswered)}${s.missingStores.length ? ` (not asked: ${s.missingStores.join(', ')})` : ''} | ${s1(s.rowsCurrent)} | ${s1(s.quiet)} | ${s.questions} (${s.socketQuestions} + ${s.httpQuestions}) | ${s.askedTwice} | ${s.mb} (${s.mbSocket} + ${s.mbHttp}) | ${copy} |`)
   })
   return lines.join('\n')
 }
