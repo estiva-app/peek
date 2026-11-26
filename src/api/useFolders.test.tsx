@@ -136,6 +136,17 @@ describe('useFolders', () => {
     expect(lists.map(({ result }) => result.current.folders)).toEqual([[TEAM], [TEAM], [TEAM]])
   })
 
+  it('a copy that could not answer yet is asked again by the next list to mount', async () => {
+    // The copy still opening on a slow disk: its first read rejects, and the relay has not answered either.
+    seam.listFolders.mockReturnValue(new Promise(() => {}))
+    seam.listFoldersFromDevice.mockRejectedValueOnce(new RelayReadError('not in the copy')).mockResolvedValueOnce([TEAM])
+    renderHook(() => useFolders())
+    await settle()
+    const later = renderHook(() => useFolders())
+    await settle()
+    expect(later.result.current.folders).toEqual([TEAM])
+  })
+
   it('negative control: a copy that answers after the relay is not drawn', async () => {
     let copied: (folders: FolderSummary[]) => void = () => {}
     seam.listFolders.mockResolvedValueOnce([TEAM, PLACED])

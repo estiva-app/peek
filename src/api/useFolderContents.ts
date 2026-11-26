@@ -449,7 +449,10 @@ export function useFolders(): {
           if (!folders) readingListingFromCopy = false
           else if (folderListing.snapshot().value === undefined) setListingFromCopy(folders)
         })
-        .catch(() => {})
+        // Not in the copy yet, or the copy still opening: the next list to mount asks again.
+        .catch(() => {
+          readingListingFromCopy = false
+        })
     }
     void folderListing.ensure(load)
   }, [load, listFoldersFromDevice])
