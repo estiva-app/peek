@@ -204,6 +204,17 @@ const COPY_DRAW = `JSON.stringify({ copyDraw: { read: performance.getEntriesByNa
 
 // What the reopen caught up from the copy with NIP-77 and what it asked plainly (THE-6); nothing on a build before it.
 const CATCH_UPS = `JSON.stringify({ catchUps: typeof __catchUps === 'function' ? __catchUps() : null })`
+// desk-reopen `--squeeze <n>@<ms>` (THE-15): just before the reopen, the first tab's signed-in socket spends n of the
+// person's relay quota with throwaway questions, as their other apps do (app-speed-recorder.js), and the reopen opens
+// <ms> later. A reopen that meets the quota on demand; the relay's 5 s window says how long its pause is: about
+// 5 s less the gap and the reopen's sign-in.
+const SQUEEZE = option('squeeze', undefined)
+const SQUEEZE_NEXT = (() => {
+  if (!SQUEEZE) return []
+  const [n, gap = '0'] = SQUEEZE.split('@')
+  if (!(Number(n) > 0) || !(Number(gap) >= 0)) throw new Error('--squeeze <n>@<ms>, e.g. 45@1500')
+  return ['--eval', `__spSqueezeNow(${Number(n)})`, ...(Number(gap) > 0 ? ['--wait', String(Number(gap))] : [])]
+})()
 
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
@@ -234,7 +245,7 @@ const LEGS = {
   // The copy is counted twice before the reopen, 5 s and 15 s after the first open went quiet: a copy still growing
   // between them is a save that lags the reads, and a reopen 5 s after quiet starts from less than the person read.
   'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
-    '--eval', FIRST_OPEN, '--wait', '5000', '--eval', COPY_COUNT, '--wait', '10000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
+    '--eval', FIRST_OPEN, '--wait', '5000', '--eval', COPY_COUNT, '--wait', '10000', '--eval', COPY_COUNT, ...SQUEEZE_NEXT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
     '--eval', CATCH_UPS, '--eval', COPY_DRAW, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
@@ -470,7 +481,7 @@ if (args.includes('--compare')) {
   const keep = (n, reports) => {
     for (const r of reports) {
       ;(result.rows[r.label] ??= []).push(r)
-      console.error(`run ${n} ${r.label}: ${r.marks ? `text ${sec(r.marks.allTexts === undefined ? null : r.marks.allTexts + r.bounceMs)}` : `answer ${sec(r.ms)}`}, ${r.reads} reads, ${mbs(r.mb)}${r.failed?.length ? `, relay failed ${r.failed.length}×` : ''}${r.failure ? `, FAILED: ${String(r.failure).slice(0, 160)}` : ''}`)
+      console.error(`run ${n} ${r.label}: ${r.marks ? `text ${sec(r.marks.allTexts === undefined ? null : r.marks.allTexts + r.bounceMs)}` : `answer ${sec(r.ms)}`}, ${r.reads} reads, ${mbs(r.mb)}${r.squeeze ? `, squeeze ${r.squeeze.sent} sent ${sec(r.squeeze.msBefore)} before (${r.squeeze.refused} refused), app refused ${r.refusals?.length ?? 0}×` : ''}${r.failed?.length ? `, relay failed ${r.failed.length}×` : ''}${r.failure ? `, FAILED: ${String(r.failure).slice(0, 160)}` : ''}`)
     }
     writeFileSync(out, JSON.stringify(result))
   }

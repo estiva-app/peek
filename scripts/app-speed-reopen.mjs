@@ -48,9 +48,14 @@ export function reopenSummary(report) {
   for (const ask of wire.asks) {
     const name = storeOf(ask)
     if (!name) continue
-    if (stores[name]) stores[name].asks++
-    // A first question closed or never answered leaves the store unanswered.
-    else stores[name] = { asks: 1, asked: ask.at, answered: ask.closed ? null : ask.done, ...(ask.closed ? { closed: ask.closed } : {}) }
+    const answer = ask.closed ? null : ask.done
+    if (!stores[name]) stores[name] = { asks: 1, asked: ask.at, answered: answer, ...(ask.closed ? { closed: ask.closed } : {}) }
+    else {
+      stores[name].asks++
+      // A first question the relay refused (its quota, THE-15) is answered by the store's next one that is; never
+      // answered leaves the store unanswered.
+      if (stores[name].answered === null && stores[name].closed && answer != null) stores[name].answered = answer
+    }
   }
   const unanswered = Object.keys(stores).filter((n) => stores[n].answered === null)
   const answered = Object.values(stores).map((s) => s.answered).filter((t) => t !== null)

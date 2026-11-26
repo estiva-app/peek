@@ -139,10 +139,43 @@ function writeShared(floor: number) {
   }
 }
 
-/** This load's frames merged with the other loads', oldest first: what the relay's window holds of this device. */
+/**
+ * Frames the relay counted that no Peek load on this device sent (THE-15). The quota is the person's, and their other
+ * apps (Ship, Leaf, another device, the agent acting as them) spend it unseen; a quota refusal is the only sign of
+ * them. Without it, the reads held back by the relay's pause all went out the moment it ended, into a window still
+ * full, and a catch-up refused twice is asked whole: one of Miky's reopens read 6 MB that way.
+ */
+const unseen: number[] = []
+
+/**
+ * The relay refused a frame for the person's quota, saying its window frees in `retryMs`: count that window as full,
+ * its frames leaving evenly from then until a whole window from now, so what waits goes out as the window frees.
+ * Frames this device sent count towards it; refusals in the same burst add nothing more.
+ */
+export function noteQuotaRefused(retryMs: number, limit = FRAMES_PER_WINDOW, now: () => number = Date.now): void {
+  const at = now()
+  const floor = Math.min(at, at + retryMs - SHAPED_WINDOW_MS)
+  trim(unseen, at - SHAPED_WINDOW_MS)
+  const counted = inWindow(floor, sent).filter((t) => t > floor).length
+  const missing = limit - counted
+  if (missing <= 0) return
+  const step = (at - floor) / missing
+  for (let i = 1; i <= missing; i++) unseen.push(floor + step * i)
+  unseen.sort((a, b) => a - b)
+}
+
+/** How long until the last frame counted for a quota refusal leaves the window: 0 when none is left in it. */
+export function quotaFullForMs(now: () => number = Date.now): number {
+  const at = now()
+  trim(unseen, at - SHAPED_WINDOW_MS)
+  return unseen.length === 0 ? 0 : unseen[unseen.length - 1] + SHAPED_WINDOW_MS - at
+}
+
+/** This load's frames merged with the other loads' and the unseen ones, oldest first: what the relay's window holds. */
 function inWindow(floor: number, mine: number[]): number[] {
   const theirs = elsewhere(floor)
-  return theirs.length === 0 ? mine : [...mine, ...theirs].sort((a, b) => a - b)
+  const notOurs = unseen.filter((at) => at > floor)
+  return theirs.length === 0 && notOurs.length === 0 ? mine : [...mine, ...theirs, ...notOurs].sort((a, b) => a - b)
 }
 
 export function sendingAsRead<T>(send: () => T): T {
@@ -324,6 +357,7 @@ export function resetSocketFrames(): void {
   sent.length = 0
   sentForSecond.length = 0
   others.length = 0
+  unseen.length = 0
   firstAsked.length = 0
   firstUntil = 0
 }

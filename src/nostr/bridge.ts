@@ -269,8 +269,9 @@ export async function queryRelay(
     // A question the copy already holds is brought up to date with NIP-77, fetching only what changed (THE-6).
     // A file's first page is a click waiting on one round trip, so it is asked as before.
     const reader = socketReader
-    // A reader that cannot compare now (paused for quota, another person's socket) asks as before: falling back
-    // through the catch-up would send a pack's whole union over HTTP just when the relay said to back off.
+    // A reader that cannot compare now (paused for quota longer than a catch-up waits, another person's socket) asks
+    // as before: falling back through the catch-up would send a pack's whole union over HTTP just when the relay said
+    // to back off. A short pause is waited out by the catch-up itself (THE-15).
     const copy =
       asked !== 'first' && reader?.reconcile && pubkey && (reader.canReconcile?.(relayUrl, pubkey) ?? true)
         ? await copyToCatchUp(relayUrl, pubkey)
