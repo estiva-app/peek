@@ -34,7 +34,7 @@ const SIGNED_OUT = 'signed-out'
 /** How long a saved page may stand in before the live page shows regardless. */
 const STAND_IN_MS = 4_000
 
-type Shown = { shownAt: number; page?: PicturePage; click?: { x: number; y: number }; liveAt?: number; clicked?: boolean }
+type Shown = { shownAt: number; page?: PicturePage; click?: { x: number; y: number }; liveAt?: number; drawnAt?: number; clicked?: boolean }
 
 declare global {
   interface Window {
@@ -165,6 +165,9 @@ export function revealWhenPageDrawn(): void {
     const drawn = livePageDrawn()
     // A list that goes back to its skeleton starts the wait again.
     drawnAt = drawn ? (drawnAt ?? now) : undefined
+    // When the live page first drew under the saved one, from the copy on a reopen: the speed kit's copy draw (THE-6).
+    const shown = window.__peekPicture
+    if (shown && drawnAt !== undefined && shown.drawnAt === undefined) shown.drawnAt = Math.round(drawnAt)
     const same = saved !== '' && textOf(root.querySelector('main')) === saved
     const settled = same || now - changedAt > STILL_MS || (drawnAt !== undefined && now - drawnAt > SETTLE_MS)
     if ((drawn && settled) || now - started > STAND_IN_MS) {

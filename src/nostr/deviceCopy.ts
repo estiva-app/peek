@@ -94,6 +94,10 @@ function rememberOwner(scope: string): void {
   }
 }
 
+function markCopy(name: string): void {
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function' && !performance.getEntriesByName(name).length) performance.mark(name)
+}
+
 /** The copy for this person on this relay, opened on first use. One person per tab. */
 function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   const scope = snapshotScope(relayUrl, pubkey)
@@ -124,6 +128,9 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   }
   const snapshot = createEventSnapshot({ storage, scope, version: DEVICE_COPY_VERSION })
   current = { scope, snapshot }
+  // For the speed kit's reopen leg: how long the copy took to read, against when the Desk drew from it (THE-6).
+  markCopy('peek-copy-read')
+  void snapshot.ready.then(() => markCopy('peek-copy-ready'), () => undefined)
   return snapshot
 }
 

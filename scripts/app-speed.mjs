@@ -183,9 +183,23 @@ const wholeAll = ['--wait', '1000', '--until', '__sp.quietAll() > 5000 || perfor
 // the platform's snapshot keeps them in.
 const COPY_COUNT = `new Promise((done) => { const open = indexedDB.open('peek-device-copy'); open.onerror = () => done('{"error":"no copy"}');
   open.onsuccess = () => { const db = open.result; const names = [...db.objectStoreNames]; if (!names.length) return done('{"events":0,"mb":0}');
-    const tx = db.transaction(names); let events = 0, bytes = 0, left = names.length;
+    const tx = db.transaction(names); let events = 0, bytes = 0, left = names.length; const kinds = {};
     for (const n of names) tx.objectStore(n).getAll().onsuccess = (e) => { const text = JSON.stringify(e.target.result); bytes += text.length;
-      events += text.split('"sig":"').length - 1; if (!--left) done(JSON.stringify({ events, mb: bytes / 1e6 })) } } })`
+      events += text.split('"sig":"').length - 1; for (const m of text.matchAll(/"kind":(\\d+)/g)) kinds[m[1]] = (kinds[m[1]] ?? 0) + 1;
+      if (!--left) done(JSON.stringify({ events, mb: bytes / 1e6, kinds })) } } })`
+
+// desk-reopen: what the first open, the one that fills the copy, had refused or failed: an answer that never came is
+// missing from the copy, and the reopen then asks it plainly (THE-6, the 2.2 MB run of 26 Nov).
+const FIRST_OPEN = `JSON.stringify({ firstOpen: { refused: __sp.refusals.length, failed: __sp.failed.length,
+  refusals: __sp.refusals.slice(0, 5), failures: __sp.failed.slice(0, 5),
+  catchUps: typeof __catchUps === 'function' ? (({ recent, ...total }) => total)(__catchUps()) : null } })`
+
+// desk-reopen: the Desk's own draw from the copy, in ms since the tab opened: Peek starting to read the copy and having
+// it (deviceCopy.ts's marks), the saved picture shown, and the live Desk, drawn from the copy, replacing it.
+const COPY_DRAW = `JSON.stringify({ copyDraw: { read: performance.getEntriesByName('peek-copy-read')[0]?.startTime ?? null,
+  ready: performance.getEntriesByName('peek-copy-ready')[0]?.startTime ?? null,
+  picture: window.__peekPicture?.shownAt ?? null, drawn: window.__peekPicture?.drawnAt ?? null,
+  live: window.__peekPicture?.liveAt ?? null } })`
 
 // What the reopen caught up from the copy with NIP-77 and what it asked plainly (THE-6); nothing on a build before it.
 const CATCH_UPS = `JSON.stringify({ catchUps: typeof __catchUps === 'function' ? __catchUps() : null })`
@@ -216,9 +230,11 @@ const LEGS = {
   // the Desk again in a new tab of the same browser with the first one closed (probe --tab), as Miky does when he
   // comes back to Peek. The report is the reopen's alone; the copy is counted before and after it.
   // Peek saves the copy behind the reads (deviceCopy.ts queues them): 5 s more before the count and the reopen.
+  // The copy is counted twice before the reopen, 5 s and 15 s after the first open went quiet: a copy still growing
+  // between them is a save that lags the reads, and a reopen 5 s after quiet starts from less than the person read.
   'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
-    '--wait', '5000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
-    '--eval', CATCH_UPS, ...report('desk-reopen')],
+    '--eval', FIRST_OPEN, '--wait', '5000', '--eval', COPY_COUNT, '--wait', '10000', '--eval', COPY_COUNT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
+    '--eval', CATCH_UPS, '--eval', COPY_DRAW, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
   ...Object.fromEntries(Object.keys(PAGES).map((leg) => [leg, () => ['--base', 'https://peek.estiva.app', '--url', PAGES[leg][0], ...settle(60000), ...whole, ...report(leg)]])),
@@ -246,8 +262,12 @@ async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
   const copy = (out.steps ?? []).filter((s) => typeof s.result === 'string' && /^\{"(events|error)"/.test(s.result)).map((s) => JSON.parse(s.result))
   const caught = (out.steps ?? []).find((s) => typeof s.result === 'string' && s.result.startsWith('{"catchUps"'))
   const catchUps = caught ? JSON.parse(caught.result).catchUps : undefined
+  const first = (out.steps ?? []).find((s) => typeof s.result === 'string' && s.result.startsWith('{"firstOpen"'))
+  const firstOpen = first ? JSON.parse(first.result).firstOpen : undefined
+  const drew = (out.steps ?? []).find((s) => typeof s.result === 'string' && s.result.startsWith('{"copyDraw"'))
+  const copyDraw = drew ? JSON.parse(drew.result).copyDraw : undefined
   return step
-    ? { ...JSON.parse(step.result), ...(copy.length ? { copy } : {}), ...(catchUps ? { catchUps } : {}), failure: failure || undefined }
+    ? { ...JSON.parse(step.result), ...(copy.length ? { copy } : {}), ...(catchUps ? { catchUps } : {}), ...(firstOpen ? { firstOpen } : {}), ...(copyDraw ? { copyDraw } : {}), failure: failure || undefined }
     : { label: leg, failure: failure || died || 'no report' }
 }
 
