@@ -21,6 +21,7 @@ import {
   FIRST_RESERVE,
   FRAMES_PER_SECOND,
   FRAMES_PER_WINDOW,
+  noteQuotaRefused,
   otherFramesSince,
   readingFirst,
   SHAPED_WINDOW_MS,
@@ -232,6 +233,57 @@ describe('socket reads', () => {
     expect(budget.noteRateLimited).not.toHaveBeenCalled()
   })
 
+  it('a catch-up met by a short quota pause waits it out and compares on the socket, instead of asking whole (THE-15)', async () => {
+    vi.useFakeTimers()
+    const { client } = fakeClient()
+    const compared: Record<string, unknown>[] = []
+    ;(client.relay as unknown as { reconcile: unknown }).reconcile = async (filter: Record<string, unknown>) => {
+      compared.push(filter)
+      return { ok: true, need: ['new'], have: ['gone'] }
+    }
+    // Another of the person's apps spent the quota: the relay said "retry in 2s".
+    const until = Date.now() + 2_000
+    const pause = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => Math.max(0, until - Date.now())) }
+    const { read } = reader(client, pause)
+    expect(read.canReconcile!('https://relay', ME)).toBe(true)
+
+    let outcome: unknown
+    void read.reconcile!('https://relay', { kinds: [9] }, [], ME).then((o) => (outcome = o))
+    await vi.advanceTimersByTimeAsync(1_900)
+    expect(compared).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(compared).toEqual([{ kinds: [9] }])
+    expect(outcome).toEqual({ ok: true, need: ['new'], have: ['gone'] })
+  })
+
+  it('while the relay’s window is full of the person’s other apps’ frames, a click’s plain question goes over HTTP at once (THE-15)', async () => {
+    const { client, subs } = fakeClient()
+    let fullFor = 3_000
+    const read = createSocketReader({
+      getClient: () => client,
+      currentPubkey: () => ME,
+      budget: { noteRateLimited: vi.fn(() => 0), pausedForMs: () => 0 },
+      httpBudget: { pausedForMs: () => 0 },
+      relayFullForMs: () => fullFor,
+    })
+    expect(await read('https://relay', [{ kinds: [30078], '#d': ['open-work'] }], ME)).toBeNull()
+    expect(subs).toHaveLength(0)
+    fullFor = 0
+    void read('https://relay', [{ kinds: [30078], '#d': ['open-work'] }], ME)
+    await vi.waitFor(() => expect(subs).toHaveLength(1))
+  })
+
+  it('a quota pause longer than the relay’s window is not waited out: the catch-up is asked plainly', async () => {
+    const { client } = fakeClient()
+    const reconcile = vi.fn()
+    ;(client.relay as unknown as { reconcile: unknown }).reconcile = reconcile
+    const pause = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 30_000) }
+    const { read } = reader(client, pause)
+    expect(read.canReconcile!('https://relay', ME)).toBe(false)
+    expect(await read.reconcile!('https://relay', { kinds: [9] }, [], ME)).toMatchObject({ ok: false, reason: 'unsupported', message: 'socket paused' })
+    expect(reconcile).not.toHaveBeenCalled()
+  })
+
   it('leaves the socket alone while its quota is paused, or for another pubkey, or with no credential', async () => {
     const { client, subs } = fakeClient()
     const paused = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 2_000) }
@@ -420,6 +472,26 @@ describe('socket frames', () => {
     expect(out).toHaveLength(5)
     expect(otherFramesSince(at - 1)).toHaveLength(2)
     expect(otherFramesSince(at)).toHaveLength(0)
+  })
+
+  it('after a quota refusal, frames wait out the relay’s pause and then go as its window frees, not all at once (THE-15)', async () => {
+    const { out, shaper: s } = shaper()
+    // Another app of the person's filled the relay's window: it says "retry in 1s".
+    noteQuotaRefused(1_000)
+    for (let i = 0; i < 10; i++) s.send(`["REQ","peek-${i}",{}]`)
+    expect(out).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(900)
+    expect(out).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.length).toBeLessThanOrEqual(3)
+    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
+    expect(out).toHaveLength(10)
+    // The refusals of one burst count the window full once, not once each.
+    noteQuotaRefused(1_000)
+    const full = otherFramesSince(Date.now() - SHAPED_WINDOW_MS).length
+    noteQuotaRefused(1_000)
+    expect(otherFramesSince(Date.now() - SHAPED_WINDOW_MS)).toHaveLength(full)
   })
 
   it(`sends at most ${FRAMES_PER_SECOND} metered frames a second and ${FRAMES_PER_WINDOW} a window, the rest in order`, async () => {
