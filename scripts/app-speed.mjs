@@ -180,7 +180,8 @@ const report = (label) => ['--eval', `__sp.report(${JSON.stringify(label)}, ${RE
 // desk-reopen: the open waits until the socket is quiet too, not only HTTP (Peek reads mostly over its socket).
 const wholeAll = ['--wait', '1000', '--until', '__sp.quietAll() > 5000 || performance.now() > 120000']
 // What the copy on the device holds, read from IndexedDB: signed events (counted by their `sig`) and bytes, whatever
-// the platform's snapshot keeps them in.
+// the platform's snapshot keeps them in. Kinds are counted by every `"kind":N` in the stored JSON: for comparing two
+// counts of one run, not a total that must equal `events`.
 const COPY_COUNT = `new Promise((done) => { const open = indexedDB.open('peek-device-copy'); open.onerror = () => done('{"error":"no copy"}');
   open.onsuccess = () => { const db = open.result; const names = [...db.objectStoreNames]; if (!names.length) return done('{"events":0,"mb":0}');
     const tx = db.transaction(names); let events = 0, bytes = 0, left = names.length; const kinds = {};

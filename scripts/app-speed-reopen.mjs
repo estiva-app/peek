@@ -82,7 +82,9 @@ export function reopenSummary(report) {
     // The Desk's own draw from the copy: from Peek starting to read the copy to the live Desk first drawn (under the
     // saved picture, which stays until it settles; the Desk's texts when no picture showed), and the copy's read alone, in ms.
     copyRead: ms(report.copyDraw?.ready, report.copyDraw?.read),
-    copyToDesk: ms(report.copyDraw?.drawn ?? report.marks?.allTexts, report.copyDraw?.read),
+    // With a picture shown, the Desk's texts are the picture's: no `drawn` then means the draw was not seen (the picture
+    // left at its stand-in limit first), never a fast draw.
+    copyToDesk: ms(report.copyDraw?.picture == null ? report.marks?.allTexts : report.copyDraw?.drawn, report.copyDraw?.read),
     // Events that came over the socket for the reopen's questions, against the copy's events (HTTP answers are
     // counted in bytes only).
     socketEvents: wire.asks.reduce((n, a) => n + (a.events ?? 0), 0),
