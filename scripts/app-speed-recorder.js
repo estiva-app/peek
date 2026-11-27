@@ -46,44 +46,6 @@
   sp.socket = { in: 0, out: 0, lastIn: null, times: [] }
   let sockets = 0
   const NativeWS = window.WebSocket
-  /*
-    The squeeze (app-speed --squeeze, THE-15): the relay's quota is the person's, so another app of theirs (Ship, a
-    second device, the agent acting as them) spends it unseen. `__spSqueezeNow(n)` asks `n` throwaway questions on
-    this document's signed-in relay socket, as such an app would just before the reopen. Their answers never reach
-    the app. What it sent is kept in localStorage, and the next document reports it as `squeeze`, with how long
-    before that document it went out.
-  */
-  try {
-    const before = JSON.parse(localStorage.getItem('sp.squeezed') ?? 'null')
-    if (before) sp.squeeze = { ...before, msBefore: Math.round(sp.origin - before.wallAt) }
-  } catch {}
-  const SQUEEZE_SUB = 'sp-squeeze-'
-  const relaySockets = []
-  window.__spSqueezeNow = (n) => {
-    const socket = relaySockets.filter((s) => s.__spAuthed && s.readyState === NativeWS.OPEN).pop()
-    if (!socket) return 'no signed-in relay socket'
-    const squeeze = { n, sent: 0, answered: 0, refused: 0, wallAt: performance.timeOrigin + performance.now() }
-    socket.__spSqueeze = squeeze
-    for (let i = 0; i < n; i++) {
-      NativeWS.prototype.send.call(socket, JSON.stringify(['REQ', `${SQUEEZE_SUB}${i}`, { kinds: [0], authors: ['0'.repeat(64)], limit: 1 }]))
-      squeeze.sent++
-    }
-    const save = () => localStorage.setItem('sp.squeezed', JSON.stringify(squeeze))
-    save()
-    socket.__spSqueezeSave = save
-    return `sent ${squeeze.sent}`
-  }
-  const squeezed = (text) => typeof text === 'string' && text.startsWith('[') && text.includes(`"${SQUEEZE_SUB}`)
-  const hidden = new WeakMap()
-  const hide = (listener) => {
-    if (!hidden.has(listener)) {
-      hidden.set(listener, function (e) {
-        if (squeezed(e.data)) return
-        return typeof listener === 'function' ? listener.call(this, e) : listener.handleEvent(e)
-      })
-    }
-    return hidden.get(listener)
-  }
   window.WebSocket = class extends NativeWS {
     constructor(...args) {
       super(...args)
@@ -92,24 +54,13 @@
       this.__spSubs = new Map()
       this.__spRelay = toRelay
       this.__spN = ++sockets
-      if (toRelay) relaySockets.push(this)
       let opened = false
       this.addEventListener('open', () => (opened = true))
       this.addEventListener('close', (e) => {
         if (!opened && toRelay) sp.failed.push({ at: now(), via: 'ws-upgrade', code: e.code })
       })
-      // The recorder's own listener sees the squeeze's answers too: past the hiding below.
-      NativeWS.prototype.addEventListener.call(this, 'message', (e) => {
+      this.addEventListener('message', (e) => {
         const text = String(e.data)
-        if (toRelay && squeezed(text)) {
-          const [verb, sub] = JSON.parse(text)
-          const squeeze = this.__spSqueeze
-          if (squeeze && verb === 'EOSE') squeeze.answered++, NativeWS.prototype.send.call(this, JSON.stringify(['CLOSE', sub]))
-          if (squeeze && verb === 'CLOSED' && refused(text)) squeeze.refused++
-          this.__spSqueezeSave?.()
-          return
-        }
-        if (toRelay && this.__spAuth && text.startsWith(`["OK","${this.__spAuth}",true`)) this.__spAuthed = true
         if (toRelay) {
           sp.socket.in += text.length
           sp.socket.lastIn = now()
@@ -137,29 +88,10 @@
         }
       })
     }
-    // The app never sees the squeeze's answers, however it listens.
-    addEventListener(type, listener, options) {
-      return super.addEventListener(type, type === 'message' && this.__spRelay && listener ? hide(listener) : listener, options)
-    }
-    removeEventListener(type, listener, options) {
-      return super.removeEventListener(type, type === 'message' && listener && hidden.has(listener) ? hidden.get(listener) : listener, options)
-    }
-    get onmessage() {
-      return this.__spOnMessage ?? null
-    }
-    set onmessage(listener) {
-      this.__spOnMessage = listener
-      super.onmessage = listener && this.__spRelay ? hide(listener) : listener
-    }
     send(data) {
       const text = String(data)
       // NIP-77's verbs have a hyphen: NEG-OPEN, NEG-MSG, NEG-CLOSE.
       const type = /^\["([\w-]+)"/.exec(text)?.[1] ?? '?'
-      if (type === 'AUTH' && this.__spRelay) {
-        try {
-          this.__spAuth = JSON.parse(text)[1].id
-        } catch {}
-      }
       sp.ws.push({ at: now(), dir: 'out', type, bytes: text.length })
       if (this.__spRelay) {
         sp.socket.out += text.length
@@ -323,7 +255,6 @@
       ...(label.startsWith('desk-reopen') ? { wire: sp.asks() } : {}),
       statuses: reads.reduce((s, h) => ({ ...s, [h.status ?? h.error ?? 'pending']: (s[h.status ?? h.error ?? 'pending'] ?? 0) + 1 }), {}),
       refusals: sp.refusals,
-      ...(sp.squeeze ? { squeeze: sp.squeeze } : {}),
       failed: sp.failed,
       socketIn: sp.ws.filter((w) => w.dir === 'in'),
       mbByKind: Object.fromEntries(Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, b]) => [k, +(b / 1e6).toFixed(2)])),
