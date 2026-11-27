@@ -88,10 +88,11 @@ export function channelDestination(channel: string): string {
 /**
  * Where an old topic route's parameter lands, or null when it names nothing.
  *
- * A trailing uuid is a channel's, and a uuid this table does not hold is still
- * a channel — a team's, reached through a `39000:` reference — so it lands on
- * that Folder. Anything else is a `seedKey`, and one this table does not hold
- * was never a production topic.
+ * A trailing uuid (a `<slug>-<uuid>` ref) is a channel's, and a uuid this table
+ * does not hold is still a channel — a team's — so it lands on that Folder. A
+ * whole `39000:<pubkey>:<uuid>` address names nothing since LIN-8, like every
+ * old long link. Anything else is a `seedKey`, and one this table does not
+ * hold was never a production topic.
  */
 export function legacyTopicDestination(ref: string): string | null {
   const topic = legacyTopicOf(ref)
