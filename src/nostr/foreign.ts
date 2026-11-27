@@ -2326,8 +2326,13 @@ export async function applyActionAsViewer(
     (`text-is-a-change`), so a description typed into New project goes out as its first change too, and the
     team listing follows once the project exists.
   */
+  /*
+    And a Leaf document made from ⌘K (KIN-9): its text, the ⌘K answer, is its first change too, by Leaf's declared
+    `describe`.
+  */
   const fileKind = declared?.emits.kind
-  if ((fileKind === ISSUE_KIND || fileKind === PROJECT_KIND) && typeof value !== 'string' && newId) {
+  if ((fileKind === ISSUE_KIND || fileKind === PROJECT_KIND || fileKind === DOCUMENT_KIND) && typeof value !== 'string' && newId) {
+    const noun = fileKind === ISSUE_KIND ? 'an issue' : fileKind === PROJECT_KIND ? 'a project' : 'a document'
     const { [TEXT_FIELD]: text = '', ...rest } = value
     const first = buildActionEvents({ ...common, value: rest, createdAtMs: Date.now() })
     if (typeof first === 'string') return fail(first)
@@ -2352,7 +2357,28 @@ export async function applyActionAsViewer(
         textAction = textOf(textManifest)
       }
     }
-    if (text && !textAction) return fail(`Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s description from Peek yet, so nothing was created.`)
+    if (text && !textAction) {
+      // A newer manifest by another key for this kind is not the one that offered the creation: read that one by its
+      // address instead, so a planted manifest cannot stop every document with text (KIN-9).
+      const [, author, d] = resolved.address.split(':')
+      const events = await query([{ kinds: [31990], authors: [author], '#d': [d] }]).catch(() => [])
+      const newest = events.filter((e) => e.pubkey === author).sort((a, b) => b.created_at - a.created_at)[0]
+      try {
+        const whole = newest ? (JSON.parse(newest.content) as typeof resolved.manifest) : null
+        if (whole) {
+          textManifest = whole
+          textAction = textOf(whole)
+        }
+      } catch {
+        // Not a manifest: no text action, said below.
+      }
+    }
+    if (text && !textAction)
+      return fail(
+        fileKind === DOCUMENT_KIND
+          ? 'Leaf can’t take this text from Peek yet, so the document wasn’t made. Make it without the text, then paste the text in Leaf.'
+          : `Its app does not take ${noun}’s description from Peek yet, so nothing was created.`,
+      )
     const made = await createFile({
       root: transform ? transform(root) : root,
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
@@ -2374,7 +2400,7 @@ export async function applyActionAsViewer(
         if (typeof one === 'string') return one
         // Built by the action's id, so the event is checked too: a listing naming two actions by one id never makes
         // Peek sign another kind than the text action found.
-        return one[0].kind === KIND_CHANGE ? one[0] : `Its app does not take a${fileKind === ISSUE_KIND ? 'n issue' : ' project'}’s description from Peek yet.`
+        return one[0].kind === KIND_CHANGE ? one[0] : `Its app does not take ${noun}’s description from Peek yet.`
       },
       sign: (event) => signViaEstivaId(event, token.accessToken, token.pubkey),
       publish: (event) => publishSigned(relayUrl, event, token.accessToken, token.pubkey),
