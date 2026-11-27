@@ -2373,7 +2373,12 @@ export async function applyActionAsViewer(
         // Not a manifest: no text action, said below.
       }
     }
-    if (text && !textAction) return fail(`Its app does not take ${noun}’s description from Peek yet, so nothing was created.`)
+    if (text && !textAction)
+      return fail(
+        fileKind === DOCUMENT_KIND
+          ? 'Leaf can’t take this text from Peek yet, so the document wasn’t made. Make it without the text, then paste the text in Leaf.'
+          : `Its app does not take ${noun}’s description from Peek yet, so nothing was created.`,
+      )
     const made = await createFile({
       root: transform ? transform(root) : root,
       ...(text ? { text: { value: text, ...(args.contentFormat ? { format: args.contentFormat } : {}) } } : {}),
