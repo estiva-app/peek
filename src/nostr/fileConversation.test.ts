@@ -10,7 +10,7 @@
  * wrong tag publishes for ever.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { encodeNaddr, encodeNpub } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNaddr, encodeNpub } from '@estiva-app/protocol'
 import { boxLinksOf, embedsToSend, messageReference } from '@estiva-app/conversation'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
@@ -26,6 +26,7 @@ import {
   PUBLISH_ATTEMPTS,
   attachmentsOf,
   channelConversationAsViewer,
+  conversationAsViewer,
   commentAsViewer,
   deleteEventAsViewer,
   publishConfirmed,
@@ -818,6 +819,15 @@ describe('a channel conversation (REM-1)', () => {
   beforeEach(() => {
     queryRelay.mockClear()
     queryRelay.mockImplementation(relayOver([hello, picture, answer, nested, elsewhere, helloEdited, liked, done]))
+  })
+
+  it("keeps in a team's chat a message whose text links a document, and leaves talk about the document to it (§6.4, KIN-9)", async () => {
+    const DOCUMENT = `30842:${MIKY}:launch-plan`
+    const card = event({ kind: 9, pubkey: MIKY, content: `nostr:${addrToNaddr(DOCUMENT)}`, tags: [['h', DM], ['a', DOCUMENT]] })
+    const aboutIt = event({ kind: 9, content: 'Section two needs a date.', tags: [['h', DM], ['a', DOCUMENT]] })
+    queryRelay.mockImplementation(relayOver([hello, card, aboutIt]))
+    const found = await conversationAsViewer({ kind: 'channel', h: DM, general: true }, [], 'https://relay.test', token)
+    expect(found.roots.map((r) => r.id)).toEqual([hello.id, card.id])
   })
 
   it('reads the messages by #h, puts each reply under its thread, and folds what was done to them', async () => {
