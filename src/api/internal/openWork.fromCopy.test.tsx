@@ -145,4 +145,12 @@ describe('Open work on a reopen, while the relay catches up (aec00dfc)', () => {
     await settle(100)
     expect(rows(result.current.items)).toEqual(['Quota wait', 'Positioning'])
   })
+
+  it('keeps the rows the copy drew when the relay refuses the read', async () => {
+    queryRelay.mockImplementation(async () => ({ ok: false, reason: 'rate-limited: quota exceeded', events: [] }))
+    listed = [HELD]
+    const { result } = render()
+    await settle(3_000)
+    expect(rows(result.current.items)).toEqual(['Quota wait'])
+  })
 })

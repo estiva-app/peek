@@ -1164,8 +1164,12 @@ export function useResolvedReferences(
         if (found.length) setObjects((prev) => ({ ...Object.fromEntries(found), ...prev }))
       })
       .catch(() => {})
+    let failed = false
     resolveObjects(ask, 'relay', readOptionsOf(archivedWith, withoutText))
-      .catch(() => Object.fromEntries(ask.map((ref) => [ref, null])))
+      .catch(() => {
+        failed = true
+        return Object.fromEntries(ask.map((ref) => [ref, null]))
+      })
       // One setState for the whole body rather than one per reference: a
       // message with four mentions should not lay out four times.
       .then((objects) => {
@@ -1174,7 +1178,8 @@ export function useResolvedReferences(
         for (const [ref, value] of Object.entries(objects)) {
           if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref, archivedWith, roots, withoutText), async () => ({ ok: true, value }))
         }
-        setObjects(objects)
+        // A failed read is no answer: what the copy drew stays drawn (Open work's rows, offline or refused; aec00dfc).
+        setObjects((prev) => (failed ? { ...objects, ...Object.fromEntries(Object.entries(prev).filter(([, value]) => value)) } : objects))
       })
     return () => {
       cancelled = true

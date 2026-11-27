@@ -246,9 +246,13 @@ describe('Open work while a file is still on its way (aec00dfc; Miky, 27 Nov)', 
     mount()
     const left = screen.getByTestId('left')
     expect(left.textContent).not.toContain('Organize what you want to read')
-    expect(within(left).getByText('Issue one')).toBeTruthy()
-    // The kit's row placeholder: a square and a bar, pulsing.
-    expect(left.querySelectorAll('.animate-pulse')).toHaveLength(2)
+    // Only the file is a row to open: the placeholder links nowhere until it is the file.
+    const rowLinks = within(left)
+      .getAllByRole('link')
+      .map((link) => link.getAttribute('href') ?? '')
+      .filter((href) => href.startsWith('/app/desk?') || /^\/app\/dms\/./.test(href))
+    // The file, and Starred's DM below: nothing for the placeholder.
+    expect(rowLinks).toEqual([`/app/desk?${new URLSearchParams({ open: ISSUE })}`, '/app/dms/dm-1'])
   })
 
   it('says Open work is empty only when it holds nothing to draw', () => {
