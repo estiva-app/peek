@@ -107,7 +107,7 @@ describe('up to two words the field is a search', () => {
     await enter(input(), 'product designer')
 
     expect(await screen.findByText('Alice Johnson')).toBeInTheDocument()
-    expect(input().rows).toBe(1)
+    expect(footer()).not.toContain('ask')
     expect(screen.queryByText(/^Ask/)).not.toBeInTheDocument()
     expect(groupNames()).not.toContain('Suggested')
   })
@@ -117,17 +117,16 @@ describe('up to two words the field is a search', () => {
     open()
     await enter(input(), '"alice johnson" designer -intern')
 
-    expect(input().rows).toBe(1)
     expect(footer()).not.toContain('ask')
   })
 })
 
 describe('from the third word the field is a prompt', () => {
-  it('grows to three lines, names the conversation, and the search results leave', async () => {
+  it('becomes a prompt, names the conversation, and the search results leave', async () => {
     open()
     await enter(input(), 'alice johnson designer')
 
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
     expect(screen.getByText('Build failures')).toBeInTheDocument()
     // A person all three words match is a search result, and those have left.
     expect(screen.queryByText('Alice Johnson')).not.toBeInTheDocument()
@@ -139,7 +138,7 @@ describe('from the third word the field is a prompt', () => {
     // The rejected design (INT-2): a sentence that falls through to the model on its own.
     open()
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
 
     expect(promptForText).not.toHaveBeenCalled()
   })
@@ -157,11 +156,11 @@ describe('from the third word the field is a prompt', () => {
   it('goes back to a search, with its results, when a word is deleted', async () => {
     open()
     await enter(input(), 'product designer alice')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
 
     await userEvent.type(input(), '{Backspace}{Backspace}{Backspace}{Backspace}{Backspace}{Backspace}')
     expect(input()).toHaveValue('product designer')
-    expect(input().rows).toBe(1)
+    expect(footer()).not.toContain('ask')
     expect(await screen.findByText('Alice Johnson')).toBeInTheDocument()
   })
 })
@@ -170,7 +169,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
   it('says to open a conversation, with none open', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
     await userEvent.type(input(), '{Enter}')
 
     expect(await screen.findByText('Open a conversation to ask about it.')).toBeInTheDocument()
@@ -180,7 +179,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
   it('says nothing has been said yet in an open conversation that is empty, not to open one', async () => {
     open({ composer: { isFocused: true, hasDraft: false }, conversation: { references: [], messages: [] } })
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
     await userEvent.type(input(), '{Enter}')
 
     expect(await screen.findByText('Nothing has been said here yet.')).toBeInTheDocument()
@@ -191,7 +190,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
     prefillAvailability.mockResolvedValue('unanswered')
     open()
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
     await userEvent.type(input(), '{Enter}')
 
     expect(await screen.findByText('Asking needs this browser’s on-device model, which is not turned on.')).toBeInTheDocument()
@@ -204,7 +203,7 @@ describe('where nothing can answer, the box is the same and Enter says why', () 
     prefillAvailability.mockResolvedValue('unavailable')
     open()
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
     await userEvent.type(input(), '{Enter}')
 
     expect(await screen.findByText('Asking needs this browser’s on-device model, which is not turned on.')).toBeInTheDocument()
@@ -327,7 +326,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
     prefillAvailability.mockResolvedValue('unavailable')
     open()
     await enter(input(), 'what did we decide')
-    await waitFor(() => expect(input().rows).toBe(3))
+    await waitFor(() => expect(footer()).toContain('ask'))
 
     expect(screen.queryByText(/Download the on-device model/i)).not.toBeInTheDocument()
   })
