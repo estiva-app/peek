@@ -169,14 +169,26 @@ interface CommandLauncherProps {
  */
 export function placeOf(pathname: string, search: string, deskDmId: string | undefined): string {
   const onDesk = pathname === '/app/desk'
+  // A DM picked on Desk is what Desk shows, even with an `?open=` left in the address (Back after picking it).
+  if (onDesk && deskDmId) return `dm:${deskDmId}`
   const ref = (onDesk ? new URLSearchParams(search).get('open') : null) ?? fileRouteFromPath(pathname)?.ref
   if (ref) {
     const address = addressFromRef(ref)
     const d = address ? address.split(':').slice(2).join(':') : identifierFromRef(ref)
-    if (d) return `file:${d.toLowerCase()}`
+    // A team's chat beside Desk's lists (`39000:…`) has no `d`: it is still its own place.
+    return d ? `file:${d.toLowerCase()}` : `open:${ref}`
   }
-  const dm = onDesk ? deskDmId : pathname.startsWith('/app/dms/') ? decodeURIComponent(pathname.slice('/app/dms/'.length)) : undefined
+  const dm = pathname.startsWith('/app/dms/') ? decoded(pathname.slice('/app/dms/'.length)) : undefined
   return dm ? `dm:${dm}` : pathname
+}
+
+/** A path segment as its id was written; one with a stray `%` stays as it is rather than throw. */
+function decoded(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
 }
 
 /** Peek's ⌘K box: the shared launcher, mounted with what only Peek knows. */

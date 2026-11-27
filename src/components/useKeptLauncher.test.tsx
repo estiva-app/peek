@@ -26,7 +26,7 @@ const { promptForText, captureLauncherContext, insertTextIntoActiveComposer, ins
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(),
   captureLauncherContext: vi.fn<() => LauncherContext>(),
   insertTextIntoActiveComposer: vi.fn<(text: string) => boolean>(() => true),
-  insertTextWhenComposerOpens: vi.fn<(label: string | undefined, text: string) => Promise<boolean>>(async () => true),
+  insertTextWhenComposerOpens: vi.fn<(label: string | undefined, text: string, stillThere: () => boolean) => Promise<boolean>>(async () => true),
   insertTextIntoComposer: vi.fn<(label: string | undefined, text: string) => boolean>(() => false),
 }))
 vi.mock('@/lib/promptApi', async () => {
@@ -185,6 +185,7 @@ beforeEach(() => {
   captureLauncherContext.mockReturnValue(builds)
   insertTextIntoActiveComposer.mockClear()
   insertTextWhenComposerOpens.mockClear()
+  history.replaceState(null, '', '/')
   insertTextIntoComposer.mockReset()
   // The message box on screen is the first conversation's.
   insertTextIntoComposer.mockImplementation((label) => label === 'Build failures')
@@ -393,6 +394,41 @@ describe('on Desk, where every conversation is the same page', () => {
     await askThenMove(user, 'Pick Ben on Desk')
     expect((await openBox(user)).value).toBe('')
     expect(screen.queryByTestId('answer')).toBeNull()
+  })
+
+  /*
+    The answer is put from a topic page: Peek goes back to `/app/desk` and writes once a box of that name opens.
+    Desk then shows the DM it remembers, which may be another person's, whose box can carry the same name.
+  */
+  async function putFromATopicPage(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Go to Launch plan' }))
+    await openBox(user)
+    await user.click(await screen.findByRole('option', { name: new RegExp(SENTENCE) }))
+    await user.click(await screen.findByText('Put the answer in the composer'))
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/app/desk'))
+    expect(insertTextWhenComposerOpens).toHaveBeenCalledTimes(1)
+    // The wait reads the window's address, which the app's router keeps and this test's memory router does not.
+    history.replaceState(null, '', '/app/desk')
+    return insertTextWhenComposerOpens.mock.calls[0][2]
+  }
+
+  it('writes an answer about a DM picked on Desk into that DM, back on Desk', async () => {
+    const user = mount('/app/desk')
+    await user.click(screen.getByRole('button', { name: 'Pick Ana on Desk' }))
+    await ask(user)
+    await act(async () => answerNow('It broke after the bump [1].'))
+    await hide(user)
+    captureLauncherContext.mockReturnValue(launch)
+    const stillThere = await putFromATopicPage(user)
+    expect(stillThere()).toBe(true)
+  })
+
+  it('writes nothing into another DM that Desk shows when the person goes back, though its box has the same name', async () => {
+    const user = mount('/app/desk')
+    await user.click(screen.getByRole('button', { name: 'Pick Ana on Desk' }))
+    await askThenMove(user, 'Pick Ben on Desk')
+    const stillThere = await putFromATopicPage(user)
+    expect(stillThere()).toBe(false)
   })
 
   it('shows the ask again in the same topic opened from Desk after its own page', async () => {
