@@ -220,10 +220,12 @@ const SQUEEZE_NEXT = (() => {
 // desk-reopen `--away <minutes>` (THE-6): Peek is closed that long before the reopen, as when someone comes back
 // after an hour. The tab moves to Peek's own /version.json, a page on the same origin that runs no Peek, so the
 // sign-in stays and nothing keeps the copy current; the reopen then catches up what changed in that time.
-const AWAY = option('away', undefined)
+const LEGS_ASKED = (option('legs', '') ?? '').split(',')
+const AWAY = args.includes('--away') ? option('away', '') : undefined
 const AWAY_NEXT = (() => {
-  if (!AWAY) return []
+  if (AWAY === undefined) return []
   if (!(Number(AWAY) > 0)) throw new Error('--away <minutes>, e.g. 60')
+  if (!LEGS_ASKED.includes('desk-reopen')) throw new Error('--away measures desk-reopen only: add it to --legs')
   if (SQUEEZE) throw new Error('--away and --squeeze: the squeeze spends the quota from a Peek tab, which --away closes')
   return ['--tab', '/version.json', '--wait', String(Math.round(Number(AWAY) * 60000))]
 })()
