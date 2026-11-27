@@ -8,7 +8,7 @@ import { laterToastLabel } from '@/lib/laterTimes'
 import { usePagePicture } from '@/lib/pagePicture'
 import { IconCheck, IconHash, IconSortDescending, IconX } from '@tabler/icons-react'
 import { KIND_BARE_FILE, isArchived } from '@estiva-app/interop'
-import { Chip, CollapsibleSection, EmptyState, KindIcon, MenuItem, NavItem, SkeletonList, type UnreadDotTone } from '@estiva-app/ui'
+import { Chip, CollapsibleSection, EmptyState, KindIcon, MenuItem, NavItem, SkeletonList, SkeletonRow, type UnreadDotTone } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { RailListColumn } from '@/layouts/RailListColumn'
 import { Divider } from '@/components/ui/Divider'
@@ -571,6 +571,8 @@ export function DeskPage() {
             },
       )}
       openWork={openWorkItems.map((item) => {
+        // Drawn as the kit's placeholder by `DeskRows`; nothing to open or remove until it is the file.
+        if (item.kind === 'loading') return { id: item.id, kind: 'loading' as const, name: '', isUnread: false, isSelected: false, href: '', onClick: () => {} }
         if (item.kind === 'chat') {
           // Its team is held: the list above dropped the chats whose team is not.
           const team = chatTeamOf(item.address)!
@@ -658,7 +660,7 @@ export interface DeskRow {
     opens in the Desk's right column like a DM (SID-3), drawing the same
     conversation as the file's own page.
   */
-  kind: 'dm' | 'file' | 'chat'
+  kind: 'dm' | 'file' | 'chat' | 'loading'
   name: string
   /** Its own icon, in place of the kind's glyph: a team's chat wears `#` (Q-37). */
   icon?: ReactNode
@@ -725,8 +727,15 @@ function sortOpenWork(
   chatName: (address: string) => string,
 ): OpenWorkRow[] {
   if (sort === 'added') return items
-  const nameOf = (item: OpenWorkRow) => (item.kind === 'file' ? item.title : item.kind === 'chat' ? chatName(item.address) : item.name)
-  if (sort === 'name') return [...items].sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+  // A file still on its way has no name yet: it waits after the rest, where it was added.
+  const nameOf = (item: OpenWorkRow) =>
+    item.kind === 'file' ? item.title : item.kind === 'chat' ? chatName(item.address) : item.kind === 'loading' ? undefined : item.name
+  if (sort === 'name')
+    return [...items].sort((a, b) => {
+      const x = nameOf(a)
+      const y = nameOf(b)
+      return x === undefined || y === undefined ? (x === y ? 0 : x === undefined ? 1 : -1) : x.localeCompare(y)
+    })
   // Newest first; what has said nothing yet keeps its added order, after the rest.
   return [...items].sort((a, b) => {
     const x = activityOf(a)
@@ -787,9 +796,8 @@ export function DeskRowItem({ row }: { row: DeskRow }) {
 function DeskRows({ rows }: { rows: DeskRow[] }) {
   return (
     <div className="flex flex-col gap-0.5 mt-1">
-      {rows.map((row) => (
-        <DeskRowItem key={row.id} row={row} />
-      ))}
+      {/* A file still on its way: the kit's row placeholder, a row's height, where the file will draw (aec00dfc). */}
+      {rows.map((row) => (row.kind === 'loading' ? <SkeletonRow key={row.id} /> : <DeskRowItem key={row.id} row={row} />))}
     </div>
   )
 }

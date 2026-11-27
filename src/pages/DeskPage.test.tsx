@@ -240,6 +240,24 @@ describe('Open work keeps the person’s order', () => {
   })
 })
 
+describe('Open work while a file is still on its way (aec00dfc; Miky, 27 Nov)', () => {
+  it('draws a placeholder row where the file will be, never the empty text', () => {
+    desk.openWork = [openWorkFile(ISSUE, 'Issue one'), { id: `ow_loading_${SECOND}`, kind: 'loading', address: SECOND }]
+    mount()
+    const left = screen.getByTestId('left')
+    expect(left.textContent).not.toContain('Organize what you want to read')
+    expect(within(left).getByText('Issue one')).toBeTruthy()
+    // The kit's row placeholder: a square and a bar, pulsing.
+    expect(left.querySelectorAll('.animate-pulse')).toHaveLength(2)
+  })
+
+  it('says Open work is empty only when it holds nothing to draw', () => {
+    desk.openWork = []
+    mount()
+    expect(screen.getByTestId('left').textContent).toContain('Organize what you want to read')
+  })
+})
+
 /** Hovers `target` and returns the tooltip's text once it opens, or null when none does. */
 async function hoverTooltip(target: HTMLElement): Promise<string | null> {
   // `shouldAdvanceTime`: user-event's act wrapper waits on a setTimeout(0), which a clock that never moves never fires.

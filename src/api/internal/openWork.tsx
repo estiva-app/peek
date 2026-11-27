@@ -75,7 +75,8 @@ const FILES_WAIT_MS = 2_500
  * reads as archived, so its row says "Archived" as the Screener's does (PEE-68).
  * One object, so the read's options are stable.
  */
-const FOLLOW = { live: true, archivedWith: true }
+// Without each file's text: a row never draws it, and the copy on the device answers this read on a reopen (aec00dfc).
+const FOLLOW = { live: true, archivedWith: true, withoutText: true }
 
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
@@ -214,9 +215,14 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
         // A team's chat, kept by its address as a file is (Q-37, B-14): the Desk names it, and drops it while its team is unread.
         out.push({ id: `ow_chat_${entry.address}`, kind: 'chat', address: entry.address })
       } else if (entry.kind === 'file') {
-        // Unresolved (still asking, deleted, or unreadable): no row, and the
-        // address stays in the list — the rule every other kind follows.
+        // Not answered yet, by the copy or the relay: a placeholder row where it will appear, so the section never
+        // reads as empty while it has entries (Miky, 27 Nov, aec00dfc). Answered as nothing (deleted, or unreadable):
+        // no row, and the address stays in the list — the rule every other kind follows.
         const object = fileObjects[entry.address]
+        if (object === undefined) {
+          out.push({ id: `ow_loading_${entry.address}`, kind: 'loading', address: entry.address })
+          continue
+        }
         if (!object) continue
         out.push({
           id: `ow_file_${entry.address}`,

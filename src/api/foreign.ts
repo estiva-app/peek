@@ -371,8 +371,9 @@ const following = new Map<string, { count: number; leave: () => void }>()
  * "Archived" for an issue of an archived project.
  */
 // A roots-only answer is held apart: it has no comments or children, and a widget drawing the whole file must not get it.
-const heldKey = (pubkey: string, reference: string, archivedWith = false, roots = false) =>
-  `${pubkey} ${reference.replace(/^nostr:/i, '')}${archivedWith ? ' archived-with' : ''}${roots ? ' roots' : ''}`
+// So is one read without its text (Open work's rows): a widget drawing the file's text must not get it either.
+const heldKey = (pubkey: string, reference: string, archivedWith = false, roots = false, withoutText = false) =>
+  `${pubkey} ${reference.replace(/^nostr:/i, '')}${archivedWith ? ' archived-with' : ''}${roots ? ' roots' : ''}${withoutText ? ' without-text' : ''}`
 
 /**
  * Keep a held object in step with its file while something draws it.
@@ -428,7 +429,7 @@ function followHeld(key: string, folder: string | undefined, address: string | u
 }
 
 /** One reference's object, resolved as the viewer — the held objects' load. `archivedWith` as it was held. */
-function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>, archivedWith = false, roots = false): HeldLoad {
+function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>, archivedWith = false, roots = false, withoutText = false): HeldLoad {
   return async () => {
     const v = viewer()
     if (!v) return { ok: true, value: null }
@@ -437,7 +438,7 @@ function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>, 
         const objects = await resolveRootsAsViewer([reference], v.relayUrl, v.token, 'relay', archivedWith ? ARCHIVED_WITH : undefined)
         return { ok: true, value: objects[reference] ?? null }
       }
-      return { ok: true, value: await pooledResolve(reference, v.relayUrl, v.token, archivedWith) }
+      return { ok: true, value: await pooledResolve(reference, v.relayUrl, v.token, archivedWith, withoutText) }
     } catch {
       return { ok: false, failure: true }
     }
@@ -460,9 +461,19 @@ const pools = new Map<string, { relayUrl: string; token: StoredToken; asked: Map
  */
 const ARCHIVED_WITH: ArchiveReadOptions = { archivedWith: true }
 
-function pooledResolve(reference: string, relayUrl: string, token: StoredToken, archivedWith = false): Promise<ForeignObject | null> {
-  // A read that marks a file archived with its parent is a pool of its own: it is one more request (SHI-13).
-  const key = `${relayUrl}\u0000${token.pubkey}${archivedWith ? '\u0000archived-with' : ''}`
+/*
+  Each file without its text (SPEC §6.13's fields read, no `text`): for rows that name files and open none, as the
+  Screener's are. The copy on the device keeps that read and answers it on a reopen, and never an open read, so Open
+  work's rows draw from the copy while the relay catches up rather than waiting for it (aec00dfc).
+*/
+const WITHOUT_TEXT: ArchiveReadOptions = { withoutText: true }
+const ARCHIVED_WITH_WITHOUT_TEXT: ArchiveReadOptions = { archivedWith: true, withoutText: true }
+const readOptionsOf = (archivedWith: boolean, withoutText: boolean): ArchiveReadOptions | undefined =>
+  withoutText ? (archivedWith ? ARCHIVED_WITH_WITHOUT_TEXT : WITHOUT_TEXT) : archivedWith ? ARCHIVED_WITH : undefined
+
+function pooledResolve(reference: string, relayUrl: string, token: StoredToken, archivedWith = false, withoutText = false): Promise<ForeignObject | null> {
+  // A read that marks a file archived with its parent is a pool of its own: it is one more request (SHI-13). So is one without text.
+  const key = `${relayUrl}\u0000${token.pubkey}${archivedWith ? '\u0000archived-with' : ''}${withoutText ? '\u0000without-text' : ''}`
   let pool = pools.get(key)
   if (!pool) {
     const fresh = { relayUrl, token, asked: new Map<string, { resolve: (value: ForeignObject | null) => void; reject: (error: unknown) => void }[]>() }
@@ -471,7 +482,7 @@ function pooledResolve(reference: string, relayUrl: string, token: StoredToken, 
     setTimeout(() => {
       pools.delete(key)
       const refs = [...fresh.asked.keys()]
-      resolveObjectsAsViewer(refs, fresh.relayUrl, fresh.token, 'relay', archivedWith ? ARCHIVED_WITH : undefined).then(
+      resolveObjectsAsViewer(refs, fresh.relayUrl, fresh.token, 'relay', readOptionsOf(archivedWith, withoutText)).then(
         (objects) => {
           for (const [ref, waiting] of fresh.asked) for (const w of waiting) w.resolve(objects[ref] ?? null)
         },
@@ -1093,11 +1104,19 @@ export function useResolvedReferences(
      * names files and opens none. Held apart from the whole answer.
      */
     roots?: boolean
+    /**
+     * Each file whole but without its text: for rows that name files and open
+     * none yet need their comments (Open work, which the Screener's urgent
+     * fold reads). The copy on the device answers this read on a reopen, and
+     * never the open read with text. Held apart from the whole answer.
+     */
+    withoutText?: boolean
   },
 ): Record<string, ForeignObject | null> {
   const live = options?.live ?? false
   const archivedWith = options?.archivedWith ?? false
   const roots = options?.roots ?? false
+  const withoutText = options?.withoutText ?? false
   const { resolveObjects: resolveWhole } = useForeignObjects()
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey ?? ''
@@ -1124,7 +1143,7 @@ export function useResolvedReferences(
     if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
     const ask = refs.filter((ref) => {
-      const held = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))
+      const held = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots, withoutText))
       return held?.value === undefined || Date.now() - held.at >= HELD_OBJECT_FRESH_MS
     })
     if (!ask.length) return
@@ -1137,15 +1156,15 @@ export function useResolvedReferences(
       it is held, so the next ask goes to the relay. Only what this tab never
       held: a stale one is on screen already (PEE-4).
     */
-    const unheld = ask.filter((ref) => heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))?.value === undefined)
-    if (unheld.length) resolveObjects(unheld, 'copy', archivedWith ? ARCHIVED_WITH : undefined)
+    const unheld = ask.filter((ref) => heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots, withoutText))?.value === undefined)
+    if (unheld.length) resolveObjects(unheld, 'copy', readOptionsOf(archivedWith, withoutText))
       .then((objects) => {
         if (cancelled || answered) return
         const found = Object.entries(objects).filter(([, value]) => value)
         if (found.length) setObjects((prev) => ({ ...Object.fromEntries(found), ...prev }))
       })
       .catch(() => {})
-    resolveObjects(ask, 'relay', archivedWith ? ARCHIVED_WITH : undefined)
+    resolveObjects(ask, 'relay', readOptionsOf(archivedWith, withoutText))
       .catch(() => Object.fromEntries(ask.map((ref) => [ref, null])))
       // One setState for the whole body rather than one per reference: a
       // message with four mentions should not lay out four times.
@@ -1153,14 +1172,14 @@ export function useResolvedReferences(
         if (cancelled) return
         answered = true
         for (const [ref, value] of Object.entries(objects)) {
-          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref, archivedWith, roots), async () => ({ ok: true, value }))
+          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref, archivedWith, roots, withoutText), async () => ({ ok: true, value }))
         }
         setObjects(objects)
       })
     return () => {
       cancelled = true
     }
-  }, [key, resolveObjects, pubkey, archivedWith, roots])
+  }, [key, resolveObjects, pubkey, archivedWith, roots, withoutText])
 
   /*
     A held object is asked again when its file changes (`followHeld`), so it is
@@ -1170,20 +1189,20 @@ export function useResolvedReferences(
   useEffect(() => {
     // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
     if (!live || !hasRelay || !pubkey || !key) return
-    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref, archivedWith, roots), () => setHeldChanges((n) => n + 1)))
+    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref, archivedWith, roots, withoutText), () => setHeldChanges((n) => n + 1)))
     return () => leave.forEach((each) => each())
-  }, [live, key, pubkey, archivedWith, roots])
+  }, [live, key, pubkey, archivedWith, roots, withoutText])
 
   const merged = useMemo(() => {
     void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
       // A listing keeps its own answer first, as before; it fills only what it has not answered.
       if (!live && objects[ref]) return []
-      const value = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots))?.value
+      const value = heldObjects.peek(heldKey(pubkey, ref, archivedWith, roots, withoutText))?.value
       return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [live, key, objects, pubkey, heldChanges, archivedWith, roots])
+  }, [live, key, objects, pubkey, heldChanges, archivedWith, roots, withoutText])
 
   // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
   const follow = live
@@ -1198,10 +1217,10 @@ export function useResolvedReferences(
     if (!follow || !pubkey) return
     const leave = follow.split('\u0000').map((each) => {
       const [ref, folder, address] = each.split('\u0001')
-      return followHeld(heldKey(pubkey, ref, archivedWith, roots), folder, address, heldLoad(ref, viewer, archivedWith, roots))
+      return followHeld(heldKey(pubkey, ref, archivedWith, roots, withoutText), folder, address, heldLoad(ref, viewer, archivedWith, roots, withoutText))
     })
     return () => leave.forEach((each) => each())
-  }, [follow, pubkey, viewer, archivedWith, roots])
+  }, [follow, pubkey, viewer, archivedWith, roots, withoutText])
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a

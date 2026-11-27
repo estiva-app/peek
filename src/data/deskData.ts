@@ -31,6 +31,15 @@ export type OpenWorkItem =
       /** The chat's address, `39000:<pubkey>:<team>`, as Open work holds it. */
       address: string
     }
+  | {
+      id: string
+      /**
+       * A file not answered yet, by the copy or the relay: a placeholder row where it will appear, so Open work never
+       * says it is empty while it has entries (Miky, 27 Nov, aec00dfc). Answered as nothing, it draws no row.
+       */
+      kind: 'loading'
+      address: string
+    }
 
 export type UrgentItem =
   | {

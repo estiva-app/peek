@@ -134,7 +134,8 @@ export function useOpenWorkActivity(): (item: OpenWorkItem) => number | undefine
     () => (item: OpenWorkItem) => {
       if (item.kind === 'dm') return dmNewestAt(item.dmId)
       // A team's chat has no comments of its own to time: under Recent activity it sorts after the rest.
-      if (item.kind === 'chat') return undefined
+      // Nor has a file still on its way: it waits after the rest.
+      if (item.kind === 'chat' || item.kind === 'loading') return undefined
       const comments = item.object.comments ?? []
       return comments.length ? Math.max(...comments.map((c) => c.createdAt)) : undefined
     },
