@@ -64,10 +64,12 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
         event('2', [['h', FOLDER_A], ['a', DOCUMENT]], { kind: 9, content: 'Looks right to me.' }),
         // A link to another file does not make the tagged one a mention.
         event('3', [['h', FOLDER_A], ['a', ISSUE]], { kind: 9, content: `nostr:${naddr}` }),
+        // A comment (kind:1111) that links its own file is still talk about it: the rule is a chat message's alone.
+        event('4', [['h', FOLDER_A], ['A', DOCUMENT], ['a', DOCUMENT]], { content: linked }),
       ],
       [FOLDER_A],
     )
-    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[], [DOCUMENT], [ISSUE]])
+    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[], [DOCUMENT], [ISSUE], [DOCUMENT]])
   })
 
   it("puts a NIP-22 reply in its file's stream by its `A` (CON-34)", () => {
