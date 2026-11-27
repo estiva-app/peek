@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import { THREAD_RULE_FROM } from '@estiva-app/conversation'
 import {
   CHANNEL_STREAM_LIMIT,
@@ -50,6 +50,26 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
     )
     expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE, PROJECT]])
     expect(grouped[FOLDER_B].map((m) => m.about)).toEqual([[]])
+  })
+
+  it('keeps a chat message whose text links the file in the general stream: a mention, not talk about it (§6.4, KIN-9)', () => {
+    const naddr = 'naddr1qqjrgvfn8qengcee95mrwdtx956xvdfs95ukzv3c94snyvrzv33x2dt9vv6kxq3q7w3clfjxm675zc'
+    const DOCUMENT = `30842:${'f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1'}:4138f8c9-6c57-4f5d-8a28-a20bdd2e5e65`
+    // The body's link must decode to the tagged address for it to be a mention; built from the address so it does.
+    const linked = `nostr:${addrToNaddr(DOCUMENT)}`
+    const grouped = streamMessagesByFolder(
+      [
+        event('1', [['h', FOLDER_A], ['a', DOCUMENT]], { kind: 9, content: linked }),
+        // Only the tag, with nothing in the text: talk about the file, as before.
+        event('2', [['h', FOLDER_A], ['a', DOCUMENT]], { kind: 9, content: 'Looks right to me.' }),
+        // A link to another file does not make the tagged one a mention.
+        event('3', [['h', FOLDER_A], ['a', ISSUE]], { kind: 9, content: `nostr:${naddr}` }),
+        // A comment (kind:1111) that links its own file is still talk about it: the rule is a chat message's alone.
+        event('4', [['h', FOLDER_A], ['A', DOCUMENT], ['a', DOCUMENT]], { content: linked }),
+      ],
+      [FOLDER_A],
+    )
+    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[], [DOCUMENT], [ISSUE], [DOCUMENT]])
   })
 
   it("puts a NIP-22 reply in its file's stream by its `A` (CON-34)", () => {

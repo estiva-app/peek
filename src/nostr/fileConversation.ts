@@ -92,6 +92,7 @@ import type { QueryFn, Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, signViaEstivaId } from './bridge'
+import { aboutOf } from './channelStreams'
 import { RATE_LIMIT_MAX_WAIT_MS, retryAfterMs } from './relayRead'
 import {
   buildCommentAsViewer,
@@ -584,7 +585,8 @@ async function channelConversationWith(h: string, query: QueryFn, general = fals
   const seen = new Set<string>()
   let until: number | undefined
   // A team's chat is the channel's messages about no file: the same reading as its stream's (`channelStreams.ts`).
-  const about = (event: SignedEvent) => event.tags.some((tag) => tag[0] === 'a' && !!tag[1])
+  // A file's link in the text is a mention, so that message stays in the chat (KIN-9).
+  const about = (event: SignedEvent) => aboutOf(event).length > 0
   for (let page = 0; page < CHANNEL_PAGES; page += 1) {
     const filter = { kinds: [KIND.STREAM_MESSAGE], '#h': [h], limit: CHANNEL_PAGE, ...(until !== undefined ? { until } : {}) }
     const events = await query([filter])
