@@ -1,13 +1,14 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { CommandLauncher as Launcher, type LauncherHost, type LauncherMessageRow, type LauncherState, type LauncherWords } from '@estiva-app/launcher'
 import { Avatar, showInConversation, showInConversationWhenDrawn } from '@estiva-app/ui'
+import { identifierFromRef } from '@estiva-app/interop'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { PEEK_FORM } from './launcherForm'
 import { FilePreviewCard } from './ui/MessageLinks'
 import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople } from '@/api'
 import { snippetAround } from '@/lib/launcherSearch'
-import { filePath, fileRouteFromPath, fileThreadPath, refNamesFile } from '@/lib/objectUrl'
+import { addressFromRef, filePath, fileRouteFromPath, fileThreadPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { referenceOfValue } from '@/lib/embedValue'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -159,11 +160,30 @@ interface CommandLauncherProps {
   initialActionId?: string
 }
 
+/**
+ * The conversation a sentence asked here is about (KIN-12), named the same
+ * wherever it is shown. Desk shows every one at `/app/desk`: a file by
+ * `?open=`, a DM only in its own memory. So the place is the file's `d`, on
+ * its own page or beside Desk's lists, or the DM's id, on People or on Desk;
+ * anywhere else the page. A thread open in it is still the same place.
+ */
+export function placeOf(pathname: string, search: string, deskDmId: string | undefined): string {
+  const onDesk = pathname === '/app/desk'
+  const ref = (onDesk ? new URLSearchParams(search).get('open') : null) ?? fileRouteFromPath(pathname)?.ref
+  if (ref) {
+    const address = addressFromRef(ref)
+    const d = address ? address.split(':').slice(2).join(':') : identifierFromRef(ref)
+    if (d) return `file:${d.toLowerCase()}`
+  }
+  const dm = onDesk ? deskDmId : pathname.startsWith('/app/dms/') ? decodeURIComponent(pathname.slice('/app/dms/'.length)) : undefined
+  return dm ? `dm:${dm}` : pathname
+}
+
 /** Peek's ⌘K box: the shared launcher, mounted with what only Peek knows. */
 export function CommandLauncher(props: CommandLauncherProps) {
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
-  const { dmId: selectedPersonId } = useLastSelection()
+  const { dmId: selectedPersonId, desk } = useLastSelection()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
   const openPersonId = pathname.startsWith('/app/dms/') ? selectedPersonId : null
   // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
@@ -178,7 +198,7 @@ export function CommandLauncher(props: CommandLauncherProps) {
     apps: LAUNCHER_APPS,
     mark,
     words: WORDS,
-    path: { pathname, search },
+    path: { pathname, search, place: placeOf(pathname, search, desk?.dm?.dmId) },
     navigate,
     people,
     openPerson: (id) => navigate(`/app/dms/${encodeURIComponent(id)}`),

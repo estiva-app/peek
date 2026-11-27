@@ -17,7 +17,7 @@ import { enter } from '@/test-enter'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
-import { LastSelectionProvider } from '@/lib/lastSelection'
+import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
 import { KeptLauncherProvider } from '@/lib/KeptLauncherProvider'
 import { useKeptSearch } from './useKeptLauncher'
@@ -60,13 +60,38 @@ const launch = conversation('Launch plan', 'we ship the website on Friday')
 let answerNow: (text: string | null) => void = () => {}
 const SENTENCE = 'what broke the build'
 
+/* Two topics as production addresses them: on their own page by `<slug>-<d>`, beside Desk's lists by their address. */
+const BUILDS_D = '5f0c2a1e-8b1d-4c3e-9a77-1d2e3f4a5b6c'
+const LAUNCH_D = '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d'
+const OWNER = 'b'.repeat(64)
+const BUILDS_PAGE = `/topic/build-failures-${BUILDS_D}`
+const onDesk = (d: string) => `/app/desk?open=${encodeURIComponent(`30851:${OWNER}:${d}`)}`
+
 /** Where the page is, for the test to read, and a way to go somewhere else as a click in the sidebar would. */
 function Where() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const { setLastDesk } = useLastSelection()
+  // As Desk does: a DM picked there is in Desk's memory, not in the address.
+  const pickDm = (dmId: string, dmName: string) => {
+    setLastDesk({ search: '', dm: { dmId, dmName, section: 'urgent' } })
+    navigate('/app/desk')
+  }
   return (
     <>
       <output data-testid="where">{pathname}</output>
+      <button type="button" onClick={() => navigate(onDesk(LAUNCH_D))}>
+        Open Launch plan on Desk
+      </button>
+      <button type="button" onClick={() => navigate(onDesk(BUILDS_D))}>
+        Open Build failures on Desk
+      </button>
+      <button type="button" onClick={() => pickDm('dm-ana', 'Ana')}>
+        Pick Ana on Desk
+      </button>
+      <button type="button" onClick={() => pickDm('dm-ben', 'Ben')}>
+        Pick Ben on Desk
+      </button>
       <button type="button" onClick={() => navigate('/topic/launch')}>
         Go to Launch plan
       </button>
@@ -107,9 +132,9 @@ function Frame() {
   )
 }
 
-function mount() {
+function mount(at = '/topic/builds') {
   render(
-    <MemoryRouter initialEntries={['/topic/builds']}>
+    <MemoryRouter initialEntries={[at]}>
       <DebugProvider>
         <PeekDataProvider>
           <LastSelectionProvider>
@@ -340,5 +365,40 @@ describe('after moving to another conversation', () => {
     expect(insertTextIntoComposer).not.toHaveBeenCalled()
     expect(insertTextWhenComposerOpens).toHaveBeenCalledWith('Build failures', 'It broke after the bump.', expect.any(Function))
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/topic/builds'))
+  })
+})
+
+/* Desk shows every conversation at `/app/desk` (Miky's test of KIN-12, step 2: "I opened another topic, but the previous one is still opened"). */
+describe('on Desk, where every conversation is the same page', () => {
+  /** Ask, let the answer come, hide; then the person is in the other conversation. */
+  async function askThenMove(user: ReturnType<typeof userEvent.setup>, move: string) {
+    await ask(user)
+    await act(async () => answerNow('It broke after the bump [1].'))
+    await hide(user)
+    captureLauncherContext.mockReturnValue(launch)
+    await user.click(screen.getByRole('button', { name: move }))
+  }
+
+  it('opens fresh about the other topic, with the ask under Recent "in" the first one', async () => {
+    const user = mount(onDesk(BUILDS_D))
+    await askThenMove(user, 'Open Launch plan on Desk')
+    expect((await openBox(user)).value).toBe('')
+    expect(screen.queryByTestId('answer')).toBeNull()
+    expect(await screen.findByRole('option', { name: new RegExp(SENTENCE) })).toHaveTextContent('in Build failures')
+  })
+
+  it('opens fresh about the other DM, though neither is in the address', async () => {
+    const user = mount('/app/desk')
+    await user.click(screen.getByRole('button', { name: 'Pick Ana on Desk' }))
+    await askThenMove(user, 'Pick Ben on Desk')
+    expect((await openBox(user)).value).toBe('')
+    expect(screen.queryByTestId('answer')).toBeNull()
+  })
+
+  it('shows the ask again in the same topic opened from Desk after its own page', async () => {
+    const user = mount(BUILDS_PAGE)
+    await askThenMove(user, 'Open Build failures on Desk')
+    expect((await openBox(user)).value).toBe(SENTENCE)
+    expect(await screen.findByTestId('answer')).toHaveTextContent('It broke after the bump')
   })
 })
