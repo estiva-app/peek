@@ -4,6 +4,7 @@
  *
  *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,desk-cmdk,peek-topic-all,peek-topic-important,page-topic,page-team,page-chat,page-dm] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
+ *     [--squeeze <n>@<ms>]   (desk-reopen: spend n of the person's relay quota <ms> before the reopen, THE-15)
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
  *   `--ship-query <q>`: every Ship leg opens with `?<q>`, such as `issueFields=on`, a tab's opt-in to a switch (ISS-4).

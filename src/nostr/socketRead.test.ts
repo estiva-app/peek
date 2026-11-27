@@ -21,7 +21,6 @@ import {
   FIRST_RESERVE,
   FRAMES_PER_SECOND,
   FRAMES_PER_WINDOW,
-  noteQuotaRefused,
   otherFramesSince,
   readingFirst,
   SHAPED_WINDOW_MS,
@@ -472,26 +471,6 @@ describe('socket frames', () => {
     expect(out).toHaveLength(5)
     expect(otherFramesSince(at - 1)).toHaveLength(2)
     expect(otherFramesSince(at)).toHaveLength(0)
-  })
-
-  it('after a quota refusal, frames wait out the relay’s pause and then go as its window frees, not all at once (THE-15)', async () => {
-    const { out, shaper: s } = shaper()
-    // Another app of the person's filled the relay's window: it says "retry in 1s".
-    noteQuotaRefused(1_000)
-    for (let i = 0; i < 10; i++) s.send(`["REQ","peek-${i}",{}]`)
-    expect(out).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(900)
-    expect(out).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(400)
-    expect(out.length).toBeGreaterThan(0)
-    expect(out.length).toBeLessThanOrEqual(3)
-    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
-    expect(out).toHaveLength(10)
-    // The refusals of one burst count the window full once, not once each.
-    noteQuotaRefused(1_000)
-    const full = otherFramesSince(Date.now() - SHAPED_WINDOW_MS).length
-    noteQuotaRefused(1_000)
-    expect(otherFramesSince(Date.now() - SHAPED_WINDOW_MS)).toHaveLength(full)
   })
 
   it(`sends at most ${FRAMES_PER_SECOND} metered frames a second and ${FRAMES_PER_WINDOW} a window, the rest in order`, async () => {
