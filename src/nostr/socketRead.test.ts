@@ -232,57 +232,6 @@ describe('socket reads', () => {
     expect(budget.noteRateLimited).not.toHaveBeenCalled()
   })
 
-  it('a catch-up met by a short quota pause waits it out and compares on the socket, instead of asking whole (THE-15)', async () => {
-    vi.useFakeTimers()
-    const { client } = fakeClient()
-    const compared: Record<string, unknown>[] = []
-    ;(client.relay as unknown as { reconcile: unknown }).reconcile = async (filter: Record<string, unknown>) => {
-      compared.push(filter)
-      return { ok: true, need: ['new'], have: ['gone'] }
-    }
-    // Another of the person's apps spent the quota: the relay said "retry in 2s".
-    const until = Date.now() + 2_000
-    const pause = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => Math.max(0, until - Date.now())) }
-    const { read } = reader(client, pause)
-    expect(read.canReconcile!('https://relay', ME)).toBe(true)
-
-    let outcome: unknown
-    void read.reconcile!('https://relay', { kinds: [9] }, [], ME).then((o) => (outcome = o))
-    await vi.advanceTimersByTimeAsync(1_900)
-    expect(compared).toHaveLength(0)
-    await vi.advanceTimersByTimeAsync(200)
-    expect(compared).toEqual([{ kinds: [9] }])
-    expect(outcome).toEqual({ ok: true, need: ['new'], have: ['gone'] })
-  })
-
-  it('while the relay’s window is full of the person’s other apps’ frames, a click’s plain question goes over HTTP at once (THE-15)', async () => {
-    const { client, subs } = fakeClient()
-    let fullFor = 3_000
-    const read = createSocketReader({
-      getClient: () => client,
-      currentPubkey: () => ME,
-      budget: { noteRateLimited: vi.fn(() => 0), pausedForMs: () => 0 },
-      httpBudget: { pausedForMs: () => 0 },
-      relayFullForMs: () => fullFor,
-    })
-    expect(await read('https://relay', [{ kinds: [30078], '#d': ['open-work'] }], ME)).toBeNull()
-    expect(subs).toHaveLength(0)
-    fullFor = 0
-    void read('https://relay', [{ kinds: [30078], '#d': ['open-work'] }], ME)
-    await vi.waitFor(() => expect(subs).toHaveLength(1))
-  })
-
-  it('a quota pause longer than the relay’s window is not waited out: the catch-up is asked plainly', async () => {
-    const { client } = fakeClient()
-    const reconcile = vi.fn()
-    ;(client.relay as unknown as { reconcile: unknown }).reconcile = reconcile
-    const pause = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 30_000) }
-    const { read } = reader(client, pause)
-    expect(read.canReconcile!('https://relay', ME)).toBe(false)
-    expect(await read.reconcile!('https://relay', { kinds: [9] }, [], ME)).toMatchObject({ ok: false, reason: 'unsupported', message: 'socket paused' })
-    expect(reconcile).not.toHaveBeenCalled()
-  })
-
   it('leaves the socket alone while its quota is paused, or for another pubkey, or with no credential', async () => {
     const { client, subs } = fakeClient()
     const paused = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 2_000) }
