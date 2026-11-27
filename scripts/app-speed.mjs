@@ -5,6 +5,7 @@
  *   node scripts/app-speed.mjs [--legs weekly,weekly-from-peek,ship-project,ship-issue,agent|ship-projects,ship-issues,ship-topics,ship-topic,peek,teams,topics,desk,desk-cmdk,peek-topic-all,peek-topic-important,page-topic,page-team,page-chat,page-dm] [--runs 3]
  *     [--json /tmp/before.json] [--agent <estiva-agent dir>] [--as miky --session <session.json>] [--reads]
  *     [--squeeze <n>@<ms>]   (desk-reopen: spend n of the person's relay quota <ms> before the reopen, THE-15)
+ *     [--away <minutes>]     (desk-reopen: Peek closed that long before the reopen, THE-6)
  *   `--as`/`--session`: the browser legs signed in as someone else than QA-1, with a delegated session (probe.mjs),
  *   to measure at Miky's scale (ALO-17). `--reads`: each run also keeps every relay read (when, ms, bytes, filter).
  *   `--ship-query <q>`: every Ship leg opens with `?<q>`, such as `issueFields=on`, a tab's opt-in to a switch (ISS-4).
@@ -216,6 +217,16 @@ const SQUEEZE_NEXT = (() => {
   if (!(Number(n) > 0) || !(Number(gap) >= 0)) throw new Error('--squeeze <n>@<ms>, e.g. 45@1500')
   return ['--eval', `__spSqueezeNow(${Number(n)})`, ...(Number(gap) > 0 ? ['--wait', String(Number(gap))] : [])]
 })()
+// desk-reopen `--away <minutes>` (THE-6): Peek is closed that long before the reopen, as when someone comes back
+// after an hour. The tab moves to Peek's own /version.json, a page on the same origin that runs no Peek, so the
+// sign-in stays and nothing keeps the copy current; the reopen then catches up what changed in that time.
+const AWAY = option('away', undefined)
+const AWAY_NEXT = (() => {
+  if (!AWAY) return []
+  if (!(Number(AWAY) > 0)) throw new Error('--away <minutes>, e.g. 60')
+  if (SQUEEZE) throw new Error('--away and --squeeze: the squeeze spends the quota from a Peek tab, which --away closes')
+  return ['--tab', '/version.json', '--wait', String(Math.round(Number(AWAY) * 60000))]
+})()
 
 const LEGS = {
   weekly: () => ['--base', 'https://leaf.estiva.app', '--url', WEEKLY.path, ...settle(150000), ...whole, ...report('weekly')],
@@ -246,7 +257,7 @@ const LEGS = {
   // The copy is counted twice before the reopen, 5 s and 15 s after the first open went quiet: a copy still growing
   // between them is a save that lags the reads, and a reopen 5 s after quiet starts from less than the person read.
   'desk-reopen': () => ['--base', 'https://peek.estiva.app', '--url', '/app/desk', ...settle(60000), ...wholeAll,
-    '--eval', FIRST_OPEN, '--wait', '5000', '--eval', COPY_COUNT, '--wait', '10000', '--eval', COPY_COUNT, ...SQUEEZE_NEXT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
+    '--eval', FIRST_OPEN, '--wait', '5000', '--eval', COPY_COUNT, '--wait', '10000', '--eval', COPY_COUNT, ...SQUEEZE_NEXT, ...AWAY_NEXT, '--tab', '/app/desk', ...settle(60000), ...wholeAll, '--eval', COPY_COUNT,
     '--eval', CATCH_UPS, '--eval', COPY_DRAW, ...report('desk-reopen')],
   'peek-topic-all': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('All'), ...report('peek-topic-all')],
   'peek-topic-important': () => ['--base', 'https://peek.estiva.app', '--url', `/topic/${QA_TOPIC.address}`, ...settle(60000), ...whole, ...atLevel('Important'), ...report('peek-topic-important')],
@@ -262,7 +273,7 @@ async function browserLeg(leg, awaitFile, as = 'qa1', session = undefined) {
   let died = ''
   try {
     const signIn = session ? ['--as', as, '--session', session] : ['--as', as]
-    ;({ stdout } = await run('node', [PROBE, ...signIn, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 }))
+    ;({ stdout } = await run('node', [PROBE, ...signIn, '--init', awaitFile, '--timeout', '200000', ...LEGS[leg]()], { maxBuffer: 1 << 26, timeout: 600000 + (AWAY ? Number(AWAY) * 60000 : 0) }))
   } catch (error) {
     stdout = error.stdout
     died = `probe exited ${error.code ?? error.signal}: ${String(error.stderr ?? error.message).trim().split('\n').slice(-3).join(' | ')}`
