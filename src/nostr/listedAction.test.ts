@@ -283,6 +283,64 @@ describe('a listed creation', () => {
     expect(published()).toEqual([])
   })
 
+  /* Leaf's New document and its text, as Leaf's `src/manifest.ts` declares them (KIN-9). */
+  const DOCUMENT = 30842
+  const leaf = event({
+    kind: 31990,
+    tags: [['d', 'estiva-leaf'], ['k', String(DOCUMENT)]],
+    content: JSON.stringify({
+      name: 'Leaf',
+      records: { changeKind: 1851, targetTag: 'a', fieldTag: 'field', valueTag: 'value' },
+      projections: { [DOCUMENT]: { widget: 'card', slots: { title: { tag: 'title' } } } },
+      actions: [
+        {
+          id: 'add-document',
+          label: 'New document',
+          appliesTo: '39000',
+          emits: { kind: DOCUMENT, placement: 'h', listed: true },
+          input: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, description: { type: 'string', target: 'content' } }, required: ['title'] },
+        },
+        { id: 'describe', label: 'Edit', appliesTo: [String(DOCUMENT)], emits: { kind: 1851, field: 'description' }, input: { type: 'string' } },
+      ],
+    }),
+  })
+  const newDocument = () =>
+    applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-document', value: { title: 'Launch plan', description: 'We launch on 3 December.' }, declaredBy: `31990:${AUTHOR}:estiva-leaf` },
+      'https://relay.test',
+      token,
+    )
+  const madeWithText = (result: Awaited<ReturnType<typeof newDocument>>) => {
+    expect(result).toMatchObject({ ok: true, listed: true })
+    expect(result.textNotSaved).toBeUndefined()
+    const [record, text, listing] = signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; tags: string[][]; content: string })
+    // The relay refuses a document's first record carrying text (`text-is-a-change`).
+    expect(record.kind).toBe(DOCUMENT)
+    expect(record.content).toBe('')
+    expect(tag(record, 'h')).toBe(FOLDER)
+    expect(text.kind).toBe(1851)
+    expect(tag(text, 'field')).toBe('description')
+    expect(tag(text, 'a')).toBe(result.created)
+    expect(`${text.content} ${tag(text, 'value') ?? ''}`).toContain('We launch on 3 December.')
+    expect(tag(listing, 'op')).toBe('add')
+  }
+
+  it('a Leaf document with the ⌘K answer: the record with no text, the answer as its first change, then the add (KIN-9)', async () => {
+    queryRelay.mockImplementation(relayOver([leaf, channel(FOLDER), state(FOLDER, [])]))
+    madeWithText(await newDocument())
+  })
+
+  it('a Leaf document with text, when a newer manifest by another key claims documents: still made by Leaf’s own (KIN-9)', async () => {
+    const other = event({
+      kind: 31990,
+      pubkey: 'ef'.repeat(32),
+      tags: [['d', 'other-app'], ['k', String(DOCUMENT)]],
+      content: JSON.stringify({ name: 'Other', projections: { [DOCUMENT]: { widget: 'card', slots: { title: { tag: 'title' } } } }, actions: [] }),
+    })
+    queryRelay.mockImplementation(relayOver([leaf, other, channel(FOLDER), state(FOLDER, [])]))
+    madeWithText(await newDocument())
+  })
+
   it('into a Folder without state: the record alone', async () => {
     queryRelay.mockImplementation(relayOver([manifest, channel(FOLDER)]))
     const result = await create()
