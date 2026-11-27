@@ -9,16 +9,14 @@ import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
 import { identifierFromRef, KIND_BARE_FILE } from '@estiva-app/interop'
 import { useFileAddress, rememberFileAddress, spaceTeamOf, useFolderContents, useReferenceFolder, useRememberFile, useRouteWords, useTeams } from '@/api'
-import { addressFromRef, filePath, isNaddrPath } from '@/lib/objectUrl'
+import { filePath, isNaddrPath } from '@/lib/objectUrl'
 import { showConversationItemWhenDrawn } from '@/lib/messageAnchor'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
-import { KIND_TOPIC } from '@/nostr/foreign'
 import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
 
 /**
- * `/<word>/<slug>-<d>` and `/topic/<address>` — one file, in three panes
- * (FOL-19, FOL-37, FOL-39).
+ * `/<word>/<slug>-<d>` — one file, in three panes (FOL-19, FOL-37, FOL-39).
  *
  * **One page shape for every file, Peek's or anybody's.** RFC 0.5 §10.7 says
  * Peek is where a file's conversation is read; this is the page that claim
@@ -41,19 +39,17 @@ import { fileTabTitle, useTabTitle } from '@/lib/useTabTitle'
  * than the source of truth: the Folder comes off the resolved file (`h`), the
  * parent off `parentRef`, and the left pane opens to where the file is.
  *
- * ## Two grammars, one route
+ * ## One grammar
  *
  * `/<word>/<slug>-<d>` is a file in the short form §7 gives every object —
  * `/topic/` for a bare file (FOL-37), `/project/` and `/issue/` for Ship's,
- * and whatever word any other manifest declares (FOL-39, §7.7) — and
- * `/topic/<address>` is any file at all. `addressFromRef` tells them apart
- * without fetching anything — an address carries two colons and a slug
- * carries none. The short form costs one `#d` query over the word's kinds to
- * recover the author (`useFileAddress`), after which both grammars resolve
- * identically, and a file opened from the long form is canonicalised to the
- * short one the way `TopicsPage` refreshes a stale slug. The word itself is
- * not checked here: one nobody declares resolves over every declared kind,
- * so a link with a word Peek has not heard of still opens the file it names.
+ * and whatever word any other manifest declares (FOL-39, §7.7). It costs one
+ * `#d` query over the word's kinds to recover the author (`useFileAddress`).
+ * The word itself is not checked here: one nobody declares resolves over every
+ * declared kind, so a link with a word Peek has not heard of still opens the
+ * file it names. Peek's old long link, `/topic/<kind>:<pubkey>:<d>`, is read
+ * by nothing since the stored ones were rewritten (LIN-8): it carries no
+ * `<slug>-<d>`, so it is a link that points at nothing.
  *
  * The short form used to be the Convex channel topic's. A link that still names
  * one — its uuid is a channel's, and `legacyTopicLinks` holds it — is sent on
@@ -80,16 +76,8 @@ export function FilePage({ address: drawnAt }: { address?: string } = {}) {
   const { word = 'topic', ref } = useParams<{ word: string; ref: string }>()
   // Drawn again when the manifests' words arrive, so the page can move to its short link.
   useRouteWords()
-  const address = drawnAt ?? (ref ? addressFromRef(ref) : null)
-  /*
-    A topic is not a file page. A `39000:` address resolves — it is a real
-    addressable event — but its conversation is `kind:9` messages carrying `h`
-    and no `a`, so this page would draw it as a file nobody has said anything
-    about. A retired topic's channel lands on the file its conversation moved
-    to, and any other channel — a team — on its Folder (FOL-26). Decided before
-    the read, so the redirect costs no round trip.
-  */
-  const topicIdentifier = address?.startsWith(`${KIND_TOPIC}:`) ? address.split(':')[2] : null
+  // An address only ever comes from `ObjectPage` (`/o/<naddr>`): a path's ref is a `<slug>-<d>` (LIN-8).
+  const address = drawnAt ?? null
   /*
     The short form: a `d` and nothing else (FOL-37). A Convex topic's link
     carried a channel uuid in the same position, so the uuid is first tried
@@ -99,9 +87,7 @@ export function FilePage({ address: drawnAt }: { address?: string } = {}) {
   const identifier = ref && !address ? identifierFromRef(ref) : null
   const legacyTopic = identifier ? legacyTopicByChannel(identifier) : undefined
   const shortForm = useFileAddress(word, legacyTopic ? null : identifier)
-  const fileAddress = topicIdentifier
-    ? null
-    : (address ?? (typeof shortForm === 'object' && 'address' in shortForm ? shortForm.address : null))
+  const fileAddress = address ?? (typeof shortForm === 'object' && 'address' in shortForm ? shortForm.address : null)
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -160,13 +146,12 @@ export function FilePage({ address: drawnAt }: { address?: string } = {}) {
 
   /*
     Canonicalise (FOL-37, FOL-39), the way `TopicsPage` does: a file reached
-    from its long form, from a short link whose slug a rename has left stale,
+    at its `/o/<naddr>`, from a short link whose slug a rename has left stale,
     or under a word its own app did not declare, is given the URL `filePath`
     writes for it now that its title and kind are known. The identity in the
     URL is what resolved and the rest is decoration, so this needs no redirect
     table — and it is what makes the address bar the link to copy. Only a kind
-    with a declared word has a short form; any other kind's long form is
-    already canonical and is left alone.
+    with a declared word has a short form; any other kind stays at its `/o/`.
   */
   const shortFormAddress = file?.address ?? null
   const linkPath = shortFormAddress ? filePath(shortFormAddress, file?.slots.title?.value) : null
@@ -267,7 +252,6 @@ export function FilePage({ address: drawnAt }: { address?: string } = {}) {
     onListingChanged: reloadTeam,
   })
 
-  if (topicIdentifier) return <Navigate to={channelDestination(topicIdentifier)} replace />
   // A Convex topic's old short link: the file its conversation moved to.
   if (identifier && legacyTopic) {
     // Its file's short link carries no author; the table has the address, so the next page costs no `#d` read.

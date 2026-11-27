@@ -217,7 +217,7 @@ describe('recents (C3)', () => {
     })
 
     it('is left out when its page is the one you are on', async () => {
-      open({}, {}, `/topic/${FILE}`)
+      open({}, {}, '/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
       const recent = await screen.findByRole('group', { name: 'Recent' })
       await waitFor(() => expect(recent).toHaveTextContent('Amie Miles'))
       expect(recent).not.toHaveTextContent('FOL-15 test topic 2')

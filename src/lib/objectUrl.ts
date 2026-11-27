@@ -16,49 +16,15 @@
  * lowercase uuid gets no link, since the relay refuses any such file.
  *
  * What stays here is Peek's own: the words its `/<word>/` route reads back
- * with (`routeWordsOf`), the registry links are drawn from in render, the old
- * long link it still reads until the stored ones are rewritten
- * (`addressFromRef`), and the Convex topics' `/topic-old/` and messages'
- * `/message/` paths.
+ * with (`routeWordsOf`), the registry links are drawn from in render, and the
+ * Convex topics' `/topic-old/` and messages' `/message/` paths. The old long
+ * link, `/topic/<kind>:<pubkey>:<d>`, is read by nothing (LIN-8): the stored
+ * ones were rewritten to the short link, and it opens nothing now.
  *
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-path-is-the-same-on-every-apps-host.md
  * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-a-random-uuid-the-same-rule-as-a-teams-id.md
  */
 import { fileLinkWordsOf, filePathOf, fileUrlOf, identifierFromRef, objectRef, urlPatternsOf, type LinkManifest } from '@estiva-app/interop'
-
-/**
- * A NIP-33 address — `<kind>:<pubkey>:<d>` — as Peek's old long link,
- * `/topic/<kind>:<pubkey>:<d>`, carried it.
- *
- * Peek no longer writes that link (LIN-3) and reads it only until the stored
- * ones are rewritten, the project's last issue. The two colons make it
- * unambiguous against the `<slug>-<uuid>` refs beside it, which a slug cannot
- * contain. The `d` is any text, a line break included (`s`), as written then.
- */
-const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/is
-
-/**
- * The address an old long link's `/topic/<ref>` names, or `null` when it
- * carries a bare `d` instead — FOL-19, FOL-37.
- *
- * Which grammar a ref is, is readable from the ref: an address carries two
- * colons and a slug carries none, so nothing has to be fetched to decide.
- *
- * The ref as given is tested **first**, because `useParams` has already decoded
- * the path segment and decoding twice would corrupt a `d` containing a literal
- * `%`. The second attempt is for a link that arrived still escaped — a chat
- * client that percent-encoded the colons, or `location.pathname` read directly.
- */
-export function addressFromRef(ref: string): string | null {
-  if (ADDRESS_RE.test(ref)) return ref
-  try {
-    const decoded = decodeURIComponent(ref)
-    return ADDRESS_RE.test(decoded) ? decoded : null
-  } catch {
-    // A stray `%` is not an address either.
-    return null
-  }
-}
 
 /**
  * The words links are written and read with — SPEC §7.7, from the manifests.
@@ -312,15 +278,12 @@ export function copyPageLink(path: string): Promise<boolean> {
 }
 
 /**
- * Whether a `/<word>/<ref>` names this file, in either grammar — the launcher's
- * "the page you are on is not somewhere to go" (FOL-37).
+ * Whether a `/<word>/<ref>` names this file — the launcher's "the page you are
+ * on is not somewhere to go" (FOL-37).
  *
- * The short form carries only the `d`, so a file is matched on its
- * identifier; the old long form is matched on the whole address.
+ * The short form carries only the `d`, so a file is matched on its identifier.
  */
 export function refNamesFile(ref: string, address: string): boolean {
-  const asAddress = addressFromRef(ref)
-  if (asAddress) return asAddress.toLowerCase() === address.toLowerCase()
   const identifier = identifierFromRef(ref)
   return identifier !== null && address.toLowerCase().endsWith(`:${identifier}`)
 }

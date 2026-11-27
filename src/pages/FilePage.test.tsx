@@ -41,6 +41,15 @@ const TOPIC_D = '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
 const TOPIC_ADDRESS = `30840:${CATH}:${TOPIC_D}`
 /** The short form FOL-37 gives a bare file: its slug and `d`, no author. */
 const TOPIC_SHORT = `/topic/fol-15-test-topic-2-${TOPIC_D}`
+/**
+ * A file's short link, `/topic/<d>`, with its address already known — as when Peek has just put it in the address bar
+ * — so the page opens it with no `#d` read. Where this page's tests open a file; the read itself is pinned below.
+ */
+function linkOf(address: string): string {
+  const d = address.split(':')[2]!
+  shortForm.known.set(d, address)
+  return `/topic/${d}`
+}
 
 const comment = (id: string, body: string, createdAt: number) => ({
   id: id.repeat(64).slice(0, 64),
@@ -517,7 +526,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
     // The listing holds the project and the topic; the issue is the project's
     // child, resolved from the project's manifest, and appears in no listing.
     // FOL-17's pane opened nothing here. This route opens the file.
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByText('The file route')).toBeInTheDocument()
     // No chip beside the name (Miky, 14 October): the way into its app is "Open", tested below.
@@ -526,7 +535,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
   })
 
   it('names the file, then Peek, in the browser tab (SFX-2)', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(document.title).toBe('The file route – Peek')
   })
 
@@ -552,7 +561,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
         openUrl: LEAF_URL,
         slots: { title: { value: 'Leaf 1 notes' } },
       })
-      mount(`/topic/${DOCUMENT_ADDRESS}`)
+      mount(linkOf(DOCUMENT_ADDRESS))
       expect(header().getByText('Leaf 1 notes')).toBeInTheDocument()
       // No chip: neither the app's name nor the file's type.
       expect(header().queryByText('Leaf')).toBeNull()
@@ -568,7 +577,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
     it('a Ship issue: "Open" goes to Ship, named "Open in Estiva Ship", and no chip', () => {
       const ISSUE_URL = 'https://ship.estiva.app/o/naddr1issue'
       objects.byAddress[ISSUE_ADDRESS] = { ...issue, noun: 'issue', openUrl: ISSUE_URL }
-      mount(`/topic/${ISSUE_ADDRESS}`)
+      mount(linkOf(ISSUE_ADDRESS))
       expect(header().queryByText('Estiva Ship')).toBeNull()
       expect(header().queryByText('Issue')).toBeNull()
       const open = header().getByRole('link', { name: 'Open in Estiva Ship' })
@@ -578,7 +587,7 @@ describe('FilePage opens a file by address, not against the listing', () => {
 
     it('a topic — Peek’s own file — is unchanged: no chip and no "Open"', () => {
       objects.byAddress[TOPIC_ADDRESS] = { ...topic, appName: 'Peek', noun: 'topic', openUrl: 'https://peek.estiva.app/o/naddr1x' }
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       expect(header().getByText('FOL-15 test topic 2')).toBeInTheDocument()
       expect(header().queryByText('Topic')).toBeNull()
       expect(header().queryByRole('link', { name: /^Open/ })).toBeNull()
@@ -594,15 +603,10 @@ describe('FilePage opens a file by address, not against the listing', () => {
         openUrl: 'javascript:alert(1)',
         slots: { title: { value: 'Leaf 1 notes' } },
       })
-      mount(`/topic/${DOCUMENT_ADDRESS}`)
+      mount(linkOf(DOCUMENT_ADDRESS))
       expect(header().getByText('Leaf 1 notes')).toBeInTheDocument()
       expect(header().queryByRole('link', { name: /^Open/ })).toBeNull()
     })
-  })
-
-  it('pins the route: a percent-encoded address in the path still opens', () => {
-    mount(`/topic/${encodeURIComponent(ISSUE_ADDRESS)}`)
-    expect(within(screen.getByTestId('middle')).getByText('The file route')).toBeInTheDocument()
   })
 
   it('says so for a link that is not an address at all', () => {
@@ -612,27 +616,27 @@ describe('FilePage opens a file by address, not against the listing', () => {
     expect(screen.getByText('That link does not point at anything Peek can open.')).toBeInTheDocument()
   })
 
-  it('sends a retired topic’s channel address to the file its conversation moved to', () => {
-    // A `39000:` resolves — it is a real event — but its conversation is
-    // `kind:9` under `h`, which no `#a` read returns. Drawn as a file it would
-    // be an empty one; FOL-26 sends it where the conversation is.
-    mount(`/topic/39000:${CATH}:${FOLDER}`)
-    expect(screen.getByTestId('url').textContent).toBe(
-      '/project/claude-on-estiva-estiva-steer-f3652427-fcf5-4777-86a2-1dd4ee1f3808',
-    )
-  })
-
-  it('sends any other channel address — a team — to its Folder', () => {
-    const PEEK_TEAM = 'fd03975a-eb00-49d6-a4b7-33ead1854672'
-    mount(`/topic/39000:${CATH}:${PEEK_TEAM}`)
-    expect(screen.getByTestId('url').textContent).toBe(`/app/teams/${PEEK_TEAM}`)
+  /*
+    LIN-8: the stored long links were rewritten to the short one (0 left on production, 27 Nov), and then no app reads
+    the old shape (Miky, 24 Nov). A long link kept in a bookmark is a link that points at nothing, and asks the relay
+    for nothing: its trailing uuid is not a `<slug>-<d>`.
+  */
+  it.each([
+    ['a file', `/topic/${ISSUE_ADDRESS}`],
+    ['a file, percent-encoded', `/topic/${encodeURIComponent(ISSUE_ADDRESS)}`],
+    ['a bare file', `/topic/${TOPIC_ADDRESS}`],
+    ['a channel', `/topic/39000:${CATH}:${FOLDER}`],
+  ])('opens nothing from Peek’s old long link to %s, and reads nothing (LIN-8)', (_what, at) => {
+    mount(at)
+    expect(screen.getByText('That link does not point at anything Peek can open.')).toBeInTheDocument()
+    expect(screen.getByTestId('url').textContent).toBe(at)
+    expect(writes.resolveFileAddress).not.toHaveBeenCalled()
   })
 })
 
 /*
   The short form — FOL-37. `/topic/<slug>-<d>` carries a bare file's `d` and no
-  author; the page recovers the address with one read and then draws the file
-  exactly as it does from the long form, which it turns into the short one.
+  author; the page recovers the address with one read and then draws the file.
 */
 describe('FilePage opens a topic in a Folder at its short form', () => {
   it('opens /topic/<slug>-<d> from the d alone, with one read for the author', async () => {
@@ -644,8 +648,8 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
   })
 
-  it('canonicalises the long form to the short one, with no second read', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+  it('gives a short link with no slug its slug, with no second read', () => {
+    mount(linkOf(TOPIC_ADDRESS))
     expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
     expect(within(screen.getByTestId('middle')).getByText('FOL-15 test topic 2')).toBeInTheDocument()
     // The page had the address; the replace must not throw it away and ask again.
@@ -660,9 +664,10 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
 
   it('leaves a file at the address it was reached at until the manifests are read — never sent to /o/', () => {
     forgetRouteWords()
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    const at = linkOf(ISSUE_ADDRESS)
+    mount(at)
     expect(within(screen.getByTestId('middle')).getByText('The file route')).toBeInTheDocument()
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(at)
   })
 
   it('at /o/<naddr>, draws a file whose kind has no word there, and stays — not sent to /o/ again', async () => {
@@ -697,7 +702,7 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
 
   it('moves to the short link once the manifests have been read', async () => {
     forgetRouteWords()
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     act(() => rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST])))
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_LINK))
   })
@@ -743,7 +748,7 @@ describe('FilePage serves every declared shape', () => {
   })
 
   it('canonicalises the issue’s long form to /issue/<slug>-<d>, with no second read', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT)
     expect(writes.resolveFileAddress).not.toHaveBeenCalled()
   })
@@ -760,12 +765,12 @@ describe('FilePage serves every declared shape', () => {
     // A Ship issue's header has no menu (FOL-33), so the link copied from its
     // page is the address bar — the ticket's done-when — and it must carry the
     // open thread the way the bare file's does.
-    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=x`)
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 
   it('opened by link and listed in no initiative of yours, it is shown under Teams, which comes back to it with its open thread', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=x`)
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
     expect(screen.getByTestId('topics-path').textContent).toBe('')
@@ -775,7 +780,7 @@ describe('FilePage serves every declared shape', () => {
   // so an initiative of yours listing it no longer sends it under Initiatives.
   it('opened by link and listed in an initiative of yours, a Ship issue is still shown under Teams, where it lives', () => {
     topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
-    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=x`)
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
     expect(screen.getByTestId('topics-path').textContent).toBe('')
@@ -783,7 +788,7 @@ describe('FilePage serves every declared shape', () => {
 
   it('opened by link, an initiative (a topic no team marks as its space) is shown under Initiatives, which comes back to it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(screen.getByTestId('file-column').textContent).toBe('topics')
     expect(within(screen.getByTestId('left')).getByText('Initiatives')).toBeInTheDocument()
     expect(screen.getByTestId('topics-path').textContent).toBe(TOPIC_SHORT)
@@ -792,7 +797,7 @@ describe('FilePage serves every declared shape', () => {
 
   it('opened by link, a team’s space (a topic in the team) is shown under Teams', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(TOPIC_SHORT)
   })
@@ -800,7 +805,7 @@ describe('FilePage serves every declared shape', () => {
   it('clicked in Folders, it is shown under Folders though a topic of yours lists it (TOP-4)', () => {
     topicsColumn.mine = [{ topic: topic as { address: string }, files: [issue as { address: string }] }]
     rememberOpenedFrom(ISSUE_ADDRESS, 'folders')
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     expect(screen.getByTestId('folders-path').textContent).toBe(ISSUE_SHORT)
   })
@@ -808,7 +813,7 @@ describe('FilePage serves every declared shape', () => {
 
 describe('FilePage draws every app’s file in the same panes', () => {
   it('a Ship issue and a Peek bare file get identical panes', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const ship = shape()
     // Both have comments and neither may be commented on; the numbers differ
     // by fixture, the shape must not.
@@ -823,7 +828,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
   })
 
   it('…and the Peek file, from the same address grammar', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(shape()).toEqual({
       teamsLabel: false,
       teamDrawn: true,
@@ -835,7 +840,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
   })
 
   it("clicking a team's topic row leads to that file's address", () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     fireEvent.click(within(topicRow).getByText('FOL-15 test topic 2'))
@@ -844,7 +849,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
   })
 
   it('draws the column as rows, not cards — no widget in the column', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const left = screen.getByTestId('left')
     // A card would carry the app's name; a row is its title alone, on the Topics list's row.
     expect(left.querySelector('[data-card]')).toBeNull()
@@ -866,7 +871,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
 describe('an initiative’s page names its team', () => {
   it('a chip right after its name, with the team’s icon, opening the team’s page', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     const chip = within(screen.getByTestId('middle')).getByRole('link', { name: 'Folders' })
     expect(chip.getAttribute('href')).toBe(`/app/teams/${FOLDER}`)
     expect(chip.querySelector('.tabler-icon-users')).not.toBeNull()
@@ -875,7 +880,7 @@ describe('an initiative’s page names its team', () => {
   })
 
   it('a team’s topic (#) has none: it sits under its team', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(within(screen.getByTestId('middle')).queryByRole('link', { name: 'Folders' })).toBeNull()
   })
 })
@@ -883,7 +888,7 @@ describe('an initiative’s page names its team', () => {
 describe('a file opened by its address lands where it lives (DK-03, Q-54)', () => {
   it('a project shows under Teams, its row current in its team’s Files fold, which is open', async () => {
     relay.files = [project, topic]
-    mount(`/topic/${PROJECT_ADDRESS}`)
+    mount(linkOf(PROJECT_ADDRESS))
     expect(screen.getByTestId('file-column').textContent).toBe('folders')
     const left = screen.getByTestId('left')
     const fold = within(left).getByRole('button', { name: 'Files' })
@@ -900,7 +905,7 @@ describe('a file opened by its address lands where it lives (DK-03, Q-54)', () =
 describe('another app’s file: its trail, its team’s chip, then Open (F-04 to F-06)', () => {
   // No team in the trail: the team is the chip after the name (Katerina, 17 November: "make sure the breadcrumbs now dont show the team").
   it('its title is a trail — its project, then its name — and its team is a chip after it, opening in place', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
     expect(trail.queryByRole('link', { name: 'Folders' })).toBeNull()
     expect(trail.getByRole('link', { name: 'Folders: navigation for the whole suite' })).toBeInTheDocument()
@@ -912,7 +917,7 @@ describe('another app’s file: its trail, its team’s chip, then Open (F-04 to
   })
 
   it('a topic keeps its own title, with no trail', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull()
   })
 
@@ -920,7 +925,7 @@ describe('another app’s file: its trail, its team’s chip, then Open (F-04 to
   it('one chip after its name, its team, then Open: no chip for an initiative, even one that lists it', () => {
     objects.byAddress[ISSUE_ADDRESS] = { ...issue, openUrl: 'https://ship.estiva.app/issue/the-file-route' } as unknown as ForeignObject
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: false }] })]
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const middle = within(screen.getByTestId('middle'))
     const teamChip = middle.getByRole('link', { name: 'Folders' })
     const open = middle.getByRole('link', { name: 'Open in Estiva Ship' })
@@ -955,7 +960,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
   it('a click keeps the team drawn and selects the clicked row before its file has resolved', () => {
     objects.pending.add(OTHER_ADDRESS)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
 
     expect(screen.getByTestId('url').textContent).toBe(`/topic/another-topic-${OTHER_D}`)
@@ -986,7 +991,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     listing.files = [commentableOther]
     objects.byAddress[OTHER_ADDRESS] = commentableOther
     objects.pending.add(OTHER_ADDRESS)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     peekView.args.length = 0
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
 
@@ -1008,7 +1013,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
   it('an archived listed topic shows the placeholder alone until its file resolves', () => {
     listing.files = [{ ...commentableOther, archived: { by: CATH, at: 1_790_000_000 } } as unknown as ForeignObject]
     objects.pending.add(OTHER_ADDRESS)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
 
     const middle = screen.getByTestId('middle')
@@ -1018,7 +1023,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
 
   it('a click that resolves to nothing lets the last file go, as a dead link always has', () => {
     delete objects.byAddress[OTHER_ADDRESS]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(within(screen.getByTestId('middle')).getByText('First on the topic')).toBeInTheDocument()
     fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
     expect(within(screen.getByTestId('middle')).queryByText('First on the topic')).toBeNull()
@@ -1045,12 +1050,12 @@ describe('a thread named on arrival is scrolled into view where it was said (U-0
 
   it('arriving at a thread scrolls its message into view', async () => {
     const rootId = issue.comments[0].id
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     await waitFor(() => expect(scrolledItems()).toContain(rootId))
   })
 
   it('a thread opened on the page itself is not scrolled to', async () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(threadControls(screen.getByTestId('middle'))[0])
     await new Promise((resolve) => setTimeout(resolve, 120))
     expect(scrolledItems()).toEqual([])
@@ -1061,7 +1066,7 @@ describe('FilePage opens a thread beside the conversation', () => {
   const rootId = issue.comments[0].id
 
   it('opens the thread pane for a comment, and puts it in the URL', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     const middle = screen.getByTestId('middle')
     fireEvent.click(threadControls(middle)[0])
@@ -1074,7 +1079,7 @@ describe('FilePage opens a thread beside the conversation', () => {
   })
 
   it('opens from a pasted ?thread= link', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).getByText('First on the issue')).toBeInTheDocument()
   })
 
@@ -1087,7 +1092,7 @@ describe('FilePage opens a thread beside the conversation', () => {
         ],
       },
     }
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).getByText('A reply from Ship')).toBeInTheDocument()
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByRole('button', { name: /^1 reply,/ })).toBeInTheDocument()
@@ -1096,13 +1101,13 @@ describe('FilePage opens a thread beside the conversation', () => {
   })
 
   it('offers no composer at all: the manifest declared no comment', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).queryByRole('textbox')).toBeNull()
     expect(within(screen.getByTestId('middle')).queryByRole('textbox')).toBeNull()
   })
 
   it('closing the thread drops the parameter', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     fireEvent.click(screen.getByRole('button', { name: 'Close thread' }))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}`)
@@ -1120,7 +1125,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
 
   it('a Ship issue: the container is the file’s address and its Folder', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const middle = screen.getByTestId('middle')
     const view = within(middle).getByTestId('peek-view')
     expect(view.getAttribute('data-address')).toBe(ISSUE_ADDRESS)
@@ -1136,7 +1141,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
 
   it('…and a Peek bare file, identically', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     const view = within(screen.getByTestId('middle')).getByTestId('peek-view')
     expect(view.getAttribute('data-address')).toBe(TOPIC_ADDRESS)
     expect(view.getAttribute('data-h')).toBe(FOLDER)
@@ -1150,7 +1155,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   it('…and a Leaf document, identically', () => {
     const DOCUMENT_ADDRESS = `30842:${ISSUE_ADDRESS.split(':')[1]}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`
     objects.byAddress[DOCUMENT_ADDRESS] = commentable({ ...issue, kind: 30842, address: DOCUMENT_ADDRESS, noun: 'document', appName: 'Leaf' } as ForeignObject)
-    mount(`/topic/${DOCUMENT_ADDRESS}`)
+    mount(linkOf(DOCUMENT_ADDRESS))
     const middle = screen.getByTestId('middle')
     const view = within(middle).getByTestId('peek-view')
     expect(view.getAttribute('data-address')).toBe(DOCUMENT_ADDRESS)
@@ -1161,7 +1166,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   it('the open thread is still the URL’s, and closing it drops the parameter', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
     const rootId = issue.comments[0].id
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     expect(screen.getByTestId('peek-thread').textContent).toBe(rootId)
     const last = peekView.args.at(-1)! as { onOpenThread: (id: string | null) => void }
     act(() => last.onOpenThread(null))
@@ -1170,7 +1175,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   })
 
   it('a signed-out or unresolved file hands the view no container', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(peekView.args.every((a) => a.container === null)).toBe(true)
     expect(screen.queryByTestId('peek-view')).toBeNull()
   })
@@ -1185,7 +1190,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
   */
   it('a Ship project: the Folder the resolve found, not the record’s absent h, is the container', () => {
     objects.byAddress[PROJECT_ADDRESS] = commentable({ ...project, folder: '2611db6d-57f0-4f39-a454-a198298b526f' })
-    mount(`/topic/${PROJECT_ADDRESS}`)
+    mount(linkOf(PROJECT_ADDRESS))
     const view = within(screen.getByTestId('middle')).getByTestId('peek-view')
     expect(view.getAttribute('data-address')).toBe(PROJECT_ADDRESS)
     expect(view.getAttribute('data-h')).toBe('2611db6d-57f0-4f39-a454-a198298b526f')
@@ -1193,7 +1198,7 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
 
   it('a commentable file with no Folder at all keeps the read-only conversation — never a spinner', () => {
     objects.byAddress[PROJECT_ADDRESS] = commentable({ ...project, folder: undefined, comments: issue.comments })
-    mount(`/topic/${PROJECT_ADDRESS}`)
+    mount(linkOf(PROJECT_ADDRESS))
     const middle = screen.getByTestId('middle')
     expect(peekView.args.every((a) => a.container === null)).toBe(true)
     expect(within(middle).queryByTestId('peek-view')).toBeNull()
@@ -1236,19 +1241,19 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
 
   it('asks by the file’s address, and only for a file the viewer may comment on', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(mentions.asked).toContain(TOPIC_ADDRESS)
   })
 
   it('…and not for a read-only file, whose conversation is not Peek’s view', () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(mentions.asked.every((a) => !a)).toBe(true)
   })
 
   it('a mention is the third column: labelled, naming the file it was said on, and leading to the message itself (PEE-48)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = ownColumn()
     expect(within(column).getByText('Activity')).toBeInTheDocument()
@@ -1269,7 +1274,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
   it('a mention from another day names its day beside its time', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     // 1_700_000_000 is 14 November 2023 (the 15th east of UTC+2): a past year names itself.
@@ -1312,7 +1317,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ edit: 'Same shape, one level down — edited.', reactions: ['👍'], replies: 2 })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     expect(within(row).getByText('Same shape, one level down — edited.')).toBeInTheDocument()
@@ -1326,7 +1331,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ kept: false })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = ownColumn()
     expect(column.querySelector('[data-relation="mention"]')).toBeNull()
@@ -1337,7 +1342,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ reactions: ['👍'] })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const row = ownColumn().querySelector('[data-relation="mention"]') as HTMLElement
     await userEvent.hover(within(row).getByText(mention.body))
@@ -1353,21 +1358,21 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
 
   it('a file nobody has named keeps its two columns', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(noColumn()).toBe(true)
   })
 
   it('…and so does a file somebody has named: closed until asked for (Katerina, 13 October)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(noColumn()).toBe(true)
     expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
   })
 
   it('the sidebar button shows its Overview, with Activity’s empty line when nobody has named it', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = ownColumn()
     expect(within(column).getByText('Overview')).toBeInTheDocument()
@@ -1379,18 +1384,18 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
   it('opening it holds for the visit: back on the file, it is closed again', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    const first = mount(`/topic/${TOPIC_ADDRESS}`)
+    const first = mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(within(ownColumn()).getByText('Activity')).toBeInTheDocument()
     first.unmount()
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(noColumn()).toBe(true)
   })
 
   it('an open thread wins the column', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    mount(`/topic/${TOPIC_ADDRESS}?thread=${'r'.repeat(64)}`)
+    mount(`${linkOf(TOPIC_ADDRESS)}?thread=${'r'.repeat(64)}`)
     const column = ownColumn()
     expect(within(column).getByTestId('peek-thread')).toBeInTheDocument()
     expect(within(column).queryByText('Activity')).toBeNull()
@@ -1418,13 +1423,13 @@ describe("FilePage puts another app's widget in the third column", () => {
 
   it('a Ship issue: closed until asked for, like every file (Katerina, 13 October)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
   })
 
   it('a Ship issue: the card, its title the link into Ship, under the app’s name', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     expect(widget()).not.toBeNull()
@@ -1440,7 +1445,7 @@ describe("FilePage puts another app's widget in the third column", () => {
 
   it('…and for a file the viewer may comment on, whose column is otherwise Peek’s', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(shipIssue)
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
     expect(ownColumn().contains(widget())).toBe(true)
@@ -1449,13 +1454,13 @@ describe("FilePage puts another app's widget in the third column", () => {
 
   it('a bare file gets nothing: it is nobody’s, and its title is already the header', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(noColumn()).toBe(true)
   })
 
   it('opening a thread replaces the widget, and closing it brings the widget back', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const middle = screen.getByTestId('middle')
     fireEvent.click(within(middle).getByRole('button', { name: 'Show side panel' }))
     fireEvent.click(threadControls(middle)[0])
@@ -1472,7 +1477,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     mentions.byAddress[ISSUE_ADDRESS] = [
       { id: 'm'.repeat(64), author: CATH, body: 'Names the issue.', createdAt: 1_700_000_000, kind: 1111, folder: FOLDER, saidIn: TOPIC_ADDRESS, threadId: 'r'.repeat(64), references: [TOPIC_ADDRESS, ISSUE_ADDRESS], files: [] },
     ]
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = ownColumn()
     const card = widget()!
@@ -1482,7 +1487,7 @@ describe("FilePage puts another app's widget in the third column", () => {
 
   it('the widget is handed the file the page resolved: no second read for it', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
     expect(writes.resolveObject).not.toHaveBeenCalled()
@@ -1503,7 +1508,7 @@ describe('FilePage lands on a comment left for it (FOL-36)', () => {
 
   it('opens the thread from the URL, then scrolls to the reply once the pane has drawn, and consumes the one-shot', async () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
     expect(screen.getByTestId('peek-thread').textContent).toBe(rootId)
     await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(replyId))
     expect(anchor.scrollTo).toHaveBeenCalledTimes(1)
@@ -1512,13 +1517,13 @@ describe('FilePage lands on a comment left for it (FOL-36)', () => {
 
   it('a root comment is the thread itself: the scroll is to the root', async () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId } })
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId } })
     await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(rootId))
   })
 
   it('opens the thread itself when the URL did not carry it — the one-shot is enough on its own', async () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
-    mount(`/topic/${ISSUE_ADDRESS}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
+    mount(linkOf(ISSUE_ADDRESS), { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}?thread=${rootId}`))
     await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(replyId))
   })
@@ -1526,7 +1531,7 @@ describe('FilePage lands on a comment left for it (FOL-36)', () => {
   it('leaves a one-shot for a comment that is not one of this file’s, so the page it belongs to still answers it', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
     const elsewhere = { folder: OTHER_FOLDER, eventId: 'a'.repeat(64) }
-    mount(`/topic/${ISSUE_ADDRESS}`, { pending: elsewhere })
+    mount(linkOf(ISSUE_ADDRESS), { pending: elsewhere })
     expect(screen.getByTestId('pending').textContent).toBe(JSON.stringify(elsewhere))
     expect(anchor.scrollTo).not.toHaveBeenCalled()
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_LINK}`)
@@ -1542,18 +1547,18 @@ describe('FilePage puts the file in Recent, with its title', () => {
   const recents = () => JSON.parse(window.localStorage.getItem('estiva-peek:recents') ?? '[]') as unknown[]
 
   it('a bare file, once it has resolved', async () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     await waitFor(() => expect(recents()).toEqual([{ kind: 'file', id: TOPIC_ADDRESS, title: 'FOL-15 test topic 2' }]))
   })
 
   it('a Ship issue too — anything this page opens', async () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     await waitFor(() => expect(recents()).toEqual([{ kind: 'file', id: ISSUE_ADDRESS, title: 'The file route' }]))
   })
 
   it('nothing for an address that resolved to nothing', async () => {
     objects.byAddress = {}
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     await act(async () => {})
     expect(recents()).toEqual([])
   })
@@ -1574,7 +1579,7 @@ describe('FilePage marks the file read, and only the file', () => {
   })
 
   it("advances the file's own address after the dwell, and never the Folder's channel", () => {
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(marks.file).not.toHaveBeenCalled()
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
@@ -1597,7 +1602,7 @@ describe('FilePage marks the file read, and only the file', () => {
       roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
       replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
     }
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    mount(`${linkOf(ISSUE_ADDRESS)}?thread=${rootId}`)
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
@@ -1614,7 +1619,7 @@ describe('FilePage marks the file read, and only the file', () => {
       roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
       replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
     }
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
@@ -1626,7 +1631,7 @@ describe('FilePage marks the file read, and only the file', () => {
     // A file the person never saw was never read, and marking it would clear
     // a dot for something that is still unread.
     objects.byAddress = {}
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS * 2)
     })
@@ -1634,7 +1639,7 @@ describe('FilePage marks the file read, and only the file', () => {
   })
 
   it('marks nothing when the page is left before the dwell', () => {
-    const { unmount } = mount(`/topic/${ISSUE_ADDRESS}`)
+    const { unmount } = mount(linkOf(ISSUE_ADDRESS))
     unmount()
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS * 2)
@@ -1680,7 +1685,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
   it('the header of a topic has what is done to the topic itself — details, rename, move, copy link, delete — and nothing done from a list (TOPI-7)', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     // Open work is the button beside the ⋮, Make it a space is on the topic's row, Add is in Who follows (TOPI-7);
     // the default team here leads it and has the person in it, so Make it a space would have been offered.
     expect(openHeaderMenu()).toEqual(['Details', 'Rename', 'Move…', 'Copy link', 'Delete'])
@@ -1697,7 +1702,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' },
       actions: [...(bareFile.actions ?? []), { id: 'archive', label: 'Archive', control: 'toggle', effect: 'writes', field: 'archived' }],
     }
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByText(/^Archived by/)).toBeInTheDocument()
     expect(within(middle).queryByRole('button', { name: 'Join' })).toBeNull()
@@ -1708,7 +1713,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   // Above the messages, as Ship's issue page has it; the box's line alone under them (Miky, 25 October, PEEKM-3).
   it('an archived file shows its card above the messages and the box line under them', () => {
     objects.byAddress[TOPIC_ADDRESS] = { ...bareFile, archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' } }
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     const middle = screen.getByTestId('middle')
     const card = within(middle).getByText(/^Archived by/)
     const messages = within(middle).getByTestId('peek-view')
@@ -1721,7 +1726,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
@@ -1731,7 +1736,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
     await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
@@ -1739,7 +1744,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
   it('the header of a Ship issue has nothing from the manifest — Move in its ⋮, and Open work as its button (F-08)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const middle = screen.getByTestId('middle')
     expect(within(middle).queryByRole('link', { name: 'Open folder' })).toBeNull()
     // Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.
@@ -1756,7 +1761,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     } as unknown as ForeignObject
     objects.byAddress[TOPIC_ADDRESS] = archivable
     topicsColumn.others = [archivable]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     hover(topicRow)
@@ -1773,7 +1778,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
   it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
     const field = await screen.findByRole('textbox', { name: 'Name' })
@@ -1793,7 +1798,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('a refused rename stays in the dialog, with the relay’s reason under the field', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     writes.renameFile.mockResolvedValueOnce({ ok: false, reason: 'relay_membership_required' })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
     fireEvent.change(await screen.findByRole('textbox', { name: 'Name' }), { target: { value: 'Nope' } })
@@ -1816,7 +1821,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     it('the page draws no summary; Details does, and saves a change through the manifest’s summarize action', async () => {
       objects.byAddress[TOPIC_ADDRESS] = summarized
       writes.applyAction.mockClear()
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       expect(screen.queryByText(SUMMARY)).toBeNull()
       openHeaderMenu()
       fireEvent.click(screen.getByRole('menuitem', { name: 'Details' }))
@@ -1833,7 +1838,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
     it('a file whose manifest declares no summary change offers no Edit in Details', async () => {
       objects.byAddress[TOPIC_ADDRESS] = { ...summarized, actions: bareFile.actions } as unknown as ForeignObject
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       openHeaderMenu()
       fireEvent.click(screen.getByRole('menuitem', { name: 'Details' }))
       expect(await screen.findByText(SUMMARY)).toBeInTheDocument()
@@ -1849,7 +1854,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
         { id: 'delete-issue', label: 'Delete', control: 'confirm', effect: 'destructive', listed: true },
       ],
     }
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const items = openHeaderMenu()
     expect(items).toEqual(expect.arrayContaining(['Details', 'Delete']))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
@@ -1862,7 +1867,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
   it('Delete asks first, reads the Folder for hasState, deletes, and lands on the team', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     // Nothing is written by the menu item itself (D56).
@@ -1884,7 +1889,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('a Folder without state gets the one write, and the page still lands on the team', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     writes.resolveFolderContents.mockResolvedValueOnce({ id: FOLDER, name: 'Folders', hasState: false, source: 'containment', files: [] })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
@@ -1896,7 +1901,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('a non-author’s delete says the relay refused it, in the relay’s words, and stays', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     writes.deleteFile.mockResolvedValueOnce({ ok: false, reason: 'invalid: must be event author' })
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
@@ -1909,7 +1914,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('an unreadable Folder means no delete at all — hasState is never guessed', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     writes.resolveFolderContents.mockRejectedValueOnce(new Error('relay_membership_required'))
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
@@ -1925,11 +1930,11 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 */
 describe('FilePage offers Join and Leave in Members, not on the header (§11.8, F-07)', () => {
   it('no Join or Leave button on the header, for somebody not in it or somebody in it', () => {
-    const first = mount(`/topic/${ISSUE_ADDRESS}`)
+    const first = mount(linkOf(ISSUE_ADDRESS))
     for (const name of ['Join', 'Leave', 'Mute']) expect(screen.queryByRole('button', { name })).toBeNull()
     first.unmount()
     follows.keys = new Set([ISSUE_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
@@ -1944,7 +1949,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
     roster.members = new Map([[ME, { member: true }]])
     roster.directory = { [ME]: { displayName: 'Miky' }, [CATH]: { displayName: 'Cath' }, [SHIP]: { displayName: 'Ship bot' } }
     follows.keys = new Set([ISSUE_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '1 member' }))
     const dialog = screen.getByRole('dialog')
@@ -1957,7 +1962,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
 
   it('Join from the dialog for somebody not in, and the roster is read again once the relay holds it', async () => {
     roster.members = new Map([[CATH, { member: true }]])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(screen.getByRole('button', { name: '1 member' }))
     const dialog = screen.getByRole('dialog')
     // Only a member brings others in, as in Ship.
@@ -1969,7 +1974,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
 
   it('when the roster could not be read: no pill, and no Join on the header in its place (F-07)', () => {
     roster.members = undefined
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     expect(screen.queryByRole('button', { name: /members?$/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull()
   })
@@ -1979,7 +1984,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
     rememberRouteWords(routeWordsOf([PEEK_MANIFEST, SHIP_MANIFEST]))
     objects.byAddress[PROJECT_ADDRESS] = { ...project, children: [issue] } as ForeignObject
     roster.members = new Map([[ME, { member: true }]])
-    mount(`/topic/${PROJECT_ADDRESS}`)
+    mount(linkOf(PROJECT_ADDRESS))
     fireEvent.click(screen.getByRole('button', { name: '1 member' }))
     expect(within(screen.getByRole('dialog')).getByText('Your issues here still notify you.')).toBeInTheDocument()
     forgetRouteWords()
@@ -1988,7 +1993,7 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
   it('an archived file lists its members and offers no Join, Leave or Add', () => {
     objects.byAddress[ISSUE_ADDRESS] = { ...issue, archived: { by: CATH, at: 1_790_000_000 } } as ForeignObject
     roster.members = new Map([[ME, { member: true }]])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(screen.getByRole('button', { name: '1 member' }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('You')).toBeInTheDocument()
@@ -1998,19 +2003,19 @@ describe('FilePage offers Join and Leave in Members, not on the header (§11.8, 
 
   it('has no mute control: muting is not built into the screens (Miky, 2026-10-01)', () => {
     follows.keys = new Set([ISSUE_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     for (const name of ['Mute', 'Unmute']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
   it('offers nothing while the relay has not said what the person is a member of', () => {
     follows.state = 'unknown'
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
   it('a topic’s row offers no Join or Leave: it is followed with the switch on its header (TEA-6) — and no mark when idle', () => {
     follows.keys = new Set([TOPIC_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     expect(row.parentElement!.querySelector('[data-member]')).toBeNull()
     fireEvent.mouseEnter(row)
@@ -2054,7 +2059,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
   })
 
   it('draws no trail over the file — the tree beside shows where it sits (5 October)', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(within(screen.getByTestId('middle')).queryByRole('navigation')).toBeNull()
   })
 
@@ -2066,7 +2071,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
       source: 'state',
       files: [project, brief, notes, deep, elsewhere],
     } as never)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
@@ -2101,7 +2106,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
         : { id, name: 'Steer', hasState: true, source: 'state', files: [] },
     )
     writes.moveFile.mockClear()
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await readTeamList())
@@ -2150,7 +2155,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
         : ({ id, name: 'Steer', hasState: true, source: 'state', files: [steerProject] } as never),
     )
     writes.moveFile.mockClear()
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await readTeamList())
@@ -2186,7 +2191,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     writes.resolveFolderContents.mockImplementation(
       async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [project, otherProject, moving] }) as never,
     )
-    mount(`/topic/${ISSUE_ADDRESS}`)
+    mount(linkOf(ISSUE_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     // The empty place takes an issue out of its project rather than to a top, and is said so; it is never chosen for the person.
@@ -2203,7 +2208,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
 
   it('offers New topic inside nowhere: not on a topic’s ⋮ or its row, not on a Ship project’s ⋮ (TOPI-7)', () => {
     const offered = () => screen.queryAllByRole('menuitem').map((item) => item.textContent)
-    const topicPage = mount(`/topic/${TOPIC_ADDRESS}`)
+    const topicPage = mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     // The ⋮ opened, with Move in it: what is missing is New topic inside, not the menu.
     expect(offered()).toContain('Move…')
@@ -2216,7 +2221,7 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     expect(offered()).not.toContain('New topic inside')
     topicPage.unmount()
 
-    mount(`/topic/${PROJECT_ADDRESS}`)
+    mount(linkOf(PROJECT_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     expect(offered().length).toBeGreaterThan(0)
     expect(offered()).not.toContain('New topic inside')
@@ -2254,7 +2259,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
   })
 
   const openMove = async (to: string) => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await readTeamList())
@@ -2297,7 +2302,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
 
   it('opens at once while the teams are read, saying so, with no team to pick and nothing to move yet', async () => {
     teamsHeld.teams = null as never
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     const dialog = await screen.findByRole('dialog')
@@ -2310,7 +2315,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     holdTeams()
     let land!: (folders: unknown) => void
     writes.listFolders.mockReturnValueOnce(new Promise((resolve) => (land = resolve)) as never)
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     const dialog = await screen.findByRole('dialog')
@@ -2322,7 +2327,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
 
   it('opened before the teams are read, the box is still ticked once they are, and the move keeps it a space', async () => {
     teamsHeld.teams = null as never
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await screen.findByText('Reading…')
@@ -2339,7 +2344,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
     holdTeams({ inSource: false })
     // Followed, so its section — and the space's row — is drawn for them.
     teamsHeld.teams[0] = { ...teamsHeld.teams[0], isFollowing: true }
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     // Its manifest offers only Move, so with Move gone its header has no ⋮ at all (TOPI-7: Open work is the button).
     expect(within(screen.getByTestId('middle')).queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Add to Open work' })).toBeInTheDocument()
@@ -2352,7 +2357,7 @@ describe('Moving one of a team’s spaces asks to keep it a space (TEA-5, SPEC �
 
   it('…and the same space offers Move to a member of its team', () => {
     holdTeams()
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     expect(screen.getByRole('menuitem', { name: 'Move…' })).toBeInTheDocument()
   })
@@ -2378,7 +2383,7 @@ describe('A topic is made an initiative, or an initiative a topic, from its row,
     // An initiative of yours: its row is in the Initiatives column beside its page.
     topicsColumn.mine = [topic as never]
     topicsColumn.others = []
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(headerMenu()).not.toContain('Make it a topic')
     rowMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Make it a topic' }))
@@ -2387,7 +2392,7 @@ describe('A topic is made an initiative, or an initiative a topic, from its row,
 
   it('a member makes one of the team’s topics an initiative from its row; its page’s ⋮ does not offer it', () => {
     teamsHeld.teams = [team({ id: FOLDER, name: 'Folders', isMember: true, listed: [{ address: TOPIC_ADDRESS, space: true }] })]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(headerMenu()).not.toContain('Make it an initiative')
     rowMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Make it an initiative' }))
@@ -2397,7 +2402,7 @@ describe('A topic is made an initiative, or an initiative a topic, from its row,
   it('somebody not in the team is offered neither on its row', () => {
     // Followed, so its section — and the space's row — is drawn for them.
     teamsHeld.teams = [{ ...team({ id: FOLDER, name: 'Folders', isMember: false, listed: [{ address: TOPIC_ADDRESS, space: true }] }), isFollowing: true }]
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     rowMenu()
     expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(0)
     expect(screen.queryByRole('menuitem', { name: 'Make it an initiative' })).toBeNull()
@@ -2415,7 +2420,7 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
   const middle = () => screen.getByTestId('middle')
 
   it('the button adds the topic to Open work, reads pressed, and a toast says so with Undo', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(within(middle()).queryByRole('button', { name: 'Add to Open work' })).not.toBeNull()
     fireEvent.click(within(middle()).getByRole('button', { name: 'Add to Open work' }))
     expect([...openWork.files]).toEqual([TOPIC_ADDRESS])
@@ -2429,7 +2434,7 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
 
   it('Ctrl+O takes it out of Open work and Cmd+O puts it back, each said in a toast, and the browser’s Open file never runs', () => {
     openWork.files = new Set([TOPIC_ADDRESS])
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(press({ key: 'o', ctrlKey: true }).prevented).toBe(true)
     expect([...openWork.files]).toEqual([])
     expect(within(middle()).getByRole('button', { name: 'Add to Open work' })).toHaveAttribute('aria-pressed', 'false')
@@ -2467,13 +2472,13 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
 
     // The open topic's row names it: "the team's row of a topic offers Open work…" above.
     it('another topic’s row does not name Ctrl/Cmd+O, since the key acts on the open topic’s page alone', () => {
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       const otherItem = rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!
       expect(otherItem.textContent).toBe('Add to Open work')
     })
 
     it('Add to Open work says so in a toast with Undo, as the page’s button does', () => {
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent?.startsWith('Add to Open work'))!)
       expect([...openWork.files]).toEqual([OTHER_ADDRESS])
       expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Added to Open work', type: 'success', actionLabel: 'Undo' })])
@@ -2484,7 +2489,7 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
     it('Copy link puts the topic’s link on the clipboard and says “Link copied”', async () => {
       const writeText = vi.fn(async () => {})
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-      mount(`/topic/${TOPIC_ADDRESS}`)
+      mount(linkOf(TOPIC_ADDRESS))
       fireEvent.click(rowMenu(OTHER_ADDRESS).find((item) => item.textContent === 'Copy link')!)
       await waitFor(() => expect(toasts.shown).toEqual([expect.objectContaining({ label: 'Link copied', type: 'success' })]))
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/topic/another-topic-${OTHER_D}`)
@@ -2493,7 +2498,7 @@ describe('A topic’s Open work is a button on its page, and Ctrl/Cmd+O anywhere
 
   it('an archived topic has no button, and Ctrl+O is left to the browser and changes nothing', () => {
     objects.byAddress[TOPIC_ADDRESS] = { ...topic, archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' } } as ForeignObject
-    mount(`/topic/${TOPIC_ADDRESS}`)
+    mount(linkOf(TOPIC_ADDRESS))
     expect(within(middle()).getByText(/^Archived by/)).toBeInTheDocument()
     expect(within(middle()).queryByRole('button', { name: /Open work/ })).toBeNull()
     expect(press({ key: 'o', ctrlKey: true }).prevented).toBe(false)
