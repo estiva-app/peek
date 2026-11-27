@@ -330,7 +330,11 @@ describe('after moving to another conversation', () => {
     insertTextIntoComposer.mockImplementation((label) => label === 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Go to Launch plan' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/topic/launch')
-    await openBox(user)
+    // Somewhere else, the box opens fresh and the ask waits under Recent, "in" where it was asked (KIN-12).
+    expect((await openBox(user)).value).toBe('')
+    const kept = await screen.findByRole('option', { name: new RegExp(SENTENCE) })
+    expect(kept).toHaveTextContent('in Build failures')
+    await user.click(kept)
     await user.click(await screen.findByText('Put the answer in the composer'))
     expect(insertTextIntoActiveComposer).not.toHaveBeenCalled()
     expect(insertTextIntoComposer).not.toHaveBeenCalled()
