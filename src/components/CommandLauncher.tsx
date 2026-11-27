@@ -8,7 +8,7 @@ import { PEEK_FORM } from './launcherForm'
 import { FilePreviewCard } from './ui/MessageLinks'
 import { formatDateLabel, reloadFoldersOnScreen, useFileSearch, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople } from '@/api'
 import { snippetAround } from '@/lib/launcherSearch'
-import { addressFromRef, filePath, fileRouteFromPath, fileThreadPath, refNamesFile } from '@/lib/objectUrl'
+import { filePath, fileRouteFromPath, fileThreadPath, refNamesFile } from '@/lib/objectUrl'
 import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { referenceOfValue } from '@/lib/embedValue'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -171,10 +171,12 @@ export function placeOf(pathname: string, search: string, deskDmId: string | und
   const onDesk = pathname === '/app/desk'
   // A DM picked on Desk is what Desk shows, even with an `?open=` left in the address (Back after picking it).
   if (onDesk && deskDmId) return `dm:${deskDmId}`
-  const ref = (onDesk ? new URLSearchParams(search).get('open') : null) ?? fileRouteFromPath(pathname)?.ref
+  // Desk's `?open=` holds the file's whole address, Desk's own state rather than a link; a page's path holds its ref.
+  const open = onDesk ? new URLSearchParams(search).get('open') : null
+  const ref = open ?? fileRouteFromPath(pathname)?.ref
   if (ref) {
-    const address = addressFromRef(ref)
-    const d = address ? address.split(':').slice(2).join(':') : identifierFromRef(ref)
+    const parts = open?.split(':') ?? []
+    const d = parts.length > 2 ? parts.slice(2).join(':') : identifierFromRef(ref)
     // A team's chat beside Desk's lists (`39000:…`) has no `d`: it is still its own place.
     return d ? `file:${d.toLowerCase()}` : `open:${ref}`
   }

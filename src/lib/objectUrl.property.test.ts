@@ -15,7 +15,6 @@ import * as shared from '@estiva-app/interop'
 import { isFileId } from '@estiva-app/protocol'
 import { PRODUCTION_MANIFESTS } from '@/test/manifests'
 import {
-  addressFromRef,
   filePath,
   fileRouteFromPath,
   forgetRouteWords,
@@ -69,7 +68,7 @@ describe('a link Peek copies for a file', () => {
         // `FilePage` gets the ref from the router, which decodes the segment (react-router's `decodePath`).
         const pageRef = decodeURIComponent(path!.split('/')[2])
         // Never the long link: no address in it.
-        expect(addressFromRef(pageRef), path!).toBeNull()
+        expect(pageRef, path!).not.toContain(':')
         expect(shared.identifierFromRef(pageRef), path!).toBe(d)
         // The launcher and the rail read the pathname as the address bar has it, escapes and all.
         const route = fileRouteFromPath(path!)

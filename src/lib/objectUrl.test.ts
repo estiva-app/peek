@@ -3,7 +3,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { identifierFromRef, matchObjectUrl, urlPatternsOf } from '@estiva-app/interop'
 import {
-  addressFromRef,
   filePath,
   fileRouteFromPath,
   routeWordsOf,
@@ -28,42 +27,6 @@ const ISSUE = `30851:${SHIP}:d68a8c78-5ec7-4652-b236-89ab57ac5b1e`
 /** A bare file — a topic in a Folder — by the person who started it. */
 const FILE_D = 'd68a8c78-5ec7-4652-b236-89ab57ac5b1e'
 const FILE = `30840:${SHIP}:${FILE_D}`
-
-/*
-  One route, two grammars — FOL-19, FOL-37. `/topic/<slug>-<d>` is a bare
-  file's short form and `/topic/<address>` is any file; the link says which,
-  and nothing is fetched to find out.
-*/
-describe('addressFromRef', () => {
-  it('reads an address out of the ref, colons and all', () => {
-    expect(addressFromRef(ISSUE)).toBe(ISSUE)
-  })
-
-  it('is null for a short ref, which carries a d and no author', () => {
-    // A slug cannot contain a colon, so nothing a short link carries can be
-    // mistaken for an address.
-    expect(addressFromRef(`design-review-${UUID}`)).toBe(null)
-    expect(addressFromRef(UUID)).toBe(null)
-  })
-
-  it('tolerates a link whose colons were percent-encoded on the way', () => {
-    expect(addressFromRef(encodeURIComponent(ISSUE))).toBe(ISSUE)
-  })
-
-  it('does not decode twice: a d with a literal percent survives', () => {
-    // `useParams` has already decoded the segment once. A second decode would
-    // turn `%25` into `%` and the address into a different address.
-    const odd = `30840:${SHIP}:a%25b`
-    expect(addressFromRef(odd)).toBe(odd)
-  })
-
-  it('is null for things that are nearly an address', () => {
-    expect(addressFromRef(`30851:${SHIP.slice(0, 63)}:x`)).toBe(null)
-    expect(addressFromRef(`30851:${SHIP}:`)).toBe(null)
-    expect(addressFromRef('naddr1qq')).toBe(null)
-    expect(addressFromRef('%E0%A4%A')).toBe(null)
-  })
-})
 
 /*
   Every link Peek writes is the shared writer's (LIN-3), with the words the
@@ -258,7 +221,7 @@ describe('fileRouteFromPath', () => {
   })
 })
 
-/* The launcher's "the page you are on is not somewhere to go", in both grammars — FOL-37. */
+/* The launcher's "the page you are on is not somewhere to go" — FOL-37. */
 describe('refNamesFile', () => {
   it('matches a short ref on the file’s d, whatever the slug', () => {
     expect(refNamesFile(`design-review-${FILE_D}`, FILE)).toBe(true)
@@ -267,10 +230,9 @@ describe('refNamesFile', () => {
     expect(refNamesFile(`design-review-${UUID}`, FILE)).toBe(false)
   })
 
-  it('matches a long ref on the whole address', () => {
-    expect(refNamesFile(ISSUE, ISSUE)).toBe(true)
-    expect(refNamesFile(ISSUE.toUpperCase(), ISSUE)).toBe(true)
-    expect(refNamesFile(ISSUE, FILE)).toBe(false)
+  it('names nothing for the old long ref, the file’s own address included (LIN-8)', () => {
+    expect(refNamesFile(ISSUE, ISSUE)).toBe(false)
+    expect(refNamesFile(FILE, FILE)).toBe(false)
   })
 
   it('names nothing when the ref carries no identity', () => {
