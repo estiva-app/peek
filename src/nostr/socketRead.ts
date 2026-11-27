@@ -27,6 +27,7 @@ import {
   createPacer,
   createRelayBudget,
   matchesSnapshotFilter,
+  retryHintMs,
   type BudgetChannel,
   type ReadLane,
   type RelayBudget,
@@ -39,7 +40,7 @@ import type { QueryLane, SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
-import { firstFrameWaitMs, otherFramesSince, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
+import { firstFrameWaitMs, noteQuotaRefused, otherFramesSince, quotaFullForMs, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
 
 /**
  * How long a catch-up's NEG-OPEN waits for the relay's first round (THE-6). Buzz answers in well under a second; a
@@ -47,6 +48,12 @@ import { firstFrameWaitMs, otherFramesSince, readingFirst, sendingAsRead, sendin
  * {@link EOSE_TIMEOUT_MS}, then HTTP's 15 s.
  */
 export const RECONCILE_WAIT_MS = 5_000
+/**
+ * The longest a catch-up waits out the socket's quota pause before it is asked whole over HTTP instead (THE-15). The
+ * quota is the person's, spent by all their apps, and buzz counts it over 5 s, so its pause is never longer: Miky's
+ * reopens met 0–3 s on 26 Nov. Asking whole cost such a reopen 7–11 MB; waiting costs the seconds of the pause.
+ */
+export const RECONCILE_QUOTA_WAIT_MS = 5_000
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
 /**
@@ -135,6 +142,10 @@ export interface SocketReaderOptions {
   httpBudget: Pick<RelayBudget, 'pausedForMs'>
   /** Metered frames the socket sent outside this reader since `floor`, oldest first. */
   otherFrames?: (floor: number) => number[]
+  /** The relay refused a read for the person's quota, its window freeing in `retryMs` (`noteQuotaRefused`). */
+  relayFull?: (retryMs: number) => void
+  /** How long the relay's window stays full of frames no Peek load sent, after such a refusal (`quotaFullForMs`). */
+  relayFullForMs?: () => number
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
@@ -180,6 +191,12 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     others: options.otherFrames,
   })
   const inFlight = createInFlight(MAX_REQS_IN_FLIGHT)
+  // The relay's quota refused a read: pause, and count its window as full (THE-15), since the person's other apps
+  // filled it unseen. The relay's stated wait, or the pause the budget took when it named none.
+  const quotaRefused = (reason: string) => {
+    options.budget.noteRateLimited(reason)
+    options.relayFull?.(retryHintMs(reason) ?? options.budget.pausedForMs())
+  }
   const spilled: number[] = []
   const spill = {
     afterMs: SPILL_AFTER_MS,
@@ -359,7 +376,7 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     recordRelayRequest('REQ', filters, refusal)
     // Only a quota refusal pauses the socket's reads; "too many concurrent
     // requests" is the relay's own load, and the next read may well get in.
-    if (outcome.kind === 'closed' && /quota exceeded/.test(outcome.reason)) options.budget.noteRateLimited(outcome.reason)
+    if (outcome.kind === 'closed' && /quota exceeded/.test(outcome.reason)) quotaRefused(outcome.reason)
     return outcome
   }
 
@@ -386,6 +403,9 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     if (filters.some((filter) => QUERY_ONLY.some((key) => key in filter)))
       return overHttp(lane === 'ahead' && aheadSpill.allowed() ? 'spilled' : 'query-only read')
     if (options.budget.pausedForMs() > 0) return overHttp('socket paused')
+    // The relay's window is still full of the person's other apps' frames (THE-15): a click's plain question costs the
+    // same bytes over HTTP, and the Desk's rows should not wait behind the catch-ups that must wait for the socket.
+    if (lane !== 'ahead' && (options.relayFullForMs?.() ?? 0) > 0) return overHttp('socket full')
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')
     const client = options.getClient(relayUrl)
@@ -463,7 +483,14 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
   */
   const reconcile: NonNullable<SocketReader['reconcile']> = async (relayUrl, filter, held, pubkey, { lane = 'click' } = {}) => {
     const unsupported = (message: string): ReconcileOutcome => ({ ok: false, reason: 'unsupported', message })
-    if (options.budget.pausedForMs() > 0) return unsupported('socket paused')
+    // A short quota pause is waited out: the catch-up's fallback would ask the whole question over HTTP (THE-15).
+    // Looped, since another refusal, here or in another tab, can extend it.
+    let waited = 0
+    for (let pause = options.budget.pausedForMs(); pause > 0; pause = options.budget.pausedForMs()) {
+      if (waited + pause > RECONCILE_QUOTA_WAIT_MS) return unsupported('socket paused')
+      await new Promise<void>((done) => void setTimer(done, pause))
+      waited += pause
+    }
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || pubkey !== socketPubkey) return unsupported('other pubkey')
     const client = options.getClient(relayUrl)
@@ -482,12 +509,12 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     // The relay answered, whether or not anything was missing: that ends a silent relay as a REQ's answer does (5cd7579f).
     if (outcome.ok || outcome.reason === 'refused' || outcome.reason === 'blocked') recordReadAnswered(outcome.ok)
     recordRelayRequest('NEG-OPEN', [filter], outcome.ok ? null : refusalOf(0, outcome.message))
-    if (!outcome.ok && /quota exceeded/.test(outcome.message)) options.budget.noteRateLimited(outcome.message)
+    if (!outcome.ok && /quota exceeded/.test(outcome.message)) quotaRefused(outcome.message)
     return outcome
   }
 
   const canReconcile = (relayUrl: string, pubkey: string) =>
-    options.budget.pausedForMs() === 0 && options.currentPubkey() === pubkey && !!options.getClient(relayUrl)
+    options.budget.pausedForMs() <= RECONCILE_QUOTA_WAIT_MS && options.currentPubkey() === pubkey && !!options.getClient(relayUrl)
 
   return Object.assign(read, {
     reconcile,
@@ -523,6 +550,8 @@ export function createAppSocketReader(log?: SocketReaderOptions['log']): LanedSo
     budget: socketBudget,
     httpBudget: relayBudget,
     otherFrames: otherFramesSince,
+    relayFull: (retryMs) => noteQuotaRefused(retryMs),
+    relayFullForMs: () => quotaFullForMs(),
     log,
   }))
 }
